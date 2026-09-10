@@ -1890,12 +1890,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         проставляет статус «Участие на мероприятии», о котором говорил
         заказчик, — отдельной ручки у статуса здесь нет.
         """
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
         require_scoped_permission(
             request,
             _FORCES_SELECT_PERMISSION,
             event_service.employee_scope_division(data.get("employeeId")),
         )
+        # Черновик штаба ещё не запрос (Plane №1023, ревью №944/№825): без
+        # этой проверки держатель `forces.select` мог вписать людей в
+        # неотправленную строку, зная её id, — до того, как штаб вообще решил
+        # просить департамент. Тот же гард стоит у соседних действий
+        # департамента (`split-directorate-quotas`, `notify`) этой же строки.
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.add_allocation_member(
                 pk,

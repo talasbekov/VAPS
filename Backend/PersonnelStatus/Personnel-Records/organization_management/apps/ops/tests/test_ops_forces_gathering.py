@@ -219,6 +219,53 @@ def test_split_keeps_started_department_state(manager):  # noqa: F811
     assert started["members"] == [{"employeeId": "1"}]
 
 
+def test_split_does_not_erase_the_staff_comment_of_untouched_rows(manager):  # noqa: F811
+    """Комментарий штаба переживает пересохранение раскладки ради нового
+    адресата (Plane №1023, ревью №944/№825).
+
+    Экран раскладки (`SplitEditor`) не несёт поля ввода для этого
+    комментария вовсе — он приходит из сида/API, — и шлёт УЖЕ ОТПРАВЛЕННЫЕ
+    строки как `{departmentId, need}` без ключа `comment` (их цифра всё
+    равно заперта — правится только тем же числом или довыделением).
+    Добавление НОВОГО департамента в раскладку не должно стирать комментарий
+    у прежнего тем же правилом, каким уже защищены
+    `dueAt`/`submittedLate`/`answerComment`.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, _ = event_on_demand(manager)
+    first = make_department("Департамент охраны")
+    manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(first.pk), "need": 1}]},
+        format="json",
+    )
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
+    event.force_allocation = [
+        {**row, "comment": "штабной комментарий"} for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation"])
+
+    # Штаб дописывает НОВЫЙ департамент; отправленная цифра первого не
+    # меняется (иначе она заперта — `ALLOCATION_LOCKED`/цифра сверх запроса
+    # ошибкой формы), а комментария в запросе экран не несёт вовсе.
+    second = make_department("Департамент сопровождения")
+    resaved = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()
+    kept = next(
+        row for row in resaved["forceAllocation"] if row["departmentId"] == str(first.pk)
+    )
+    assert kept["comment"] == "штабной комментарий"
+
+
 def test_split_only_while_forces_are_gathered(manager):  # noqa: F811
     """До рекогносцировки делить нечего — стадия отбивает раскладку."""
     obj = make_object(with_passport=True)
