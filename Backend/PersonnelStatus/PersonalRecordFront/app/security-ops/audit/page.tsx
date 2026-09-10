@@ -2,10 +2,23 @@
 
 // Аудит ОМ: read-only журнал действий с поиском. Записи создаёт сервер при
 // мутациях — на этой странице нет ни одной кнопки изменения.
+//
+// Селекты действия и актора — по образцу экрана прототипа «Аудит и настройки».
+// Фильтруют КЛИЕНТСКИ в пределах загруженной ленты (адаптер /api/ops/audit-logs/
+// отдаёт последние 200 без параметров) — об этом строка под фильтрами; серверные
+// фильтры живут у /api/operations/audit-logs/ и ждут своего среза.
 import { useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -29,24 +42,47 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { formatIsoDateTime } from "@/shared/lib/date";
 
+const ALL = "__all__";
+
 export default function OpsAuditPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [search, setSearch] = useState("");
+  const [action, setAction] = useState(ALL);
+  const [actor, setActor] = useState(ALL);
   const query = useOpsAuditLogs();
+
+  // Значения селектов — из фактической ленты, а не из зашитого словаря:
+  // закрытый словарь кодов живёт на бэке, и его копия здесь разошлась бы.
+  const { actions, actors } = useMemo(() => {
+    const all = query.data?.results ?? [];
+    return {
+      actions: [...new Set(all.map((log) => log.action))].sort(),
+      actors: [...new Set(all.map((log) => String(log.actorUserId)))].sort(
+        (a, b) => Number(a) - Number(b)
+      ),
+    };
+  }, [query.data]);
+
+  const hasActiveFilters = search.trim() !== "" || action !== ALL || actor !== ALL;
+  const resetFilters = () => {
+    setSearch("");
+    setAction(ALL);
+    setActor(ALL);
+  };
 
   const filtered = useMemo(() => {
     const all = query.data?.results ?? [];
     const q = search.trim().toLowerCase();
-    if (q === "") return all;
-    return all.filter((log) =>
-      // Поиск идёт и ПО ПОДПИСИ, а не только по коду: человек ищет
-      // «замещающ», а не `SECURITY_EVENT_DEPUTY_ASSIGNED`. Код тоже остаётся
-      // искомым — по нему ищут те, кто пришёл из кода или из отчёта.
-      `${auditActionLabel(log.action)} ${log.action} ${log.entityType} ${log.entityId} ${log.actorUserId} ${log.reason}`
+    return all.filter((log) => {
+      if (action !== ALL && log.action !== action) return false;
+      if (actor !== ALL && String(log.actorUserId) !== actor) return false;
+      if (q === "") return true;
+      // Сохраняем поиск по подписи и коду из текущего журнала.
+      return `${auditActionLabel(log.action)} ${log.action} ${log.entityType} ${log.entityId} ${log.actorUserId} ${log.reason}`
         .toLowerCase()
-        .includes(q)
-    );
-  }, [query.data, search]);
+        .includes(q);
+    });
+  }, [query.data, search, action, actor]);
 
   if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/audit"])) {
     return <OpsAccessDenied what="журнала аудита" />;
@@ -61,12 +97,46 @@ export default function OpsAuditPage() {
           description="Журнал действий раздела ОМ — только для чтения"
         />
 
-        <Input
-          className="max-w-md"
-          placeholder="Поиск по действию, сущности, пользователю…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="max-w-md flex-1"
+            placeholder="Поиск по действию, сущности, пользователю…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Select value={action} onValueChange={setAction}>
+            <SelectTrigger className="w-56" aria-label="Действие">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Все действия</SelectItem>
+              {actions.map((code) => (
+                <SelectItem key={code} value={code}>
+                  {auditActionLabel(code)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={actor} onValueChange={setActor}>
+            <SelectTrigger className="w-44" aria-label="Пользователь">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Все пользователи</SelectItem>
+              {actors.map((id) => (
+                <SelectItem key={id} value={id}>
+                  Пользователь {id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Чего нет и почему — вслух: экспорт и глубина ленты. */}
+        <p className="text-xs text-muted-foreground">
+          Фильтры действуют в пределах загруженной ленты (последние 200
+          записей).
+        </p>
 
         {query.isLoading && (
           <Card>
@@ -89,8 +159,13 @@ export default function OpsAuditPage() {
         )}
         {query.data !== undefined && filtered.length === 0 && (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-muted-foreground">
-              Записи не найдены
+            <CardContent className="space-y-2 p-9 text-center text-sm text-muted-foreground">
+              <p>Записи не найдены</p>
+              {hasActiveFilters && (
+                <Button variant="outline" size="sm" onClick={resetFilters}>
+                  Сбросить фильтры
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
