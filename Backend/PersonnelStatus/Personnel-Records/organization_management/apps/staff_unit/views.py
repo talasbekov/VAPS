@@ -228,6 +228,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             and self.request.method in permissions.SAFE_METHODS
         ):
             return [permissions.IsAuthenticated(), CanReadDirectorate()]
+        if self.action == 'directorate_management':
+            return [permissions.IsAuthenticated(), CanManageStaffingTable()]
         return [permissions.IsAuthenticated(), CanViewStaffingTable()]
 
     def get_queryset(self):
@@ -545,7 +547,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # они, и второе имя для одного и того же разошлось бы с ними при первой
         # же раздаче прав.
         opened_by_ops_permission = False
-        if not user.is_superuser:
+        if request.method in permissions.SAFE_METHODS and not user.is_superuser:
             opened_by_ops_permission = _has_ops_status_view(request)
             if not opened_by_ops_permission:
                 return Response(

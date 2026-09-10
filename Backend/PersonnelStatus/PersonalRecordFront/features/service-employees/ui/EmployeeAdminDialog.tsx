@@ -68,7 +68,7 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
   });
   const row = staffing.data?.staff_units[0];
   const management = row?.management;
-  const loading = positions.isLoading || ranks.isLoading || accounts.isLoading || (employee !== null && staffing.isLoading);
+  const loading = positions.isLoading || ranks.isLoading || (employee !== null && staffing.isLoading);
 
   const save = async (form: HTMLFormElement) => {
     const data = new FormData(form);
@@ -103,6 +103,7 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
       const apiError = responseError(result);
       if (apiError) throw new Error(apiError);
       await queryClient.invalidateQueries({ queryKey: ["service-employees"] });
+      await queryClient.invalidateQueries({ queryKey: ["staffing-employee"] });
       toast({ title: employee ? "Карточка обновлена" : "Сотрудник создан" });
       onClose();
     } catch (caught) {
@@ -123,6 +124,7 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
       const apiError = responseError(result);
       if (apiError) throw new Error(apiError);
       await queryClient.invalidateQueries({ queryKey: ["service-employees"] });
+      await queryClient.invalidateQueries({ queryKey: ["staffing-employee"] });
       toast({ title: "Сотрудник деактивирован" });
       onClose();
     } catch (caught) {
@@ -138,7 +140,7 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
         <DialogTitle>{employee ? "Изменить сотрудника" : "Добавить сотрудника"}</DialogTitle>
         <DialogDescription>Кадровая карточка, штатная позиция и привязка к учётной записи.</DialogDescription>
       </DialogHeader>
-      <form key={`${management?.staff_unit_id ?? (employee ? "loading" : "new")}:${positions.isSuccess}:${ranks.isSuccess}:${accounts.isSuccess}`} className="space-y-5" onSubmit={(event) => { event.preventDefault(); void save(event.currentTarget); }}>
+      {loading ? <p role="status" className="py-6 text-sm text-muted-foreground">Загрузка кадровых данных…</p> : <form key={management?.staff_unit_id ?? "new"} className="space-y-5" onSubmit={(event) => { event.preventDefault(); void save(event.currentTarget); }}>
         <fieldset disabled={loading || saving} className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1"><Label htmlFor="staff-last-name">Фамилия</Label><Input id="staff-last-name" name="last_name" required defaultValue={row?.employee?.last_name ?? employee?.full_name.split(" ")[0] ?? ""} /></div>
           <div className="space-y-1"><Label htmlFor="staff-first-name">Имя</Label><Input id="staff-first-name" name="first_name" required defaultValue={row?.employee?.first_name ?? employee?.full_name.split(" ")[1] ?? ""} /></div>
@@ -156,7 +158,7 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
           <div>{employee && management?.is_active && <Button type="button" variant="destructive" disabled={saving} onClick={() => void deactivate()}>Деактивировать</Button>}</div>
           <div className="flex gap-2"><Button type="button" variant="outline" onClick={onClose} disabled={saving}>Отмена</Button><Button type="submit" disabled={loading || saving}>{saving ? "Сохранение…" : "Сохранить"}</Button></div>
         </div>
-      </form>
+      </form>}
     </DialogContent>
   </Dialog>;
 }
