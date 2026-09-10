@@ -43,6 +43,7 @@ for name in (
     'build-bundle.sh', 'install.sh', 'snapshot.py', 'docker-compose.yml', '.env.example',
     'Dockerfile.python-deps', 'Dockerfile.node-deps', 'Dockerfile.backend',
     'Dockerfile.frontend', 'Dockerfile.proxy', 'entrypoint.sh', 'nginx.conf', 'README.md',
+    'proxy-entrypoint.sh', 'nginx-error-filter.awk',
 ):
     shutil.copy2(root / 'deploy/contour' / name, deploy / name)
 print(f'Snapshot: {count} tracked application/deployment files; no local environment')
