@@ -45,41 +45,73 @@ const PROBE_ROLE_PREFIX = 'Куратор визитов (проба e2e'
 const PROBE_ROLE = `${PROBE_ROLE_PREFIX} ${Date.now()})`
 
 /**
- * Снимает со сводок ГВО лиц, вписанных этой пробой (роль `PROBE_ROLE`):
- * упавший прогон оставлял лицо в сводке, и каждый следующий заход съедал ещё
- * одно свободное «наше» лицо каталога — на четвёртом фикстуры не оставалось
- * (прогон 04.09.2026, три лица из четырёх были «названы»).
+ * Насколько старым должен быть чужой хвост, чтобы стартовая уборка считала
+ * его брошенным, а не живым соседним прогоном (Plane №1061). Сильно больше
+ * времени одного прогона этой пробы (10-20 c на этом стенде).
  */
-async function unlinkProbePersons(): Promise<void> {
+const STALE_PROBE_AGE_MS = 5 * 60 * 1000
+
+/** Время прогона из роли `PROBE_ROLE`, если это она; иначе `null`. */
+function probeRoleTimestamp(role: string): number | null {
+  if (!role.startsWith(PROBE_ROLE_PREFIX)) return null
+  const match = role.slice(PROBE_ROLE_PREFIX.length).match(/^\s*(\d+)\)$/)
+  return match ? Number(match[1]) : null
+}
+
+/**
+ * Снимает со сводок ГВО лиц, вписанных этой пробой: упавший прогон оставлял
+ * лицо в сводке, и каждый следующий заход съедал ещё одно свободное «наше»
+ * лицо каталога — на четвёртом фикстуры не оставалось (прогон 04.09.2026,
+ * три лица из четырёх были «названы»).
+ *
+ * 🔴 ТОЧНОЕ ИМЯ РОЛИ — ПРИ СВОЁЙ УБОРКЕ, ВОЗРАСТ — ПРИ ЧУЖОЙ (Plane №1061).
+ * Стенд общий, и одновременно с этим прогоном на нём может идти ДРУГОЙ такой
+ * же прогон (свой процесс, своя сессия) — оба используют один и тот же общий
+ * `omCode` (единственный незакрытый визит фикстуры). Прежняя уборка снимала
+ * ЛЮБОЕ лицо с ПРЕФИКСОМ метки, включая ЕЩЁ ЖИВОЕ лицо соседнего прогона —
+ * воспроизведено намеренно двумя параллельными вызовами этой самой пробы:
+ * второй падал РОВНО на строке 253, как в жалобе карточки. Свой хвост
+ * (`exactRole`) убирается по ТОЧНОМУ совпадению — он known заранее и убрать
+ * его можно сразу. Чужой хвост убирается только если он старше
+ * `STALE_PROBE_AGE_MS`: тогда это гарантированно брошенный прошлый прогон, а
+ * не сосед, который ещё работает.
+ */
+async function unlinkProbePersons(exactRole?: string): Promise<void> {
   const token = await apiToken()
   const rows = await apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token)
+  const isRemovable = (role: string): boolean => {
+    if (exactRole !== undefined) return role === exactRole
+    const ts = probeRoleTimestamp(role)
+    return ts !== null && Date.now() - ts > STALE_PROBE_AGE_MS
+  }
   for (const row of rows.results) {
     const persons = row.summary.persons ?? []
-    // Отбор по ПРЕФИКСУ, а не по точному совпадению: метка несёт время
-    // прогона, и хвост упавшего прошлого захода надо подобрать тоже.
-    if (!persons.some((person) => (person.role ?? '').startsWith(PROBE_ROLE_PREFIX)))
-      continue
-    // 🔴 СБРОС РАЗДЕЛА, А НЕ ПАТЧ ОСТАТКОМ (Plane №740). Патч возвращал
-    // СОБРАННЫЙ список обратно, поэтому `visit.data['persons']` оставался
-    // заполненным НАВСЕГДА: `filled` это `bool(data)` и оставался true, а
-    // `apply_patch` на каждом прогоне поднимал версию визита и переводил
-    // статус DRAFT→READY. Хуже всего, когда пробное лицо было единственным:
-    // остаток выходил пустым, и в сводке оседала вечная подмена
-    // `persons: []`, скрывавшая охраняемое лицо БЮЛЛЕТЕНЯ из этой сводки и
-    // из счётчика «заполнено K из N».
+    const kept = persons.filter((person) => !isRemovable(person.role ?? ''))
+    if (kept.length === persons.length) continue
+    // 🔴 СНЯТЫЙ ОСТАТОК ПАТЧИТСЯ ЦЕЛИКОМ, А НЕ СБРАСЫВАЕТСЯ, КОГДА В НЁМ
+    // ЕЩЁ ЕСТЬ ЛЮДИ (Plane №1061). До этой правки любое совпадение вело к
+    // `reset/`, который снимает раздел ЦЕЛИКОМ — вместе со СВОИМ пробным
+    // лицом улетало и лицо СОСЕДНЕГО прогона, ещё живущее в той же сводке
+    // (оба используют один и тот же общий незакрытый `omCode` фикстуры).
+    // Патч с непустым остатком убирает ТОЛЬКО отобранных, сохраняя всех
+    // остальных — базу бюллетеня и живых соседей.
     //
-    // `reset/` снимает ключи раздела и удаляет запись патча, когда не
-    // осталось ничего, — то есть возвращает сводку к выводу из бюллетеня, а
-    // не к «пустому списку, записанному руками». Именно это уборка и должна
-    // делать: убрать СВОЙ след, а не оставить свой отпечаток.
-    const res = await fetch(
-      `${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/reset/`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ section: 'persons' }),
-      },
-    )
+    // `reset/` остаётся, но ТОЛЬКО когда остаток пуст: патч с `persons: []`
+    // навсегда подменил бы список — база бюллетеня перестала бы просвечивать
+    // через пустой патч (Plane №740), а `reset/` возвращает сводку к её
+    // выводу из бюллетеня, а не к «пустому списку, записанному руками».
+    const res =
+      kept.length > 0
+        ? await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
+          })
+        : await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/reset/`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ section: 'persons' }),
+          })
     // 🔴 КОД ОТВЕТА ПРОВЕРЯЕТСЯ (Plane №739). Ответ не читался вовсе, а 4xx
     // здесь достижим буднично: `apply_patch` отвечает 400 на кривое тело, а
     // `_require_foreign` отбивает ВНУТРЕННИЙ ОМ — тогда как
@@ -262,7 +294,11 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       // остаётся приклеен к этому ОМ и следующий прогон стартует не с чистого
       // состояния. Ручкой, а не окном: окна «Изменить список охраняемых лиц»
       // с единым режимом правки (№441) больше нет.
-      await unlinkProbePersons()
+      //
+      // ТОЧНАЯ РОЛЬ, а не общий префикс (Plane №1061): снимается ровно то
+      // лицо, которое вписал ЭТОТ прогон, а не любое лицо соседнего прогона,
+      // ещё живущего на том же общем `omCode` в этот самый момент.
+      await unlinkProbePersons(PROBE_ROLE)
     }
 
     // Консоль проверяется ПОСЛЕ уборки: её падение не должно оставлять след.
