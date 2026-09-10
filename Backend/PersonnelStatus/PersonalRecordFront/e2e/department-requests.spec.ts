@@ -24,6 +24,8 @@ import { uniqueBusinessDate } from './business-date'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+const FORCES_OFFICER_USERNAME = 'acc_forces_officer'
+const ACCESS_MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
 interface RequestRow {
   code: string
@@ -32,20 +34,27 @@ interface RequestRow {
   assigned: number
 }
 
-async function apiToken(): Promise<string> {
+async function apiToken(
+  username = STAND_USERNAME,
+  password = STAND_PASSWORD,
+): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
+    body: JSON.stringify({ username, password }),
   })
   return ((await res.json()) as { access: string }).access
 }
 
-async function signIn(page: Page): Promise<void> {
+async function signIn(
+  page: Page,
+  username = STAND_USERNAME,
+  password = STAND_PASSWORD,
+): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
   await api.post(`${APP}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
+    form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
 }
 
@@ -596,7 +605,7 @@ test.describe('заявки департаменту', () => {
     }
   })
 
-  test('диалог отправки называет, что при неразложенной квоте не уйдёт НИЧЕГО (Plane №808)', async ({
+  test('пустую рассылку нельзя подтвердить, а диалог объясняет следующий шаг (Plane №887)', async ({
     page,
   }) => {
     /**
@@ -611,10 +620,8 @@ test.describe('заявки департаменту', () => {
      * сейчас нечего. Число «0 из 12» человек читает как «мало», а не как
      * «ноль писем и запертая форма».
      *
-     * Заказчик в карточке назвал три варианта; сделан ПЕРВЫЙ (диалог называет
-     * положение прямо) — он ничего не запрещает и не меняет порядок работы.
-     * Варианты «выключить кнопку» и «отбивать на сервере» остаются за
-     * заказчиком: второй уже стоил 30 красных проб в №557.
+     * Решение №887: сервер не меняет состояние пустой заявки, а диалог не
+     * позволяет подтвердить действие и словами ведёт к раскладке.
      *
      * КРАСНАЯ ПРОВЕРКА: убрать блок `data-slot="notify-nothing-to-send"` из
      * `DepartmentRequestCard` — проба падает.
@@ -627,7 +634,18 @@ test.describe('заявки департаменту', () => {
     const fixture = await createDepartmentAllocationFixture(token)
 
     try {
-      await signIn(page)
+      expect(ACCESS_MATRIX_PASSWORD, 'не задан пароль учёток acc_*').not.toBe('')
+      const officerToken = await apiToken(FORCES_OFFICER_USERNAME, ACCESS_MATRIX_PASSWORD)
+      const permissionsResponse = await fetch(`${API}/api/operations/my-permissions/`, {
+        headers: { Authorization: `Bearer ${officerToken}` },
+      })
+      expect(permissionsResponse.status).toBe(200)
+      const permissions = ((await permissionsResponse.json()) as { permissions?: string[] })
+        .permissions ?? []
+      expect(permissions).toContain('forces.allocate')
+      expect(permissions).not.toContain('*')
+
+      await signIn(page, FORCES_OFFICER_USERNAME, ACCESS_MATRIX_PASSWORD)
       await page.goto(`${APP}/employees?view=forces`)
       const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
       await expect(tab).toBeVisible({ timeout: 30_000 })
@@ -662,14 +680,19 @@ test.describe('заявки департаменту', () => {
         warning,
         'диалог не говорит, что при нулевой раскладке не уйдёт ни одного уведомления',
       ).toBeVisible()
-      await expect(warning).toContainText('ни одного уведомления')
-      await expect(warning).toContainText('запрут')
+      await expect(warning).toContainText('отправка пока недоступна')
+      await expect(warning).toContainText('Сначала разложите людей или специальные группы')
       // Та же фраза обязана быть В ОПИСАНИИ диалога: жёлтый блок — для глаз, а
       // читалке диалог объявляет именно описание (`aria-describedby`).
       await expect(
         dialog.locator('[data-slot="dialog-description"]'),
         'предупреждение не попало в описание диалога — читалка его не объявит',
-      ).toContainText('не уйдёт ни одного уведомления')
+      ).toContainText('отправка недоступна')
+
+      await expect(
+        dialog.getByRole('button', { name: 'Сначала разложите запрос' }),
+        'пустую рассылку всё ещё можно необратимо подтвердить',
+      ).toBeDisabled()
 
       // Уходим без отправки — действие необратимо, и проверять его тут нечем.
       await dialog.getByRole('button', { name: 'Отмена' }).click()

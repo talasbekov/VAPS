@@ -3789,6 +3789,22 @@ def notify_directorates(event_id, allocation_id, *, actor):
     )
     answered = target.get("allocating")
     promised = int(answered if answered is not None else (target.get("need") or 0))
+    has_directorate_work = any(
+        int((known.get(str(pk)) or {}).get("need") or 0) > 0
+        or bool((known.get(str(pk)) or {}).get("groupDemandIds"))
+        for pk, _name in directorates
+    )
+    if not has_directorate_work:
+        raise DomainError(
+            "DIRECTORATE_QUOTA_EMPTY",
+            422,
+            message=(
+                "По управлениям ничего не разложено — оповещать некого. "
+                "Сначала разложите людей или специальные группы и сохраните "
+                "раскладку."
+            ),
+            detail={"quota": str(promised), "split": "0"},
+        )
     if planned > promised:
         raise DomainError(
             "DIRECTORATE_QUOTA_OVERFLOW",
