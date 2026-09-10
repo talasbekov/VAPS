@@ -33,11 +33,13 @@
  * 409 по собственному следу — падение было её, а не кода.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { localIsoDate } from './business-date'
 import { clickRowMenuItem, staffedRow } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
 async function signIn(
@@ -50,6 +52,128 @@ async function signIn(
   await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
+}
+
+async function tokenFor(username: string, password: string): Promise<string> {
+  const response = await fetch(`${API}/api/token/`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  const payload = (await response.json()) as { access?: string }
+  expect(response.status, `не удалось войти в API под ${username}`).toBe(200)
+  expect(payload.access, `API не вернул access-токен для ${username}`).toBeTruthy()
+  return payload.access!
+}
+
+interface StaffRow {
+  id: number
+  employee: { id: number; last_name: string; first_name: string } | null
+}
+
+interface PlannedStatusFixture {
+  id: number
+  employeeName: string
+  statusLabel: string
+  startDate: string
+  endDate: string
+  comment: string
+  savedState: string
+  savedStatusType: string
+  savedStartDate: string
+  savedEndDate: string
+}
+
+const shiftedIso = (days: number): string => {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return localIsoDate(date)
+}
+
+const displayIsoDate = (value: string): string => value.split('-').reverse().join('.')
+
+/**
+ * Адресная фикстура для №1112: будущий КАДРОВЫЙ статус заводит та же
+ * non-admin роль, которая затем открывает его в интерфейсе. Берём сотрудника
+ * только с первой страницы её области — строка гарантированно будет видна в
+ * таблице. Конфликт периода у одного сотрудника не повод менять чужие данные:
+ * пробуем следующего и отменяем только созданный нами status id в `finally`.
+ */
+async function seedPlannedStatus(token: string): Promise<PlannedStatusFixture> {
+  const staffResponse = await fetch(
+    `${API}/api/staff_unit/staff-units/directorate/?page=1&page_size=50`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  const staffPayload = (await staffResponse.json()) as { staff_units?: StaffRow[] }
+  expect(staffResponse.status, 'не удалось получить сотрудников области non-admin роли').toBe(200)
+  const rows = (staffPayload.staff_units ?? []).filter(
+    (row): row is StaffRow & { employee: NonNullable<StaffRow['employee']> } =>
+      row.employee !== null,
+  )
+  expect(rows.length, 'в области non-admin роли нет сотрудника для будущего статуса').toBeGreaterThan(0)
+
+  const startDate = shiftedIso(45)
+  const endDate = shiftedIso(48)
+  const comment = `Проба №1112 ${Date.now()}`
+  const rejected: string[] = []
+
+  for (const row of rows) {
+    const response = await fetch(`${API}/api/statuses/statuses/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        employee: row.employee.id,
+        status_type: 'business_trip',
+        start_date: startDate,
+        end_date: endDate,
+        comment,
+      }),
+    })
+    const body = await response.text()
+    if (response.status !== 201) {
+      rejected.push(`${row.employee.id}: HTTP ${response.status} ${body}`)
+      continue
+    }
+    const created = JSON.parse(body) as {
+      id: number
+      state: string
+      status_type: string
+      status_type_display: string
+      start_date: string
+      end_date: string
+    }
+    return {
+      id: created.id,
+      employeeName: `${row.employee.last_name} ${row.employee.first_name}`,
+      statusLabel: created.status_type_display,
+      startDate,
+      endDate,
+      comment,
+      savedState: created.state,
+      savedStatusType: created.status_type,
+      savedStartDate: created.start_date,
+      savedEndDate: created.end_date,
+    }
+  }
+
+  throw new Error(
+    `ни одному сотруднику первой страницы не удалось адресно завести будущий статус: ${rejected.join('; ')}`,
+  )
+}
+
+async function cancelPlannedStatus(token: string, statusId: number): Promise<void> {
+  const response = await fetch(`${API}/api/statuses/statuses/${statusId}/cancel/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ reason: 'Уборка адресной пробы №1112' }),
+  })
+  expect(response.status, `не удалось убрать созданный пробой статус ${statusId}`).toBe(200)
 }
 
 
@@ -147,21 +271,63 @@ test.describe('расход: постановка статуса с меропр
     ).toBe(true)
   })
 
-  test('окно статусов не показывает отдельный учёт ОМ', async ({ page }) => {
+  test('будущий статус с датами остаётся в списке без отдельного учёта ОМ', async ({ page }) => {
     test.skip(MATRIX_PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
-    await signIn(page, 'acc_dir_head_d2', MATRIX_PASSWORD)
-    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+    const username = 'acc_dir_head_d2'
+    const token = await tokenFor(username, MATRIX_PASSWORD)
+    const seeded = await seedPlannedStatus(token)
 
-    await clickRowMenuItem(page, staffedRow(page), 'Запланированные статусы')
+    try {
+      expect(seeded.savedState, 'будущий статус сервер не оставил запланированным').toBe('planned')
+      expect(seeded.savedStatusType, 'сервер сохранил другой тип будущего статуса').toBe(
+        'business_trip',
+      )
+      expect(seeded.savedStartDate, 'сервер изменил дату начала будущего статуса').toBe(
+        seeded.startDate,
+      )
+      expect(seeded.savedEndDate, 'сервер изменил дату окончания будущего статуса').toBe(
+        seeded.endDate,
+      )
+      await signIn(page, username, MATRIX_PASSWORD)
+      await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+      const row = page.locator('table tbody tr', { hasText: seeded.employeeName }).first()
+      await expect(
+        row,
+        `сотрудника ${seeded.employeeName} с созданным статусом нет на первой странице`,
+      ).toBeVisible({ timeout: 30_000 })
 
-    const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Запланированные статусы', { exact: true })).toBeVisible({
-      timeout: 20_000,
-    })
-    await expect(
-      dialog.getByText('Учёт раздела ОМ', { exact: true }),
-      'окно статусов продолжает показывать отдельный учёт ОМ вместо единого списка',
-    ).toHaveCount(0)
+      await clickRowMenuItem(page, row, 'Запланированные статусы')
+
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByText('Запланированные статусы', { exact: true })).toBeVisible({
+        timeout: 20_000,
+      })
+      const plannedCard = dialog.locator('div.rounded-lg', { hasText: seeded.comment })
+      await expect(
+        plannedCard,
+        'созданный будущий статус не показан в разделе «Запланированные статусы»',
+      ).toHaveCount(1)
+      await expect(plannedCard.getByText(seeded.statusLabel, { exact: true })).toBeVisible()
+      await expect(
+        plannedCard
+          .getByText('Дата начала', { exact: true })
+          .locator('..')
+          .getByText(displayIsoDate(seeded.startDate), { exact: true }),
+        'дата начала будущего статуса потеряна или изменена',
+      ).toBeVisible()
+      await expect(
+        plannedCard
+          .getByText('Дата окончания', { exact: true })
+          .locator('..')
+          .getByText(displayIsoDate(seeded.endDate), { exact: true }),
+        'дата окончания будущего статуса потеряна или изменена',
+      ).toBeVisible()
+      await expect(
+        dialog.getByText('Учёт раздела ОМ', { exact: true }),
+        'окно статусов продолжает показывать отдельный учёт ОМ вместо единого списка',
+      ).toHaveCount(0)
+    } finally {
+      await cancelPlannedStatus(token, seeded.id)
+    }
   })
 })
