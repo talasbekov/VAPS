@@ -66,6 +66,20 @@ class Employee(models.Model):
     def __str__(self):
         return f"{self.last_name} {self.first_name}"
 
+    def save(self, *args, **kwargs):
+        """Keep the кадровый and operational dismissal flags consistent.
+
+        The temporary admin workflow and the future external-system import both
+        save the employee card.  A fired employee must therefore be inactive at
+        this model boundary, including callers that use ``update_fields``.
+        """
+        if self.employment_status == self.EmploymentStatus.FIRED:
+            self.is_active = False
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"is_active"}
+        return super().save(*args, **kwargs)
+
 
 class EmployeeTransferHistory(models.Model):
     """История кадровых перемещений сотрудника"""
