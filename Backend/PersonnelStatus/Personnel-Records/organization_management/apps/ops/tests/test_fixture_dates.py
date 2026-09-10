@@ -1,13 +1,17 @@
 """Гонка первичной брони дат e2e (Plane №890)."""
+import json
+from io import StringIO
 from threading import Barrier, Thread
 
 import pytest
+from django.core.management import call_command
 from django.db import connections
 
 from organization_management.apps.operations.models_event import (
     OpsE2EFixtureDateCursor,
 )
 from organization_management.apps.ops.fixture_dates import (
+    FIXTURE_DATE_START,
     reserve_fixture_business_dates,
 )
 
@@ -50,3 +54,16 @@ def test_two_first_reservations_are_atomic_even_when_create_races(monkeypatch):
     assert len(set(dates)) == 2
     cursor = OpsE2EFixtureDateCursor.objects.get(singleton_key=1)
     assert cursor.next_offset == 2
+
+
+@pytest.mark.django_db
+def test_local_reservation_command_returns_the_first_date_as_json():
+    """Playwright-подготовка получает диапазон локально, без HTTP-права роли."""
+    output = StringIO()
+
+    call_command("reserve_e2e_fixture_dates", "--count", "4352", stdout=output)
+
+    assert json.loads(output.getvalue()) == {
+        "businessDate": FIXTURE_DATE_START.isoformat(),
+        "count": 4352,
+    }

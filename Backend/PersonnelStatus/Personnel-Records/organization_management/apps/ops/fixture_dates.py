@@ -15,7 +15,10 @@ from organization_management.apps.operations.models_event import OpsE2EFixtureDa
 
 FIXTURE_DATE_START = date(2027, 2, 1)
 MAX_FIXTURE_OFFSET = (date.max - FIXTURE_DATE_START).days
-MAX_RESERVATION_COUNT = 3650
+# Frontend reserves 256 dates for each of no more than 64 worker-slots.  The
+# command is local-only, so this limit protects accidental excessive CLI use,
+# not an HTTP client.
+MAX_RESERVATION_COUNT = 16_384
 
 
 @transaction.atomic
