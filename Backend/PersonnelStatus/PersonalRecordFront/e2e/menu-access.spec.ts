@@ -59,7 +59,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
   { name: 'Законы об ОМ', href: '/security-ops/laws' },
   { name: 'Транспорт ГОН', href: '/security-ops/vehicles' },
   { name: 'Аналитика ОМ', href: '/security-ops/analytics/operations' },
-  { name: 'Отчеты по ОМ', href: '/security-ops/service-reports' },
+  { name: 'Отчёты по Службе', href: '/security-ops/service-reports' },
   { name: 'Справочники', href: '/security-ops/dictionaries' },
   { name: 'Администрирование', href: '/security-ops/settings' },
   { name: 'Аудит', href: '/security-ops/audit' },
@@ -69,7 +69,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
 /** Списки — словами заказчика из карточки №348, а не пересчётом прав. */
 const CLOSED_TO_EMPLOYEE = [
   'Командный центр', 'Реестр ОМ', 'Транспорт ГОН', 'Аналитика ОМ',
-  'Отчеты по ОМ', 'Аналитика службы', 'Справочники', 'Администрирование',
+  'Отчёты по Службе', 'Аналитика службы', 'Справочники', 'Администрирование',
   'Журнал изменений',
 ]
 const OPEN_TO_EMPLOYEE = ['Объекты и паспорта', 'Охраняемые лица', 'Законы об ОМ']
@@ -175,6 +175,31 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
         `администратору «${item.name}» закрывать нечем`,
       ).toBeVisible()
     }
+  })
+
+  test('отчёт CSV службы находится в ежедневном расходе без входа из ОМ', async ({ page }) => {
+    // Не администратор: иначе wildcard `*` способен скрыть расхождение
+    // между реальным правом `report.generate` и тем, что видит руководитель.
+    await signIn(page, 'acc_dept_head_d2')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    const serviceReports = itemByHref(menu, '/security-ops/service-reports')
+    const expenseHeading = menu.getByRole('heading', { name: 'Ежедневный расход' })
+    const expenseListId = await expenseHeading.getAttribute('id')
+
+    await expect(serviceReports).toHaveAccessibleName('Отчёты по Службе')
+    await expect(menu.locator(`ul[aria-labelledby="${expenseListId}"]`).getByRole('link', {
+      name: 'Отчёты по Службе',
+    })).toBeVisible()
+    await expect(menu.getByRole('link', { name: 'Отчеты по ОМ' })).toHaveCount(0)
+
+    await serviceReports.click()
+    await expect(page).toHaveURL(/\/security-ops\/service-reports\/?$/)
+    await expect(page.getByRole('heading', { name: 'Отчёты службы' })).toBeVisible()
+    await page.getByLabel('Начало периода').fill('2026-09-09')
+    await page.getByLabel('Конец периода').fill('2026-09-10')
+    await expect(page.getByRole('button', { name: 'Сформировать отчёт' })).toBeEnabled()
   })
 
   test('карта прав покрывает каждый пункт меню', async () => {
