@@ -46,6 +46,11 @@ CELERY_TASK_ALWAYS_EAGER = False
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'asgi_path_only': {
+            '()': 'organization_management.config.logging_filters.ASGIPathOnlyFilter',
+        },
+    },
     'formatters': {'standard': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'}},
     'handlers': {
         'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
@@ -59,5 +64,15 @@ LOGGING = {
         },
     },
     'root': {'handlers': ['console', 'file'], 'level': 'INFO'},
-    'loggers': {'django': {'handlers': ['console', 'file'], 'level': 'INFO', 'propagate': False}},
+    'loggers': {
+        'django': {'handlers': ['console', 'file'], 'level': 'INFO', 'propagate': False},
+        'uvicorn.error': {
+            'handlers': ['console', 'file'], 'filters': ['asgi_path_only'],
+            'level': 'INFO', 'propagate': False,
+        },
+        'uvicorn.access': {
+            'handlers': ['console', 'file'], 'filters': ['asgi_path_only'],
+            'level': 'INFO', 'propagate': False,
+        },
+    },
 }
