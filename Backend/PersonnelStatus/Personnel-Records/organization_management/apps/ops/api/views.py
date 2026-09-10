@@ -1479,7 +1479,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 for member in (allocation.get("members") or [])
                 if member.get("employeeId") is not None
             )
-            read_context.prime_allocation_members(member_ids)
+            read_context.prime_employees(member_ids)
         for event in page:
             rows.append(
                 board.board_row(
