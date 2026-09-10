@@ -71,7 +71,7 @@ import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { remarkIsOpen } from "@/entities/security-event";
+import { placementEditable, remarkIsOpen } from "@/entities/security-event";
 import type {
   ApprovalRemark,
   PersonnelSummarySnapshot,
@@ -391,10 +391,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
-  const placementStage = scope.visit?.stage ?? event.stage;
   const canManagePlacement =
-    placementStage === "PLACEMENT" &&
-    (scope.visit?.canManagePlacement ?? access.can(PLACEMENT_MANAGE));
+    placementEditable(event, scope.visit) &&
+    (scope.visit === null
+      ? access.can(PLACEMENT_MANAGE)
+      : scope.visit.canManagePlacement === true);
   const placementManageReason = canManagePlacement
     ? ""
     : access.reason(PLACEMENT_MANAGE);
