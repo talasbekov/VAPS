@@ -97,11 +97,16 @@ class Command(BaseCommand):
                 kept += 1
                 continue
             source_file = files[number % len(files)]
-            with Image.open(source_file) as image:
-                avatar = image.convert("RGB")
-                avatar.thumbnail(AVATAR_BOX)
+            if source_file is None:
+                avatar = Image.new("RGB", (128, 128), (74, 105, 140))
                 buffer = io.BytesIO()
                 avatar.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+            else:
+                with Image.open(source_file) as image:
+                    avatar = image.convert("RGB")
+                    avatar.thumbnail(AVATAR_BOX)
+                    buffer = io.BytesIO()
+                    avatar.save(buffer, format="JPEG", quality=JPEG_QUALITY)
             if employee.photo:
                 # Старый файл снимается ЯВНО: `photo.save()` его не удаляет, а
                 # Django добавляет к имени случайный хвост — при каждом

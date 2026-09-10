@@ -100,9 +100,61 @@ function startsRegex(source: string, at: number): boolean {
   while (i >= 0 && /\s/.test(source[i] as string)) i -= 1
   if (i < 0) return true
   const prev = source[i] as string
-  if ('([{,;=:!&|?+-*%<>~^'.includes(prev)) return true
+  if ('([{,;=:!&|?+-*%<>~^}'.includes(prev)) return true
   const word = source.slice(Math.max(0, i - 9), i + 1).match(/[A-Za-z_$]+$/)
-  return word !== null && ['return', 'case', 'typeof', 'in', 'of', 'new', 'delete', 'void'].includes(word[0])
+  if (word === null) return false
+  const wordStart = i + 1 - word[0].length
+  // `value2of` must not be shortened to the keyword `of`.
+  if (wordStart > 0 && /[A-Za-z0-9_$]/.test(source[wordStart - 1] as string)) return false
+  return ['return', 'case', 'typeof', 'in', 'of', 'new', 'delete', 'void'].includes(word[0])
+}
+
+type QuotedLiteral = { value: string; end: number }
+
+function readQuoted(source: string, start: number): QuotedLiteral {
+  const quote = source[start]
+  let i = start + 1
+  let value = ''
+  while (i < source.length && source[i] !== quote) {
+    // В `${...}` вложенная строка/шаблон не закрывает внешний template literal.
+    if (quote === '`' && source[i] === '$' && source[i + 1] === '{') {
+      i = skipTemplateExpression(source, i + 1)
+      continue
+    }
+    if (source[i] === '\\') {
+      value += source[i] + (source[i + 1] ?? '')
+      i += 2
+      continue
+    }
+    value += source[i]
+    i += 1
+  }
+  return { value, end: Math.min(i + 1, source.length) }
+}
+
+function skipTemplateExpression(source: string, openBrace: number): number {
+  let depth = 1
+  let i = openBrace + 1
+  while (i < source.length && depth > 0) {
+    if (source[i] === '/' && source[i + 1] === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1
+      continue
+    }
+    if (source[i] === '/' && source[i + 1] === '*') {
+      i += 2
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1
+      i += 2
+      continue
+    }
+    if (source[i] === '"' || source[i] === "'" || source[i] === '`') {
+      i = readQuoted(source, i).end
+      continue
+    }
+    if (source[i] === '{') depth += 1
+    if (source[i] === '}') depth -= 1
+    i += 1
+  }
+  return i
 }
 
 function stringLiterals(source: string): string[] {
@@ -157,21 +209,22 @@ function stringLiterals(source: string): string[] {
       continue
     }
     if (ch === '"' || ch === "'" || ch === '`') {
-      const quote = ch
-      i += 1
-      let value = ''
-      while (i < source.length && source[i] !== quote) {
-        // Экранирование: `\"` внутри строки её не закрывает, и `\\` не
-        // экранирует следующий символ.
-        if (source[i] === '\\') {
-          value += source[i] + (source[i + 1] ?? '')
-          i += 2
-          continue
-        }
-        value += source[i]
-        i += 1
+      const first = readQuoted(source, i)
+      let value = first.value
+      i = first.end
+      // Соседние строковые литералы через `+` образуют один URL для клиента;
+      // сторож обязан видеть префикс и `page_size` вместе.
+      while (true) {
+        let next = i
+        while (/\s/.test(source[next] as string)) next += 1
+        if (source[next] !== '+') break
+        next += 1
+        while (/\s/.test(source[next] as string)) next += 1
+        if (source[next] !== '"' && source[next] !== "'" && source[next] !== '`') break
+        const joined = readQuoted(source, next)
+        value += joined.value
+        i = joined.end
       }
-      i += 1
       found.push(value)
       continue
     }
@@ -343,6 +396,25 @@ test.describe('пагинация раздела ОМ', () => {
       countIn(source),
       'деление принято за регулярку — разбор съел код до следующего слэша',
     ).toBe(1)
+  })
+
+  test('границы эвристики не принимают хвост идентификатора и закрытые конструкции за регулярку', () => {
+    for (const prefix of ['const half = value2of / 2', '/* комментарий */', 'call()', '}']) {
+      expect(
+        countIn(`${prefix}\nconst url = '/api/operations/status-types/?page_size=5'`),
+        `граница «${prefix}» не должна съедать следующий строковый литерал`,
+      ).toBe(1)
+    }
+  })
+
+  test('разборщик не обрывает вложленный template literal внутри `${...}`', () => {
+    const source = 'const url = `/api/operations/${cond ? `a` : `b`}/status-types/?page_size=5`'
+    expect(countIn(source), 'вложенная обратная кавычка спрятала page_size').toBe(1)
+  })
+
+  test('склейка строк сохраняет один URL для проверки префикса и параметра', () => {
+    const source = 'const url = "/api/operations/" + "status-types/?page_size=5"'
+    expect(countIn(source), 'склеенный URL распался на два невидимых сторожу литерала').toBe(1)
   })
 
   test('сторож не гниёт: починенная проба снимается из списка', () => {

@@ -84,10 +84,25 @@ function disabledExpressions(source: string): string[] {
   return found
 }
 
+function interfaceBlock(source: string, name: string): string {
+  const marker = `export interface ${name} {`
+  const start = source.indexOf(marker)
+  if (start === -1) return ''
+  let depth = 0
+  for (let end = start + marker.length - 1; end < source.length; end += 1) {
+    if (source[end] === '{') depth += 1
+    else if (source[end] === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, end + 1)
+    }
+  }
+  return ''
+}
+
 function countRights(source: string): Map<string, number> {
   const counts = new Map<string, number>()
   for (const expression of disabledExpressions(source)) {
-    for (const [, name] of expression.matchAll(/\brights\.([a-zA-Z]+)/g)) {
+    for (const [, name] of expression.matchAll(/!\s*rights\.([a-zA-Z]+)/g)) {
       counts.set(name, (counts.get(name) ?? 0) + 1)
     }
   }
@@ -116,10 +131,7 @@ test.describe('право гейтит кнопку, а не только объ
     // `ApprovalRights` попадает под проверку в тот же день, когда появилось.
     const file = WIRED_RIGHTS[0].file
     const source = readFileSync(join(ROOT, file), 'utf8')
-    const block = source.slice(
-      source.indexOf('export interface ApprovalRights {'),
-      source.indexOf('}', source.indexOf('export interface ApprovalRights {')),
-    )
+    const block = interfaceBlock(source, 'ApprovalRights')
     const declared = [...block.matchAll(/^\s*([a-zA-Z]+):\s*boolean;/gm)].map(([, name]) => name)
     expect(declared.length, 'интерфейс прав не разобран — проба смотрит в пустоту').toBeGreaterThan(3)
 
@@ -130,6 +142,22 @@ test.describe('право гейтит кнопку, а не только объ
       'право объявлено, но ни одной кнопки не гейтит и в исключения не внесено: ' +
         'либо подключите его к `disabled`, либо назовите причину в UNWIRED_RIGHTS',
     ).toEqual([])
+  })
+
+  test('гейт считает именно отрицательное право и запрещает мёртвое `&& false`', () => {
+    const source = readFileSync(join(ROOT, WIRED_RIGHTS[0].file), 'utf8')
+    for (const expression of disabledExpressions(source)) {
+      expect(expression, 'кнопка отключена мёртвым `&& false`, а не правом').not.toContain('&& false')
+    }
+    expect(countRights('disabled={!rights.send} disabled={rights.send}')).toEqual(new Map([['send', 1]]))
+  })
+
+  test('разбор интерфейса не обрывается на вложенной фигурной скобке', () => {
+    const block = interfaceBlock(
+      'export interface ApprovalRights { nested: { flag: boolean }; send: boolean }',
+      'ApprovalRights',
+    )
+    expect(block).toContain('send: boolean')
   })
 
   test('сторож не гниёт: подключённое право снимается из исключений', () => {
