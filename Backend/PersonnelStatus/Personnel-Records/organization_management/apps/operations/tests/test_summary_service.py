@@ -230,7 +230,8 @@ def test_a_dismissed_occupant_does_not_make_a_child_required(types, tree):
     stale = Division.objects.create(name="Расформированный", parent=root)
     employee = in_slot(stale, iin="770000000005")
     Employee.objects.filter(pk=employee.id).update(
-        employment_status=Employee.EmploymentStatus.FIRED
+        employment_status=Employee.EmploymentStatus.FIRED,
+        is_active=False,
     )
     submit(left)
     submit(right)

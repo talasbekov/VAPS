@@ -7,6 +7,7 @@
 """
 import pytest
 
+from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_duty import (
     OpsDutyConflictPolicy,
@@ -392,8 +393,8 @@ def test_mine_hides_the_shifts_of_a_dismissed_person(planner):
 
     api, user = client_for("duty-dismissed")
     employee.user = user
-    employee.is_active = False
-    employee.save(update_fields=["user", "is_active"])
+    employee.employment_status = Employee.EmploymentStatus.FIRED
+    employee.save(update_fields=["user", "employment_status"])
 
     resp = api.get(SHIFTS + "mine/")
 
