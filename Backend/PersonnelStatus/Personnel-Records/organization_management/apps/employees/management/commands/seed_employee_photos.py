@@ -48,7 +48,11 @@ class Command(BaseCommand):
     help = "Раздаёт аватарки сотрудникам сида (Plane №198/№205)."
 
     def add_arguments(self, parser):
-        parser.add_argument("--source", default=str(DEFAULT_SOURCE), help="Папка со снимками.")
+        parser.add_argument(
+            "--source",
+            default=None,
+            help="Папка со снимками; без флага берётся стандартная папка.",
+        )
         parser.add_argument("--force", action="store_true", help="Переписать фото и тем, у кого оно есть.")
         parser.add_argument("--wipe", action="store_true", help="Снять фотографии у людей сида.")
 
@@ -57,15 +61,16 @@ class Command(BaseCommand):
             self._wipe()
             return
 
-        source = Path(options["source"])
+        source_option = options["source"]
+        source = DEFAULT_SOURCE if source_option is None else Path(source_option)
         files = sorted(p for p in source.glob("*") if p.suffix.lower() in SUFFIXES)
-        use_fallback = source.resolve() == DEFAULT_SOURCE.resolve() and not files
         if not files:
-            if use_fallback:
+            if source_option is None and not source.exists():
                 # Репозиторий и контейнер стенда не обязаны содержать 192 МБ
                 # исходных фотографий заказчика. Один встроенный аватар
-                # сохраняет контракт /media/... для smoke, а явный пустой
-                # --source по-прежнему сообщает об ошибке ниже.
+                # сохраняет smoke-фикстуру, но только когда стандартная папка
+                # не смонтирована. Явный `--source`, даже с тем же путём, и
+                # существующая пустая папка остаются ошибкой ввода.
                 files = [None]
             else:
                 raise CommandError(
