@@ -771,8 +771,6 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # ШТАТНОЙ ЕДИНИЦЫ сотрудника, которое и без того точнее корня.
         scope_root = self._scope_single_root(user, all_divisions, request)
 
-        if errors and data.get('atomic') is True:
-            transaction.set_rollback(True)
         return Response({
             'division': {
                 'id': scope_root.id,
@@ -1284,6 +1282,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
                     errors.append({'staff_unit': f'Индекс {idx}: Ошибка создания штатной единицы: {str(e)}'})
 
+        if errors and data.get('atomic') is True:
+            transaction.set_rollback(True)
         return Response({
             'success': True,
             'created': created_items,
