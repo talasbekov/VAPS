@@ -295,6 +295,11 @@ export function EmployeeTable({
           void queryClient.invalidateQueries({
             queryKey: ["staff-units-by-directorate"],
           });
+          // Табличная вкладка читает страницы, а вкладки ОМ — полный состав.
+          // Обновляем обе семьи после сохранения статуса (Plane №1159).
+          void queryClient.invalidateQueries({
+            queryKey: ["staff-units-page"],
+          });
         }}
       />
     </Card>
