@@ -56,6 +56,128 @@ class CleanupResult:
         return bool(self.participations or self.statuses)
 
 
+@dataclass(frozen=True)
+class DuplicateScan:
+    """Точный план уборки повторных фактов участия (Plane №858)."""
+
+    groups: int
+    kept_ids: tuple[int, ...]
+    duplicate_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class DuplicateCleanupResult(CleanupResult):
+    groups: int
+
+
+def _duplicate_key(row: OpsStatusParticipation):
+    status = row.status
+    return (
+        status.employee_id,
+        row.event_id,
+        status.status_type_code,
+        status.date_start,
+        status.date_end,
+        status.source,
+        status.source_ref or "",
+        status.comment,
+        status.document_basis,
+        status.cancelled_at,
+        status.cancelled_by or "",
+        status.cancelled_reason,
+        row.kind_code,
+        row.role_code,
+    )
+
+
+def _scan_duplicate_participations(rows) -> DuplicateScan:
+    first_by_key: dict[tuple, int] = {}
+    kept_ids: list[int] = []
+    duplicate_ids: list[int] = []
+    duplicate_keys: set[tuple] = set()
+    for row in rows:
+        key = _duplicate_key(row)
+        if key not in first_by_key:
+            first_by_key[key] = row.pk
+            continue
+        if key not in duplicate_keys:
+            kept_ids.append(first_by_key[key])
+            duplicate_keys.add(key)
+        duplicate_ids.append(row.pk)
+    return DuplicateScan(
+        groups=len(duplicate_keys),
+        kept_ids=tuple(kept_ids),
+        duplicate_ids=tuple(duplicate_ids),
+    )
+
+
+def find_duplicate_participations() -> DuplicateScan:
+    """Найти лишь семантически одинаковые участия, сохраняя разные дни/виды.
+
+    Пара «сотрудник + ОМ» недостаточна: одна стендовая строка ОМ законно
+    используется изо дня в день, а вид участия может меняться. Дубликат —
+    совпадение сотрудника, ОМ, интервала, типа статуса, вида/роли участия и
+    содержательных полей статуса. Самый ранний факт остаётся каноническим.
+    """
+    rows = OpsStatusParticipation.objects.select_related("status").order_by(
+        "created_at", "id"
+    )
+    return _scan_duplicate_participations(rows)
+
+
+@transaction.atomic
+def purge_duplicate_participations(
+    actor: str = "system:purge_duplicate_participations",
+) -> DuplicateCleanupResult:
+    """Удалить повторные участия и только опустевшие дубли строк статуса."""
+    rows = list(
+        OpsStatusParticipation.objects.select_for_update()
+        .select_related("status")
+        .order_by("created_at", "id")
+    )
+    scan = _scan_duplicate_participations(rows)
+    if not scan.duplicate_ids:
+        return DuplicateCleanupResult(participations=0, statuses=0, groups=0)
+
+    duplicate_id_set = set(scan.duplicate_ids)
+    duplicate_rows = [row for row in rows if row.pk in duplicate_id_set]
+    status_ids = sorted({row.status_id for row in duplicate_rows})
+    event_ids = sorted({row.event_id for row in duplicate_rows})
+    employee_ids = sorted({row.status.employee_id for row in duplicate_rows})
+    OpsStatusParticipation.objects.filter(pk__in=scan.duplicate_ids).delete()
+
+    emptied = [
+        status_id
+        for status_id in status_ids
+        if not OpsStatusParticipation.objects.filter(status_id=status_id).exists()
+    ]
+    if emptied:
+        OpsEmployeeStatus.objects.filter(pk__in=emptied).delete()
+
+    result = DuplicateCleanupResult(
+        participations=len(scan.duplicate_ids),
+        statuses=len(emptied),
+        groups=scan.groups,
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.STATUS_PARTICIPATIONS_PURGED,
+        entity_type=audit_service.ENTITY_STATUS,
+        entity_key="duplicate-participations:exact",
+        old_value={
+            "reason": "exact-duplicate",
+            "groups": result.groups,
+            "participations": result.participations,
+            "statuses": result.statuses,
+            "eventIds": event_ids[:100],
+            "employeeIds": employee_ids[:100],
+            "duplicateParticipationIds": list(scan.duplicate_ids[:100]),
+            "keptParticipationIds": list(scan.kept_ids[:100]),
+        },
+    )
+    return result
+
+
 def find_orphan_participations(event_ids: list[int] | None = None):
     """Участия, чьё мероприятие не существует.
 
