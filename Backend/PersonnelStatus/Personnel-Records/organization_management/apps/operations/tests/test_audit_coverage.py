@@ -30,6 +30,7 @@ from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
 )
+from organization_management.apps.operations.daily_reminders import remind_daily_summary
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
     reissue_expense_document,
@@ -681,6 +682,11 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         # детей» и «сдал свой день» отвечают на разные вопросы.
         parent = Division.objects.create(name="Управление-сводка")
         child = Division.objects.create(name="Отдел-сводка", parent=parent)
+        # №1097: ручное напоминание пишет собственный факт аудита; вызываем
+        # реальный сервис, не подменяем record и не ослабляем ACTIONS ниже.
+        remind_daily_summary(
+            division_id=parent.id, business_date=TODAY, actor=ACTOR
+        )
         submit_day(division_id=child.id, business_date=TODAY, actor=ACTOR)
         assemble_summary(
             division_id=parent.id, business_date=TODAY, actor=ACTOR

@@ -26,6 +26,7 @@ from organization_management.apps.ops.tests.test_ops_security_events_api import 
     URL,
     _deputy_persona,
     approver,
+    client_for,
     make_employee,
     make_object,
     manager,
@@ -166,6 +167,62 @@ def test_reading_the_summary_needs_the_manage_right_too(  # noqa: F811
     # «Всем 10» — та же мерка: соседняя ручка того же экрана.
     refused_all = approver.post(f"{_url(event_id, first)}all/", {"score": 10}, format="json")
     assert refused_all.status_code == 403, refused_all.content
+
+
+def test_object_chief_conducts_only_their_own_visit_without_event_manage(
+    two_objects_on_conduct,  # noqa: F811
+):
+    """Проведение не требует global role, но всегда несёт адрес объекта.
+
+    Руководитель объекта выставляет оценки, фиксирует incident с ЕГО постом и
+    закрывает только свой объект. Второй объект остаётся запретным: ни один
+    action не становится вариантом скрытого ``event.manage``.
+    """
+    _, event_id, first, second = two_objects_on_conduct
+    chief_api, chief_user = client_for(
+        "conduct-object-chief",
+        "OBJECT_CHIEF",
+        perms=("event.view",),
+    )
+    chief = make_employee(last_name="Руководитель", first_name="Объекта")
+    chief.user = chief_user
+    chief.save(update_fields=["user"])
+    first.chief_employee_id = chief.pk
+    first.chief_name = "Руководитель О."
+    first.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    event = service.lock_event(event_id)
+    first_post = service.visit_object_posts(event, first)[0]
+
+    own = chief_api.get(_url(event_id, first))
+    assert own.status_code == 200, own.content
+    foreign = chief_api.get(_url(event_id, second))
+    assert foreign.status_code == 403, foreign.content
+
+    scored = chief_api.post(_url(event_id, first) + "all/", {"score": 10}, format="json")
+    assert scored.status_code == 200, scored.content
+    incident = chief_api.post(
+        f"{URL}{event_id}/journal/",
+        {
+            "type": "INCIDENT",
+            "title": "Связь проверена",
+            "description": "Учебная запись",
+            "postId": str(first_post["id"]),
+            "occurredAt": "2026-09-10T11:00:00Z",
+            "measures": "Связь восстановлена",
+        },
+        format="json",
+    )
+    assert incident.status_code == 200, incident.content
+    foreign_incident = chief_api.post(
+        f"{URL}{event_id}/journal/",
+        {"type": "INCIDENT", "title": "Чужой пост", "postId": "not-my-post"},
+        format="json",
+    )
+    assert foreign_incident.status_code == 403, foreign_incident.content
+    closed = chief_api.post(f"{URL}{event_id}/visit-objects/{first.pk}/close/", {}, format="json")
+    assert closed.status_code == 200, closed.content
+    refused_close = chief_api.post(f"{URL}{event_id}/visit-objects/{second.pk}/close/", {}, format="json")
+    assert refused_close.status_code == 403, refused_close.content
 
 
 def test_click_sets_and_second_click_withdraws(manager, two_objects_on_conduct):  # noqa: F811

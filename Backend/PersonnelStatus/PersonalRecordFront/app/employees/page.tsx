@@ -62,6 +62,8 @@ import {
 } from "@/features/forces-split/ui/chain-access";
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
+import { ForcesWorkspace } from "@/features/forces-workspace/ui/ForcesWorkspace";
+import { resolveWorkspaceRole } from "@/features/forces-workspace/model/workspace";
 
 /**
  * «Сбор сил на ОМ» — прежний экран личного состава, ДОПОЛНЕННЫЙ разрезом
@@ -197,9 +199,25 @@ export default function EmployeesPage() {
   // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
   return (
     <Suspense fallback={<div className="min-h-screen bg-background" />}>
-      <EmployeesScreen />
+      <EmployeesEntry />
     </Suspense>
   );
+}
+
+function EmployeesEntry() {
+  const access = useOpsPermissions();
+  const client = useQueryClient();
+  const role = resolveWorkspaceRole(access);
+  if (role === "loading") return <DashboardLayout><p role="status">Загрузка рабочего места…</p></DashboardLayout>;
+  if (role === "denied") {
+    return <DashboardLayout><Card><CardContent className="p-9 text-center">
+      <h1 className="text-lg font-semibold">Доступ закрыт</h1>
+      <p className="my-3 text-muted-foreground">{access.error ? "Не удалось загрузить права рабочего места." : "Недостаточно прав для этого рабочего места."}</p>
+      {access.error && <Button variant="outline" onClick={() => void client.invalidateQueries({ queryKey: ["ops-me"] })}>Повторить</Button>}
+    </CardContent></Card></DashboardLayout>;
+  }
+  if (role === "legacy") return <EmployeesScreen />;
+  return <ForcesWorkspace role={role} />;
 }
 
 function EmployeesScreen() {

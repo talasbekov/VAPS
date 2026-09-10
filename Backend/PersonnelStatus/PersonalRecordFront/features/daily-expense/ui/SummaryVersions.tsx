@@ -334,6 +334,8 @@ function VersionSnapshot({ id }: { id: number }) {
 }
 
 interface SummaryVersionsProps {
+  /** Optional role scope, already validated against the daily hierarchy by the caller. */
+  scopeDivisionId?: number;
   /** Дата — из ТОГО ЖЕ ответа расхода, что и остальной борд: оба блока
    * обязаны говорить об одном дне. */
   businessDate: string;
@@ -411,6 +413,7 @@ export function SummaryVersions({
   businessDate,
   boardDivisionIds,
   labelOfDivision,
+  scopeDivisionId,
 }: SummaryVersionsProps) {
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
@@ -426,16 +429,16 @@ export function SummaryVersions({
   // «сегодня»): борд получает СВОЙ `businessDate` пропом (Plane №988), и
   // дерево сдачи обязано отвечать про ТОТ ЖЕ день, что и расход рядом —
   // иначе свод сверял бы завтрашние управления со вчерашним светофором.
-  const treeQuery = useTrafficLightTree(true, dateValid ? businessDate : undefined);
+  const treeQuery = useTrafficLightTree(scopeDivisionId === undefined, dateValid ? businessDate : undefined);
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
-  const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;
+  const treeReady = dateValid && (scopeDivisionId !== undefined || (!treeQuery.isPending && !treeQuery.isError));
   const resolution = useMemo(
     () =>
-      treeReady
+      scopeDivisionId !== undefined ? ({ chosen: scopeDivisionId, reason: 'ok', candidates: [] } as SummaryResolution) : treeReady
         ? resolveSummary(treeNodes, boardDivisionIds)
         : ({ chosen: null, reason: "ok", candidates: [] } as SummaryResolution),
-    [treeReady, treeNodes, boardDivisionIds]
+    [treeReady, treeNodes, boardDivisionIds, scopeDivisionId]
   );
 
   // ВЫБОР ЧЕЛОВЕКА ПЕРЕВЕШИВАЕТ ПРАВИЛО (Plane №326), но только когда правило
@@ -616,12 +619,12 @@ export function SummaryVersions({
               деловая дата ещё не известна
             </p>
           )}
-          {dateValid && treeQuery.isPending && (
+          {scopeDivisionId === undefined && dateValid && treeQuery.isPending && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Загрузка структуры подразделений…
             </p>
           )}
-          {dateValid && !treeQuery.isPending && treeQuery.isError && (
+          {scopeDivisionId === undefined && dateValid && !treeQuery.isPending && treeQuery.isError && (
             <p role="alert" className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Не удалось прочитать структуру подразделений — узел свода не определён
             </p>

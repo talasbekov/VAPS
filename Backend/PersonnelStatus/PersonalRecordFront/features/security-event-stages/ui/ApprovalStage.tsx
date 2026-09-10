@@ -848,7 +848,12 @@ function ApprovalRoute({
   // по ссылке, видели баннер «правка расстановки открыта» — а кнопки панели
   // были выключены. Баннер утверждал то, что для них неправда.
   const chainAccess = useChainAccess();
-  const canFixPlacement = view.canFixPlacement && chainAccess.can(PLACEMENT_MANAGE);
+  const placementVisit = event.visitObjects.find((visit) => visit.id === view.visitObjectId);
+  const canFixPlacement = view.canFixPlacement && (
+    view.visitObjectId === undefined
+      ? chainAccess.can(PLACEMENT_MANAGE)
+      : placementVisit?.canManagePlacement === true
+  );
   const placementStepHref = (() => {
     const next = new URLSearchParams(searchParams.toString());
     next.set(

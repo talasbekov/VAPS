@@ -80,7 +80,16 @@ def is_urgent(event, allocations, now=None, *, urgent_days=None):
 def totals(event, allocations):
     need = events.force_demand_total(event)
     allocating = sum(int(r.get("allocating") or 0) for r in allocations if r.get("allocating") is not None)
-    sent = sum(len(r.get("members") or []) for r in allocations)
+    # Потребность и недобор этой сводки — только физнаряд. Спецгруппа —
+    # отдельная строка заявки сверх квоты; считать её человеком физнаряда
+    # значит прятать недобор 2 людьми досмотра (Plane №1129). Старые строки
+    # без kindCode сохраняют прежний смысл физического назначения.
+    sent = sum(
+        1
+        for row in allocations
+        for member in (row.get("members") or [])
+        if (member.get("kindCode") or "PHYSICAL_SQUAD") == "PHYSICAL_SQUAD"
+    )
     return {
         "need": need,
         "requested": sum(int(r.get("need") or 0) for r in allocations),

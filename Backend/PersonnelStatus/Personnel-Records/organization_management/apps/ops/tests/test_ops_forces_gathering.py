@@ -22,6 +22,43 @@ from .test_ops_security_events_api import (  # noqa: F401
 
 pytestmark = pytest.mark.django_db
 
+
+def test_collection_two_physical_and_two_special_groups_has_no_physical_shortage():
+    """Два физсотрудника закрывают физическую потребность независимо от спецгрупп (№1129)."""
+    from types import SimpleNamespace
+    from organization_management.apps.ops.force_collection_board import totals
+
+    event = SimpleNamespace(recon_force_requested_at=object(), recon_force_request=2, force_need=4)
+    result = totals(event, [{
+        "need": 2,
+        "allocating": 2,
+        "members": [
+            {"employeeId": "physical-1", "kindCode": "PHYSICAL_SQUAD"},
+            {"employeeId": "physical-2", "kindCode": "PHYSICAL_SQUAD"},
+            {"employeeId": "special-1", "kindCode": "SCREENING_GROUP"},
+            {"employeeId": "special-2", "kindCode": "SCREENING_GROUP"},
+        ],
+    }])
+    assert result == {"need": 2, "requested": 2, "allocating": 2, "sent": 2, "shortage": 0}
+
+
+def test_collection_shortage_counts_only_physical_squad_members():
+    """Спецгруппа не закрывает физический недобор в своде Штаба (№1129)."""
+    from types import SimpleNamespace
+    from organization_management.apps.ops.force_collection_board import totals
+
+    event = SimpleNamespace(recon_force_requested_at=object(), recon_force_request=2, force_need=4)
+    result = totals(event, [{
+        "need": 2,
+        "allocating": 2,
+        "members": [
+            {"employeeId": "physical", "kindCode": "PHYSICAL_SQUAD"},
+            {"employeeId": "special-1", "kindCode": "SCREENING_GROUP"},
+            {"employeeId": "special-2", "kindCode": "SCREENING_GROUP"},
+        ],
+    }])
+    assert result == {"need": 2, "requested": 2, "allocating": 2, "sent": 1, "shortage": 1}
+
 URL = "/api/ops/security-events/"
 
 # Дата, до которой статус привлечения ещё не начался: снять выделенного можно

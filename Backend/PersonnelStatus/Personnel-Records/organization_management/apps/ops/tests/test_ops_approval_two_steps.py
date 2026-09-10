@@ -10,6 +10,47 @@ from .test_ops_visit_object_approval import two_objects_on_approval  # noqa: F40
 pytestmark = pytest.mark.django_db
 
 
+def test_object_chief_recovers_empty_route_after_template_is_configured(
+    manager, two_objects_on_approval
+):
+    """№1104: настройка появилась после выхода объекта на согласование."""
+    from organization_management.apps.operations.models_settings import OpsApprovalRouteStep
+
+    base, _event_id, visit, _second, _ = two_objects_on_approval
+    chief_employee = make_employee(last_name="Старший", first_name="Восстановление")
+    chief, _ = _linked_persona(
+        "recovery-chief", "HEAD_OPS_UNIT", chief_employee, perms=("event.view",)
+    )
+    candidate_employee = make_employee(last_name="Первый", first_name="Подписант")
+    _, candidate_user = _linked_persona(
+        "recovery-approver", "HEAD_OPS_UNIT", candidate_employee,
+        perms=("assignment.approve",),
+    )
+    visit.chief_employee_id = chief_employee.pk
+    visit.approval_route = []
+    visit.save(update_fields=["chief_employee_id", "approval_route", "updated_at"])
+    OpsApprovalRouteStep.objects.create(
+        position=1, role_label="Руководитель второго департамента", username="",
+    )
+    OpsApprovalRouteStep.objects.create(
+        position=2, role_label="Заместитель руководителя организации",
+        username="configured-second", full_name="Второй Подписант",
+    )
+
+    response = chief.post(
+        f"{base}approval/route/select/",
+        {"visitObjectId": str(visit.pk), "approverUserId": str(candidate_user.pk)},
+        format="json",
+    )
+    assert response.status_code == 200, response.json()
+    visit.refresh_from_db()
+    assert len(visit.approval_route) == 2
+    assert visit.approval_route[0]["username"] == candidate_user.username
+    assert visit.approval_route[1]["username"] == "configured-second"
+    assert {row["status"] for row in visit.approval_route} == {"NOT_SENT"}
+    assert visit.stage == "APPROVAL"
+
+
 def _linked_persona(username, role_code, employee, *, perms=()):
     api, user = client_for(username, role_code, perms=perms)
     employee.user = user

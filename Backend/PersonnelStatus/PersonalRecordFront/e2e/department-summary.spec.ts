@@ -98,7 +98,11 @@ async function freshDepartmentDate(adminToken: string): Promise<string> {
       { headers: { Authorization: `Bearer ${adminToken}` } },
     )
     const body = (await res.json()) as { count: number }
-    if (body.count === 0) return date
+    if (body.count !== 0) continue
+    // A parent with no summary can still have a submitted child from a prior run.
+    // Both full (which submits it) and incomplete scenarios require a fresh child.
+    const child = await fetch(`${API}/api/ops/daily/daily-submissions/?division_id=${CHILD_DIVISION_ID}&business_date=${date}`, { headers: { Authorization: `Bearer ${adminToken}` } })
+    if (((await child.json()) as { count: number }).count === 0) return date
   }
   throw new Error(`не нашлось свободной даты за ${FAR_WINDOW_DAYS} попыток — окно исчерпано`)
 }
@@ -110,16 +114,16 @@ test.describe(LIVE ? 'вкладка «Свод департамента»' : '�
   test('вкладка видна ответственному за сбор сил и не видна оператору подразделения', async ({ page }) => {
     await signIn(page, FGO, ROLE_PASSWORD)
     await page.goto(`${APP}/employees`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: 'Свод департамента' })).toBeVisible({
+    await expect(page.getByRole('navigation', { name: 'Рабочее место' }).getByRole('link', { name: 'Ежедневный расход', exact: true })).toBeVisible({
       timeout: 30_000,
     })
 
     await signIn(page, 'role_division_operator', ROLE_PASSWORD)
     await page.goto(`${APP}/employees`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('region', { name: 'Ежедневный расход' })).toBeVisible({
+    await expect(page.getByText('Недостаточно прав для просмотра сбора сил на ОМ.', { exact: true })).toBeVisible({
       timeout: 30_000,
     })
-    await expect(page.getByRole('button', { name: 'Свод департамента' })).toHaveCount(0)
+    await expect(page.getByRole('navigation', { name: 'Рабочее место' })).toHaveCount(0)
   })
 
   test('полный свод: «Собрать свод» → «Отправить дежурному» без причины', async ({ page }) => {

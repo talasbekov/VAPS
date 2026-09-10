@@ -34,6 +34,7 @@ CODES = {
     # невозможна (у сотрудника нет штатной единицы). См. докстринг модуля.
     "VALIDATION_ERROR": frozenset({400, 422}),
     "ENTITY_NOT_FOUND": frozenset({404}),
+    "REMINDER_DELIVERY_FAILED": frozenset({503}),
     # ── Доступ (Plane №36) ───────────────────────────────────────────────
     # 422, а не 400: нагрузка верна (роль есть, строка есть), невозможно
     # именно СОСТОЯНИЕ — снявший с себя последнюю административную роль
@@ -143,6 +144,7 @@ CODES = {
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
     "FORCE_OBJECTS_NOT_READY": frozenset({422}),
+    "FORCE_VISIT_UNSTAFFED": frozenset({422}),
     "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
     "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),

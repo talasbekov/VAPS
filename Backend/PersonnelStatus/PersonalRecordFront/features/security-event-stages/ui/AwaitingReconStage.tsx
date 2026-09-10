@@ -20,9 +20,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompleteBulletin } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
+import { RightGate } from "@/shared/ui/right-gate";
 
 export function AwaitingReconStage({ event }: { event: SecurityEvent }) {
   const complete = useCompleteBulletin(event.id);
+  const blocked = event.canEditBulletin === true ? null :
+    "Открыть рекогносцировку мероприятия может редактор бюллетеня.";
   // Текста бюллетеня переход не требует (Plane №943): описание и задачи
   // сняты со всего проекта, признака «заполнено не всё» больше нет.
   const hasObject =
@@ -58,13 +61,14 @@ export function AwaitingReconStage({ event }: { event: SecurityEvent }) {
         )}
         <StageError error={complete.error} />
         <div className="flex justify-end">
-          <Button
+          <RightGate reason={blocked}>{(describedBy) => <Button
             type="button"
-            disabled={complete.isPending}
+            disabled={blocked !== null || complete.isPending}
+            aria-describedby={describedBy}
             onClick={() => complete.mutate({})}
           >
             {complete.isPending ? "Открытие…" : "Открыть рекогносцировку"}
-          </Button>
+          </Button>}</RightGate>
         </div>
       </CardContent>
     </Card>

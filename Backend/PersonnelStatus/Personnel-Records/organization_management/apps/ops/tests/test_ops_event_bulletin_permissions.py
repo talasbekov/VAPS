@@ -229,6 +229,97 @@ def test_heads_edit_bulletins_only_inside_their_organizational_scope():
     assert denied.status_code == 403, denied.content
 
 
+def test_scoped_bulletin_head_assigns_event_chief_only_inside_own_scope():
+    """Руководитель области доводит созданный в ней ОМ до ведущего наряда.
+
+    Это не выдача ``event.manage``: тот же scoped-editor уже может править
+    бюллетень, но до №1131 не мог назначить человека, который нужен для
+    завершения ознакомления. Соседнее управление не получает этот путь.
+    """
+    _, own, sibling = bulletin_tree()
+    creator, _ = client_for(
+        "bulletin-owner-for-chief-assignment",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    event_id = create_event(creator, title="Старший в своей области").json()["id"]
+    own_head, _ = client_for(
+        "bulletin-own-head-for-chief-assignment",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    sibling_head, _ = client_for(
+        "bulletin-sibling-head-for-chief-assignment",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=sibling.pk,
+    )
+    chief = make_employee(last_name="Руководитель", first_name="Наряда")
+
+    denied = sibling_head.post(
+        f"{URL}{event_id}/chief/", {"employeeId": str(chief.pk)}, format="json"
+    )
+    assert denied.status_code == 403, denied.content
+
+    assigned = own_head.post(
+        f"{URL}{event_id}/chief/", {"employeeId": str(chief.pk)}, format="json"
+    )
+    assert assigned.status_code == 200, assigned.content
+    assert assigned.json()["chiefEmployeeId"] == str(chief.pk)
+
+
+def test_event_chief_action_matches_bulletin_editor_capability():
+    """Ранний action-gate не расходится с ``canEditBulletin``.
+
+    ``event.manage`` и уже назначенный старший — давние ветки единой matrix
+    редактора. Они не обязаны также носить ``event.bulletin``: endpoint обязан
+    довести их до `_require_bulletin_editor`, как это уже делает UI capability.
+    Соседний scoped-head остаётся закрыт отдельной пробой выше.
+    """
+    creator, _ = client_for(
+        "bulletin-owner-for-chief-capability",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+    )
+    event_id = create_event(creator, title="Единая matrix старшего").json()["id"]
+    base = f"{URL}{event_id}/"
+    manager, _ = client_for(
+        "event-manager-without-bulletin",
+        "EVENT_MANAGER",
+        perms=("event.view", "event.manage"),
+    )
+    appointed_api, appointed_user = client_for(
+        "event-chief-without-bulletin",
+        "EVENT_CHIEF",
+        perms=("event.view",),
+    )
+    appointed = make_employee(last_name="Назначенный", first_name="Старший")
+    appointed.user = appointed_user
+    appointed.save(update_fields=["user"])
+    replacement = make_employee(last_name="Новый", first_name="Старший")
+
+    manager_card = manager.get(base)
+    assert manager_card.status_code == 200, manager_card.content
+    assert manager_card.json()["canEditBulletin"] is True
+    manager_assigned = manager.post(
+        f"{base}chief/", {"employeeId": str(replacement.pk)}, format="json"
+    )
+    assert manager_assigned.status_code == 200, manager_assigned.content
+
+    OpsSecurityEvent.objects.filter(pk=event_id).update(
+        chief_employee_id=appointed.pk, chief_name="Назначенный С."
+    )
+    appointed_card = appointed_api.get(base)
+    assert appointed_card.status_code == 200, appointed_card.content
+    assert appointed_card.json()["canEditBulletin"] is True
+    appointed_assigned = appointed_api.post(
+        f"{base}chief/", {"employeeId": str(replacement.pk)}, format="json"
+    )
+    assert appointed_assigned.status_code == 200, appointed_assigned.content
+
+
 def test_the_assigned_event_chief_completes_own_bulletin_without_a_bulletin_grant():
     """Ломается, если право старшего снова проверяется только кодом роли,
     хотя назначение старшего хранится в самом мероприятии.

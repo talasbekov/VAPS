@@ -27,7 +27,7 @@
  * за которым нельзя проверить, тех ли людей прислали.
  */
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -70,6 +70,8 @@ import {
 import { useReturnAllocation } from "@/hooks/use-security-event-stages";
 import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { HqStages } from "./ForceCampaignsPanel";
+import { refreshForceWorkspaceViews } from "@/hooks/use-force-campaigns";
 
 
 /**
@@ -117,6 +119,7 @@ function DepartmentRow({
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [count, setCount] = useState("");
   const topUp = useTopUpAllocation(eventId);
+  const queryClient = useQueryClient();
   // Возврат присланного списка с ПРИЧИНОЙ — единственное решение штаба по
   // строке, которое осталось на этом экране: принимать список не надо
   // (присланные люди уже в составе, `[СБС-13]`), а вернуть с замечанием
@@ -152,7 +155,7 @@ function DepartmentRow({
   return (
     <>
       <TableRow data-slot="department-row" data-top-up-of={row.topUpOf ?? ""}>
-        <TableCell>
+        <TableCell className="min-w-52 max-w-72 whitespace-normal">
           <button
             type="button"
             onClick={() => setOpen((prev) => !prev)}
@@ -184,13 +187,13 @@ function DepartmentRow({
         <TableCell className="tabular-nums" data-slot="department-sent">
           {sent} из {need}
         </TableCell>
-        <TableCell className="text-muted-foreground max-w-[220px] truncate text-sm">
+        <TableCell className="text-muted-foreground max-w-[220px] whitespace-normal text-sm">
           {row.answerComment || row.comment || "—"}
         </TableCell>
-        <TableCell className="text-sm" data-slot="department-status">
+        <TableCell className="whitespace-normal text-sm" data-slot="department-status">
           {ALLOCATION_STATUS[row.status] ?? row.status}
         </TableCell>
-        <TableCell className="text-sm" data-slot="department-responsible">
+        <TableCell className="whitespace-normal text-sm" data-slot="department-responsible">
           {row.responsibleName || <span className="text-muted-foreground">не назначен</span>}
         </TableCell>
         <TableCell>
@@ -351,7 +354,10 @@ function DepartmentRow({
               onClick={() => {
                 void back
                   .mutateAsync({ reason })
-                  .then(() => setReturnOpen(false))
+                  .then(async () => {
+                    setReturnOpen(false);
+                    await refreshForceWorkspaceViews(queryClient, [eventId]);
+                  })
                   .catch(() => undefined);
               }}
             >
@@ -372,6 +378,7 @@ interface DraftRow {
   departmentId: string;
   need: string;
   dueAt: string;
+  comment: string;
   groupDemandIds: string[];
 }
 
@@ -437,6 +444,7 @@ function SplitEditor({
       departmentId: row.departmentId,
       need: String(row.need),
       dueAt: toLocalInput(row.dueAt),
+      comment: row.comment ?? "",
       groupDemandIds: (row.groupDemands ?? []).map((demand) => demand.id),
     }));
   const [rows, setRows] = useState<DraftRow[]>(seed);
@@ -444,7 +452,7 @@ function SplitEditor({
   // не при каждом рефетче: подпись собрана по значениям (тот же приём, что у
   // карточки департамента, №555) — иначе набранное исчезало бы молча.
   const signature = unsent
-    .map((row) => `${row.id}:${row.departmentId}:${row.need}:${row.dueAt ?? ""}:${(row.groupDemands ?? []).map((demand) => demand.id).join(",")}`)
+    .map((row) => `${row.id}:${row.departmentId}:${row.need}:${row.comment ?? ""}:${row.dueAt ?? ""}:${(row.groupDemands ?? []).map((demand) => demand.id).join(",")}`)
     .join("|");
   useEffect(() => {
     setRows(seed());
@@ -484,17 +492,21 @@ function SplitEditor({
         .map((row) => ({
           departmentId: row.departmentId,
           need: row.need,
+          comment: row.comment,
+          ...(row.dueAt ? { dueAt: row.dueAt } : {}),
           groupDemandIds: (row.groupDemands ?? []).map((demand) => demand.id),
         })),
       ...rows.map((row) => ({
         departmentId: row.departmentId,
         need: toCount(row.need),
+        comment: row.comment,
         groupDemandIds: row.groupDemandIds,
         ...(row.dueAt === "" ? {} : { dueAt: new Date(row.dueAt).toISOString() }),
       })),
     ],
   });
   const save = (draft: boolean) => {
+    if (split.isPending) return;
     setFieldErrors(null);
     setNotice("");
     split.mutate(body(draft), {
@@ -601,7 +613,7 @@ function SplitEditor({
           </TableCell>
           <TableCell className="text-muted-foreground text-right">—</TableCell>
           <TableCell className="text-muted-foreground">—</TableCell>
-          <TableCell className="text-muted-foreground">—</TableCell>
+          <TableCell><Label htmlFor={`draft-comment-${row.key}`} className="sr-only">Комментарий Штаба, строка {index + 1}</Label><Input id={`draft-comment-${row.key}`} aria-label={`Комментарий Штаба, строка ${index + 1}`} value={row.comment} onChange={event => patch(row.key, { comment: event.target.value })} className="min-w-40" /></TableCell>
           <TableCell className="text-sm" data-slot="department-status">
             Черновик
           </TableCell>
@@ -641,6 +653,7 @@ function SplitEditor({
                     departmentId: "",
                     need: remainder > 0 ? String(remainder) : "1",
                     dueAt: "",
+                    comment: "",
                     groupDemandIds: [],
                   },
                 ]);
@@ -794,7 +807,7 @@ export function ForceCollectionCard({
   const editable = collectionOpen && access.can(FORCES_COMMAND);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5">
       <div>
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
@@ -822,6 +835,9 @@ export function ForceCollectionCard({
         </p>
       </div>
 
+      <HqStages current={data.handover.at || data.roster.length > 0 ? 4 : sentRows.length > 0 ? 3 : 2} />
+      <p className="rounded-lg border-l-4 border-primary bg-primary/5 p-3 text-sm">Запрос — пожелание Штаба. Департамент вправе выделить меньше, больше или отказаться. Специальные группы идут сверх квоты физического наряда.</p>
+
       {/* Блок 1 «Потребность» (`[СБС-11]`, Plane №426): по объектам посещения
           «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов)» → Итого N.
 
@@ -835,16 +851,16 @@ export function ForceCollectionCard({
           мог свести. Теперь сумма верна по построению, а расхождение с тем,
           что получил штаб, названо отдельной строкой — это РАЗНЫЕ факты, и
           прятать второй ради первого нельзя. */}
-      <section aria-labelledby="collection-need-heading" className="space-y-2" data-slot="collection-need">
+      <section aria-labelledby="collection-need-heading" className="space-y-3 rounded-xl border bg-card p-4" data-slot="collection-need">
         <h3 id="collection-need-heading" className="font-semibold">
           Потребность
         </h3>
         {data.needByObject.length === 0 ? (
           <p className="text-muted-foreground text-sm">Объектов посещения у мероприятия нет.</p>
         ) : (
-          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <ul className="grid gap-2 text-sm lg:grid-cols-2">
             {data.needByObject.map((item) => (
-              <li key={item.visitObjectId || "unassigned"} data-slot="need-by-object">
+              <li key={item.visitObjectId || "unassigned"} data-slot="need-by-object" className="rounded-lg border p-3">
                 {/* Строка «без объекта посещения» — не объект, и кавычек ей не
                     полагается: она про посты, которые объекту не отнесены. */}
                 {item.visitObjectId === "" ? (
@@ -875,7 +891,8 @@ export function ForceCollectionCard({
           </p>
         )}
       </section>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {(data.demandRows ?? []).some(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD") && <section aria-label="Потребность в специальных группах" className="rounded-xl border bg-card p-4"><h3 className="font-semibold">Специальные группы · сверх физического наряда</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{(data.demandRows ?? []).filter(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD").map(row => <p key={row.id} className="rounded-lg bg-muted/40 p-3 text-sm">{row.specification || row.kindCode} · {row.need} · {row.place}</p>)}</div></section>}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Требуется по рекогносцировке"
           value={data.need}
@@ -891,6 +908,7 @@ export function ForceCollectionCard({
               : `Ещё не разложено ${data.need - data.allocated}`
           }
         />
+        <StatCard label="Департаменты выделяют" value={data.totals.allocating} caption="Ответы на запросы Штаба" />
         <StatCard
           label="Собрано"
           value={data.gathered}
@@ -908,12 +926,11 @@ export function ForceCollectionCard({
       <section aria-labelledby="collection-split-heading" className="space-y-3">
         <div>
           <h3 id="collection-split-heading" className="font-semibold">
-            Распределение по департаментам
+            2–3. Запросы департаментам и полученные списки
           </h3>
           <p className="text-muted-foreground text-sm">
-            Запрошено [ввод] у черновых строк; после «Отправить запросы» цифры
-            заперты, недобор довыделяется новой строкой. Строка раскрывается —
-            видно поимённо, кого департамент уже отдал.
+            Подготовьте квоты и сроки в черновике. Отправленные строки сохраняются;
+            недобор довыделяется новым запросом. Раскройте департамент, чтобы увидеть состав и историю.
           </p>
         </div>
 

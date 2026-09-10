@@ -893,6 +893,20 @@ class SummaryAssembleSerializer(serializers.Serializer):
     allow_incomplete = serializers.BooleanField(default=False)
 
 
+class SummaryRemindSerializer(serializers.Serializer):
+    """Напоминание о сдаче: область и явная деловая дата."""
+
+    division_id = serializers.IntegerField(min_value=1)
+    business_date = serializers.DateField()
+
+
+class SummaryRemindResponseSerializer(serializers.Serializer):
+    business_date = serializers.DateField()
+    laggard_division_ids = serializers.ListField(child=serializers.IntegerField())
+    notified_recipient_count = serializers.IntegerField()
+    unresolved_division_ids = serializers.ListField(child=serializers.IntegerField())
+
+
 class SummarySendSerializer(serializers.Serializer):
     """Тело отправки дежурному: подразделение, день и причина неполноты.
 

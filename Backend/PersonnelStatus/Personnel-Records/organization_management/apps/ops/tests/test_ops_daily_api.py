@@ -110,6 +110,9 @@ def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, divisi
         "ancestors": [],
         "can_submit": True,
         "last_submitted_at": None,
+        "parent_id": None,
+        "without_status": 0,
+        "notify_recipient_name": None,
         # Тип узла добавлен в Plane №307 — тем же расширением, что и поля
         # выше: читателю нужен УРОВЕНЬ, а «нет предков» опознаёт департамент
         # неверно (у организации предков тоже нет).
@@ -119,6 +122,84 @@ def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, divisi
     scoped_rows = scoped_viewer.get(DIVISIONS).json()["results"]
     assert all(row["name"] != division.name for row in scoped_rows)
     assert len(scoped_rows) == 1
+
+
+def test_division_metadata_uses_requested_day_and_expense_subtree(operator, division, in_service, duty_type):
+    from organization_management.apps.staff_unit.models import StaffUnit
+    department = Division.objects.create(name="Департамент", parent=division, division_type=Division.DivisionType.DEPARTMENT)
+    directorate = Division.objects.create(name="Управление", parent=department, division_type=Division.DivisionType.DIRECTORATE)
+    # Sibling names must differ: uq_division_name_per_parent enforces it.
+    sibling = Division.objects.create(name="Второе управление", parent=department, division_type=Division.DivisionType.DIRECTORATE)
+    child = Division.objects.create(name="Отдел", parent=directorate, division_type=Division.DivisionType.DIVISION)
+    other_department = Division.objects.create(name="Другой департамент", parent=division, division_type=Division.DivisionType.DEPARTMENT)
+    twin = Division.objects.create(name="Управление", parent=other_department, division_type=Division.DivisionType.DIRECTORATE)
+    make_employee(directorate)
+    explicit = make_employee(child)
+    make_employee(child)
+    dismissed = make_employee(child)
+    dismissed.employment_status = dismissed.EmploymentStatus.FIRED
+    dismissed.save(update_fields=["employment_status"])
+    StaffUnit.objects.create(division=child, index=99)
+    make_employee()  # Working but without a staff slot is outside the denominator.
+    OpsEmployeeStatus.objects.create(employee_id=explicit.pk, status_type_code="DUTY", date_start=TODAY, date_end=TODAY + timedelta(days=1))
+    off_list = make_employee(child)
+    StatusType.objects.create(code="OFF_LIST_TEST", name="Вне списка", priority=2, report_column_code="O", counts_in_staff=False)
+    OpsEmployeeStatus.objects.create(employee_id=off_list.pk, status_type_code="OFF_LIST_TEST", date_start=TODAY, date_end=TODAY + timedelta(days=10))
+    def rows(day):
+        response = operator.get(DIVISIONS, {"business_date": day.isoformat()})
+        assert response.status_code == 200, response.data
+        return {row["id"]: row for row in response.json()["results"]}
+    with clock.override(TODAY + timedelta(days=3)):
+        result = rows(TODAY)
+        assert result[str(directorate.pk)]["parent_id"] == str(department.pk)
+        assert result[str(sibling.pk)]["parent_id"] == str(department.pk)
+        assert result[str(sibling.pk)]["id"] != result[str(directorate.pk)]["id"]
+        assert result[str(twin.pk)]["parent_id"] == str(other_department.pk)
+        assert result[str(directorate.pk)]["without_status"] == 2
+        assert result[str(child.pk)]["without_status"] == 1
+        assert rows(TODAY + timedelta(days=1))[str(directorate.pk)]["without_status"] == 3
+    with clock.override(TODAY):
+        today_rows = {row["id"]: row for row in operator.get(DIVISIONS).json()["results"]}
+        assert today_rows[str(directorate.pk)]["without_status"] == 2
+
+
+def test_division_metadata_resolves_names_without_exposing_addresses(operator, division):
+    from django.contrib.auth.models import User
+    from organization_management.apps.operations.models_submission import OpsDivisionNotifyRecipient
+    user = User.objects.create_user(username="recipient", first_name="Иван", last_name="Петров")
+    assignment = OpsDivisionNotifyRecipient.objects.create(division_id=division.pk, recipient=str(user.pk))
+    def label():
+        return operator.get(DIVISIONS).json()["results"][0]["notify_recipient_name"]
+    assert label() == "Иван Петров"
+    for raw, expected in [("pagerduty", None), ("Дежурный управления", None), ("person@example.com", None), ("token:secret123", None), ("99999999999999999999999999", None)]:
+        assignment.recipient = raw
+        assignment.save(update_fields=["recipient"])
+        assert label() == expected
+
+
+def test_division_metadata_rejects_invalid_date(operator):
+    assert operator.get(DIVISIONS, {"business_date": "not-a-date"}).status_code == 400
+
+
+def test_division_metadata_is_batched_and_scoped(scoped_viewer, scoped_division, division, in_service):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    make_employee(scoped_division)
+    make_employee(division)
+    # Warm up settings: first read may create singleton control settings.
+    scoped_viewer.get(DIVISIONS)
+    with CaptureQueriesContext(connection) as baseline:
+        response = scoped_viewer.get(DIVISIONS)
+    assert [row["id"] for row in response.json()["results"]] == [str(scoped_division.pk)]
+    for index in range(5):
+        child = Division.objects.create(name=f"Отдел {index}", parent=scoped_division, division_type=Division.DivisionType.DIVISION)
+        make_employee(child)
+    with CaptureQueriesContext(connection) as expanded:
+        response = scoped_viewer.get(DIVISIONS)
+    rows = {row["id"]: row for row in response.json()["results"]}
+    assert str(division.pk) not in rows
+    assert rows[str(scoped_division.pk)]["without_status"] == 6
+    assert len(expanded) == len(baseline)
 
 
 def test_divisions_tell_apart_who_the_actor_submits_for(division):

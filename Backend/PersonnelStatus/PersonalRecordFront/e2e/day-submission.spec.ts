@@ -189,6 +189,9 @@ function fakeSubmission(divisionId: string, businessDate: string) {
     submitted_by: STAND_USERNAME,
     submitted_at: new Date().toISOString(),
     late: false,
+    sent_at: null,
+    sent_by: '',
+    incomplete_reason: '',
   }
 }
 
@@ -354,7 +357,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
 
     await signIn(page)
-    await page.goto(`${APP}/employees?view=daily`)
+    await page.goto(`${APP}/employees?view=daily&businessDate=${report.business_date}`)
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
 
@@ -441,7 +444,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await interceptSubmitConflict(page, targetDivisionId, report.business_date)
 
     await signIn(page)
-    await page.goto(`${APP}/employees?view=daily`)
+    await page.goto(`${APP}/employees?view=daily&businessDate=${report.business_date}`)
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
 

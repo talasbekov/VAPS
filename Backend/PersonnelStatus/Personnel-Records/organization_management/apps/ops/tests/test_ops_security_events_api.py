@@ -1970,6 +1970,14 @@ def test_deputy_edits_placement_of_own_object_without_manage_right(manager):
     assert trace.count() == 2
     assert trace.last().new_value["operation"] == "UNASSIGN"
 
+    # Назначение старшего поста — не правка состава, а полномочие старшего
+    # объекта/ведущего. Замещающему UI не должен показывать этот 403-путь.
+    assert deputy_api.post(
+        f"{base}placement/{assignments[0]['id']}/senior/",
+        {"senior": True},
+        format="json",
+    ).status_code == 403
+
     # Завершение этапа замещающему НЕ открыто: это переход цепочки.
     assert deputy_api.post(f"{base}placement/complete/").status_code == 403
 

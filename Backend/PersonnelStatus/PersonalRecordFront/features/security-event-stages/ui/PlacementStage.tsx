@@ -71,7 +71,8 @@ import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { remarkIsOpen } from "@/entities/security-event";
+import { useMyEmployee } from "@/hooks/use-my-employee";
+import { placementEditable, remarkIsOpen } from "@/entities/security-event";
 import type {
   ApprovalRemark,
   PersonnelSummarySnapshot,
@@ -116,6 +117,37 @@ type DragPayload = {
   sectionCode?: string | null;
 };
 
+/**
+ * Сервер различает три действия на расстановке: замещающий может править
+ * посты своего объекта, но не переводит этап и не назначает старшего поста.
+ * Нельзя сводить это к одному `canManagePlacement`: так экран обещал две
+ * операции, которые API справедливо отклонял 403 (Plane №1127).
+ */
+export function placementRightsOf(input: {
+  editable: boolean;
+  canEditPlacement: boolean;
+  identityResolved: boolean;
+  myEmployeeId: string | null;
+  visit: {
+    chiefEmployeeId: string | null;
+    deputies?: readonly { employeeId: string; canEditPlacement?: boolean }[];
+  } | null;
+}) {
+  const { editable, canEditPlacement, identityResolved, myEmployeeId, visit } = input;
+  const isDeputy = myEmployeeId !== null && (visit?.deputies ?? []).some(
+    deputy => deputy.employeeId === myEmployeeId && deputy.canEditPlacement !== false,
+  );
+  const edit = editable && canEditPlacement;
+  // Старший объекта, ведущий ОМ и глобальный исполнитель уже приходят с
+  // `canEditPlacement`; единственный различимый в данных редактор без права
+  // перехода — заместитель. Серверный контракт закреплён API-пробой ниже.
+  // Пока «кто я» грузится или ответил без кадровой записи, нельзя выводить
+  // операции, которые могут принадлежать только ведущему: отсутствие id не
+  // доказывает, что пользователь не заместитель (P1 №1127).
+  const lead = identityResolved && edit && !isDeputy;
+  return { edit, setSectorSenior: lead, complete: lead, isDeputy };
+}
+
 type AutoPlacementPlanRow = {
   postId: string;
   postLabel: string;
@@ -123,6 +155,22 @@ type AutoPlacementPlanRow = {
   employeeName: string;
   reasons: string[];
 };
+
+export async function reconcileAutoPlan(
+  plan: readonly AutoPlacementPlanRow[],
+  save: (row: AutoPlacementPlanRow) => Promise<void>,
+): Promise<{ applied: AutoPlacementPlanRow[]; remaining: AutoPlacementPlanRow[]; error: unknown | null }> {
+  const applied: AutoPlacementPlanRow[] = [];
+  for (let index = 0; index < plan.length; index += 1) {
+    try {
+      await save(plan[index]);
+      applied.push(plan[index]);
+    } catch (error) {
+      return { applied, remaining: [...plan.slice(index)], error };
+    }
+  }
+  return { applied, remaining: [], error: null };
+}
 /**
  * Перенос, ожидающий обоснования (Plane №762).
  *
@@ -302,6 +350,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
   // и отвечает словами, если нет.
   const access = useChainAccess();
+  const me = useMyEmployee();
   // Ссылки в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
   const forcesOpen = moduleOpenFor("/employees", access.can);
   const assign = useAssignPlacement(event.id);
@@ -346,6 +395,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * перезагрузки блок исчезает — отклонение записано в решениях. */
   const [autoReasons, setAutoReasons] = useState<Record<string, string[]>>({});
   const [autoPlan, setAutoPlan] = useState<AutoPlacementPlanRow[] | null>(null);
+  const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
   /** Чей рейтинг открыт: null — модалка закрыта. Человек, а не флаг: иначе
    * пришлось бы держать имя и подразделение отдельной парой полей. */
   const [ratingBriefFor, setRatingOf] = useState<{
@@ -391,13 +441,27 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
-  const placementStage = scope.visit?.stage ?? event.stage;
-  const canManagePlacement =
-    placementStage === "PLACEMENT" &&
-    (scope.visit?.canManagePlacement ?? access.can(PLACEMENT_MANAGE));
+  const identityResolved = me.isSuccess && me.data?.employee !== null;
+  const placementRights = placementRightsOf({
+    editable: placementEditable(event, scope.visit),
+    canEditPlacement: scope.visit === null
+      ? access.can(PLACEMENT_MANAGE)
+      : scope.visit.canManagePlacement === true,
+    identityResolved,
+    myEmployeeId: identityResolved ? String(me.data!.employee!.id) : null,
+    visit: scope.visit,
+  });
+  const canManagePlacement = placementRights.edit;
+  const canSetSectorSenior = placementRights.setSectorSenior;
+  const canCompletePlacement = placementRights.complete;
   const placementManageReason = canManagePlacement
     ? ""
     : access.reason(PLACEMENT_MANAGE);
+  const placementLeadReason = canCompletePlacement
+    ? ""
+    : placementRights.isDeputy
+      ? "Завершает расстановку и назначает старшего поста старший объекта или ведущий ОМ"
+      : placementManageReason;
   /**
    * Кандидаты ПОКАЗАННОГО ОБЪЕКТА (Plane №579).
    *
@@ -905,21 +969,30 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         });
       }
     }
+    setAutoFillMessage(null);
     setAutoPlan(plan);
   }
 
   async function confirmAutoFill(): Promise<void> {
     if (autoPlan === null || autoPlan.length === 0) return;
-    const reasons: Record<string, string[]> = { ...autoReasons };
-    for (const row of autoPlan) {
+    const planned = autoPlan;
+    const outcome = await reconcileAutoPlan(planned, async (row) => {
       await assign.mutateAsync({
         postId: row.postId,
         employeeId: row.employeeId,
       });
+    });
+    const reasons: Record<string, string[]> = { ...autoReasons };
+    for (const row of outcome.applied) {
       reasons[`${row.postId}:${row.employeeId}`] = row.reasons;
     }
     setAutoReasons(reasons);
-    setAutoPlan(null);
+    setAutoPlan(outcome.remaining.length === 0 ? null : outcome.remaining);
+    setAutoFillMessage(
+      outcome.error === null
+        ? null
+        : `Сохранено: ${outcome.applied.length}. Оставшиеся строки можно повторить после исправления причины отказа.`,
+    );
   }
 
   /** Почему автоподбор выбрал ЭТОГО человека на ЭТОТ пост.
@@ -1026,30 +1099,32 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </Button>
               )}
             </RightGate>
-            <RightGate
-              reason={
-                placementAlreadyCompleted
-                  ? "Расстановка уже завершена — вернитесь к согласованию"
-                  : placementManageReason
-              }
-            >
-              {(describedBy) => (
-                <Button
-                  type="button"
-                  size="sm"
-                  // На шаге, открытом назад с «Согласования» (№861), сервер
-                  // отобьёт повторное завершение (`_require_visit_stage`);
-                  // обещать кнопкой то, что отобьют, нельзя (ревью №825).
-                  disabled={complete.isPending || !canManagePlacement || placementAlreadyCompleted}
-                  aria-describedby={describedBy}
-                  onClick={() =>
-                    complete.mutate({ visitObjectId: scope.visit?.id })
-                  }
-                >
-                  {complete.isPending ? "Завершение…" : "Завершить расстановку"}
-                </Button>
-              )}
-            </RightGate>
+            {canCompletePlacement && (
+              <RightGate
+                reason={
+                  placementAlreadyCompleted
+                    ? "Расстановка уже завершена — вернитесь к согласованию"
+                    : placementLeadReason
+                }
+              >
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    size="sm"
+                    // На шаге, открытом назад с «Согласования» (№861), сервер
+                    // отобьёт повторное завершение (`_require_visit_stage`);
+                    // обещать кнопкой то, что отобьют, нельзя (ревью №825).
+                    disabled={complete.isPending || !canCompletePlacement || placementAlreadyCompleted}
+                    aria-describedby={describedBy}
+                    onClick={() =>
+                      complete.mutate({ visitObjectId: scope.visit?.id })
+                    }
+                  >
+                    {complete.isPending ? "Завершение…" : "Завершить расстановку"}
+                  </Button>
+                )}
+              </RightGate>
+            )}
           </div>
         </div>
 
@@ -1482,30 +1557,32 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        <RightGate reason={placementManageReason}>
-                          {(describedBy) => (
-                            <button
-                              type="button"
-                              aria-pressed={assignment.isSectorSenior}
-                              aria-label={`Старший поста: ${assignment.employeeName}`}
-                              disabled={setSenior.isPending || !canManagePlacement}
-                              aria-describedby={describedBy}
-                              onClick={() =>
-                                setSenior.mutate({
-                                  assignmentId: assignment.id,
-                                  senior: !assignment.isSectorSenior,
-                                })
-                              }
-                              className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
-                                assignment.isSectorSenior
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-input bg-background text-foreground hover:bg-muted"
-                              }`}
-                            >
-                              {assignment.isSectorSenior ? "✓ " : ""}Старший поста
-                            </button>
-                          )}
-                        </RightGate>
+                        {canSetSectorSenior && (
+                          <RightGate reason={placementManageReason}>
+                            {(describedBy) => (
+                              <button
+                                type="button"
+                                aria-pressed={assignment.isSectorSenior}
+                                aria-label={`Старший поста: ${assignment.employeeName}`}
+                                disabled={setSenior.isPending || !canSetSectorSenior}
+                                aria-describedby={describedBy}
+                                onClick={() =>
+                                  setSenior.mutate({
+                                    assignmentId: assignment.id,
+                                    senior: !assignment.isSectorSenior,
+                                  })
+                                }
+                                className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                                  assignment.isSectorSenior
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input bg-background text-foreground hover:bg-muted"
+                                }`}
+                              >
+                                {assignment.isSectorSenior ? "✓ " : ""}Старший поста
+                              </button>
+                            )}
+                          </RightGate>
+                        )}
                         <span className="flex gap-1">
                           <RightGate reason={placementManageReason}>
                             {(describedBy) => (
@@ -1975,6 +2052,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 Проверьте сотрудников и посты. Назначения сохранятся только после подтверждения.
               </DialogDescription>
             </DialogHeader>
+            {autoFillMessage !== null && (
+              <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                {autoFillMessage}
+              </p>
+            )}
             {autoPlan?.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Для свободных мест нет доступных сотрудников из пула этого объекта.

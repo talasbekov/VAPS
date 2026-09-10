@@ -79,6 +79,73 @@ async function placementEventWithRoster(
 
 test.describe(LIVE ? 'расстановка' : 'расстановка (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  // Без этой настройки service worker обходит `page.route`, и проверка
+  // подставляет не заместителя, а настоящего admin из сессии.
+  test.use({ serviceWorkers: 'block' })
+
+  test('№1127: заместителю не рендерятся серверно-запрещённые завершение и старший поста', async ({ page, request }) => {
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(token)
+    requireFixture(target, 'свой ОМ на расстановке для заместителя')
+    const eventId = target!.id
+    const before = (await (
+      await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+    ).json()) as {
+      visitObjects: { id: string; chiefEmployeeId: string | null }[]
+      reconSectorPosts: { id: string; visitObjectId: string }[]
+      forceRoster: { employeeId: string }[]
+      placementAssignments: { id: string; employeeId: string }[]
+    }
+    const visit = before.visitObjects[0]
+    const deputyId = before.forceRoster
+      .map((member) => String(member.employeeId))
+      .find((id) => id !== String(visit?.chiefEmployeeId))
+    requireFixture(visit, 'у своей фикстуры есть объект посещения')
+    requireFixture(deputyId, 'в своём составе есть не-старший для заместителя')
+    const post = before.reconSectorPosts.find((row) => row.visitObjectId === visit!.id)
+    requireFixture(post, 'у объекта заместителя есть пост')
+    const assigned = await request.post(
+      `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+      { headers: auth, data: { postId: post!.id, employeeId: deputyId } },
+    )
+    expect(assigned.ok(), await assigned.text()).toBe(true)
+    const deputy = await request.post(
+      `${API}/api/ops/security-events/${eventId}/visit-objects/${visit!.id}/deputies/`,
+      { headers: auth, data: { employeeId: deputyId, canEditPlacement: true } },
+    )
+    expect(deputy.status(), await deputy.text()).toBe(201)
+
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      (route) => route.fulfill({ json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] } }),
+    )
+    let releaseIdentity!: () => void
+    const identityReleased = new Promise<void>((resolve) => { releaseIdentity = resolve })
+    let identityRequested!: () => void
+    const identityPending = new Promise<void>((resolve) => { identityRequested = resolve })
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-employee/'),
+      async (route) => {
+        identityRequested()
+        await identityReleased
+        await route.fulfill({ json: { employee: { id: Number(deputyId), full_name: 'Заместитель №1127', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null } })
+      },
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visit!.id}`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card).toBeVisible({ timeout: 20_000 })
+    await identityPending
+    // Пока «кто я» не ответил, нельзя кратко рекламировать действие, которое
+    // может быть отклонено сервером для заместителя.
+    await expect(card.getByRole('button', { name: 'Завершить расстановку', exact: true })).toHaveCount(0, { timeout: 1_000 })
+    await expect(card.getByRole('button', { name: /Старший поста:/ })).toHaveCount(0, { timeout: 1_000 })
+    releaseIdentity()
+    await expect(card.getByRole('button', { name: 'Удалить с поста', exact: false })).toBeEnabled()
+    await expect(card.getByRole('button', { name: 'Завершить расстановку', exact: true })).toHaveCount(0, { timeout: 1_000 })
+    await expect(card.getByRole('button', { name: /Старший поста:/ })).toHaveCount(0, { timeout: 1_000 })
+  })
 
   test('дерево постов и назначение идут от живого расчёта', async ({ page, request }) => {
     const errors: string[] = []

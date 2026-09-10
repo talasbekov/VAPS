@@ -7318,6 +7318,9 @@ def select_approval_route(
         "APPROVAL",
         "Маршрут выбирается только на этапе «Согласование».",
     )
+    # №1104: объект мог выйти на согласование ДО настройки подписантов.
+    # Заполненный маршрут не перезаписывается — как при approval/send.
+    approval_route_service.seed_route(visit)
     route = list(visit.approval_route or [])
     if len(route) < 2:
         raise DomainError(
