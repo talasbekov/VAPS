@@ -115,6 +115,11 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
       { name: "Ежедневный отчет", href: "/reports", icon: FileText },
+      // CSV «Расход личного состава» формирует маршрут service-reports, но
+      // относится к Службе, а не к конкретному охранному мероприятию. URL и
+      // его `report.generate` остаются прежними: меняется только понятный
+      // человеку вход, без второй копии экрана в меню (Plane №1071).
+      { name: "Отчёты по Службе", href: "/security-ops/service-reports", icon: ScrollText },
       // Права здесь НЕ проверяются — тем же приёмом, что у остальных пунктов
       // этого меню (см. комментарий у «Права»/«Роли» ниже): видимость решает
       // сама страница по роли DUTY_OFFICER (Plane №992), а не пункт меню.
@@ -145,7 +150,6 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
       // попадали только по ссылкам с других экранов.
       { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
-      { name: "Отчеты по ОМ", href: "/security-ops/service-reports", icon: ScrollText },
     ],
   },
   {
