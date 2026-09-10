@@ -11,7 +11,7 @@ import { StatCard } from "@/components/stat-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Download, Upload, RefreshCw } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
 import { directorateDenial } from "@/hooks/use-staff-units-by-directorate"
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
@@ -181,18 +181,8 @@ export default function StatusesPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               {canEdit && (
-                <>
-                  <SecondmentRequestsDialog />
-                  <Button variant="outline" size="sm">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Импорт
-                  </Button>
-                </>
+                <SecondmentRequestsDialog />
               )}
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Экспорт
-              </Button>
             </div>
           </div>
 

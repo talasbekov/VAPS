@@ -46,6 +46,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Search,
+  Download,
   MoreHorizontal,
   Edit,
   Calendar,
@@ -74,6 +75,7 @@ import {
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
 import { LoadFailure } from "@/components/load-failure";
+import { saveFile } from "@/features/ops-reports/report-shared";
 
 interface Employee {
   id: string;
@@ -359,6 +361,7 @@ export function StatusTable({
     isLoading: queryLoading,
     isError: queryFailed,
     isFetching: queryFetching,
+    isPlaceholderData,
     refetch,
   } = useStaffUnitsPage({
     page,
@@ -722,6 +725,35 @@ export function StatusTable({
     [employees]
   );
 
+  // Экспортирует ровно текущую серверную страницу, без обхода всего состава
+  // и без объединения чужих/прежних фильтров из query cache (Plane №1157).
+  const exportUnavailable =
+    loading || queryFetching || isPlaceholderData || queryFailed || filteredEmployees.length === 0;
+  const exportPage = () => {
+    if (exportUnavailable) return;
+    const cell = (raw: string) => {
+      // Значения из ФИО/справочников остаются текстом даже при открытии в Excel.
+      const value = /^[\s]*[=+@-]/.test(raw) || /^[\t\r\n]/.test(raw) ? `'${raw}` : raw;
+      return `"${value.replace(/"/g, '""')}"`;
+    };
+    const rows = [
+      ["№", "ФИО", "Отдел", "Должность", "Статус (кадровый)", "Обновлён", "Следующий"],
+      ...filteredEmployees.map((employee) => [
+        String(employee.number),
+        employee.name,
+        employee.department,
+        employee.position,
+        employee.status,
+        formatIsoDate(employee.startDate, "Не обновлено"),
+        formatIsoDate(employee.endDate, "Не указано"),
+      ]),
+    ];
+    saveFile(
+      `кадровые-статусы-страница-${data?.page ?? page}.csv`,
+      `\uFEFF${rows.map((row) => row.map(cell).join(";")).join("\r\n")}`
+    );
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       onSelectionChange(filteredEmployees.map((emp) => emp.id));
@@ -768,6 +800,15 @@ export function StatusTable({
               <>Всего: {data?.matched_count ?? filteredEmployees.length}</>
             )}
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportPage} disabled={exportUnavailable}>
+            <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+            Экспорт страницы CSV
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Кадровые статусы только показанных строк с учётом фильтров.
+          </p>
         </div>
       </CardHeader>
       <CardContent>
