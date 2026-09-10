@@ -389,7 +389,15 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
         "comment": "",
         "members": [],
         "directorates": [
-            {**d, "need": 0, "notifiedAt": None, "id": f"{key}-{d.get('divisionId')}"}
+            {
+                **d,
+                "need": 0,
+                "notifiedAt": None,
+                # Добор не переносит спецгруппы исходной заявки: его новая
+                # физическая потребность должна быть заново разложена.
+                "groupDemandIds": [],
+                "id": f"{key}-{d.get('divisionId')}",
+            }
             for d in (source.get("directorates") or [])
         ],
         "topUpOf": source.get("id"),

@@ -267,6 +267,57 @@ def test_department_assigns_a_group_to_a_directorate_without_a_physical_quota(ma
     assert row["groupDemandIds"] == [demand["id"]]
 
 
+def test_top_up_of_group_request_starts_with_empty_directorate_groups(manager):  # noqa: F811
+    """Добор — новая физическая заявка, а не повтор ранее выданной спецгруппы."""
+    department = make_department("Департамент А")
+    directorate = make_directorate(department, "Управление спецгрупп")
+    base, total = event_on_demand(manager)
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    demand = {
+        "id": "demand-canine",
+        "kindCode": "CANINE_GROUP",
+        "need": 1,
+        "place": "Главный вход",
+        "specification": "Кинолог с собакой",
+        "requirements": "Допуск на объект",
+        "shift": "08:00–18:00",
+    }
+    event.demand_rows = [*event.demand_rows, demand]
+    event.save(update_fields=["demand_rows"])
+    original = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": total, "groupDemandIds": [demand["id"]]}]},
+        format="json",
+    ).json()["forceAllocation"][0]
+    split = manager.post(
+        f"{base}forces/allocation/{original['id']}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": total, "groupDemandIds": [demand["id"]]}]},
+        format="json",
+    )
+    assert split.status_code == 200, split.content
+    assert manager.post(f"{base}forces/allocation/{original['id']}/notify/").status_code == 200
+
+    topped_up = manager.post(
+        f"{base}forces/allocation/{original['id']}/top-up/", {"count": 1}, format="json"
+    )
+    assert topped_up.status_code == 200, topped_up.content
+    top_up = topped_up.json()["forceAllocation"][-1]
+    assert top_up.get("groupDemands", []) == []
+    assert top_up["directorates"][0]["groupDemandIds"] == []
+
+    empty = manager.post(f"{base}forces/allocation/{top_up['id']}/notify/")
+    assert empty.status_code == 422
+    assert empty.json()["error_code"] == "DIRECTORATE_QUOTA_EMPTY"
+
+    split_top_up = manager.post(
+        f"{base}forces/allocation/{top_up['id']}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": 1, "groupDemandIds": []}]},
+        format="json",
+    )
+    assert split_top_up.status_code == 200, split_top_up.content
+    assert manager.post(f"{base}forces/allocation/{top_up['id']}/notify/").status_code == 200
+
+
 def test_one_group_demand_cannot_be_sent_to_two_departments(manager):  # noqa: F811
     first = make_department("Департамент А")
     second = make_department("Департамент Б")
