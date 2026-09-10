@@ -16,10 +16,13 @@
 import datetime as dt
 import importlib
 import json
+import threading
 
 import pytest
 from django.apps import apps as django_apps
+from django.db import connection, connections
 from django.core.management import call_command
+from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
@@ -117,6 +120,21 @@ def _run_to_completion(api, job_code):
     """Две ступени чтения: PENDING → PROCESSING → COMPLETED."""
     api.get(JOBS)
     return api.get(job_path(job_code)).json()
+
+
+def _create_report_in_thread(user_id, body, results, index):
+    """Отдельное соединение, как два одновременных HTTP-клика в Postgres."""
+    try:
+        from django.contrib.auth import get_user_model
+
+        api = APIClient()
+        api.force_authenticate(get_user_model().objects.get(pk=user_id))
+        response = api.post(JOBS, body, format="json")
+        results[index] = (response.status_code, response.json())
+    except Exception as error:  # noqa: BLE001 — гонка не должна скрыть 500
+        results[index] = ("EXC", error)
+    finally:
+        connections.close_all()
 
 
 # ── Каталог типов ───────────────────────────────────────────────────────────
@@ -429,10 +447,8 @@ def test_report_scope_snapshot_does_not_follow_later_grant_change(
     scoped_report_actors,
 ):
     own_api, _ = scoped_report_actors
-    created = own_api.post(
-        JOBS, _create_body(idempotencyKey="scoped-grant-change"),
-        format="json",
-    ).json()
+    body = _create_body(idempotencyKey="scoped-grant-change")
+    created = own_api.post(JOBS, body, format="json").json()
     job = OpsServiceReportJob.objects.get(job_code=created["reportJobId"])
     second_department = Division.objects.get(name="Второй департамент отчёта")
 
@@ -441,8 +457,10 @@ def test_report_scope_snapshot_does_not_follow_later_grant_change(
     )
 
     # Готовящийся job остался снимком первого департамента: новый grant не
-    # переинтерпретирует ни его данные, ни возможность открыть карточку.
+    # переинтерпретирует ни его данные, ни возможность открыть карточку или
+    # получить её повторной отправкой того же idempotency key.
     assert own_api.get(job_path(job.job_code)).status_code == 404
+    assert own_api.post(JOBS, body, format="json").status_code == 404
 
 
 def test_0117_reverse_keeps_preexisting_manual_role_permission(registries):
@@ -467,7 +485,7 @@ def test_0117_reverse_keeps_preexisting_manual_role_permission(registries):
 
 
 def test_0119_keeps_preexisting_report_generate_grants(registries):
-    """№1125 добавляет HEAD, но не отбирает существующие профили."""
+    """Убирается только глобальная добавка OM_CATEGORY_ORG."""
     client_for(
         "report-unapproved", "REPORT_UNAPPROVED",
         perms=("report.generate",),
@@ -477,16 +495,62 @@ def test_0119_keeps_preexisting_report_generate_grants(registries):
         "0119_report_generate_head_department_only"
     )
 
-    migration._preserve_existing(django_apps, None)
+    migration._revoke_global_om_category(django_apps, None)
 
     holders = set(RolePermission.objects.filter(
         permission_code_id="report.generate"
     ).values_list("role_code_id", flat=True))
     assert {
         "DEPARTMENT_EXPENSE_OFFICER", "DUTY_OFFICER", "ANALYST",
-        "HEAD_OPS_UNIT", "OM_CATEGORY_ORG", "EMPLOYEE_OPS_D2",
+        "HEAD_OPS_UNIT", "EMPLOYEE_OPS_D2",
         "HEAD_DEPARTMENT_LINE", "REPORT_UNAPPROVED",
     } <= holders
+    assert "OM_CATEGORY_ORG" not in holders
+
+
+def test_0120_is_explicitly_irreversible():
+    migration = importlib.import_module(
+        "organization_management.apps.operations.migrations."
+        "0120_report_job_idempotency_per_actor"
+    )
+    assert migration.Migration.operations[-1].reversible is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_same_actor_key_returns_one_job(generator, monkeypatch):
+    """Обе HTTP-транзакции проходят lookup до INSERT и ловят unique-гонку."""
+    _, actor = generator
+    assert connection.vendor == "postgresql"
+    barrier = threading.Barrier(2, timeout=20)
+    original_create = OpsServiceReportJob.objects.create
+
+    def create_simultaneously(*args, **kwargs):
+        barrier.wait()
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(
+        OpsServiceReportJob.objects, "create", create_simultaneously
+    )
+    body = _create_body(idempotencyKey="concurrent-same-actor-key")
+    results = [None, None]
+    threads = [
+        threading.Thread(
+            target=_create_report_in_thread,
+            args=(int(actor), body, results, index),
+        )
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert all(not thread.is_alive() for thread in threads), results
+
+    assert [status for status, _ in results] == [200, 200], results
+    assert results[0][1]["reportJobId"] == results[1][1]["reportJobId"]
+    assert OpsServiceReportJob.objects.filter(
+        created_by_user_id=actor, idempotency_key=body["idempotencyKey"]
+    ).count() == 1
 
 
 # ── Повтор и новая редакция (§22.25) ────────────────────────────────────────

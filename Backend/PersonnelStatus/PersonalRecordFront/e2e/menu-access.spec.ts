@@ -36,6 +36,12 @@ const DENIED = 'Недостаточно прав для просмотра'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+// Изолированный acceptance-стенд кладёт две смены с этими маркерами. На
+// штатном смоуке переменная не задана: он всё равно проверяет реальную выдачу
+// CSV, а scope-пара строк относится к отдельной подготовленной проходке.
+const SCOPE_PROBE = process.env.SERVICE_REPORT_SCOPE_PROBE === '1'
+const FIRST_SCOPE_MARKER = 'E2E-1125-FIRST-DEPARTMENT'
+const SECOND_SCOPE_MARKER = 'E2E-1125-SECOND-DEPARTMENT'
 
 /** Пункты меню и подписи, под которыми они стоят.
  *
@@ -177,11 +183,10 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     }
   })
 
-  test('отчёт CSV службы находится в ежедневном расходе без входа из ОМ', async ({ page }) => {
-    // Не администратор: иначе wildcard `*` способен скрыть расхождение
-    // между реальным правом `report.generate` и тем, что видит начальник
-    // линейного департамента в области `dept_other` (Plane №1125).
-    await signIn(page, 'acc_dept_head')
+  test('отчёт CSV службы начальника второго департамента ограничен его областью', async ({ page }) => {
+    // Не администратор: `acc_dept_head_d2` несёт scoped HEAD_OPS_UNIT. Его
+    // старый глобальный OM_CATEGORY_ORG не должен расширить содержимое CSV.
+    await signIn(page, 'acc_dept_head_d2')
     await page.goto(`${APP}/security-ops/profile`)
 
     const menu = page.locator('aside')
@@ -231,14 +236,19 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     expect(savedFile.fileName).toMatch(/\.csv$/)
     expect(savedFile.content).toContain('# Расход личного состава за период')
     expect(savedFile.content).toContain('Дата;Сотрудник;Объект;Пост;Состояние')
+    if (SCOPE_PROBE) {
+      // Две реальные смены в соседних департаментах подготовлены до Chromium:
+      // файл второго департамента обязан содержать свою и не содержать чужую.
+      expect(savedFile.content).toContain(SECOND_SCOPE_MARKER)
+      expect(savedFile.content).not.toContain(FIRST_SCOPE_MARKER)
+    }
 
-    // Соседняя роль не получает `report.generate`. Прямая карточка не должна
-    // раскрывать ни существование, ни содержимое работы коллеги: это решает
-    // серверный гейт, а не скрытая кнопка клиента.
-    await signIn(page, 'acc_dir_head')
+    // У начальника первого департамента то же право, но другая scoped
+    // область. Прямая карточка не должна раскрывать чужой CSV: это серверный
+    // гейт, а не скрытая кнопка клиента.
+    await signIn(page, 'acc_dept_head')
     await page.goto(`${APP}${ownJobPath}`)
-    await expect(page.getByRole('heading', { name: 'Доступ закрыт' })).toBeVisible()
-    await expect(page.getByText('Недостаточно прав для просмотра карточки работы отчёта.')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Работа недоступна' })).toBeVisible()
   })
 
   test('отчёты службы закрыты начальнику управления', async ({ page }) => {
