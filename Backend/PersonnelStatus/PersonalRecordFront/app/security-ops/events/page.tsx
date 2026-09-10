@@ -82,6 +82,7 @@ import type {
 import { mayManageVisitObjects } from "@/entities/security-event/model/capabilities";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 import { REMARKS, ruCount } from "@/lib/ru-plural";
 
 const PAGE_SIZE = 20;
@@ -529,16 +530,12 @@ function EventRow({
     // Отказ ОБЪЯСНЯЕТСЯ: сервер не даёт стереть ОМ с расстановкой или
     // записями журнала, и человеку нужна эта причина, а не «не получилось».
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Мероприятие не удалено",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права удалять это мероприятие.",
+        ),
         variant: "destructive",
       });
     },
@@ -998,16 +995,12 @@ function VisitObjectList({
     // Отказ сервера ОБЪЯСНЯЕТСЯ: снять объект нельзя, пока за ним числятся
     // посты расчёта, и человеку нужно знать причину, а не «не получилось».
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Объект не снят",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права снимать объект с мероприятия.",
+        ),
         variant: "destructive",
       });
     },
@@ -1382,16 +1375,12 @@ function ChiefLine({
       toast({ title: "Старший снят с объекта" });
     },
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Старший не снят",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права менять старшего объекта.",
+        ),
         variant: "destructive",
       });
     },
@@ -1493,16 +1482,12 @@ function DeputyLine({
       toast({ title: "Замещающий снят" });
     },
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Замещающий не снят",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права менять замещающих объекта.",
+        ),
         variant: "destructive",
       });
     },

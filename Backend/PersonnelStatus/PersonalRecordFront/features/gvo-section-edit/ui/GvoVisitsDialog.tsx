@@ -28,6 +28,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { updateVisitObject } from "@/features/event-visit-objects";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 
 export interface GvoVisitsDialogProps {
   event: SecurityEvent;
@@ -97,17 +98,9 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
       toast({ description: "Объекты посещения обновлены" });
       onClose();
     } catch (error: unknown) {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       // Причина отказа показывается ДОСЛОВНО: сервер отбивает закрытое
       // мероприятие и битую дату, и человеку нужна причина, а не «не вышло».
-      setFailed(
-        message === ""
-          ? "Сервис временно недоступен. Попробуйте ещё раз."
-          : message
-      );
+      setFailed(friendlyOpsErrorMessage(error, "Нет права менять объекты посещения."));
     }
   }
 
