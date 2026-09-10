@@ -289,6 +289,32 @@ def test_foreign_parameters_redacted_and_download_refused(
     }
     assert actions["DOWNLOAD"]["available"] is False
     assert actions["OPEN_PARAMETERS"]["available"] is False
+    # Действия меняют ряд параметров и потому закрыты тем же серверным
+    # правилом, что и скачивание. Один видимый state не даёт права повторить
+    # чужой запуск.
+    assert actions["RETRY"]["available"] is False
+    assert actions["NEW_REVISION"]["available"] is False
+    assert api.post(job_path(foreign["reportJobId"]) + "retry/").status_code == 403
+    assert api.post(
+        job_path(foreign["reportJobId"]) + "new-revision/"
+    ).status_code == 403
+
+
+def test_orphan_artifact_keeps_foreign_parameter_download_gate(
+    generator, sensitive_api, shifts,
+):
+    """Удаление job не должно превратить файл в публичный для коллеги."""
+    api, _ = generator
+    foreign = sensitive_api.post(JOBS, _create_body(), format="json").json()
+    detail = _run_to_completion(sensitive_api, foreign["reportJobId"])
+    artifact_id = detail["artifact"]["artifactId"]
+    OpsServiceReportJob.objects.filter(
+        job_code=foreign["reportJobId"]
+    ).delete()
+
+    refused = api.post(download_path(artifact_id))
+    assert refused.status_code == 403
+    assert refused.json()["error_code"] == "PERMISSION_DENIED"
 
 
 def test_own_parameters_always_visible(generator, shifts):
@@ -382,6 +408,23 @@ def test_scoped_report_is_not_addressable_from_another_department(
     assert foreign_api.post(download_path(artifact_id)).status_code == 404
 
 
+def test_same_idempotency_key_is_independent_for_each_report_actor(
+    scoped_report_actors,
+):
+    own_api, foreign_api = scoped_report_actors
+    body = _create_body(idempotencyKey="same-key-in-two-departments")
+
+    own = own_api.post(JOBS, body, format="json")
+    foreign = foreign_api.post(JOBS, body, format="json")
+
+    assert own.status_code == 200
+    assert foreign.status_code == 200
+    assert own.json()["reportJobId"] != foreign.json()["reportJobId"]
+    assert OpsServiceReportJob.objects.filter(
+        idempotency_key=body["idempotencyKey"]
+    ).count() == 2
+
+
 def test_report_scope_snapshot_does_not_follow_later_grant_change(
     scoped_report_actors,
 ):
@@ -423,8 +466,8 @@ def test_0117_reverse_keeps_preexisting_manual_role_permission(registries):
     ).exists()
 
 
-def test_0119_removes_report_generate_from_every_role_except_head(registries):
-    """Forward policy is exact; reverse remains a safe no-op."""
+def test_0119_keeps_preexisting_report_generate_grants(registries):
+    """№1125 добавляет HEAD, но не отбирает существующие профили."""
     client_for(
         "report-unapproved", "REPORT_UNAPPROVED",
         perms=("report.generate",),
@@ -434,11 +477,16 @@ def test_0119_removes_report_generate_from_every_role_except_head(registries):
         "0119_report_generate_head_department_only"
     )
 
-    migration._revoke_unapproved(django_apps, None)
+    migration._preserve_existing(django_apps, None)
 
-    assert set(RolePermission.objects.filter(
+    holders = set(RolePermission.objects.filter(
         permission_code_id="report.generate"
-    ).values_list("role_code_id", flat=True)) == {"HEAD_DEPARTMENT_LINE"}
+    ).values_list("role_code_id", flat=True))
+    assert {
+        "DEPARTMENT_EXPENSE_OFFICER", "DUTY_OFFICER", "ANALYST",
+        "HEAD_OPS_UNIT", "OM_CATEGORY_ORG", "EMPLOYEE_OPS_D2",
+        "HEAD_DEPARTMENT_LINE", "REPORT_UNAPPROVED",
+    } <= holders
 
 
 # ── Повтор и новая редакция (§22.25) ────────────────────────────────────────

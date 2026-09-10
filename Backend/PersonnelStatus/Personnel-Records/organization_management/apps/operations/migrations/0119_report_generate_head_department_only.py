@@ -1,33 +1,23 @@
-"""Оставить ``report.generate`` только начальнику линейного департамента.
+"""Сохранить существующие выдачи ``report.generate`` (Plane №1125).
 
-Plane №1125: ранее право также было у профилей второго департамента и у
-глобальной категории ОМ. Последняя давала ``acc_dept_head_d2`` область всей
-организации и обходила снимок области работы ``dept_other``. Право выпуска
-служебного CSV принадлежит только ``HEAD_DEPARTMENT_LINE``.
-
-Откат не восстанавливает удалённые строки: происхождение RolePermission не
-хранится, а повторная выдача могла бы создать право, которое администратор
-снял вручную после миграции.
+№1125 добавляет grant начальнику линейного департамента в migration 0117.
+Ранее выданные профили не относятся к этой правке: у RolePermission нет
+provenance, поэтому migration не вправе удалять или восстанавливать их.
 """
 
 from django.db import migrations
 
 
-def _revoke_unapproved(apps, schema_editor):
-    RolePermission = apps.get_model("operations", "RolePermission")
-    RolePermission.objects.filter(
-        permission_code="report.generate"
-    ).exclude(
-        role_code="HEAD_DEPARTMENT_LINE"
-    ).delete()
+def _preserve_existing(apps, schema_editor):
+    """Явный no-op для уже выпущенной migration без потери ручных grants."""
+    return None
 
 
 def _reverse_noop(apps, schema_editor):
-    # См. docstring: безопаснее не создавать потенциально ручные grants.
     return None
 
 
 class Migration(migrations.Migration):
     dependencies = [("operations", "0118_service_report_scope_snapshot")]
 
-    operations = [migrations.RunPython(_revoke_unapproved, _reverse_noop)]
+    operations = [migrations.RunPython(_preserve_existing, _reverse_noop)]

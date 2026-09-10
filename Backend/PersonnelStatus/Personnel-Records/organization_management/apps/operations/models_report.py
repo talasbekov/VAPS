@@ -38,8 +38,9 @@ class OpsServiceReportType(TimeStampedModel):
 
 
 class OpsServiceReportJob(TimeStampedModel):
-    """Работа генерации. Ключ идемпотентности уникален: повтор с тем же
-    ключом возвращает ТУ ЖЕ работу (§22.21), а не создаёт вторую."""
+    """Работа генерации. Ключ идемпотентности уникален внутри одного актора:
+    повтор возвращает ТУ ЖЕ работу, но одинаковый ключ коллеги не раскрывает
+    и не блокирует его запуск (§22.21)."""
 
     job_code = models.CharField(max_length=100, unique=True)
     report_type_code = models.CharField(max_length=100)
@@ -53,7 +54,7 @@ class OpsServiceReportJob(TimeStampedModel):
     failure_code = models.CharField(max_length=100, null=True)
     safe_failure_message = models.TextField(null=True)
     artifact_code = models.CharField(max_length=100, null=True)
-    idempotency_key = models.CharField(max_length=255, unique=True)
+    idempotency_key = models.CharField(max_length=255)
     sensitive = models.BooleanField()
     param_from = models.DateField()
     param_to = models.DateField()
@@ -68,6 +69,10 @@ class OpsServiceReportJob(TimeStampedModel):
         # История читается свежими сверху; ключ — тай-брейкер.
         ordering = ["-requested_at", "-id"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["created_by_user_id", "idempotency_key"],
+                name="uq_ops_report_job_actor_idempotency",
+            ),
             models.CheckConstraint(
                 condition=models.Q(state__in=_JOB_STATES),
                 name="chk_ops_report_job_state",

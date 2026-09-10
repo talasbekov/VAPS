@@ -625,6 +625,23 @@ def _build_job_actions(job, artifact_available, parameters_visible):
             "reason": "Срок хранения артефакта истёк — файла больше нет на "
                       "сервере.",
         }
+    retry_available = parameters_visible and terminal
+    revision_available = parameters_visible and job.state == "COMPLETED"
+    retry_reason = (
+        None if retry_available else (
+            FOREIGN_PARAMETERS_REASON if not parameters_visible else running
+        )
+    )
+    revision_reason = (
+        None if revision_available else (
+            FOREIGN_PARAMETERS_REASON if not parameters_visible else (
+                "Редакция бывает у собранного отчёта: у упавшей работы "
+                "её нет — используйте «Повторить»."
+                if job.state == "FAILED"
+                else running
+            )
+        )
+    )
     return [
         {
             "code": "OPEN_PARAMETERS",
@@ -636,22 +653,13 @@ def _build_job_actions(job, artifact_available, parameters_visible):
         download,
         {
             "code": "RETRY",
-            "available": terminal,
-            "reason": None if terminal else running,
+            "available": retry_available,
+            "reason": retry_reason,
         },
         {
             "code": "NEW_REVISION",
-            "available": job.state == "COMPLETED",
-            "reason": (
-                None
-                if job.state == "COMPLETED"
-                else (
-                    "Редакция бывает у собранного отчёта: у упавшей работы "
-                    "её нет — используйте «Повторить»."
-                    if job.state == "FAILED"
-                    else running
-                )
-            ),
+            "available": revision_available,
+            "reason": revision_reason,
         },
         {
             "code": "VIEW_ERROR",
@@ -888,13 +896,12 @@ def create_report_job(actor, perms, body):
                 "PERIOD_TOO_LONG", 422,
                 message=f"Период отчёта не может превышать {max_days} дней.",
             )
-        # §22.21 идемпотентность: тот же ключ возвращает ТУ ЖЕ работу.
+        # §22.21: ключ принадлежит КЛИЕНТУ этого актора. Глобальный lookup
+        # превращал такой же ключ коллеги в 404 и мешал независимому запуску.
         existing = OpsServiceReportJob.objects.filter(
-            idempotency_key=idempotency_key
+            created_by_user_id=actor or "", idempotency_key=idempotency_key
         ).first()
         if existing is not None:
-            if not _scope_allows(existing.scope_division_ids, scope_division_ids):
-                raise _not_found(existing.job_code)
             return _project_job(existing, True)
         # Работа создаётся В ОЖИДАНИИ: §22.21 «success показывай только
         # после COMPLETED и получения artifactId».
@@ -935,6 +942,10 @@ def rerun_report_job(actor, perms, job_code, mode):
             source, can_sensitive, current_scope
         ):
             raise _not_found(job_code)
+        # Повтор и новая редакция воспроизводят период и режим исходной
+        # работы. Это те же закрытые параметры, что в скачиваемом CSV.
+        if not _can_see_parameters(source, actor, perms):
+            raise _permission_denied(FOREIGN_PARAMETERS_PERMISSION)
         if mode == "NEW_REVISION" and source.state != "COMPLETED":
             raise DomainError(
                 "NO_BASE_REVISION", 422,
@@ -1005,10 +1016,12 @@ def download_artifact(actor, perms, artifact_code):
         raise _permission_denied(SENSITIVE_PERMISSION)
     # §22.26: чужой артефакт скачивает тот, кому разрешены параметры чужого
     # отчёта — период выгрузки написан в ПЕРВОЙ СТРОКЕ файла.
-    owner = OpsServiceReportJob.objects.filter(
-        job_code=artifact.job_code
-    ).first()
-    if owner is not None and not _can_see_parameters(owner, actor, perms):
+    # Артефакт живёт дольше job, поэтому owner нельзя брать только из job.
+    # ``generated_by`` — неизменяемый снимок автора и тот же критерий, что
+    # у _can_see_parameters для существующей работы.
+    if artifact.generated_by != (actor or "") and not has_perm(
+        perms, FOREIGN_PARAMETERS_PERMISSION
+    ):
         raise _permission_denied(FOREIGN_PARAMETERS_PERMISSION)
     if Clock.now() >= artifact.expires_at:
         raise DomainError(
