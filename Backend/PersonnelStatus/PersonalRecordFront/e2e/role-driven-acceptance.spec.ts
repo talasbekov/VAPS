@@ -1032,6 +1032,12 @@ async function finishOmUI(page: Page, run: OmRun, phase: 'full' | 'ack' = 'full'
     }
   }
   for (const [eventIndex, eventId] of run.eventIds.entries()) {
+    // При повторном `OM_ACCEPTANCE_RESUME` уже закрытое ОМ нельзя снова
+    // искать среди «предстоящих» назначений: оно закономерно находится в
+    // истории. Финальная проверка ниже как раз подтверждает этот результат.
+    if ((await read(page, token, `/api/ops/security-events/${eventId}/`)).stage === 'CLOSED') {
+      continue
+    }
     for (const noaccount of [false, true]) {
       const username = noaccount ? 'acc_dir_head' : 'probe1090_participant'
       const ackToken = await role(page, username)
@@ -1132,11 +1138,17 @@ async function finishOmUI(page: Page, run: OmRun, phase: 'full' | 'ack' = 'full'
   }
   const participant = await role(page, 'probe1090_participant')
   await page.goto(`${APP}/security-ops/profile`)
-  await page.getByRole('tab', { name: 'История', exact: true }).click()
+  // Переключатели профиля — обычная навигация из кнопок, не ARIA tablist.
+  // Человек нажимает видимую кнопку «История»; роль `tab` никогда не
+  // существовала и останавливала уже завершённую бизнес-проходку.
+  await page.getByRole('button', { name: 'История', exact: true }).click()
   const history = await read(page, participant, '/api/ops/security-events/my-assignments/')
   for (const [index, eventId] of run.eventIds.entries()) {
     expect(history.results.find((row: { eventId: string }) => row.eventId === eventId).eventStage).toBe('CLOSED')
-    await expect(page.getByRole('link', { name: new RegExp(`${run.marker} ОМ${index + 1}`) })).toBeVisible()
+    // Рядовой участник видит название своего ОМ, но не получает `event.view`:
+    // EventLink намеренно становится текстом, чтобы не вести его на закрытую
+    // карточку. Приёмка проверяет именно видимую историю, не ложную ссылку.
+    await expect(page.getByText(new RegExp(`${run.marker} ОМ${index + 1}`))).toBeVisible()
   }
   await stableScreenshot(page, `/tmp/1090-${run.campaignId}-participant-history.png`)
   const analyst = await role(page, 'acc_ops_staff')

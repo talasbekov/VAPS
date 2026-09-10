@@ -309,29 +309,24 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
-        # Закрытие объекта (`[ЗАК-05]`, Plane №404) — под правом ведения
-        # мероприятия; разведение «старший объекта закрывает, замещающий — нет»
-        # (`[ЗАК-14]`) — карточка прав этапа 5, её в очереди пока нет.
+        # Закрытие объекта (`[ЗАК-05]`, Plane №404) — по global
+        # `event.manage` ИЛИ назначенному старшему конкретного объекта: вторую
+        # часть ниже строго сужает `permission_override` по visit id.
         "visit_object_close": _MANAGE_EVENT_PERMISSION,
-        # 🔴 ОЦЕНКИ ЭТАПА «ПРОВЕДЕНИЕ» ЗАКРЫТЫ ПРАВОМ ВЕДЕНИЯ ЦЕЛИКОМ — И НА
-        # ЧТЕНИЕ ТОЖЕ (`[ЗАК-02]`, Plane №433; комментарий выправлен по факту
-        # в №776).
+        # 🔴 ОЦЕНКИ ЭТАПА «ПРОВЕДЕНИЕ» ЗАКРЫТЫ ПРАВОМ ВЕДЕНИЯ — И НА ЧТЕНИЕ
+        # ТОЖЕ (`[ЗАК-02]`, Plane №433). Помимо global `event.manage` их
+        # открывает назначенный старший ТОГО ЖЕ объекта через object matrix
+        # ниже; читатель без роли в данных остаётся 403.
         #
         # Здесь стояло «читает тот, кто видит ОМ; ставит тот, кто его ведёт» —
         # контракт, которого НЕТ: обе строки под этой фразой ставят
         # `event.manage`, а `visit_object_evaluations` — одно действие DRF на
-        # GET и POST, и развести их правами, не разведя маршруты, нельзя в
-        # принципе. Врущий комментарий здесь дороже отсутствующего: следующий,
-        # кто придёт чинить панель оценок, поверит ему и примет 403 у читателя
-        # за дефект гейта, а не за правило.
+        # GET и POST. Object-chief проходит ту же ручку только после проверки
+        # именно его visit, поэтому «видит ОМ» по-прежнему не равно «читает
+        # оценки».
         #
-        # ФАКТ ПРИЗНАН ПРАВИЛОМ, а не поправлен на «как написано», потому что
-        # так же решено рядом: №695 закрывает оценки в «Скачать дело» тем, у
-        # кого прав на них нет. Открыть их читателю ОМ здесь значило бы
-        # развести два ответа на один вопрос «кому видны баллы людей».
-        # Отдельное право на ЧТЕНИЕ оценок (и разведение действия DRF на два
-        # маршрута) — решение заказчика и своя карточка, а не следствие
-        # правки комментария.
+        # Отдельное право на чтение оценок всему реестру по-прежнему не
+        # создаётся: object role не открывает чужой visit.
         "visit_object_evaluations": _MANAGE_EVENT_PERMISSION,
         "visit_object_evaluations_all": _MANAGE_EVENT_PERMISSION,
         # Выделение транспорта — правка мероприятия, а не отдельная область
@@ -2097,6 +2092,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         }
     )
 
+    #: Действия проведения адресуют объект явно в URL, кроме incident: у него
+    #: объект выводится из обязательного поста в теле. Руководитель события
+    #: ведёт все его объекты, руководитель объекта — только свой; никакой из
+    #: этих веток не открывает event-wide `close` или журнал без поста.
+    _CONDUCT_OBJECT_LEAD_ACTIONS = frozenset(
+        {
+            "visit_object_evaluations",
+            "visit_object_evaluations_all",
+            "visit_object_close",
+            "journal",
+        }
+    )
+
     # ── Исключение гейта: старший объекта ведёт согласование своего объекта ──
     #
     # `[СОГ-12]` (Plane №401): «старший объекта — отправить, отозвать, ответить
@@ -2153,6 +2161,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if self.action in self._PLACEMENT_OBJECT_LEAD_ACTIONS:
             if self._placement_object_lead_override(request):
                 return True
+        if self.action in self._CONDUCT_OBJECT_LEAD_ACTIONS:
+            if self._conduct_object_lead_override(request):
+                return True
         if self.action in self._OBJECT_LEAD_ACTIONS:
             return self._object_lead_override(request)
         if self.action not in self._DEPUTY_ACTIONS:
@@ -2183,6 +2194,44 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _conduct_object_lead_override(self, request):
+        """Старший ведёт Conduct лишь на объекте своей ответственности."""
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        # URL-параметр проходит сюда до обычного обработчика 404: берём
+        # мероприятие тем же безопасным путём, иначе ``/security-events/nope``
+        # превращается в ValueError ещё на проверке доступа.
+        event = self._bulletin_event(self.kwargs.get("pk"))
+        if event is None:
+            return False
+        if self.action == "journal":
+            data = request.data or {}
+            if data.get("type") != "INCIDENT":
+                return False
+            post_id = str(data.get("postId") or "").strip()
+            if post_id == "":
+                return False
+            visit = event_service._visit_of_post(event, post_id)
+        else:
+            try:
+                visit = event_service._visit_object_or_404(
+                    event, self.kwargs.get("visit_object_id")
+                )
+            except DomainError:
+                return False
+        if visit is None:
+            return False
+        if (
+            event.chief_employee_id is not None
+            and int(event.chief_employee_id) == int(employee.pk)
+        ):
+            return True
+        return bool(
+            visit.chief_employee_id is not None
+            and int(visit.chief_employee_id) == int(employee.pk)
+        )
 
     def _placement_object_lead_override(self, request):
         """Старший объекта без глобального права правит только свои посты."""

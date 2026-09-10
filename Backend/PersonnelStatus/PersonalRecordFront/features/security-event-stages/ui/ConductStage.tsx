@@ -32,6 +32,7 @@ import { useVisitObjectScope, VisitObjectPicker } from "./useVisitObjectScope";
 import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useMyEmployee } from "@/hooks/use-my-employee";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import type {
@@ -41,6 +42,57 @@ import type {
 import { PersonnelPicker } from "@/features/personnel-picker";
 import { FieldErrors, StageError } from "./StageErrors";
 import { JournalList } from "./JournalList";
+
+const CONDUCT_OBJECT_LEAD_REASON =
+  "Оценивать, фиксировать инциденты и закрывать объект могут ведущий ОМ или назначенный старший этого объекта.";
+
+/**
+ * Локальная половина серверного gate №1132. Общее `event.manage` по-прежнему
+ * открывает все объекты; без него назначенный старший мероприятия ведёт все
+ * его объекты, а старший объекта — только свой. Не подменяем неразрешённый
+ * профиль «временно доступной» кнопкой: до ответа `/me` действие закрыто.
+ */
+export function conductVisitRightsOf({
+  hasEventManage,
+  identityResolved,
+  myEmployeeId,
+  eventChiefEmployeeId,
+  visitChiefEmployeeId,
+}: {
+  hasEventManage: boolean;
+  identityResolved: boolean;
+  myEmployeeId: string | null;
+  eventChiefEmployeeId: string | null;
+  visitChiefEmployeeId: string | null;
+}): { canManage: boolean; reason: string } {
+  if (hasEventManage) return { canManage: true, reason: "" };
+  if (!identityResolved || myEmployeeId === null) {
+    return { canManage: false, reason: CONDUCT_OBJECT_LEAD_REASON };
+  }
+  const isEventChief =
+    eventChiefEmployeeId !== null && String(eventChiefEmployeeId) === myEmployeeId;
+  const isVisitChief =
+    visitChiefEmployeeId !== null && String(visitChiefEmployeeId) === myEmployeeId;
+  return {
+    canManage: isEventChief || isVisitChief,
+    reason: isEventChief || isVisitChief ? "" : CONDUCT_OBJECT_LEAD_REASON,
+  };
+}
+
+function useConductVisitRights(
+  event: SecurityEvent,
+  visit: SecurityEvent["visitObjects"][number] | null
+) {
+  const access = useChainAccess();
+  const me = useMyEmployee();
+  return conductVisitRightsOf({
+    hasEventManage: access.can(EVENT_MANAGE),
+    identityResolved: me.isSuccess && me.data?.employee != null,
+    myEmployeeId: me.data?.employee != null ? String(me.data.employee.id) : null,
+    eventChiefEmployeeId: event.chiefEmployeeId,
+    visitChiefEmployeeId: visit?.chiefEmployeeId ?? null,
+  });
+}
 
 export function ConductStage({ event }: { event: SecurityEvent }) {
   /**
@@ -63,10 +115,6 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
    * этом этапе они те же, что читают панели (`event.reconSectorPosts`).
    */
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
-  // Право читается и здесь: блок причин обязан знать текст, который скажет
-  // ОДИН РАЗ за обе панели. Внутри панелей `useChainAccess` остаётся — он
-  // отвечает на другой вопрос, «включать ли кнопку», и живёт рядом с ней.
-  const access = useChainAccess();
   // Порядок панелей — по шестому шагу прототипа: «Закрытие и итоги» первым,
   // потому что шаг называется закрытием и ради него сюда и приходят. «Контроль
   // постов» идёт вторым — он даёт разрез той же сводки и объясняет, кого
@@ -83,31 +131,23 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
       />
       <EvaluationPanel event={event} />
       <IncidentsPanel event={event} />
-      {/* 🔴 ПРИЧИНА ОТКАЗА — ОДИН РАЗ НА ПАРУ, А НЕ У КАЖДОЙ КНОПКИ
-          (Plane №913, конвенция №801). Обе панели закрытия рисуются на
-          «Проведении» ОДНОВРЕМЕННО, обе кнопки закрыты ОДНИМ правом, и обе
-          печатали свою копию одной и той же фразы — тот самый «частокол»,
-          ради которого `AccessHints` и появился.
-
-          🔴 БЛОК СТОИТ ЗДЕСЬ, А НЕ НАВЕРХУ ЭТАПА. Карточек в колонке восемь,
-          и общий блок над первой из них оказался бы за два экрана прокрутки
-          от кнопок: человек, доскроллив до серой кнопки, не увидел бы причины
-          ВОВСЕ — это хуже повтора, а не лучше. Панели закрытия идут подряд,
-          поэтому блок охватывает ровно их две и стоит вплотную. Для читалки
-          расстояние безразлично — связь держит `aria-describedby`, — но
-          глазами причина читается там, где стоит.
-
-          Остальные шесть карточек этапа права `event.manage` не спрашивают,
-          и в блок им попадать не с чем. */}
-      <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>
-        <VisitObjectClosurePanel event={event} />
+      <VisitObjectClosurePanel event={event} />
+      {/* Закрытие мероприятия целиком остаётся штабным действием с общим
+          `event.manage`; объектное закрытие выше управляется своим scoped
+          gate и не должно наследовать эту причину отказа. */}
+      <GlobalClosureAccessHint>
         <ClosurePanel event={event} />
-      </AccessHints>
+      </GlobalClosureAccessHint>
       <PostControlPanel event={event} />
       <JournalPanel event={event} />
       <ReplacementPanel event={event} />
     </div>
   );
+}
+
+function GlobalClosureAccessHint({ children }: { children: React.ReactNode }) {
+  const access = useChainAccess();
+  return <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>{children}</AccessHints>;
 }
 
 /**
@@ -434,14 +474,8 @@ const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 function EvaluationPanel({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const visit = scope.visit;
-  // 🔴 ПАНЕЛЬ ЗАКРЫТА ТЕМ ЖЕ ПРАВОМ, ЧТО И ОСТАЛЬНЫЕ ДЕЙСТВИЯ ЭТАПА (Plane
-  // №644). Обе ручки оценок требуют `event.manage`, а гард стоял только у
-  // «Завершить этап» и «Закрыть объект»: читатель ОМ получал 403 на сводку,
-  // видел «Оценки не загрузились — обновите страницу» и десять включённых
-  // кнопок шкалы в каждой строке, каждая из которых отвечала 403.
-  const access = useChainAccess();
-  const canManage = access.can(EVENT_MANAGE);
-  const query = useVisitEvaluations(event.id, visit?.id ?? null, canManage);
+  const rights = useConductVisitRights(event, visit);
+  const query = useVisitEvaluations(event.id, visit?.id ?? null, rights.canManage);
   const lockedHintId = `evaluation-locked-${event.id}`;
   const setScore = useSetEvaluation(event.id, visit?.id ?? "");
   const scoreAll = useScoreAll(event.id, visit?.id ?? "");
@@ -465,7 +499,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
           <p className="text-xs text-muted-foreground" data-slot="evaluation-progress">
             {summary
               ? `Оценено ${summary.evaluated} из ${summary.total}`
-              : canManage
+              : rights.canManage
                 ? "Загрузка…"
                 : "Сводка закрыта правом"}
           </p>
@@ -475,14 +509,14 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
             type="button"
             variant="outline"
             size="sm"
-            disabled={busy || !canManage || !summary || summary.evaluated === summary.total}
+            disabled={busy || !rights.canManage || !summary || summary.evaluated === summary.total}
             // 🔴 БЕЗ `title` (Plane №714): на выключенной кнопке браузер
             // подавляет указательные события, а с ними и подсказку — она
             // показалась бы ровно тогда, когда показаться не может. Причина
             // стоит ВИДИМОЙ строкой ниже, а связь с кнопкой держит
             // `aria-describedby`: фокуса выключенная кнопка не получает, но
             // виртуальный курсор читалки до неё доходит.
-            aria-describedby={canManage ? undefined : lockedHintId}
+            aria-describedby={rights.canManage ? undefined : lockedHintId}
             onClick={() => scoreAll.mutate({ score: 10 })}
           >
             Всем 10
@@ -492,7 +526,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
       <CardContent className="space-y-4">
         <StageError error={setScore.error} />
         <StageError error={scoreAll.error} />
-        {!canManage ? (
+        {!rights.canManage ? (
           // Не ошибка и не пустота, а закрытая дверь: «обновите страницу»
           // здесь было бы советом, который не может помочь.
           //
@@ -509,7 +543,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
             className="text-sm text-muted-foreground"
             data-slot="evaluation-locked"
           >
-            {access.reason(EVENT_MANAGE)}
+            {rights.reason}
           </p>
         ) : (
           query.isError && (
@@ -577,7 +611,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
                               key={value}
                               type="button"
                               aria-pressed={row.score === value}
-                              disabled={closed || busy}
+                              disabled={closed || busy || !rights.canManage}
                               className={
                                 "h-8 min-w-8 rounded-md border px-2 text-xs tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-60 " +
                                 (row.score === value
@@ -601,7 +635,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
                             className="h-8 text-xs"
                             placeholder="Комментарий (необязательно)"
                             aria-label={`Комментарий к оценке: ${row.employeeName}`}
-                            disabled={closed}
+                            disabled={closed || !rights.canManage}
                             value={commentOf(row)}
                             onChange={(e) =>
                               setDrafts((prev) => ({
@@ -657,17 +691,17 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
       setComment("");
     },
   });
-  const access = useChainAccess();
   const visit = scope.visit;
+  const rights = useConductVisitRights(event, visit);
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
   // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают. Ручка закрыта
-  // тем же `event.manage`, что и сама кнопка «Закрыть объект» ниже, поэтому
+  // тем же scoped-правом, что и сама кнопка «Закрыть объект» ниже, поэтому
   // без права запрос не отправляется (Plane №644): диалога закрытия читателю
   // всё равно не открыть, а 403 при каждом возврате фокуса — чистый шум.
   const evaluations = useVisitEvaluations(
     event.id,
     visit?.id ?? null,
-    access.can(EVENT_MANAGE)
+    rights.canManage
   );
   // Смена объекта в шапке — это ДРУГОЙ объект и другой черновик (Plane №610).
   // Эффект, а не `key` на компоненте: `key` пересоздал бы и запрос сводки
@@ -744,12 +778,12 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 виртуальный курсор читалки до подписи доходит. Тем же приёмом
                 закрыта панель оценок выше (№644). */}
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <RightGate reason={access.reason(EVENT_MANAGE)}>
+              <RightGate reason={rights.reason}>
                 {(describedBy) => (
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={!access.can(EVENT_MANAGE)}
+                    disabled={!rights.canManage}
                     aria-describedby={describedBy}
                     onClick={() => setOpen(true)}
                   >
@@ -900,6 +934,16 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
  * «+ Добавить» — форма; пусто — одна строка «Инцидентов не было».
  */
 function IncidentsPanel({ event }: { event: SecurityEvent }) {
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  const visit = scope.visit;
+  const rights = useConductVisitRights(event, visit);
+  const access = useChainAccess();
+  const canAdd = access.can(EVENT_MANAGE) || (visit !== null && rights.canManage);
+  // Человек без общего права выбирает только посты видимого объекта. Это не
+  // косметический фильтр: backend №1132 сверяет тот же postId с объектом.
+  const availablePosts = access.can(EVENT_MANAGE)
+    ? event.reconSectorPosts
+    : scope.rows;
   const [open, setOpen] = useState(false);
   const [occurredAt, setOccurredAt] = useState("");
   const [postId, setPostId] = useState("");
@@ -922,6 +966,10 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
       setPostId("");
     },
   });
+  useEffect(() => {
+    setOpen(false);
+    setPostId("");
+  }, [visit?.id]);
   const incidents = event.journalEntries.filter((e) => e.type === "INCIDENT");
   const postName = (id: string | null | undefined) => {
     const post = event.reconSectorPosts.find((p) => p.id === id);
@@ -931,9 +979,20 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
     <Card data-slot="incidents-panel">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Инциденты и замечания</CardTitle>
-        <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
-          + Добавить
-        </Button>
+        <RightGate reason={rights.reason}>
+          {(describedBy) => (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canAdd}
+              aria-describedby={describedBy}
+              onClick={() => setOpen((v) => !v)}
+            >
+              + Добавить
+            </Button>
+          )}
+        </RightGate>
       </CardHeader>
       <CardContent className="space-y-3">
         {incidents.length === 0 ? (
@@ -965,7 +1024,7 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
             ))}
           </ul>
         )}
-        {open && (
+        {open && canAdd && (
           <div className="grid gap-2 rounded-md border p-3 md:grid-cols-2" data-slot="incident-form">
             <div className="space-y-1">
               <Label htmlFor="incident-time">Время</Label>
@@ -979,8 +1038,8 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
                 value={postId}
                 onChange={(e) => setPostId(e.target.value)}
               >
-                <option value="">— не привязан —</option>
-                {event.reconSectorPosts.map((post) => (
+                <option value="">— выберите пост —</option>
+                {availablePosts.map((post) => (
                   <option key={post.id} value={post.id}>
                     {post.sector} · {post.post}
                   </option>
@@ -1008,7 +1067,7 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
               <Button
                 type="button"
                 size="sm"
-                disabled={add.isPending}
+                disabled={add.isPending || postId === ""}
                 onClick={() => {
                   setFieldErrors(null);
                   add.mutate({
@@ -1016,7 +1075,7 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
                     title,
                     description,
                     measures,
-                    postId: postId || null,
+                    postId,
                     occurredAt: occurredAt ? new Date(occurredAt).toISOString() : null,
                   });
                 }}
