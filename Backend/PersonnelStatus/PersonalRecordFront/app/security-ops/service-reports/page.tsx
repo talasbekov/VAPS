@@ -6,10 +6,12 @@
 // приходят метаданные; содержимое появляется в памяти вкладки ровно на время
 // сохранения файла.
 import { useMemo, useState } from "react";
+import { FileSpreadsheet, FileText, Info, ScrollText } from "lucide-react";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { ReportSectionCard } from "@/components/reports/report-section-card";
 import {
   useCreateReportJob,
   useDownloadArtifact,
@@ -142,8 +144,8 @@ export default function ServiceReportsPage() {
       <div className="space-y-4">
         <PageHeader
           eyebrow="Охранные мероприятия"
-          title="Отчёты службы"
-          description="Асинхронное формирование отчётов, метаданные артефактов и выгрузка."
+          title="Отчёты по ОМ"
+          description="Единый каталог документов ОМ: асинхронное формирование, история и выгрузка в PDF."
         />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">
@@ -170,16 +172,14 @@ export default function ServiceReportsPage() {
         )}
 
         {reportType !== null && typesQuery.data !== undefined && (
-          <section
+          <ReportSectionCard
             role="group"
             aria-label="Форма запуска отчёта"
-            className="rounded-xl border bg-card p-4"
+            icon={FileSpreadsheet}
+            iconClassName="text-green-600"
+            title={reportType.safeTitle}
+            description={reportType.description}
           >
-            <div className="mb-1 text-sm font-semibold">{reportType.safeTitle}</div>
-            <p className="mb-3 text-xs text-muted-foreground">
-              {reportType.description}
-            </p>
-
             <div className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 text-xs font-semibold">
                 Начало периода
@@ -251,24 +251,21 @@ export default function ServiceReportsPage() {
                 {createJob.error.message}
               </p>
             )}
-          </section>
+          </ReportSectionCard>
         )}
 
-        {/* Документы ОМ. Отдельная секция, а не строка в форме отчёта:
+        {/* Документы ОМ. Отдельная карточка, а не строка в форме отчёта:
             отчёт — это ЗАДАНИЕ (очередь, срок, повтор, ревизия), а документ
             собирается одним ответом и ничего после себя не оставляет. Свести
             их в одно место значило бы обещать документу жизненный цикл,
             которого у него нет. */}
-        <section
+        <ReportSectionCard
           role="group"
           aria-label="Выгрузка документов ОМ"
-          className="rounded-xl border bg-card p-4"
+          icon={FileText}
+          title="Документы по мероприятию"
+          description="Готовый файл по форме документа: DOCX для правки руками, PDF для печати и отправки. Собирается сразу, в очередь работ не попадает."
         >
-          <h2 className="mb-1 text-sm font-semibold">Документы по мероприятию</h2>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Готовый файл по форме документа: DOCX для правки руками, PDF для
-            печати и отправки. Собирается сразу, в очередь работ не попадает.
-          </p>
           {documentKinds.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка видов документов…</p>
           ) : documentKinds.data === undefined ? (
@@ -513,10 +510,9 @@ export default function ServiceReportsPage() {
               )}
             </div>
           )}
-        </section>
+        </ReportSectionCard>
 
-        <section className="rounded-xl border bg-card p-4">
-          <h2 className="mb-2 text-sm font-semibold">Работы и артефакты</h2>
+        <ReportSectionCard icon={ScrollText} title="Работы и артефакты">
           {jobsQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
           ) : jobsQuery.data === undefined ? (
@@ -614,13 +610,14 @@ export default function ServiceReportsPage() {
               {download.error.message}
             </p>
           )}
-        </section>
+        </ReportSectionCard>
 
         {typesQuery.data !== undefined && (
-          <section className="rounded-xl border border-dashed bg-muted/30 p-4">
-            <h2 className="mb-2 text-sm font-semibold">
-              Что отчёт не содержит и почему
-            </h2>
+          <ReportSectionCard
+            className="border-dashed bg-muted/30"
+            icon={Info}
+            title="Что отчёт не содержит и почему"
+          >
             <ul className="flex flex-col gap-2">
               {[
                 ...typesQuery.data.maskedFields,
@@ -633,7 +630,7 @@ export default function ServiceReportsPage() {
                 </li>
               ))}
             </ul>
-          </section>
+          </ReportSectionCard>
         )}
       </div>
     </DashboardLayout>
