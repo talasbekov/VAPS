@@ -42,7 +42,8 @@ import {
 } from "lucide-react";
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
-import { apiClient } from "@/lib/api";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -121,6 +122,9 @@ export function PlannedStatusesDialog({
   const statusTypes = catalogTypes.filter(
     (item) => !EVENT_PARTICIPATION_STATUS_CODES.has(item.code)
   );
+  // Справочник ОМ нужен не для второго раздела, а чтобы дать строкам обеих
+  // моделей одну подпись и распознать точный дубль через legacy_code.
+  const opsStatusTypes = useOpsStatusTypes(open);
   // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
   // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
   // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
@@ -137,6 +141,7 @@ export function PlannedStatusesDialog({
   const [statuses, setStatuses] = useState<PlannedStatusesResponse | null>(
     null
   );
+  const [opsStatuses, setOpsStatuses] = useState<OpsEmployeeStatusRow[]>([]);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{
     status_type: string;
@@ -207,6 +212,7 @@ export function PlannedStatusesDialog({
     if (!employeeIdNum) {
       setError("Сотрудник не найден или вакантная должность");
       setStatuses(null);
+      setOpsStatuses([]);
       return;
     }
 
@@ -214,10 +220,12 @@ export function PlannedStatusesDialog({
       try {
         setLoading(true);
         setError(null);
-        const response = await apiClient.getEmployeePlannedStatuses(
-          employeeIdNum
-        );
-        setStatuses(response);
+        const [employeeStatuses, sectionStatuses] = await Promise.all([
+          apiClient.getEmployeePlannedStatuses(employeeIdNum),
+          apiClient.getOpsStatusesFor(employeeIdNum),
+        ]);
+        setStatuses(employeeStatuses);
+        setOpsStatuses(sectionStatuses);
         setEditingStatusId(null); // Сброс редактирования при обновлении
       } catch (e) {
         const message =
@@ -226,6 +234,7 @@ export function PlannedStatusesDialog({
             : "Не удалось загрузить данные о статусах";
         setError(message);
         setStatuses(null);
+        setOpsStatuses([]);
       } finally {
         setLoading(false);
       }
@@ -233,6 +242,30 @@ export function PlannedStatusesDialog({
 
     fetchStatuses();
   }, [open, employeeIdNum]);
+
+  // Одна и та же будущая запись иногда существует в обеих таблицах во время
+  // переходного периода. Совпадение считается дублем только при одинаковых
+  // каноническом типе и границах периода; кадровая карточка остаётся, потому
+  // что её можно править из этого окна. Самостоятельные строки ОМ сохраняются.
+  const plannedOpsStatuses = useMemo(() => {
+    const legacyCodeByOpsCode = new Map(
+      opsStatusTypes.all.map((type) => [type.code, type.legacy_code])
+    );
+    const employeeKeys = new Set(
+      (statuses?.planned ?? []).map(
+        (status) =>
+          `${status.status_type}|${status.start_date ?? ""}|${status.end_date ?? ""}`
+      )
+    );
+    return opsStatuses.filter((row) => {
+      if (row.state !== "PLANNED") return false;
+      const canonicalCode =
+        legacyCodeByOpsCode.get(row.status_type_code) ?? row.status_type_code;
+      return !employeeKeys.has(
+        `${canonicalCode}|${row.date_start}|${row.date_end}`
+      );
+    });
+  }, [opsStatusTypes.all, opsStatuses, statuses?.planned]);
 
   const handleEditClick = (status: EmployeeStatusDto) => {
     setEditingStatusId(status.id);
@@ -255,7 +288,12 @@ export function PlannedStatusesDialog({
   /** Перечитать статусы и освежить таблицу под диалогом. */
   const reloadStatuses = async () => {
     if (!employeeIdNum) return;
-    setStatuses(await apiClient.getEmployeePlannedStatuses(employeeIdNum));
+    const [employeeStatuses, sectionStatuses] = await Promise.all([
+      apiClient.getEmployeePlannedStatuses(employeeIdNum),
+      apiClient.getOpsStatusesFor(employeeIdNum),
+    ]);
+    setStatuses(employeeStatuses);
+    setOpsStatuses(sectionStatuses);
     // Обе семьи ключей: сводка шапки и страницы таблицы — разные запросы.
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
     queryClient.invalidateQueries({ queryKey: ["staff-units-page"] });
@@ -758,11 +796,11 @@ export function PlannedStatusesDialog({
                   </Button>
                 )}
               </div>
-              {statuses.planned.length > 0 ? (
+              {statuses.planned.length + plannedOpsStatuses.length > 0 ? (
                 <div className="space-y-3">
                   {statuses.planned.map((status) => (
                     <div
-                      key={status.id}
+                      key={`employee-${status.id}`}
                       className="rounded-lg border p-4 flex flex-col gap-2 bg-card relative group"
                     >
                       {editingStatusId === status.id && editForm ? (
@@ -977,6 +1015,48 @@ export function PlannedStatusesDialog({
                             </div>
                           )}
                         </>
+                      )}
+                    </div>
+                  ))}
+                  {plannedOpsStatuses.map((status) => (
+                    <div
+                      key={`operations-${status.id}`}
+                      data-status-source="operations"
+                      className="rounded-lg border p-4 flex flex-col gap-3 bg-card"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className={naming.colorOf(status.status_type_code)}>
+                          {opsStatusTypes.labelOf(status.status_type_code)}
+                        </Badge>
+                        <Badge variant="outline">Запланирован</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-foreground">
+                        <div>
+                          <div className="font-medium">Дата начала</div>
+                          <div>{formatDate(status.date_start)}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium">Дата окончания</div>
+                          <div>{formatDate(status.date_end)}</div>
+                        </div>
+                      </div>
+                      {status.comment && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Комментарий: </span>
+                          {status.comment}
+                        </div>
+                      )}
+                      {status.participations.length > 0 && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Мероприятия: </span>
+                          {status.participations
+                            .map((participation) =>
+                              participation.event_code === ""
+                                ? `удалено из реестра (№${participation.event_id})`
+                                : `${participation.event_code} · ${participation.event_title}`
+                            )
+                            .join("; ")}
+                        </div>
                       )}
                     </div>
                   ))}

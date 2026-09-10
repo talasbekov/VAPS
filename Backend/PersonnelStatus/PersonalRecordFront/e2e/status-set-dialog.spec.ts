@@ -32,6 +32,9 @@
  * Первая версия пробы била в первого попавшегося и на втором прогоне падала
  * 409 по собственному следу — падение было её, а не кода.
  */
+import { execFile } from 'node:child_process'
+import path from 'node:path'
+import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { localIsoDate } from './business-date'
 import { clickRowMenuItem, staffedRow } from './row-menu'
@@ -41,6 +44,10 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+const execFileAsync = promisify(execFile)
+const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
+const BACKEND_PYTHON = path.join(BACKEND_ROOT, '.venv/bin/python')
+const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
 
 async function signIn(
   page: Page,
@@ -73,6 +80,8 @@ interface StaffRow {
 
 interface PlannedStatusFixture {
   id: number
+  marker: string
+  employeeId: number
   employeeName: string
   statusLabel: string
   startDate: string
@@ -84,6 +93,15 @@ interface PlannedStatusFixture {
   savedEndDate: string
 }
 
+interface HrStatusSnapshot {
+  id: number
+  state: string
+  status_type: string
+  start_date: string | null
+  end_date: string | null
+  comment: string
+}
+
 const shiftedIso = (days: number): string => {
   const date = new Date()
   date.setDate(date.getDate() + days)
@@ -93,13 +111,16 @@ const shiftedIso = (days: number): string => {
 const displayIsoDate = (value: string): string => value.split('-').reverse().join('.')
 
 /**
- * Адресная фикстура для №1112: будущий КАДРОВЫЙ статус заводит та же
- * non-admin роль, которая затем открывает его в интерфейсе. Берём сотрудника
- * только с первой страницы её области — строка гарантированно будет видна в
- * таблице. Конфликт периода у одного сотрудника не повод менять чужие данные:
- * пробуем следующего и отменяем только созданный нами status id в `finally`.
+ * Адресная фикстура для №1112: сотрудника берём с первой страницы области
+ * non-admin роли, а будущую строку ОМ создаёт выделенная management command.
+ * Она не вызывает кадровый сервис, не закрывает «В строю» и помечает строку
+ * уникальным marker. В штатном cleanup проверяются marker и точный id; marker
+ * известен до create и позволяет убрать строку даже при непарсируемом ответе.
  */
-async function seedPlannedStatus(token: string): Promise<PlannedStatusFixture> {
+async function seedPlannedStatus(
+  token: string,
+  marker: string,
+): Promise<PlannedStatusFixture> {
   const staffResponse = await fetch(
     `${API}/api/staff_unit/staff-units/directorate/?page=1&page_size=50`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -114,66 +135,80 @@ async function seedPlannedStatus(token: string): Promise<PlannedStatusFixture> {
 
   const startDate = shiftedIso(45)
   const endDate = shiftedIso(48)
-  const comment = `Проба №1112 ${Date.now()}`
-  const rejected: string[] = []
-
-  for (const row of rows) {
-    const response = await fetch(`${API}/api/statuses/statuses/`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        employee: row.employee.id,
-        status_type: 'business_trip',
-        start_date: startDate,
-        end_date: endDate,
-        comment,
-      }),
-    })
-    const body = await response.text()
-    if (response.status !== 201) {
-      rejected.push(`${row.employee.id}: HTTP ${response.status} ${body}`)
-      continue
-    }
-    const created = JSON.parse(body) as {
-      id: number
-      state: string
-      status_type: string
-      status_type_display: string
-      start_date: string
-      end_date: string
-    }
-    return {
-      id: created.id,
-      employeeName: `${row.employee.last_name} ${row.employee.first_name}`,
-      statusLabel: created.status_type_display,
+  const employee = rows[0].employee
+  const { stdout } = await execFileAsync(
+    BACKEND_PYTHON,
+    [
+      'manage.py',
+      'status_dialog_probe',
+      'create',
+      '--employee-id',
+      String(employee.id),
+      '--start-date',
       startDate,
+      '--end-date',
       endDate,
-      comment,
-      savedState: created.state,
-      savedStatusType: created.status_type,
-      savedStartDate: created.start_date,
-      savedEndDate: created.end_date,
-    }
-  }
-
-  throw new Error(
-    `ни одному сотруднику первой страницы не удалось адресно завести будущий статус: ${rejected.join('; ')}`,
+      '--marker',
+      marker,
+      `--settings=${DJANGO_SETTINGS}`,
+    ],
+    { cwd: BACKEND_ROOT, timeout: 120_000 },
   )
+  const created = JSON.parse(stdout.trim()) as {
+    id: number
+    state: string
+    status_type: string
+    status_label: string
+    start_date: string
+    end_date: string
+    marker: string
+  }
+  return {
+    id: created.id,
+    marker,
+    employeeId: employee.id,
+    employeeName: `${employee.last_name} ${employee.first_name}`,
+    statusLabel: created.status_label,
+    startDate,
+    endDate,
+    comment: created.marker,
+    savedState: created.state,
+    savedStatusType: created.status_type,
+    savedStartDate: created.start_date,
+    savedEndDate: created.end_date,
+  }
 }
 
-async function cancelPlannedStatus(token: string, statusId: number): Promise<void> {
-  const response = await fetch(`${API}/api/statuses/statuses/${statusId}/cancel/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ reason: 'Уборка адресной пробы №1112' }),
-  })
-  expect(response.status, `не удалось убрать созданный пробой статус ${statusId}`).toBe(200)
+async function purgePlannedStatus(statusId: number | null, marker: string): Promise<void> {
+  const statusIdArgs = statusId === null ? [] : ['--status-id', String(statusId)]
+  const { stdout } = await execFileAsync(
+    BACKEND_PYTHON,
+    [
+      'manage.py',
+      'status_dialog_probe',
+      'purge',
+      ...statusIdArgs,
+      '--marker',
+      marker,
+      `--settings=${DJANGO_SETTINGS}`,
+    ],
+    { cwd: BACKEND_ROOT, timeout: 120_000 },
+  )
+  const result = JSON.parse(stdout.trim()) as { deleted_statuses: number; remaining: number }
+  if (statusId !== null) {
+    expect(result.deleted_statuses, `фикстура ОМ ${statusId} не была удалена`).toBe(1)
+  }
+  expect(result.remaining, `фикстура ОМ ${statusId} осталась после purge`).toBe(0)
+}
+
+async function hrStatuses(token: string, employeeId: number): Promise<HrStatusSnapshot[]> {
+  const response = await fetch(
+    `${API}/api/statuses/statuses/?employee=${employeeId}&page=1&page_size=200`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  const body = (await response.json()) as { results?: HrStatusSnapshot[] }
+  expect(response.status, 'не удалось снять контрольный кадровый срез').toBe(200)
+  return (body.results ?? []).sort((left, right) => left.id - right.id)
 }
 
 
@@ -275,12 +310,18 @@ test.describe('расход: постановка статуса с меропр
     test.skip(MATRIX_PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
     const username = 'acc_dir_head_d2'
     const token = await tokenFor(username, MATRIX_PASSWORD)
-    const seeded = await seedPlannedStatus(token)
+    const marker = `status-dialog-e2e:${process.pid}:${Date.now()}`
+    let seeded: PlannedStatusFixture | null = null
+    let hrBefore: HrStatusSnapshot[] | null = null
 
     try {
-      expect(seeded.savedState, 'будущий статус сервер не оставил запланированным').toBe('planned')
+      seeded = await seedPlannedStatus(token, marker)
+      hrBefore = await hrStatuses(token, seeded.employeeId)
+      expect(seeded.savedState, 'будущий статус ОМ сервер не оставил запланированным').toBe(
+        'PLANNED',
+      )
       expect(seeded.savedStatusType, 'сервер сохранил другой тип будущего статуса').toBe(
-        'business_trip',
+        'STUDY',
       )
       expect(seeded.savedStartDate, 'сервер изменил дату начала будущего статуса').toBe(
         seeded.startDate,
@@ -327,7 +368,13 @@ test.describe('расход: постановка статуса с меропр
         'окно статусов продолжает показывать отдельный учёт ОМ вместо единого списка',
       ).toHaveCount(0)
     } finally {
-      await cancelPlannedStatus(token, seeded.id)
+      await purgePlannedStatus(seeded?.id ?? null, marker)
+      if (seeded !== null && hrBefore !== null) {
+        expect(
+          await hrStatuses(token, seeded.employeeId),
+          'browser-фикстура изменила кадровые статусы живого сотрудника',
+        ).toEqual(hrBefore)
+      }
     }
   })
 })
