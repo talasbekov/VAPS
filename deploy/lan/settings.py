@@ -12,3 +12,9 @@ for logger in LOGGING['loggers'].values():
     logger['handlers'] = ['console']
 # A closed network may provide SMTP later; do not try an external mail service.
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Swagger/Redoc must work without fetching JavaScript or CSS from a CDN.
+INSTALLED_APPS = [*INSTALLED_APPS, 'drf_spectacular_sidecar']
+SPECTACULAR_SETTINGS = {**SPECTACULAR_SETTINGS,
+    'SWAGGER_UI_DIST': 'SIDECAR', 'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR'}
