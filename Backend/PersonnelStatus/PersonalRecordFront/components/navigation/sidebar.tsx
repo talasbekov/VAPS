@@ -196,12 +196,14 @@ function NavLink({
   icon: Icon,
   active,
   counter,
+  disabled = false,
 }: {
   href: string;
   name: string;
   icon: LucideIcon;
   active: boolean;
   counter?: { value: number; hint: string };
+  disabled?: boolean;
 }) {
   // Метка «В разработке» у пункта (Plane №450) — из того же реестра, что и у
   // шапки экрана. Внутри ссылки она СКРЫТА от скринридера, а список читается
@@ -210,6 +212,22 @@ function NavLink({
   // следом, а не вклинивается в имя.
   const note = inDevelopmentOfRoute(href);
   const noteId = useId();
+  if (disabled) {
+    return (
+      <span
+        role="link"
+        aria-disabled="true"
+        aria-describedby={noteId}
+        tabIndex={0}
+        title="Нет доступа. Обратитесь к администратору за назначением роли."
+        className={`${ITEM_CLASS} cursor-not-allowed text-sidebar-foreground/50`}
+      >
+        <Icon className="mr-3 h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="flex-1">{name}</span>
+        <span id={noteId} className="sr-only">Нет доступа. Обратитесь к администратору за назначением роли.</span>
+      </span>
+    );
+  }
   return (
     <>
     <Link
@@ -420,23 +438,13 @@ function SidebarContent() {
   const activeHref = pathname === '/employees' && workspace
     ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
     : activeRouteHref;
-  const visibleCategories = categories.map((category) => ({
-    ...category,
-    items: category.items.filter((item) => {
-      if (user === null) return true;
-      // ПОРТАЛЬНЫХ ПРАВ БОЛЬШЕ НЕТ (Plane №352, Ш-1). Раньше здесь стояла
-      // ветка `item.resource` — набор ресурсов зашитой портальной роли из
-      // `lib/auth.tsx`. Заказчик потребовал работать по семи ролям, а они
-      // живут в каталоге РАЗДЕЛА, поэтому и портальные пункты спрашивают
-      // раздел. Одна дорога вместо двух.
-      if (opsPermissionsLoading) return true;
-      return moduleOpenFor(
-        item.href.split("?")[0],
-        hasOpsPermission,
-        (code) => sectionRoles.some((role) => role.code === code),
-      );
-    }),
-  })).filter((category) => category.items.length > 0);
+  // №1158: разделы остаются видимыми по правилу блока2 от 10.09.2026.
+  // Закрытый пункт не содержит href, не загружает страницу и не показывает счётчик.
+  const itemDisabled = (item: NavItem) => user === null || opsPermissionsLoading || !moduleOpenFor(
+    item.href.split("?")[0],
+    hasOpsPermission,
+    (code) => sectionRoles.some((role) => role.code === code),
+  );
 
   // Сквозной счётчик для stagger-анимации: задержка считается от начала
   // меню, а не от начала своей категории, иначе пункты разных категорий
@@ -572,7 +580,7 @@ function SidebarContent() {
           className="h-full overflow-y-auto px-4 py-3"
           aria-label="Основная навигация"
         >
-          {visibleCategories.map((category, categoryIndex) => {
+          {categories.map((category, categoryIndex) => {
             const headingId = `sidebar-category-${categoryIndex}`;
             return (
               <div key={category.title} className={categoryIndex > 0 ? "mt-4" : undefined}>
@@ -603,6 +611,7 @@ function SidebarContent() {
                           name={item.name}
                           icon={item.icon}
                           active={item.href === activeHref}
+                          disabled={itemDisabled(item)}
                           counter={
                             item.counter === undefined
                               ? undefined
