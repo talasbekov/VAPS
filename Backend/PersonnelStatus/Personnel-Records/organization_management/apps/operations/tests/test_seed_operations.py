@@ -261,10 +261,11 @@ def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
     assert {"analytics.view"} <= granted("HEAD_DEPARTMENT_LINE")
     assert {"analytics.view"} <= granted("FORCES_GATHERING_OFFICER")
 
-    # Отчёты по ОМ (`report.generate`) — только у второго департамента.
-    assert holders("report.generate") >= {"HEAD_OPS_UNIT"}
+    # Отчёты по Службе (`report.generate`) открыты начальнику департамента
+    # и руководителям второго департамента. Начальник управления линейного
+    # департамента и ответственный за сбор сил этого права не получают.
+    assert holders("report.generate") >= {"HEAD_OPS_UNIT", "HEAD_DEPARTMENT_LINE"}
     assert "report.generate" not in granted("HEAD_DIRECTORATE_LINE")
-    assert "report.generate" not in granted("HEAD_DEPARTMENT_LINE")
     assert "report.generate" not in granted("FORCES_GATHERING_OFFICER")
 
     # Сбор сил — по разделу 7 спецификации и `[ШТБ-01]`–`[ШТБ-04]` (Plane

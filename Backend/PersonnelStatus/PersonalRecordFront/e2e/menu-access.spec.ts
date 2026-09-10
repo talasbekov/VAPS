@@ -179,8 +179,9 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
 
   test('отчёт CSV службы находится в ежедневном расходе без входа из ОМ', async ({ page }) => {
     // Не администратор: иначе wildcard `*` способен скрыть расхождение
-    // между реальным правом `report.generate` и тем, что видит руководитель.
-    await signIn(page, 'acc_dept_head_d2')
+    // между реальным правом `report.generate` и тем, что видит начальник
+    // линейного департамента в области `dept_other` (Plane №1125).
+    await signIn(page, 'acc_dept_head')
     await page.goto(`${APP}/security-ops/profile`)
 
     const menu = page.locator('aside')
@@ -199,7 +200,40 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     await expect(page.getByRole('heading', { name: 'Отчёты службы' })).toBeVisible()
     await page.getByLabel('Начало периода').fill('2026-09-09')
     await page.getByLabel('Конец периода').fill('2026-09-10')
-    await expect(page.getByRole('button', { name: 'Сформировать отчёт' })).toBeEnabled()
+    const create = page.getByRole('button', { name: 'Сформировать отчёт' })
+    await expect(create).toBeEnabled()
+    await create.click()
+
+    const jobLink = page.getByRole('link', { name: 'Карточка работы' }).first()
+    await expect(jobLink).toBeVisible({ timeout: 30_000 })
+    await jobLink.click()
+    await expect(page).toHaveURL(/\/security-ops\/service-reports\/report-job-/)
+
+    const download = page.getByRole('button', { name: 'Скачать', exact: true })
+    await expect(download).toBeEnabled({ timeout: 30_000 })
+    // Клиент получает JSON с содержимым и сохраняет Blob сам: Playwright
+    // не обязан сообщать событие native-download. Проверяем реальную выдачу
+    // CSV по защищённой ручке, а не внутренний механизм браузерной загрузки.
+    const saved = page.waitForResponse((response) =>
+      response.request().method() === 'POST' &&
+      /\/service-report-artifacts\/[^/]+\/download\/?$/.test(response.url()),
+    )
+    await download.click()
+    await expect((await saved).status()).toBe(200)
+  })
+
+  test('отчёты службы закрыты начальнику управления', async ({ page }) => {
+    // Соседняя роль отличается уровнем области, но не должна получить
+    // `report.generate`: отчёт формирует начальник департамента, не управления.
+    await signIn(page, 'acc_dir_head')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+    await expect(itemByHref(menu, '/security-ops/service-reports')).toHaveCount(0)
+
+    await page.goto(`${APP}/security-ops/service-reports`)
+    await expect(page.getByText(DENIED)).toBeVisible()
   })
 
   test('карта прав покрывает каждый пункт меню', async () => {
