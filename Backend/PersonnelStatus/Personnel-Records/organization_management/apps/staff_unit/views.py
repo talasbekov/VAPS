@@ -593,7 +593,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         ).select_related(
             # `employee__rank` — вместе с сотрудником: звание печатается в
             # КАЖДОЙ строке списка, без него был бы запрос на строку.
-            'division', 'position', 'employee', 'employee__rank', 'vacancy'
+            'division', 'position', 'employee', 'employee__rank',
+            'employee__user', 'vacancy'
         ).prefetch_related(
             # Правило «какой статус действующий» и его префетч — в
             # `statuses.selectors`, одним куском. Своя копия здесь уже
@@ -626,6 +627,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         # Создаем плоский список с полной информацией (БЕЗ children)
         result = []
+        can_manage_staffing = user.is_superuser or CanManageStaffingTable().has_permission(
+            request, self
+        )
         for unit in staff_units:
             unit_data = {
                 'id': unit.id,
@@ -713,6 +717,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         'end_date': current_status.end_date,
                     } if current_status else None
                 }
+                # Идентификаторы кадрового редактирования не входят в общий
+                # реестр статусов. Их получает только тот, кто этой же ручкой
+                # вправе писать штатное расписание (Plane №1153).
+                if can_manage_staffing:
+                    unit_data['management'] = {
+                        'staff_unit_id': unit.id,
+                        'middle_name': unit.employee.middle_name,
+                        'callsign': unit.employee.callsign,
+                        'rank_id': unit.employee.rank_id,
+                        'user': ({
+                            'id': unit.employee.user_id,
+                            'username': unit.employee.user.username,
+                        } if unit.employee.user_id else None),
+                        'is_active': unit.employee.is_active,
+                    }
 
             # Vacancy
             if unit.vacancy:
@@ -999,7 +1018,14 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         last_name=employee_data.get('last_name', ''),
                         middle_name=employee_data.get('middle_name', ''),
                         iin=employee_data.get('iin', ''),
+                        callsign=employee_data.get('callsign', ''),
                     )
+
+                    if employee_data.get('user'):
+                        from django.contrib.auth import get_user_model
+                        employee.user = get_user_model().objects.get(
+                            id=employee_data['user'], employee__isnull=True
+                        )
 
                     # Валидация перед сохранением (проверит ИИН)
                     employee.full_clean()
@@ -1316,7 +1342,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     )
 
                     # Обновляем только разрешенные поля
-                    allowed_fields = ['first_name', 'last_name', 'middle_name', 'iin']
+                    allowed_fields = [
+                        'first_name', 'last_name', 'middle_name', 'iin',
+                        'callsign', 'is_active',
+                    ]
                     for field in allowed_fields:
                         if field in employee_data:
                             setattr(employee, field, employee_data[field])
@@ -1335,6 +1364,18 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         else:
                             employee.rank = None
 
+                    if 'user' in employee_data:
+                        user_id = employee_data['user']
+                        if user_id:
+                            if employee.user_id != int(user_id):
+                                from django.contrib.auth import get_user_model
+                                employee.user = get_user_model().objects.get(
+                                    id=user_id, employee__isnull=True
+                                )
+                        else:
+                            employee.user = None
+
+                    employee.full_clean()
                     employee.save()
                     updated_items['employees'] += 1
 
