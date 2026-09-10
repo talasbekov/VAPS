@@ -566,7 +566,6 @@ class StatusApplicationService:
 
         return applied_statuses
 
-    @transaction.atomic
     def complete_expired_statuses(self, target_date: Optional[date] = None) -> List[EmployeeStatus]:
         """
         Завершение статусов, срок которых истек
@@ -576,6 +575,16 @@ class StatusApplicationService:
 
         Returns:
             List[EmployeeStatus]: Список завершенных статусов
+
+        🔴 ПО СТРОКЕ, А НЕ ОДНОЙ ТРАНЗАКЦИЕЙ НА ВЕСЬ ПРОГОН (Plane №1113).
+        Раньше весь метод был одной `@transaction.atomic`: свалившийся на
+        ОДНОМ сотруднике `create_status` (например, `full_clean` откажет на
+        противоречивых датах) откатывал ЗАВЕРШЕНИЕ статусов ВСЕХ остальных за
+        этот прогон — а после Plane №961 (задача больше не глотает исключение
+        молча) это стало бы ежедневным падением всей пачки, не одной строки.
+        Тот же приём, что уже стоит в `apply_planned_statuses`: своя
+        транзакция и `continue` на строку, чтобы один плохой сотрудник не
+        оставлял без актуального статуса всех остальных.
         """
         if target_date is None:
             target_date = timezone.localdate()
@@ -587,17 +596,26 @@ class StatusApplicationService:
 
         completed_statuses = []
         for status in expired_statuses:
-            status.state = EmployeeStatus.StatusState.COMPLETED
-            status.save()
-            completed_statuses.append(status)
+            try:
+                with transaction.atomic():
+                    status.state = EmployeeStatus.StatusState.COMPLETED
+                    status.save()
 
-            # Автоматически создаем статус "В строю" после завершения
-            if status.status_type != EmployeeStatus.StatusType.IN_SERVICE:
-                self.create_status(
-                    employee_id=status.employee_id,
-                    status_type=EmployeeStatus.StatusType.IN_SERVICE,
-                    start_date=status.end_date + timedelta(days=1)
+                    # Автоматически создаем статус "В строю" после завершения
+                    if status.status_type != EmployeeStatus.StatusType.IN_SERVICE:
+                        self.create_status(
+                            employee_id=status.employee_id,
+                            status_type=EmployeeStatus.StatusType.IN_SERVICE,
+                            start_date=status.end_date + timedelta(days=1)
+                        )
+            except ValidationError as error:
+                logger.warning(
+                    "Истёкший статус %s (сотрудник %s) не завершён: %s",
+                    status.pk, status.employee_id, error,
                 )
+                continue
+
+            completed_statuses.append(status)
 
         return completed_statuses
 
