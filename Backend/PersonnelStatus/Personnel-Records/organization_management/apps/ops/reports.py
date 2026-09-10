@@ -17,7 +17,7 @@ sensitive-право, владельца параметров и срок хра
 import datetime as dt
 import uuid
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
@@ -902,29 +902,48 @@ def create_report_job(actor, perms, body):
             created_by_user_id=actor or "", idempotency_key=idempotency_key
         ).first()
         if existing is not None:
+            # Повторная отправка тем же актором не должна обойти отзыв либо
+            # перенос grant: работа остаётся снимком исходной области.
+            if not _scope_allows(existing.scope_division_ids, scope_division_ids):
+                raise _not_found(existing.job_code)
             return _project_job(existing, True)
         # Работа создаётся В ОЖИДАНИИ: §22.21 «success показывай только
         # после COMPLETED и получения artifactId».
-        job = OpsServiceReportJob.objects.create(
-            job_code=f"tmp-{uuid.uuid4().hex}",
-            report_type_code=report_type.report_type_code,
-            format=body.get("format"),
-            state="PENDING",
-            progress_percent=None,
-            requested_at=Clock.now(),
-            created_by_user_id=actor or "",
-            created_by_label=actor or "",
-            completed_at=None,
-            failure_code=None,
-            safe_failure_message=None,
-            artifact_code=None,
-            idempotency_key=idempotency_key,
-            sensitive=sensitive,
-            param_from=param_from,
-            param_to=param_to,
-            scope_division_ids=scope_division_ids,
-        )
-        _stamp_code(job, "job_code", "report-job")
+        job_created = False
+        try:
+            # Savepoint оставляет внешнюю транзакцию пригодной для lookup,
+            # если параллельный запрос того же актора выиграл unique-гонку.
+            with transaction.atomic():
+                job = OpsServiceReportJob.objects.create(
+                    job_code=f"tmp-{uuid.uuid4().hex}",
+                    report_type_code=report_type.report_type_code,
+                    format=body.get("format"),
+                    state="PENDING",
+                    progress_percent=None,
+                    requested_at=Clock.now(),
+                    created_by_user_id=actor or "",
+                    created_by_label=actor or "",
+                    completed_at=None,
+                    failure_code=None,
+                    safe_failure_message=None,
+                    artifact_code=None,
+                    idempotency_key=idempotency_key,
+                    sensitive=sensitive,
+                    param_from=param_from,
+                    param_to=param_to,
+                    scope_division_ids=scope_division_ids,
+                )
+                job_created = True
+        except IntegrityError:
+            # Единственная ожидаемая коллизия здесь — actor+key. Не прячем
+            # остальные integrity failures за успешным идемпотентным ответом.
+            job = OpsServiceReportJob.objects.filter(
+                created_by_user_id=actor or "", idempotency_key=idempotency_key
+            ).first()
+            if job is None:
+                raise
+        if job_created:
+            _stamp_code(job, "job_code", "report-job")
         return _project_job(job, True)
 
 

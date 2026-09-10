@@ -474,7 +474,7 @@ ROLE_PERMISSIONS = {
     # `SECTION_READ`) на своей области; мероприятия по всей организации от
     # этого не сузились — их даёт `event.view`, который остался здесь.
     "OM_CATEGORY_ORG": [
-        "event.view", "catalog.view", "analytics.operations", "report.generate",
+        "event.view", "catalog.view", "analytics.operations",
         "personnel.view", "document.view",
     ],
 
