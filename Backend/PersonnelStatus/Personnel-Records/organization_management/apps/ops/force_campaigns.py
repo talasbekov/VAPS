@@ -229,6 +229,31 @@ def hand_over(campaign_id, *, comment, actor):
     by_event = {}
     for assignment in assignments:
         by_event.setdefault(assignment.event_id, []).append(assignment)
+    # Validate every campaign event before writing any handover, including
+    # events that have no assignments at all. A shortage may be explained,
+    # but a published object with demand cannot enter placement empty.
+    for link in campaign.campaign_events.select_related("event"):
+        event = link.event
+        published = published_visit_ids(event)
+        for visit in event.visit_objects.all():
+            if published is not None and str(visit.pk) not in published:
+                continue
+            demands = [
+                row for row in (event.demand_rows or [])
+                if str(row.get("visitObjectId") or "") == str(visit.pk)
+            ]
+            if sum(int(row.get("need") or 0) for row in demands) <= 0:
+                continue
+            demand_ids = {str(row.get("id") or "") for row in demands}
+            if not any(
+                row.visit_object_id == visit.pk and row.demand_row_id in demand_ids
+                for row in by_event.get(event.pk, [])
+            ):
+                raise DomainError(
+                    "FORCE_VISIT_UNSTAFFED", 422,
+                    message=(f"{event.code}: объект «{visit.object_name}» не укомплектован. "
+                             "Назначьте хотя бы одного сотрудника перед передачей в расстановку."),
+                )
     now = timezone.now().isoformat()
     actor_key = str(actor or "")
     handovers = []

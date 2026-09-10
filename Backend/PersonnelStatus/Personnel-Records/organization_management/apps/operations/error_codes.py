@@ -143,6 +143,7 @@ CODES = {
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
     "FORCE_OBJECTS_NOT_READY": frozenset({422}),
+    "FORCE_VISIT_UNSTAFFED": frozenset({422}),
     "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
     "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),

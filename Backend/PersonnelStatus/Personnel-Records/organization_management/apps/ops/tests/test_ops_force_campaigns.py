@@ -216,6 +216,84 @@ def test_time_overlap_needs_an_explicit_override_reason(manager):  # noqa: F811
     assert overridden.json()["assignments"][-1]["overrideReason"] == "Разрешено начальником штаба"
 
 
+@pytest.mark.parametrize("same_event", [True, False])
+def test_handover_refuses_a_published_positive_need_visit_without_any_assignment(manager, same_event):
+    """№1106: комментарий о недоборе не разрешает полностью пустой объект."""
+    from organization_management.apps.operations.models_forces import OpsForceCampaign
+
+    make_assignment_status_type()
+    first_data = create_event(manager, make_object(code="FIRST-1106"), business_date="2026-09-14").json()
+    first = OpsSecurityEvent.objects.get(pk=first_data["id"])
+    first_visit = first.visit_objects.get()
+    if same_event:
+        missing_event = first
+        missing_visit = first.visit_objects.create(
+            security_object=make_object(code="MISSING-1106"),
+            object_name="Неукомплектованный объект №1106", position=1,
+        )
+    else:
+        data = create_event(manager, make_object(code="MISSING-1106", name="Неукомплектованный объект №1106"), business_date="2026-09-15").json()
+        missing_event = OpsSecurityEvent.objects.get(pk=data["id"])
+        missing_visit = missing_event.visit_objects.get()
+    events = {first.pk: first, missing_event.pk: missing_event}
+    for event in events.values():
+        event.visit_objects.update(stage="PLACEMENT")
+        event.stage = "PLACEMENT"
+        event.demand_rows = [
+            {"id": f"demand-{visit.pk}", "visitObjectId": str(visit.pk), "kindCode": "PHYSICAL_SQUAD", "need": 2}
+            for visit in event.visit_objects.all()
+        ]
+        event.save(update_fields=["stage", "demand_rows", "updated_at"])
+    person = make_employee(last_name="Проверка1106", first_name="Резерв")
+    first.force_roster = [{"employeeId": str(person.pk), "employeeName": "Проверка1106 Резерв"}]
+    first.save(update_fields=["force_roster", "updated_at"])
+    campaign = manager.post(URL, {"title": "Проверка №1106", "eventIds": [str(pk) for pk in events]}, format="json").json()
+    assigned = manager.post(f"{URL}{campaign['id']}/assignments/", {
+        "employeeId": str(person.pk), "eventId": str(first.pk),
+        "visitObjectId": str(first_visit.pk), "demandRowId": f"demand-{first_visit.pk}",
+    }, format="json")
+    assert assigned.status_code == 201, assigned.json()
+    before = {pk: (event.force_roster, event.force_handover) for pk, event in events.items()}
+    response = manager.post(f"{URL}{campaign['id']}/hand-over/", {"comment": "Недобор объяснён, но один объект совсем пуст"}, format="json")
+    assert response.status_code == 422, response.json()
+    assert response.json()["error_code"] == "FORCE_VISIT_UNSTAFFED"
+    assert missing_event.code in response.json()["message"]
+    assert missing_visit.object_name in response.json()["message"]
+    for pk, event in events.items():
+        event.refresh_from_db()
+        assert (event.force_roster, event.force_handover) == before[pk]
+    persisted_campaign = OpsForceCampaign.objects.get(pk=campaign["id"])
+    assert persisted_campaign.status == "DISTRIBUTING"
+    assert not persisted_campaign.handovers.exists()
+
+
+def test_handover_allows_explained_shortage_when_each_positive_need_visit_has_a_person(manager):
+    make_assignment_status_type()
+    event = OpsSecurityEvent.objects.get(pk=create_event(manager, make_object(code="PARTIAL-1106")).json()["id"])
+    visit = event.visit_objects.get()
+    event.visit_objects.create(security_object=make_object(code="ZERO-1106"), object_name="Объект без потребности", position=1)
+    event.stage = "PLACEMENT"
+    event.visit_objects.update(stage="PLACEMENT")
+    event.demand_rows = [{"id": "partial-demand", "visitObjectId": str(visit.pk), "kindCode": "PHYSICAL_SQUAD", "need": 2}]
+    people = [make_employee(last_name="Неполный1106", first_name=name) for name in ["Назначен", "Резерв"]]
+    event.force_roster = [{"employeeId": str(person.pk), "employeeName": str(person)} for person in people]
+    event.save(update_fields=["stage", "demand_rows", "force_roster", "updated_at"])
+    campaign = manager.post(URL, {"title": "Объяснённый недобор", "eventIds": [str(event.pk)]}, format="json").json()
+    assigned = manager.post(f"{URL}{campaign['id']}/assignments/", {
+        "employeeId": str(people[0].pk), "eventId": str(event.pk),
+        "visitObjectId": str(visit.pk), "demandRowId": "partial-demand",
+    }, format="json")
+    assert assigned.status_code == 201, assigned.json()
+    missing_comment = manager.post(f"{URL}{campaign['id']}/hand-over/", {}, format="json")
+    assert missing_comment.status_code == 400
+    response = manager.post(f"{URL}{campaign['id']}/hand-over/", {"comment": "Второе место ожидает усиления"}, format="json")
+    assert response.status_code == 200, response.json()
+    assert response.json()["status"] == "HANDED_OVER"
+    event.refresh_from_db()
+    assert len(event.force_roster) == 1
+    assert event.force_handover["comment"] == "Второе место ожидает усиления"
+
+
 def test_handover_projects_assignments_to_event_rosters_and_locks_campaign(manager):  # noqa: F811
     make_assignment_status_type()
     source = _event(manager, code="HANDOVER-POOL", date="2026-09-11")
