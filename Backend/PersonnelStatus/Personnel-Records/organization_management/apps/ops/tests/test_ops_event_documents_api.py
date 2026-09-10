@@ -124,27 +124,28 @@ def test_document_comes_back_as_a_real_pdf(reader):
     assert base64.b64decode(body["contentBase64"])[:4] == b"%PDF"
 
 
-def test_the_handle_offers_both_formats_and_renders_docx(reader):
-    """Ручка называет форматы и собирает DOCX с верным content-type.
+def test_the_handle_offers_pdf_only_and_rejects_docx(reader):
+    """Каталог называет ровно один формат — PDF (Plane №986, [ОТЧ-ОМ-04]).
 
-    Тип содержимого — не украшение: по нему браузер решает, чем открыть файл.
-    Отдать Word под `application/pdf` значит отдать файл, который не
-    открывается ничем.
+    До №986 ручка называла `["docx", "pdf"]` и собирала оба по запросу
+    человека. Прямое решение заказчика 26-27.08.2026 сняло DOCX из
+    пользовательской выгрузки; DOCX-шаблон и конвертер остаются ВНУТРИ
+    сборщика (PDF без них не собрать) — снаружи, по `ext=docx`, теперь отказ,
+    а не файл.
     """
     api = reader
 
     listed = api.get(LIST_URL).json()
-    assert [row["format"] for row in listed["formats"]] == ["docx", "pdf"]
+    assert [row["format"] for row in listed["formats"]] == ["pdf"]
+
     # Параметр называется `ext`, а НЕ `format`: имя `format` занято самим DRF
     # (URL_FORMAT_OVERRIDE) под выбор рендерера, и `?format=docx` отвечает 404
     # ещё до вьюхи. Найдено этой пробой — она и стережёт имя.
+    response = api.get(RENDER_URL, {"kind": "bulletin", "ext": "docx"})
 
-    body = api.get(RENDER_URL, {"kind": "bulletin", "ext": "docx"}).json()
-
-    assert body["fileName"].endswith(".docx")
-    assert body["contentType"] == (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert response.json()["details"]["ext"] == ["Формат бывает: pdf"]
 
 
 def test_the_handle_still_renders_pdf_without_a_format(reader):

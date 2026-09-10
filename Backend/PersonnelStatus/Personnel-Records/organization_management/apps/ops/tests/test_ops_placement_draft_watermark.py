@@ -9,6 +9,7 @@ import io
 
 import pytest
 
+from organization_management.apps.ops import documents_registry
 from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
     approver,
     manager,
@@ -48,7 +49,13 @@ def test_the_pdf_is_a_draft_until_the_object_is_approved(
 
     # До отправки и во время согласования — проект.
     assert "ПРОЕКТ" in text_of(_pdf(manager, code, first))
-    assert b"PK" == _pdf(manager, code, first, fmt="docx")[:2]  # DOCX — без знака, это zip
+    # DOCX — прямым вызовом генератора, а не HTTP (Plane №986): пользовательский
+    # формат ручки теперь только PDF, `ext=docx` отвечает 400. Сам DOCX-шаблон
+    # и конвертер живы — этот вызов и доказывает, что знак в шаблон не зашит.
+    docx_payload, _ = documents_registry.render(
+        "placement", event_code=code, fmt="docx", visit_object_id=str(first.pk)
+    )
+    assert docx_payload[:2] == b"PK"  # DOCX — без знака, это zip
 
     row = _add_approver(manager, base, first)
     approver_id = row["visitObjects"][0]["approvalRoute"][0]["id"] if row.get("visitObjects") else None

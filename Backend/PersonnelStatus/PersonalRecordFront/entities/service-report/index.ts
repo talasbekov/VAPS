@@ -591,11 +591,13 @@ export interface EventDocumentKind {
 }
 
 /**
- * Формат выгрузки. DOCX — то, что просил заказчик (Plane №156): образцы это
- * рабочие бланки Word, их дозаполняют руками после выгрузки. PDF рядом нужен,
- * когда документ идут печатать или отправлять и правок в нём не ждут.
+ * Формат выгрузки — ТОЛЬКО PDF (Plane №986, [ОТЧ-ОМ-04]). До №986 здесь стоял
+ * `"docx" | "pdf"`: заказчик просил DOCX (Plane №156, образцы — рабочие
+ * бланки Word), позднее прямым решением 26-27.08.2026 отменил это для
+ * пользовательской выгрузки — сервер и это отражает, `list_formats()` теперь
+ * отдаёт единственную запись.
  */
-export type EventDocumentFormat = "docx" | "pdf";
+export type EventDocumentFormat = "pdf";
 
 export interface EventDocumentFormatOption {
   format: EventDocumentFormat;
