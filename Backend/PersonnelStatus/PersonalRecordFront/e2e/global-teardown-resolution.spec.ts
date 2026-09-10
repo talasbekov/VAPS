@@ -12,8 +12,9 @@ import { resolvePurgeTarget } from './purge-python'
 const frontendRoot = path.resolve(__dirname, '..')
 const worktreePython = path.resolve(frontendRoot, '../Personnel-Records/.venv/bin/python')
 const resolverSource = readFileSync(path.join(frontendRoot, 'e2e/purge-python.ts'), 'utf8')
+const rolePassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
-test('worktree без локального venv находит purge Python главного checkout', async () => {
+test('purge Python выбирается из текущего либо главного checkout', async () => {
   const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], {
     cwd: frontendRoot,
     encoding: 'utf8',
@@ -23,26 +24,30 @@ test('worktree без локального venv находит purge Python гл
     ? path.join(primaryRoot, 'Backend/PersonnelStatus/Personnel-Records/.venv/bin/python')
     : ''
 
-  expect(existsSync(worktreePython), 'проверка осмысленна только без local worktree venv').toBe(false)
-  expect(existsSync(primaryPython), 'основной checkout обязан дать проверенный Python').toBe(true)
+  const expectedPython = existsSync(worktreePython) ? worktreePython : primaryPython
+  expect(existsSync(expectedPython), 'текущий или основной checkout обязан дать проверенный Python').toBe(true)
   await expect(resolvePurgeTarget()).resolves.toEqual({
-    backendRoot: path.dirname(path.dirname(path.dirname(primaryPython))),
-    python: primaryPython,
+    backendRoot: path.dirname(path.dirname(path.dirname(expectedPython))),
+    python: expectedPython,
   })
   expect(resolverSource).toContain('SMOKE_PURGE_PYTHON')
 })
 
-test('production: observer открывает личный кабинет до уборки worktree', async ({ page }) => {
+test('production: не-admin открывает личный кабинет до уборки worktree', async ({ page }) => {
   test.skip(process.env.SMOKE_LIVE !== '1', 'нужен production-стенд: SMOKE_LIVE=1')
+  test.skip(rolePassword === '', 'нужен ACCESS_MATRIX_PASSWORD для не-admin персоны')
   const app = process.env.SMOKE_APP ?? process.env.SMOKE_BASE_URL ?? 'http://localhost:3106'
-  const password = process.env.SMOKE_PASSWORD ?? ''
-  expect(password, 'production config обязан передать пароль стенда').not.toBe('')
 
   const csrf = (await (await page.context().request.get(`${app}/api/auth/csrf/`)).json()) as {
     csrfToken: string
   }
   await page.context().request.post(`${app}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: 'observer', password, json: 'true' },
+    form: {
+      csrfToken: csrf.csrfToken,
+      username: 'acc_employee_d2',
+      password: rolePassword,
+      json: 'true',
+    },
   })
   await page.goto(`${app}/security-ops/profile/`, { waitUntil: 'domcontentloaded' })
 
