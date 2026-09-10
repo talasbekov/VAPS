@@ -732,6 +732,23 @@ test('production рабочие места: settled desktop и mobile двух �
   }
 })
 
+test('№1126: ответственный открывает рабочее место без 403 счётчика Реестра ОМ', async ({ page }) => {
+  test.setTimeout(90_000)
+  const forbiddenRegistryResponses: string[] = []
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (response.status() === 403 && url.pathname === '/api/ops/security-events/') {
+      forbiddenRegistryResponses.push(response.url())
+    }
+  })
+
+  await role(page, 'acc_forces_officer')
+  await page.goto(`${APP}/employees`)
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Рабочий стол', exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  expect(forbiddenRegistryResponses, 'Sidebar не должен вызывать недоступный ответственного реестр ради счётчика').toEqual([])
+})
+
 test('диагностика прав завершения ознакомления текущей UI кампании', async ({ page }) => {
   const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
   for (const username of ['acc_dir_head_d2', 'acc_dept_head_d2', 'probe1090_senior']) {

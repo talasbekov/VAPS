@@ -347,27 +347,6 @@ function SidebarContent() {
   const searchParams = useSearchParams();
   const query = new URLSearchParams(searchParams);
 
-  // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
-  // не нужны, нужно число, и тащить ради бейджа страницу мероприятий было бы
-  // расточительством на каждом экране приложения. Отказ (нет права `event.view`
-  // — сервер отвечает 403) гасит бейдж целиком: пустое место честнее нуля,
-  // который читался бы как «мероприятий нет».
-  const eventsCount = useSecurityEvents({
-    search: "",
-    stage: "ALL",
-    page: 1,
-    from: "",
-    to: "",
-    owner: "",
-    pageSize: 1,
-  });
-  const counters: Record<NonNullable<NavItem["counter"]>, { value: number; hint: string } | null> = {
-    events:
-      eventsCount.data === undefined
-        ? null
-        : { value: eventsCount.data.count, hint: "Мероприятий в реестре" },
-  };
-
   // Подсвечивается ОДИН пункт — самый длинный подошедший адрес. Простое
   // `startsWith` зажигало бы «Аналитику службы» (/security-ops/analytics)
   // заодно с «Аналитикой ОМ» (/security-ops/analytics/operations): второй
@@ -396,6 +375,27 @@ function SidebarContent() {
     isLoading: opsPermissionsLoading,
     roles: sectionRoles,
   } = access;
+  // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
+  // не нужны, нужно число, и тащить ради бейджа страницу мероприятий было бы
+  // расточительством на каждом экране приложения. Важно ждать уже загруженную
+  // матрицу прав: до неё нельзя угадывать, что `event.view` есть, иначе
+  // ответственный за сбор сил получает 403 за элемент, который его меню затем
+  // всё равно скрывает. Пустое место честнее нуля и не является ошибкой сети.
+  const eventsCount = useSecurityEvents({
+    search: "",
+    stage: "ALL",
+    page: 1,
+    from: "",
+    to: "",
+    owner: "",
+    pageSize: 1,
+  }, { enabled: !opsPermissionsLoading && hasOpsPermission("event.view") });
+  const counters: Record<NonNullable<NavItem["counter"]>, { value: number; hint: string } | null> = {
+    events:
+      eventsCount.data === undefined
+        ? null
+        : { value: eventsCount.data.count, hint: "Мероприятий в реестре" },
+  };
   // Подпись внизу меню: первая роль раздела. Их может быть несколько — полный
   // состав виден в профиле, а строка в 256px не место для списка.
   const sidebarRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
