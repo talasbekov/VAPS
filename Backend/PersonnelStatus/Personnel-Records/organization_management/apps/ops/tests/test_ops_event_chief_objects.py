@@ -159,7 +159,7 @@ def test_gvo_manager_capability_matches_object_chief_mutation():
     assert assigned.status_code == 200, assigned.content
 
 
-def test_bulletin_creator_does_not_appoint_visit_object_chiefs():
+def test_bulletin_creator_cannot_remove_visit_object_or_appoint_its_chief():
     """`[ОМ-РШ-06]` отделяет правку бюллетеня от управления объектами."""
     creator, _ = client_for(
         "objects-bulletin-creator",
@@ -175,13 +175,18 @@ def test_bulletin_creator_does_not_appoint_visit_object_chiefs():
     visit_id = event.visit_objects.get(security_object=visit_object).pk
     base = f"{URL}{event_id}/"
 
-    denied = creator.post(
+    denied_chief = creator.post(
         f"{base}visit-objects/{visit_id}/chief/",
         {"employeeId": str(object_chief.pk)},
         format="json",
     )
+    denied_removal = creator.delete(f"{base}visit-objects/{visit_id}/")
 
-    assert denied.status_code == 403, denied.content
+    assert denied_chief.status_code == 403, denied_chief.content
+    assert denied_removal.status_code == 403, denied_removal.content
+    assert OpsSecurityEvent.objects.get(pk=event_id).visit_objects.filter(
+        pk=visit_id
+    ).exists()
     assert creator.get(base).json()["canManageVisitObjects"] is False
 
 
