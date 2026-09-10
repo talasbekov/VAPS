@@ -27,7 +27,10 @@ ENV NODE_OPTIONS=--max-old-space-size=2048
 # NextAuth fail-closed config is evaluated during prerender too. Use a
 # non-secret value only for this build command; runtime receives the real
 # NEXTAUTH_SECRET from the deployment environment.
-RUN NEXTAUTH_SECRET=build-only-placeholder npm run build
+# Dependencies are already complete in the deps stage. Calling the host-facing
+# npm wrapper here would require bash on Alpine and would try to bootstrap a
+# second tree after NODE_ENV=production has hidden build-time devDependencies.
+RUN NEXTAUTH_SECRET=build-only-placeholder ./node_modules/.bin/next build
 
 # ---------------------------------------------------------------- prod-deps
 # sharp и его нативные зависимости ставятся из зафиксированного package-lock.
