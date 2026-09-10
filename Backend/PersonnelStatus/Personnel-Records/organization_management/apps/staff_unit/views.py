@@ -526,6 +526,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         user = request.user
 
         if request.method not in permissions.SAFE_METHODS:
+            # Любая запись этой ручки уже допущена `orgstructure.manage` в
+            # get_permissions; область обязана происходить из того же права,
+            # а не зависеть от набора полей или маркера конкретного клиента.
+            request._directorate_manage_scope = True
             employee_rows = request.data.get('employees') or []
             protected_employee_write = (
                 (request.method == 'POST' and bool(employee_rows))
@@ -539,7 +543,6 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     require_permission,
                 )
                 require_permission(request, 'admin.roles')
-                request._directorate_manage_scope = True
 
         # ── Кто сюда допущен ───────────────────────────────────────────────
         #
