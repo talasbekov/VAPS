@@ -7,9 +7,9 @@ done
 COMPOSE_VERSION="$(docker compose version --short)"
 python3 - "$COMPOSE_VERSION" <<'PYVER'
 import re,sys
-parts=re.findall(r'\d+',sys.argv[1])
-if len(parts)<2 or tuple(map(int,parts[:2])) < (2,20):
-    raise SystemExit('Docker Compose >=2.20 is required (multiple env files and offline --wait startup)')
+version=re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?',sys.argv[1].strip())
+if not version or tuple(map(int,version.groups())) < (2,17,2):
+    raise SystemExit('Docker Compose >=2.17.2 is required (multiple env files and offline --wait startup)')
 PYVER
 MODE="${1:-}"
 if [[ -n "$MODE" && "$MODE" != --restore ]]; then
