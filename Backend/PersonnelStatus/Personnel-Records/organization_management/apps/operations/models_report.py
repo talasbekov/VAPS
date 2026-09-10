@@ -93,6 +93,9 @@ class OpsServiceReportArtifact(TimeStampedModel):
     report_type_code = models.CharField(max_length=100)
     safe_title = models.CharField(max_length=255)
     format = models.CharField(max_length=10)
+    # Hash канонических типа+периода+режима+scope: JSON NULL не годится для
+    # series uniqueness, а порядок JSON-массива не определяет документ.
+    series_key = models.CharField(max_length=64)
     revision = models.IntegerField()
     generated_at = models.DateTimeField()
     generated_by = models.CharField(max_length=255)
@@ -116,6 +119,10 @@ class OpsServiceReportArtifact(TimeStampedModel):
         verbose_name_plural = "Артефакты служебных отчётов"
         ordering = ["-generated_at", "-id"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["series_key", "revision"],
+                name="uq_ops_report_artifact_series_revision",
+            ),
             models.CheckConstraint(
                 condition=models.Q(revision__gte=1),
                 name="chk_ops_report_artifact_revision",
