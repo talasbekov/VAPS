@@ -20,6 +20,23 @@ MEDIA_ROOT = '/data/media'
 OPS_PRIVATE_STORAGE_ROOT = '/data/private'
 OPS_XACCEL_ENABLED = True
 
+# redis 8 defaults socket reads to 5s, equal to Channels' BZPOPMIN wait.
+# Let Redis's blocking-command timeout finish the read; keep connection setup
+# bounded. This affects the channel layer only, not the application cache.
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [{
+                'host': REDIS_HOST,
+                'port': int(REDIS_PORT),
+                'socket_timeout': None,
+                'socket_connect_timeout': 5,
+            }],
+        },
+    },
+}
+
 # No worker/beat service is shipped in this phase. Scheduled status processing
 # and deferred reports remain unavailable (documented in the contour runbook).
 # Keep the real broker for visibility of queued work; never silently discard it.
