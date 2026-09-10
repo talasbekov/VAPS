@@ -246,7 +246,7 @@ class Command(BaseCommand):
             self._require_ops_roles()
             rows = [self._persona(p, scopes, password) for p in PERSONAS]
 
-        self._report(rows, scopes, password)
+        self._report(rows, scopes)
 
     # ── Подразделения ───────────────────────────────────────────────────────
 
@@ -425,7 +425,7 @@ class Command(BaseCommand):
         parent = scope.parent
         return f"{scope.name} ({parent.name})" if parent else scope.name
 
-    def _report(self, rows, scopes, password: str) -> None:
+    def _report(self, rows, scopes) -> None:
         second = scopes["dept_second"]
         other = scopes["dept_other"]
         self.stdout.write(
@@ -441,7 +441,7 @@ class Command(BaseCommand):
             employee = row["employee"]
             self.stdout.write(f"{persona.title}")
             self.stdout.write(f"    логин:      {persona.username}")
-            self.stdout.write(f"    пароль:     {password}")
+            self.stdout.write("    пароль:     задан (значение не выводится)")
             self.stdout.write(f"    область:    {self._where(scope)}")
             self.stdout.write(
                 "    роли раздела ОМ: "

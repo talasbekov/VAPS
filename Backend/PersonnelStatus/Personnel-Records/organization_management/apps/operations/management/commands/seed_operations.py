@@ -538,6 +538,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
+            "--reference-only",
+            action="store_true",
+            help=(
+                "Завести только роли, права, политики и оперативные справочники; "
+                "не создавать демонстрационные рейтинги, аналитику, отчёты и обращения."
+            ),
+        )
+        parser.add_argument(
             "--assign",
             action="append",
             default=[],
@@ -821,10 +829,26 @@ class Command(BaseCommand):
             self.style.SUCCESS("Seeded ops settings and dictionaries")
         )
 
-        self._seed_ratings(options.get("rating_evaluator"))
+        # Эти каталоги и singleton-настройки нужны пустому рабочему контуру:
+        # строки фактов они не создают. Исторически они находились рядом с
+        # мок-данными, поэтому reference-only обязан вызвать их явно.
+        self._seed_rating_settings()
         self._seed_analytics()
         self._seed_reports()
-        self._seed_feedback(options.get("feedback_author"))
+        self._seed_feedback(
+            options.get("feedback_author"),
+            include_demo=not options["reference_only"],
+        )
+
+        if options["reference_only"]:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Reference-only seed complete; demo operations data was not created"
+                )
+            )
+            return
+
+        self._seed_ratings(options.get("rating_evaluator"))
 
         for spec in options["assign"]:
             parts = spec.split(":")
@@ -1156,11 +1180,19 @@ class Command(BaseCommand):
                 },
             )
 
+        self.stdout.write(self.style.SUCCESS("Seeded operational ratings"))
+
+    def _seed_rating_settings(self):
+        """Флаги возможностей рейтинга без персон, оценок и событий."""
+        from organization_management.apps.operations.models_rating import (
+            OpsRatingFeatureFlags,
+        )
+
         OpsRatingFeatureFlags.objects.update_or_create(
             singleton_key=1,
             defaults={"operational_ratings": True, "rating_conflicts": True},
         )
-        self.stdout.write(self.style.SUCCESS("Seeded operational ratings"))
+        self.stdout.write(self.style.SUCCESS("Seeded rating feature flags"))
 
     def _seed_analytics(self):
         """Реестры аналитики службы (§22) — порт мок-фикстур клиента.
@@ -1280,7 +1312,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Seeded service report types"))
 
-    def _seed_feedback(self, feedback_author):
+    def _seed_feedback(self, feedback_author, *, include_demo=True):
         """Обратная связь (§28) — порт мок-фикстуры хоста: справочник целиком
         (подписи, порядок, КАРТА ПЕРЕХОДОВ — в данных) и девять обращений —
         три страницы по четыре, последняя неполная. Среди них чужой ЧЕРНОВИК
@@ -1358,6 +1390,10 @@ class Command(BaseCommand):
                 "terminal_statuses": ["CLOSED", "REJECTED", "DUPLICATE"],
             },
         )
+
+        if not include_demo:
+            self.stdout.write(self.style.SUCCESS("Seeded feedback registry"))
+            return
 
         planner = ("demo-event-planner", "Организатор ОМ")
         analyst = ("demo-analyst", "Аналитик")

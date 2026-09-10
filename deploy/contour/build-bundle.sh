@@ -59,7 +59,7 @@ docker build --pull=false --network=none -f "$D/Dockerfile.proxy" \
   -t smart-josparlau/contour-proxy:1 "$OUT/source"
 docker save smart-josparlau/contour-backend:1 smart-josparlau/contour-frontend:1 \
   smart-josparlau/contour-proxy:1 postgres:15 redis:7-alpine | gzip -1 > runtime-images.tar.gz
-for file in install.sh docker-compose.yml .env.example README.md build-bundle.sh; do
+for file in install.sh docker-compose.yml .env.example README.md RUNBOOK.md build-bundle.sh; do
   cp "$D/$file" "$OUT/$file"
 done
 docker image inspect python:3.12-bookworm node:22-alpine postgres:15 redis:7-alpine nginx:1.28-alpine \
@@ -70,5 +70,5 @@ docker image inspect python:3.12-bookworm node:22-alpine postgres:15 redis:7-alp
 find source wheelhouse -type f -print0 | sort -z | xargs -0 sha256sum > source-sha256sums.txt
 sha256sum prepared-images.tar.gz runtime-images.tar.gz source-sha256sums.txt \
   source-revision.txt platform.txt images-manifest.txt install.sh docker-compose.yml \
-  .env.example README.md build-bundle.sh > sha256sums.txt
+  .env.example README.md RUNBOOK.md build-bundle.sh > sha256sums.txt
 echo 'BUNDLE BUILT. Transfer this complete directory. Configure .env, then bash install.sh.'
