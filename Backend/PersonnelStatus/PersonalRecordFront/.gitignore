@@ -2,6 +2,11 @@
 
 # dependencies
 /node_modules
+# Атомарное восстановление dependencies может оставить эти каталоги
+# только при SIGKILL/аварии машины; это не исходники.
+/.worktree-deps-install.lock/
+/.worktree-deps-stage.*/
+/.worktree-deps-backup.*/
 
 # next.js
 /.next/

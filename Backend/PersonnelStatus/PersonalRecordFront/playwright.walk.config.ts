@@ -13,8 +13,8 @@
 // очереди.
 //
 // Как гонять:
-//   SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts
-//   SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
+//   SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts
+//   SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts -g "persona admin"
 //
 // ⚠️ Перед обходом — замер памяти стенда, после каждого блока персон — снова:
 // у выросшего `next dev` обход падает САМ, и такое падение читается как дефект

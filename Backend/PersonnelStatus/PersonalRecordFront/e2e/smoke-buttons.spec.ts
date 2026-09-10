@@ -27,7 +27,7 @@
  * нужен ЖИВОЙ стек, поднятый снаружи —
  *   Django :8100 (Personnel-Records, DJANGO_SETTINGS_MODULE=...local_postgres)
  *   Next   :3106 (PersonalRecordFront, `npm run dev -- -p 3106`)
- * Запуск: `SMOKE_LIVE=1 npx playwright test --config playwright.smoke.config.ts`
+ * Запуск: `SMOKE_LIVE=1 npm run playwright -- --config playwright.smoke.config.ts`
  */
 import fs from 'node:fs'
 import path from 'node:path'

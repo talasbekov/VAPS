@@ -11,8 +11,8 @@
  * Как гонять. Нужен ВТОРОЙ dev-сервер, поднятый на моке (основной стенд живой):
  *
  *   NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access \
- *   NEXT_DIST_DIR=.next-mock npx next dev -p 3107
- *   SMOKE_MOCK_APP=http://localhost:3107 npx playwright test \
+ *   NEXT_DIST_DIR=.next-mock npm run dev:webpack -- -p 3107
+ *   SMOKE_MOCK_APP=http://localhost:3107 npm run playwright -- \
  *     -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
  *
  * Свой `NEXT_DIST_DIR` обязателен: два `next dev` делят `.next` и травят
