@@ -40,6 +40,32 @@ _APPROVAL_STATUSES = ("PENDING", "APPROVED", "RETURNED")
 _KINDS = ("INTERNAL", "FOREIGN")
 
 
+class OpsE2EFixtureDateCursor(TimeStampedModel):
+    """Единый курсор дат, которыми e2e создаёт свои ОМ-фикстуры.
+
+    Это НЕ ограничение `OpsSecurityEvent.business_date`: настоящие мероприятия
+    вправе совпадать по дню. Курсор — отдельный технический ресурс, поэтому
+    единственная строка закреплена и уникальным ключом, и CHECK: одного
+    `unique=True` недостаточно, он разрешил бы несколько разных ключей.
+    """
+
+    singleton_key = models.PositiveSmallIntegerField(
+        default=1, unique=True, editable=False
+    )
+    next_offset = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "ops_e2e_fixture_date_cursor"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(singleton_key=1),
+                name="chk_ops_e2e_fixture_date_cursor_singleton",
+            )
+        ]
+        verbose_name = "Курсор дат e2e-фикстур"
+        verbose_name_plural = "Курсоры дат e2e-фикстур"
+
+
 class OpsSecurityEvent(TimeStampedModel):
     class Stage(models.TextChoices):
         BULLETIN = "BULLETIN", "Бюллетень"

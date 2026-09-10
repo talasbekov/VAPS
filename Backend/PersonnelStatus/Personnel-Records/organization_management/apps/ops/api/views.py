@@ -221,6 +221,7 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
 # ── Охранные мероприятия ────────────────────────────────────────────────────
 
 from organization_management.apps.ops import security_events as event_service
+from organization_management.apps.ops.fixture_dates import reserve_fixture_business_dates
 from organization_management.apps.ops.api.serializers import (
     serialize_security_event,
 )
@@ -294,6 +295,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "list": _READ_EVENT_PERMISSION,
         "retrieve": _READ_EVENT_PERMISSION,
         "create": _CREATE_EVENT_PERMISSION,
+        # Бронь даты обслуживает только e2e-подготовку, но доступ намеренно
+        # совпадает с созданием ОМ: её результат — вход существующего POST
+        # `/security-events/`, а не административная возможность.
+        "fixture_date": _CREATE_EVENT_PERMISSION,
         # Удаление — СВОЁ право: ведущий мероприятие его правит, стирает из
         # реестра администратор (та же мерка, что у stage_override).
         "destroy": _DELETE_EVENT_PERMISSION,
@@ -1002,6 +1007,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # `actor` (№949, ревью №825): второй `save` здесь оставлял ОМ «ничьим»
         # между сохранениями и обходил всех остальных вызывателей сервиса.
         return self._event_response(event, status=201)
+
+    @action(detail=False, methods=["post"], url_path="fixture-date")
+    def fixture_date(self, request):
+        """Атомарно забронировать одну будущую дату для e2e-фикстуры.
+
+        Дата не утверждает уникальность реальных ОМ: её уникальность живёт в
+        отдельном DB cursor, чтобы параллельные browser workers не делили
+        process-local счётчик.
+        """
+        business_date = reserve_fixture_business_dates((request.data or {}).get("count", 1))
+        return Response({"businessDate": business_date.isoformat()}, status=201)
 
     # bindable-objects раньше детали в роутере не нужен: у DRF detail-роут
     # матчит только числовые pk не раньше list-экшенов.
