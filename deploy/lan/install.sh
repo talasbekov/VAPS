@@ -4,6 +4,13 @@ cd -- "$(dirname -- "$0")"
 for tool in docker sha256sum python3; do
   command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
+COMPOSE_VERSION="$(docker compose version --short)"
+python3 - "$COMPOSE_VERSION" <<'PYVER'
+import re,sys
+parts=re.findall(r'\d+',sys.argv[1])
+if len(parts)<2 or tuple(map(int,parts[:2])) < (2,20):
+    raise SystemExit('Docker Compose >=2.20 is required (multiple env files and offline --wait startup)')
+PYVER
 MODE="${1:-}"
 if [[ -n "$MODE" && "$MODE" != --restore ]]; then
   echo 'Usage: bash install.sh [--restore /absolute/backup-directory]' >&2; exit 2
