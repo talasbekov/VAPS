@@ -6,6 +6,7 @@
 // Ключ ['ops-me'] намеренно не пересекается с чужими ключами кэша хоста.
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 
@@ -37,18 +38,16 @@ export interface UseOpsPermissionsResult {
 }
 
 export function useOpsPermissions(): UseOpsPermissionsResult {
+  const { status } = useSession();
   const query = useQuery<OpsMyPermissionsResponse, OpsApiFailure>({
     queryKey: ["ops-me"],
     queryFn: () =>
       opsApiClient.get<OpsMyPermissionsResponse>(
         "/api/operations/my-permissions/"
       ),
-    // Запрос уходит ВСЕГДА, в том числе без host-логина: /security-ops/* не
-    // закрыт middleware (matcher его не перечисляет), а выключенный запрос
-    // навсегда оставил бы isLoading=true — гейты страниц (`!isLoading &&
-    // !hasPermission`) не сработали бы и раздел открылся бы анониму.
-    // Без токена бэк отвечает 403 → error → прав нет → гейт закрыт.
-    enabled: true,
+    // До завершения входа токена нет. Анонимный 403 не является набором прав
+    // и не должен оставаться в кэше до успешного submit формы.
+    enabled: status === "authenticated",
   });
 
   const permissions = useMemo<ReadonlySet<string> | undefined>(
@@ -72,7 +71,7 @@ export function useOpsPermissions(): UseOpsPermissionsResult {
     // под ролью раздела (Plane №325).
     roles: query.data?.roles ?? [],
     hasPermission,
-    isLoading: query.isLoading,
+    isLoading: status === "loading" || (status === "authenticated" && query.isLoading),
     error: query.error,
   };
 }

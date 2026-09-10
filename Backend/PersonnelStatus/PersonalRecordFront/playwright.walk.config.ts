@@ -34,6 +34,16 @@ if (process.env.SMOKE_PASSWORD === undefined) {
   }
 }
 
+if (process.env.ROLE_ACCOUNTS_PASSWORD === undefined) {
+  try {
+    process.env.ROLE_ACCOUNTS_PASSWORD = fs
+      .readFileSync(path.join(os.homedir(), '.config', 'vaps', 'role-accounts-password'), 'utf8')
+      .trim()
+  } catch {
+    // Ролевые submit-пробы ниже честно скипнутся без внешнего секрета.
+  }
+}
+
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e'),
   // Уборка та же, что у целевых проб: обход тоже заводит пробные ОМ.
