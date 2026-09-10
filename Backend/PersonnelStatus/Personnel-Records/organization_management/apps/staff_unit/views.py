@@ -1552,15 +1552,23 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # наизусть три кода — ROLE_3/6/7 — и не знала ни одной из семи ролей
         # заказчика; учётка с его ролью получала либо свою комнату, либо
         # ничего. Дорога осталась одна.
+        manage_scope = (
+            request is not None
+            and getattr(request, '_directorate_manage_scope', False)
+        )
         permission_codes = (
-            ('orgstructure.manage',)
-            if request is not None and getattr(request, '_directorate_manage_scope', False)
+            ('orgstructure.manage',) if manage_scope
             else (_OPS_READ_STATUS_PERMISSION,)
         )
         divisions = (
             _ops_scope_divisions(request, permission_codes)
             if request is not None else None
         )
+        # Для административной команды пустой scope остаётся пустым. Fallback
+        # на штатное подразделение описывает личное чтение, но расширил бы
+        # область записи за пределы гранта `orgstructure.manage`.
+        if manage_scope:
+            return divisions
         if divisions is not None and divisions.exists():
             return divisions
 
