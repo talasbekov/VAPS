@@ -558,7 +558,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     #: Объекты отделены ниже: `[ОМ-РШ-06]` отдаёт их старшему мероприятия,
     #: но не каждому редактору бюллетеня.
     _BULLETIN_EDITOR_ACTIONS = frozenset(
-        {"details", "bulletin", "bulletin_complete"}
+        {"details", "event_chief", "bulletin", "bulletin_complete"}
     )
 
     _VISIT_OBJECT_MANAGER_ACTIONS = frozenset(
