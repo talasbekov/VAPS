@@ -38,7 +38,8 @@ export interface UseOpsPermissionsResult {
 }
 
 export function useOpsPermissions(): UseOpsPermissionsResult {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const sessionExpired = (session as { error?: string } | null)?.error !== undefined;
   const query = useQuery<OpsMyPermissionsResponse, OpsApiFailure>({
     queryKey: ["ops-me"],
     queryFn: () =>
@@ -47,13 +48,13 @@ export function useOpsPermissions(): UseOpsPermissionsResult {
       ),
     // До завершения входа токена нет. Анонимный 403 не является набором прав
     // и не должен оставаться в кэше до успешного submit формы.
-    enabled: status === "authenticated",
+    enabled: status === "authenticated" && !sessionExpired,
   });
 
   const permissions = useMemo<ReadonlySet<string> | undefined>(
     () =>
-      query.data === undefined ? undefined : new Set(query.data.permissions),
-    [query.data]
+      sessionExpired || query.data === undefined ? undefined : new Set(query.data.permissions),
+    [query.data, sessionExpired]
   );
 
   // wildcard `*` = администратор; иерархий/префиксов нет — плоский список
@@ -69,9 +70,9 @@ export function useOpsPermissions(): UseOpsPermissionsResult {
     // Роли раздела — ОТДЕЛЬНО от прав: права отвечают «что мне можно», роль —
     // «кто я здесь». Шапка портала печатала кадровую роль учётке, работающей
     // под ролью раздела (Plane №325).
-    roles: query.data?.roles ?? [],
+    roles: sessionExpired ? [] : query.data?.roles ?? [],
     hasPermission,
-    isLoading: status === "loading" || (status === "authenticated" && query.isLoading),
+    isLoading: status === "loading" || (status === "authenticated" && !sessionExpired && query.isLoading),
     error: query.error,
   };
 }

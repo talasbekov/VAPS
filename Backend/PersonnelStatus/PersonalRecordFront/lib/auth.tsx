@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { resetAccessToken } from "@/lib/access-token";
 import { expiredLoginUrl } from "@/lib/expired-redirect";
@@ -47,6 +48,7 @@ export interface User {
 
 
 interface AuthContextType {
+  sessionExpired: boolean;
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -58,6 +60,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const sessionExpired = (session as { error?: string } | null)?.error !== undefined;
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -73,34 +78,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * человек здесь. Молчаливый возврат на вход после восьми часов работы
    * читается как «система выкинула ни с того ни с сего».
    */
-  /** Выход уже начат — второй раз не начинаем (Plane №462). */
-  const signingOut = useRef(false);
+  // Terminal сессия не становится пользователем даже на один рендер (№1154).
+  // Cleanup и повторный вход последовательны: поздний signOut не должен
+  // стереть cookie, только что полученную новым signIn.
+  const expiredCleanup = useRef<Promise<void> | null>(null);
   useEffect(() => {
-    if (status === "loading") return;
-    if ((session as { error?: string } | null)?.error === undefined) return;
-    if (signingOut.current) return;
-    signingOut.current = true;
+    if (!sessionExpired || status === "loading") return;
+    if (pathname !== "/") {
+      router.replace(expiredLoginUrl(window.location));
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("reason") !== "expired") {
+        params.set("reason", "expired");
+        router.replace(`/?${params.toString()}`);
+      }
+    }
+    if (expiredCleanup.current !== null) return;
     resetAccessToken();
-    queryClient.removeQueries({ queryKey: ["ops-me"] });
-    // 🔴 УВОДИМ В `then`, А НЕ В `finally` (Plane №462). `finally` уводил и
-    // при ОТКАЗЕ `signOut`: cookie сессии тогда не стёрта, браузер грузит
-    // `/?reason=expired`, провайдер монтируется, читает всё ту же ошибочную
-    // сессию, снова зовёт `signOut`, снова падает — плотный цикл полных
-    // перезагрузок, из которого человек не может даже открыть форму входа.
-    //
-    // Отказ выхода не молчит: он пишется в консоль и оставляет человека на
-    // месте. Это хуже, чем уйти на вход, но лучше, чем зациклить вкладку, —
-    // а `signingOut` не даст эффекту начать всё заново на том же сеансе.
-    const back = expiredLoginUrl(window.location);
-    void signOut({ redirect: false })
-      .then(() => {
-        window.location.href = back;
-      })
+    queryClient.clear();
+    expiredCleanup.current = signOut({ redirect: false })
+      .then(() => undefined)
       .catch((error) => {
         console.error("Не удалось завершить сессию:", error);
-        signingOut.current = false;
       });
-  }, [queryClient, session, status]);
+    // На форме не делаем полный reload: даже если cookie очистить не удалось,
+    // она остаётся terminal, форма доступна и новый signIn заменит её.
+  }, [pathname, queryClient, router, sessionExpired, status]);
 
   // Загружаем информацию о пользователе из бэкенда при наличии сессии
   useEffect(() => {
@@ -110,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (status === "unauthenticated" || !session) {
+      if (status === "unauthenticated" || !session || sessionExpired) {
         queryClient.removeQueries({ queryKey: ["ops-me"] });
         setUser(null);
         setIsLoading(false);
@@ -161,13 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     loadUser();
-  }, [queryClient, session, status]);
+  }, [queryClient, session, sessionExpired, status]);
 
   const login = async (
     username: string,
     password: string
   ): Promise<boolean> => {
     try {
+      await expiredCleanup.current;
       const result = await signIn("credentials", {
         username,
         password,
@@ -175,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (result?.ok) {
+        expiredCleanup.current = null;
         // До submit `useOpsPermissions` мог читать отсутствие сессии. Смена
         // учётной записи обязана забыть и токен, и результат/ошибку прав.
         resetAccessToken();
@@ -228,13 +233,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: sessionExpired ? null : user,
+        sessionExpired,
         login,
         logout,
-        isLoading,
+        isLoading: sessionExpired ? false : isLoading,
       }}
     >
-      {children}
+      {sessionExpired && pathname !== "/" ? null : children}
     </AuthContext.Provider>
   );
 }

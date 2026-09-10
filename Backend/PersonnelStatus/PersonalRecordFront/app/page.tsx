@@ -58,7 +58,7 @@ function LoginScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingWorkspace, setAwaitingWorkspace] = useState(false);
-  const { login, user, isLoading: authLoading } = useAuth();
+  const { login, user, sessionExpired, isLoading: authLoading } = useAuth();
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,7 +70,13 @@ function LoginScreen() {
   // Отдельно от `error` формы: то — ответ на попытку входа, это — состояние,
   // с которым человек пришёл, и первая же неудачная попытка входа обязана
   // заменить его своим сообщением, а не спорить с ним рядом.
-  const expired = searchParams.get("reason") === "expired" && error === "";
+  const expired = (sessionExpired || searchParams.get("reason") === "expired") && error === "";
+
+  useEffect(() => {
+    if (!sessionExpired || !awaitingWorkspace) return;
+    setAwaitingWorkspace(false);
+    setIsLoading(false);
+  }, [awaitingWorkspace, sessionExpired]);
 
   // Вошедшему форма входа не нужна: он попадал на неё по прямой ссылке на «/»
   // и видел приглашение залогиниться поверх уже живой сессии.
@@ -175,7 +181,7 @@ function LoginScreen() {
     }
   };
 
-  if (awaitingWorkspace || authLoading || (user !== null && user !== undefined)) {
+  if (!sessionExpired && (awaitingWorkspace || authLoading || (user !== null && user !== undefined))) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <p className="text-sm text-muted-foreground">

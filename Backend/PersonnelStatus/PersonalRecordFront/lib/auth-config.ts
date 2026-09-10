@@ -127,7 +127,7 @@ async function askBackend(refreshToken: string): Promise<RefreshOutcome> {
 async function refreshed(token: JWT): Promise<JWT> {
   const refreshToken = token.refreshToken;
   if (typeof refreshToken !== "string" || refreshToken === "") {
-    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+    return { ...token, accessToken: undefined, refreshToken: undefined, error: "RefreshAccessTokenError" };
   }
   const outcome = await onlyOneRefresh(refreshToken, () => askBackend(refreshToken));
   if (outcome.kind === "ok") {
@@ -147,7 +147,7 @@ async function refreshed(token: JWT): Promise<JWT> {
     return next;
   }
   if (outcome.kind === "rejected") {
-    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+    return { ...token, accessToken: undefined, refreshToken: undefined, error: "RefreshAccessTokenError" };
   }
   // Временный отказ: токен НЕ жжём, но и не долбим сервер без паузы.
   console.warn("Token refresh postponed:", outcome.why);
@@ -301,6 +301,9 @@ export const authOptions: NextAuthOptions = {
       // access-токен восемь часов: через восемь часов портал открывался как
       // рабочий, а КАЖДЫЙ запрос к бэку отвечал 401. Заказчик сказал «не
       // работает проект» на полностью здоровом стенде.
+      // Отвергнутый refresh окончателен до нового входа (№1154).
+      // Чтение сессии не должно снова отправлять его и оживлять старого user.
+      if (token.error !== undefined) return token;
       if (!isExpiring(token.accessTokenExpires)) return token;
       return await refreshed(token);
     },
