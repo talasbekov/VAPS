@@ -57,8 +57,9 @@ function LoginScreen() {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [awaitingWorkspace, setAwaitingWorkspace] = useState(false);
   const { login, user } = useAuth();
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading, roles } = useOpsPermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
   // ПРИЧИНА, ПО КОТОРОЙ ЧЕЛОВЕК ЗДЕСЬ (Plane №383). Провайдер сессии уводит
@@ -83,8 +84,10 @@ function LoginScreen() {
     // Права приходят отдельным запросом. До него маршрут не выбираем:
     // «/dashboard» без `orgstructure.view` показывал человеку отказ сразу
     // после успешного входа.
-    if (!permissionsLoading) router.replace(defaultPortalRoute(hasPermission));
-  }, [hasPermission, permissionsLoading, router, searchParams, user]);
+    if (!permissionsLoading) {
+      router.replace(defaultPortalRoute(hasPermission, roles.map((role) => role.code)));
+    }
+  }, [hasPermission, permissionsLoading, roles, router, searchParams, user]);
 
   // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
   // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
@@ -135,6 +138,7 @@ function LoginScreen() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
+    let loginSucceeded = false;
 
     try {
       const success = await login(credentials.username, credentials.password);
@@ -142,6 +146,8 @@ function LoginScreen() {
       if (success) {
         // Маршрут выбирает эффект выше, когда получены права раздела. Редирект
         // здесь опережал этот запрос и всегда уводил на недоступный «Обзор».
+        setAwaitingWorkspace(true);
+        loginSucceeded = true;
       } else {
         setError("Неверное имя пользователя или пароль");
       }
@@ -165,9 +171,17 @@ function LoginScreen() {
 
       setError(errorMessage);
     } finally {
-      setIsLoading(false);
+      if (!loginSucceeded) setIsLoading(false);
     }
   };
+
+  if (awaitingWorkspace || (user !== null && user !== undefined)) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <p className="text-sm text-muted-foreground">Открываем рабочее пространство…</p>
+      </div>
+    );
+  }
 
   return (
     <div

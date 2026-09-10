@@ -132,11 +132,24 @@ const ALL_PERSONAS: readonly Persona[] = [
     password: 'erda123',
     role: 'DIVISION_OPERATOR (ОМ-прав нет)',
   },
+  {
+    key: 'forces-officer',
+    username: 'role_forces_gathering_officer',
+    password: process.env.ROLE_ACCOUNTS_PASSWORD ?? '',
+    role: 'FORCES_GATHERING_OFFICER',
+  },
 ]
 
 const PERSONAS = ALL_PERSONAS.filter((p) =>
   (process.env.SMOKE_PERSONAS ?? 'admin,observer,erda').split(',').includes(p.key),
 )
+
+const FORM_LOGIN_DESTINATION: Readonly<Record<string, { path: string; heading: string }>> = {
+  [STAND_USERNAME]: { path: '/dashboard', heading: 'Обзор' },
+  observer: { path: '/security-ops/objects', heading: 'Объекты и паспорта' },
+  erda: { path: '/statuses', heading: 'Управление статусами' },
+  'forces-officer': { path: '/employees', heading: 'Сбор сил на ОМ' },
+}
 
 // ─────────────────────── запись трафика ───────────────────────
 interface NetEvent {
@@ -863,6 +876,36 @@ test.describe('смоук-обход портала', () => {
         await signInPersona(persona)
         ids = await resolveIds(await apiToken(persona.username, persona.password))
       })
+
+      const formDestination = FORM_LOGIN_DESTINATION[persona.key]
+      if (formDestination !== undefined) {
+        test(`${persona.key} submit формы открывает доступный стартовый экран`, async ({ browser }) => {
+          test.skip(persona.password === '', 'нужен пароль ролевой учётки вне репозитория')
+          // `test.use({ storageState })` выше обслуживает обход маршрутов,
+          // а эта проба намеренно проходит форму с чистой cookie-банкой.
+          const context = await browser.newContext({ storageState: undefined })
+          try {
+            const page = await context.newPage()
+            await page.goto(APP_ORIGIN)
+            await page.getByLabel('Имя пользователя').fill(persona.username)
+            await page.getByLabel('Пароль').fill(persona.password)
+            const permissionsReady = page.waitForResponse(
+              (response) =>
+                response.url().includes('/api/operations/my-permissions/') && response.status() === 200,
+              { timeout: 20_000 },
+            )
+            await page.getByRole('button', { name: 'Войти' }).click()
+            await permissionsReady
+            await expect(page).toHaveURL(new RegExp(`${formDestination.path}/?$`), { timeout: 20_000 })
+            await expect(page.getByRole('heading', { name: formDestination.heading })).toBeVisible({
+              timeout: 20_000,
+            })
+            await expect(page.getByRole('button', { name: 'Войти' })).toBeHidden()
+          } finally {
+            await context.close()
+          }
+        })
+      }
 
       if (persona.key !== STAND_USERNAME) {
         test(`${persona.key} корень открывает доступный рабочий экран`, async ({ page }) => {

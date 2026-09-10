@@ -89,12 +89,11 @@ export type ModuleHref = keyof typeof MODULE_PERMISSION;
  * выбирается по той же карте прав, что и меню и гейты экранов.
  */
 const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
-  "/service-employees",
+  "/security-ops/objects",
+  "/security-ops/events",
+  "/statuses",
   "/security-ops/command-center",
   "/dashboard",
-  "/statuses",
-  "/employees",
-  "/security-ops/objects",
 ];
 
 /**
@@ -126,8 +125,22 @@ export function moduleOpenFor(href: string, hasPermission: (code: string) => boo
 }
 
 /** Выбрать первый доступный рабочий экран сразу после входа. */
-export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
+export function defaultPortalRoute(
+  hasPermission: (code: string) => boolean,
+  roleCodes: readonly string[],
+): ModuleHref {
   if (hasPermission("*")) return "/dashboard";
+  // Штаб и ответственный начинают с единого рабочего экрана сбора сил.
+  // Его серверный гейт использует те же права и область роли, что выдаются
+  // именно этим двум ролям; случайное наличие `object.view` их не уводит в
+  // реестр вместо основной задачи.
+  if (
+    roleCodes.some(
+      (code) => code === "OPS_STAFF" || code === "FORCES_GATHERING_OFFICER",
+    )
+  ) {
+    return "/employees";
+  }
   return (
     DEFAULT_WORKSPACE_ROUTES.find((href) => moduleOpenFor(href, hasPermission)) ??
     "/security-ops/profile"

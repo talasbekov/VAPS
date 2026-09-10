@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { resetAccessToken } from "@/lib/access-token";
 import { expiredLoginUrl } from "@/lib/expired-redirect";
 
@@ -56,6 +57,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -79,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (signingOut.current) return;
     signingOut.current = true;
     resetAccessToken();
+    queryClient.removeQueries({ queryKey: ["ops-me"] });
     // 🔴 УВОДИМ В `then`, А НЕ В `finally` (Plane №462). `finally` уводил и
     // при ОТКАЗЕ `signOut`: cookie сессии тогда не стёрта, браузер грузит
     // `/?reason=expired`, провайдер монтируется, читает всё ту же ошибочную
@@ -97,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Не удалось завершить сессию:", error);
         signingOut.current = false;
       });
-  }, [session, status]);
+  }, [queryClient, session, status]);
 
   // Загружаем информацию о пользователе из бэкенда при наличии сессии
   useEffect(() => {
@@ -108,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (status === "unauthenticated" || !session) {
+        queryClient.removeQueries({ queryKey: ["ops-me"] });
         setUser(null);
         setIsLoading(false);
         return;
@@ -157,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     loadUser();
-  }, [session, status]);
+  }, [queryClient, session, status]);
 
   const login = async (
     username: string,
@@ -171,6 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (result?.ok) {
+        // До submit `useOpsPermissions` мог читать отсутствие сессии. Смена
+        // учётной записи обязана забыть и токен, и результат/ошибку прав.
+        resetAccessToken();
+        queryClient.removeQueries({ queryKey: ["ops-me"] });
         return true;
       }
 
@@ -206,6 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // следующие 15 секунд любой запрос подписывался бы токеном ушедшего
     // человека — а это уже не медлительность, а чужие права.
     resetAccessToken();
+    queryClient.removeQueries({ queryKey: ["ops-me"] });
     try {
       await signOut({ redirect: false });
     } catch (error) {
