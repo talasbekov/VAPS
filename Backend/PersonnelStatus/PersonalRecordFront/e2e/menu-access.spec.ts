@@ -235,7 +235,7 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     // Соседняя роль не получает `report.generate`. Прямая карточка не должна
     // раскрывать ни существование, ни содержимое работы коллеги: это решает
     // серверный гейт, а не скрытая кнопка клиента.
-    await signIn(page, 'acc_dept_head_d2')
+    await signIn(page, 'acc_dir_head')
     await page.goto(`${APP}${ownJobPath}`)
     await expect(page.getByRole('heading', { name: 'Доступ закрыт' })).toBeVisible()
     await expect(page.getByText('Недостаточно прав для просмотра карточки работы отчёта.')).toBeVisible()
