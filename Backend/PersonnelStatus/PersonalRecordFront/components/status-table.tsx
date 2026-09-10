@@ -919,7 +919,7 @@ export function StatusTable({
                       два-три слова короче своей ширины, и nowrap растянул бы
                       её в одну строку через всю таблицу вместо переноса. */}
                   <TableCell className="whitespace-normal">
-                    {isVacancyRow(employee) ? (
+                    {isVacancyRow(employee) || !canEdit ? (
                       getStatusBadge(employee.status, employee.statusCode)
                     ) : (
                       <div className="flex flex-col items-start gap-1">
