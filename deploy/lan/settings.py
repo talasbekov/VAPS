@@ -21,3 +21,6 @@ SPECTACULAR_SETTINGS = {**SPECTACULAR_SETTINGS,
 SPECTACULAR_SETTINGS['SWAGGER_UI_SETTINGS'] = {
     **SPECTACULAR_SETTINGS.get('SWAGGER_UI_SETTINGS', {}), 'validatorUrl': None,
 }
+# The upstream ReDoc template contains Google Fonts links even with SIDECAR.
+TEMPLATES = [{**template, 'DIRS': ['/app/lan-templates', *template.get('DIRS', [])]}
+             for template in TEMPLATES]
