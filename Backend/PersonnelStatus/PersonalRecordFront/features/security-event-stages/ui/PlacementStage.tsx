@@ -151,6 +151,22 @@ type AutoPlacementPlanRow = {
   employeeName: string;
   reasons: string[];
 };
+
+export async function reconcileAutoPlan(
+  plan: readonly AutoPlacementPlanRow[],
+  save: (row: AutoPlacementPlanRow) => Promise<void>,
+): Promise<{ applied: AutoPlacementPlanRow[]; remaining: AutoPlacementPlanRow[]; error: unknown | null }> {
+  const applied: AutoPlacementPlanRow[] = [];
+  for (let index = 0; index < plan.length; index += 1) {
+    try {
+      await save(plan[index]);
+      applied.push(plan[index]);
+    } catch (error) {
+      return { applied, remaining: [...plan.slice(index)], error };
+    }
+  }
+  return { applied, remaining: [], error: null };
+}
 /**
  * Перенос, ожидающий обоснования (Plane №762).
  *
@@ -375,6 +391,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * перезагрузки блок исчезает — отклонение записано в решениях. */
   const [autoReasons, setAutoReasons] = useState<Record<string, string[]>>({});
   const [autoPlan, setAutoPlan] = useState<AutoPlacementPlanRow[] | null>(null);
+  const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
   /** Чей рейтинг открыт: null — модалка закрыта. Человек, а не флаг: иначе
    * пришлось бы держать имя и подразделение отдельной парой полей. */
   const [ratingBriefFor, setRatingOf] = useState<{
@@ -946,21 +963,30 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         });
       }
     }
+    setAutoFillMessage(null);
     setAutoPlan(plan);
   }
 
   async function confirmAutoFill(): Promise<void> {
     if (autoPlan === null || autoPlan.length === 0) return;
-    const reasons: Record<string, string[]> = { ...autoReasons };
-    for (const row of autoPlan) {
+    const planned = autoPlan;
+    const outcome = await reconcileAutoPlan(planned, async (row) => {
       await assign.mutateAsync({
         postId: row.postId,
         employeeId: row.employeeId,
       });
+    });
+    const reasons: Record<string, string[]> = { ...autoReasons };
+    for (const row of outcome.applied) {
       reasons[`${row.postId}:${row.employeeId}`] = row.reasons;
     }
     setAutoReasons(reasons);
-    setAutoPlan(null);
+    setAutoPlan(outcome.remaining.length === 0 ? null : outcome.remaining);
+    setAutoFillMessage(
+      outcome.error === null
+        ? null
+        : `Сохранено: ${outcome.applied.length}. Оставшиеся строки можно повторить после исправления причины отказа.`,
+    );
   }
 
   /** Почему автоподбор выбрал ЭТОГО человека на ЭТОТ пост.
@@ -2016,6 +2042,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 Проверьте сотрудников и посты. Назначения сохранятся только после подтверждения.
               </DialogDescription>
             </DialogHeader>
+            {autoFillMessage !== null && (
+              <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                {autoFillMessage}
+              </p>
+            )}
             {autoPlan?.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Для свободных мест нет доступных сотрудников из пула этого объекта.

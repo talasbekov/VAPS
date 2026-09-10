@@ -12,7 +12,7 @@ export default defineConfig(smoke, {
   globalSetup: undefined,
   globalTeardown: undefined,
   expect: { timeout: 30_000 },
-  testMatch: ['forces-workspace.spec.ts', 'role-driven-acceptance.spec.ts', 'placement-rights-rules.spec.ts', 'smoke-preserve-data.spec.ts'],
+  testMatch: ['forces-workspace.spec.ts', 'role-driven-acceptance.spec.ts', 'placement-rights-rules.spec.ts', 'auto-placement-reconcile.spec.ts', 'smoke-preserve-data.spec.ts'],
   outputDir: '/tmp/1090-acceptance-results',
   use: { baseURL: process.env.SMOKE_APP, actionTimeout: 30_000, screenshot: 'only-on-failure', trace: 'retain-on-failure' },
 })
