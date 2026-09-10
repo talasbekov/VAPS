@@ -58,8 +58,8 @@ function LoginScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingWorkspace, setAwaitingWorkspace] = useState(false);
-  const { login, user } = useAuth();
-  const { hasPermission, isLoading: permissionsLoading, roles } = useOpsPermissions();
+  const { login, user, isLoading: authLoading } = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
   // ПРИЧИНА, ПО КОТОРОЙ ЧЕЛОВЕК ЗДЕСЬ (Plane №383). Провайдер сессии уводит
@@ -85,9 +85,9 @@ function LoginScreen() {
     // «/dashboard» без `orgstructure.view` показывал человеку отказ сразу
     // после успешного входа.
     if (!permissionsLoading) {
-      router.replace(defaultPortalRoute(hasPermission, roles.map((role) => role.code)));
+      router.replace(defaultPortalRoute(hasPermission));
     }
-  }, [hasPermission, permissionsLoading, roles, router, searchParams, user]);
+  }, [hasPermission, permissionsLoading, router, searchParams, user]);
 
   // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
   // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
@@ -175,10 +175,12 @@ function LoginScreen() {
     }
   };
 
-  if (awaitingWorkspace || (user !== null && user !== undefined)) {
+  if (awaitingWorkspace || authLoading || (user !== null && user !== undefined)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <p className="text-sm text-muted-foreground">Открываем рабочее пространство…</p>
+        <p className="text-sm text-muted-foreground">
+          {awaitingWorkspace || user !== null ? "Открываем рабочее пространство…" : "Проверяем сессию…"}
+        </p>
       </div>
     );
   }
