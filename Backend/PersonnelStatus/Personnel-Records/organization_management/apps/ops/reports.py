@@ -31,6 +31,8 @@ from organization_management.apps.operations.models_settings import (
     OpsPolicySectionVersion,
     OpsPolicySetting,
 )
+from organization_management.apps.operations.selectors import StaffUnitSelector
+from organization_management.apps.operations.services import PermissionService
 
 # §22.26: запуск отчёта — своё право, отдельное от аналитики; sensitive
 # export (§20.32) и просмотр параметров чужого отчёта — свои права.
@@ -125,8 +127,9 @@ UNAVAILABLE_ARTIFACT_FIELDS = [
         "code": "SCOPE_SNAPSHOT",
         "label": "Снимок scope",
         "reason": (
-            "RBAC раздела плоский, без организационного scope — снимать "
-            "нечего; тот же разрыв, что у раскрытия ИИН (§20.27)."
+            "Снимок области хранится у работы и артефакта и перепроверяется "
+            "на сервере. Числовые id подразделений не выдаются клиенту: они "
+            "не являются понятным человеку описанием области."
         ),
     },
     {
@@ -154,10 +157,9 @@ UNAVAILABLE_HISTORY_COLUMNS = [
         "code": "SCOPE",
         "label": "Scope",
         "reason": (
-            "RBAC раздела плоский, без организационного scope: у работы нет "
-            "области, которую можно было бы показать в колонке. Пустая "
-            "колонка «Scope» читалась бы как «область не ограничена», а это "
-            "утверждение, а не факт."
+            "Область фиксируется при запуске и проверяется при чтении. "
+            "В историю не выводятся внутренние id подразделений: по ним "
+            "человек не сможет понять границу отчёта."
         ),
     },
 ]
@@ -167,11 +169,10 @@ UNAVAILABLE_JOB_CARD_BLOCKS = [
         "code": "SCOPE",
         "label": "Scope запуска",
         "reason": (
-            "RBAC раздела плоский, без организационного scope: §22.27 "
-            "требует перепроверять на маршруте и permission, и scope — "
-            "перепроверяется то, что есть, право; scope перепроверять не на "
-            "чем, и пустой блок «вся организация» был бы утверждением, а не "
-            "фактом."
+            "§22.27 перепроверяет permission и сохранённый снимок области "
+            "на каждом маршруте. В карточку не выводятся внутренние id "
+            "подразделений: пустой либо числовой блок не объяснил бы человеку "
+            "границу доступа."
         ),
     },
     {
@@ -189,6 +190,21 @@ UNAVAILABLE_JOB_CARD_BLOCKS = [
 
 def has_perm(perms, code):
     return "*" in perms or code in perms
+
+
+def scope_snapshot_for(actor):
+    """Развёрнутая область ``report.generate`` на момент запуска."""
+    allowed = PermissionService.visible_division_ids(actor, GENERATE_PERMISSION)
+    return None if allowed is None else sorted(allowed)
+
+
+def _scope_allows(snapshot, current_scope):
+    """Текущий grant обязан целиком накрывать снимок файла."""
+    if current_scope is None:
+        return True
+    if snapshot is None:
+        return False
+    return set(snapshot).issubset(current_scope)
 
 
 def _permission_denied(code):
@@ -252,12 +268,17 @@ def read_report_limits():
 # ── Источник и сборка содержимого (§22.20/§22.24) ───────────────────────────
 
 
-def read_source_rows():
+def read_source_rows(scope_division_ids=None):
     """Строки «Расхода личного состава» из живых смен. Пост — из СНИМКА
     привязки паспорта, а не резолвится сейчас: отчёт обязан показать то, что
     было зафиксировано при планировании (§9.6)."""
+    shifts = OpsDutyShift.objects.all()
+    if scope_division_ids is not None:
+        # Сотрудник без штатной единицы не принадлежит ни одной scoped области.
+        employee_ids = StaffUnitSelector.employee_ids_in(scope_division_ids)
+        shifts = shifts.filter(employee_id__in=[str(pk) for pk in employee_ids])
     rows = []
-    for shift in OpsDutyShift.objects.all():
+    for shift in shifts:
         binding = shift.passport_binding or {}
         sector = str(binding.get("sectorName") or "")
         post = str(binding.get("postName") or "")
@@ -343,12 +364,15 @@ def content_size(content):
     return len(content.encode("utf-8"))
 
 
-def _series_key(report_type_code, param_from, param_to, sensitive):
+def _series_key(report_type_code, param_from, param_to, sensitive, scope_division_ids):
     """§22.25: серия — отчёт ОДНОГО типа за ОДИН период в ОДНОМ режиме.
     Режим входит в ключ намеренно: обычная и чувствительная выгрузки содержат
     разные колонки — это разные документы, а не редакции одного."""
     mode = "S" if sensitive else "N"
-    return f"{report_type_code}|{param_from}|{param_to}|{mode}"
+    scope_key = "*" if scope_division_ids is None else ",".join(
+        str(division_id) for division_id in sorted(scope_division_ids)
+    )
+    return f"{report_type_code}|{param_from}|{param_to}|{mode}|{scope_key}"
 
 
 def _artifact_series_key(artifact):
@@ -357,6 +381,7 @@ def _artifact_series_key(artifact):
         artifact.param_from.isoformat(),
         artifact.param_to.isoformat(),
         artifact.sensitive,
+        artifact.scope_division_ids,
     )
 
 
@@ -417,7 +442,7 @@ def _advance(job):
         return
     try:
         rows = select_rows(
-            read_source_rows(),
+            read_source_rows(job.scope_division_ids),
             job.param_from.isoformat(),
             job.param_to.isoformat(),
         )
@@ -457,7 +482,7 @@ def _advance(job):
         # давать 2 там, где уже есть 1.
         revision=_next_revision(_series_key(
             job.report_type_code, job.param_from.isoformat(),
-            job.param_to.isoformat(), job.sensitive,
+            job.param_to.isoformat(), job.sensitive, job.scope_division_ids,
         )),
         generated_at=generated_at,
         generated_by=job.created_by_user_id,
@@ -471,6 +496,7 @@ def _advance(job):
         hash=content_hash(content),
         expires_at=generated_at + dt.timedelta(days=limits["retentionDays"]),
         content=content,
+        scope_division_ids=job.scope_division_ids,
     )
     job.state = "COMPLETED"
     job.progress_percent = 100
@@ -639,11 +665,14 @@ def _build_job_actions(job, artifact_available, parameters_visible):
     ]
 
 
-def _is_job_visible(job, can_export_sensitive):
+def _is_job_visible(job, can_export_sensitive, current_scope):
     """§22.25: работа со скрытыми полями невидима без права на sensitive
     export — её параметры, автор и время сами по себе говорят, кого и за
     какой период выгружали. Фильтрация СЕРВЕРНАЯ."""
-    return can_export_sensitive or not job.sensitive
+    return (
+        (can_export_sensitive or not job.sensitive)
+        and _scope_allows(job.scope_division_ids, current_scope)
+    )
 
 
 # ── Ресурсы ─────────────────────────────────────────────────────────────────
@@ -689,11 +718,12 @@ def list_report_types(perms):
 
 def list_report_jobs(actor, perms, filters):
     can_sensitive = has_perm(perms, SENSITIVE_PERMISSION)
+    current_scope = scope_snapshot_for(actor)
     _advance_all()
     now = Clock.now()
     visible = [
         job for job in OpsServiceReportJob.objects.all()
-        if _is_job_visible(job, can_sensitive)
+        if _is_job_visible(job, can_sensitive, current_scope)
     ]
     matched = []
     for job in visible:
@@ -750,6 +780,7 @@ def get_report_job(actor, perms, job_code):
     ни маршруту, ни тому, что работа была в чьём-то списке. Работа
     продвигается на чтении, как в списке."""
     can_sensitive = has_perm(perms, SENSITIVE_PERMISSION)
+    current_scope = scope_snapshot_for(actor)
     with transaction.atomic():
         job = (
             OpsServiceReportJob.objects.select_for_update()
@@ -758,7 +789,9 @@ def get_report_job(actor, perms, job_code):
         )
         # Невидимая работа отвечает «не найдено», а не «нет прав»: 403 сам
         # подтвердил бы, что такая выгрузка существует.
-        if job is None or not _is_job_visible(job, can_sensitive):
+        if job is None or not _is_job_visible(
+            job, can_sensitive, current_scope
+        ):
             raise _not_found(job_code)
         _advance(job)
     now = Clock.now()
@@ -820,6 +853,7 @@ def create_report_job(actor, perms, body):
             "IDEMPOTENCY_KEY_REQUIRED", 422,
             message="Запуск отчёта требует ключа идемпотентности.",
         )
+    scope_division_ids = scope_snapshot_for(actor)
     with transaction.atomic():
         report_type = OpsServiceReportType.objects.filter(
             report_type_code=body.get("reportTypeCode") or ""
@@ -859,6 +893,8 @@ def create_report_job(actor, perms, body):
             idempotency_key=idempotency_key
         ).first()
         if existing is not None:
+            if not _scope_allows(existing.scope_division_ids, scope_division_ids):
+                raise _not_found(existing.job_code)
             return _project_job(existing, True)
         # Работа создаётся В ОЖИДАНИИ: §22.21 «success показывай только
         # после COMPLETED и получения artifactId».
@@ -879,6 +915,7 @@ def create_report_job(actor, perms, body):
             sensitive=sensitive,
             param_from=param_from,
             param_to=param_to,
+            scope_division_ids=scope_division_ids,
         )
         _stamp_code(job, "job_code", "report-job")
         return _project_job(job, True)
@@ -889,11 +926,14 @@ def rerun_report_job(actor, perms, job_code, mode):
     возвращает уже готовый пригодный артефакт, если он есть; NEW_REVISION
     собирает заново ВСЕГДА — иначе новая редакция не появлялась бы никогда."""
     can_sensitive = has_perm(perms, SENSITIVE_PERMISSION)
+    current_scope = scope_snapshot_for(actor)
     with transaction.atomic():
         source = OpsServiceReportJob.objects.filter(
             job_code=job_code
         ).first()
-        if source is None or not _is_job_visible(source, can_sensitive):
+        if source is None or not _is_job_visible(
+            source, can_sensitive, current_scope
+        ):
             raise _not_found(job_code)
         if mode == "NEW_REVISION" and source.state != "COMPLETED":
             raise DomainError(
@@ -909,6 +949,7 @@ def rerun_report_job(actor, perms, job_code, mode):
         series_key = _series_key(
             source.report_type_code, source.param_from.isoformat(),
             source.param_to.isoformat(), source.sensitive,
+            source.scope_division_ids,
         )
         if mode == "RETRY":
             reusable = _find_reusable_artifact(series_key, Clock.now())
@@ -937,6 +978,7 @@ def rerun_report_job(actor, perms, job_code, mode):
             sensitive=source.sensitive,
             param_from=source.param_from,
             param_to=source.param_to,
+            scope_division_ids=source.scope_division_ids,
         )
         _stamp_code(job, "job_code", "report-job")
         return {
@@ -954,6 +996,8 @@ def download_artifact(actor, perms, artifact_code):
         artifact_code=artifact_code
     ).first()
     if artifact is None:
+        raise _not_found(artifact_code)
+    if not _scope_allows(artifact.scope_division_ids, scope_snapshot_for(actor)):
         raise _not_found(artifact_code)
     # Право на sensitive проверяется СНОВА: право могли отозвать после
     # генерации, а артефакт остался.

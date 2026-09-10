@@ -57,6 +57,9 @@ class OpsServiceReportJob(TimeStampedModel):
     sensitive = models.BooleanField()
     param_from = models.DateField()
     param_to = models.DateField()
+    # Снимок разрешённых подразделений на момент запуска. ``None`` означает
+    # глобальный grant; список — уже развернутые потомки scoped-grant.
+    scope_division_ids = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_service_report_jobs"
@@ -98,6 +101,9 @@ class OpsServiceReportArtifact(TimeStampedModel):
     hash = models.CharField(max_length=32)
     expires_at = models.DateTimeField()
     content = models.TextField()
+    # Артефакт самодостаточен: job может быть очищен по политике раньше файла,
+    # а граница выдачи байтов должна остаться той же.
+    scope_division_ids = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_service_report_artifacts"

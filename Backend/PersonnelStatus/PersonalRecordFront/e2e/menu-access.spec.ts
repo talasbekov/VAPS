@@ -208,6 +208,7 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     await expect(jobLink).toBeVisible({ timeout: 30_000 })
     await jobLink.click()
     await expect(page).toHaveURL(/\/security-ops\/service-reports\/report-job-/)
+    const ownJobPath = new URL(page.url()).pathname
 
     const download = page.getByRole('button', { name: 'Скачать', exact: true })
     await expect(download).toBeEnabled({ timeout: 30_000 })
@@ -219,7 +220,25 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
       /\/service-report-artifacts\/[^/]+\/download\/?$/.test(response.url()),
     )
     await download.click()
-    await expect((await saved).status()).toBe(200)
+    const savedResponse = await saved
+    expect(savedResponse.status()).toBe(200)
+    const savedFile = (await savedResponse.json()) as {
+      fileName: string
+      content: string
+    }
+    // Это содержимое именно того CSV, который `saveFile` сразу передаёт в
+    // Blob: проверка не может стать зелёной от одного HTTP 200 без файла.
+    expect(savedFile.fileName).toMatch(/\.csv$/)
+    expect(savedFile.content).toContain('# Расход личного состава за период')
+    expect(savedFile.content).toContain('Дата;Сотрудник;Объект;Пост;Состояние')
+
+    // Соседняя роль не получает `report.generate`. Прямая карточка не должна
+    // раскрывать ни существование, ни содержимое работы коллеги: это решает
+    // серверный гейт, а не скрытая кнопка клиента.
+    await signIn(page, 'acc_dept_head_d2')
+    await page.goto(`${APP}${ownJobPath}`)
+    await expect(page.getByRole('heading', { name: 'Доступ закрыт' })).toBeVisible()
+    await expect(page.getByText('Недостаточно прав для просмотра карточки работы отчёта.')).toBeVisible()
   })
 
   test('отчёты службы закрыты начальнику управления', async ({ page }) => {
