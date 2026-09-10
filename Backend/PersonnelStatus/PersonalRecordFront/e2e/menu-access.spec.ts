@@ -76,4 +76,204 @@ const ITEMS: Array<{ name: string; href: string }> = [
 /** Списки — словами заказчика из карточки №348, а не пересчётом прав. */
 const CLOSED_TO_EMPLOYEE = [
   'Командный центр', 'Реестр ОМ', 'Транспорт ГОН', 'Аналитика ОМ',
-  'Отчеты по ОМ', 'Отчёты по Службе', 'Аналитика службы', 'Свод по Службе', 'Справочники', 'Администрирование',
+  'Отчёты по Службе', 'Аналитика службы', 'Свод по Службе', 'Справочники', 'Администрирование',
+  'Журнал изменений',
+]
+const OPEN_TO_EMPLOYEE = ['Объекты и паспорта', 'Охраняемые лица', 'Законы об ОМ']
+
+async function signIn(page: Page, username: string): Promise<void> {
+  const api = page.context().request
+  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+  await api.post(`${APP}/api/auth/callback/credentials/`, {
+    form: { csrfToken: csrf.csrfToken, username, password: PASSWORD, json: 'true' },
+  })
+}
+
+test.describe(LIVE ? 'меню: видно только доступное' : 'меню (скип: нет SMOKE_LIVE=1)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.skip(PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа (Plane №348)')
+
+  test('у сотрудника скрыто ровно то, что закрыто', async ({ page }) => {
+    await signIn(page, 'acc_employee')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    // Меню отрисовалось: ассерт «пункта нет» на пустой странице зелен всегда.
+    await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+
+    // Заказчик перечислил недоступное сотруднику поимённо — проверяем его
+    // словами, а не пересчётом прав.
+    for (const item of ITEMS.filter((row) => CLOSED_TO_EMPLOYEE.includes(row.name))) {
+      await expect(
+        itemByHref(menu, item.href),
+        `«${item.name}» заказчик назвал недоступным — пункта быть не должно`,
+      ).toHaveCount(0)
+    }
+    // И столь же поимённо — оставленное открытым.
+    for (const item of ITEMS.filter((row) => OPEN_TO_EMPLOYEE.includes(row.name))) {
+      await expect(
+        itemByHref(menu, item.href),
+        `«${item.name}» среди недоступных не назван — пункт должен остаться`,
+      ).toBeVisible()
+    }
+    await expect(itemByHref(menu, '/statuses')).toBeVisible()
+  })
+
+  test('спрятанный пункт и закрытый экран — одно и то же', async ({ page }) => {
+    await signIn(page, 'acc_employee')
+    await page.goto(`${APP}/security-ops/profile`)
+    const menu = page.locator('aside')
+    await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+
+    for (const item of ITEMS) {
+      const visible = (await itemByHref(menu, item.href).count()) > 0
+      await page.goto(`${APP}${item.href}`)
+      // 🔴 ЖДАТЬ ЗАГОЛОВОК НЕЛЬЗЯ, и это проверено ошибкой. Было «дождись
+      // отказа ИЛИ h1» — а `h1` рисует КАРКАС страницы, до того как гейт
+      // получил ответ о правах. Проба замеряла «экран открыт» на экране,
+      // который через полсекунды показывал отказ, и краснела на «Обзоре»,
+      // где всё работало.
+      //
+      // Отказ — единственный видимый исход, который нас интересует, поэтому
+      // ждём ЕГО с ограниченным терпением: не появился за отведённое время —
+      // экран открыт.
+      await page.waitForLoadState('networkidle').catch(() => {})
+      // Заглушка загрузки раздела уходит ПОСЛЕ того, как маршрут собран и
+      // отрисован. На dev-стенде первый заход в маршрут компилируется дольше
+      // любого разумного ожидания сети: замерено 31.08.2026 — `/security-ops/
+      // vehicles` через 3,5 с после `networkidle` всё ещё показывал
+      // «Загрузка раздела…», и проба читала это как «экран открыт».
+      await expect(page.getByText('Загрузка раздела')).toHaveCount(0, {
+        timeout: 60_000,
+      })
+      let denied = 0
+      await expect
+        .poll(
+          async () => {
+            denied = await page.getByText(DENIED).count()
+            return denied
+          },
+          // Терпение 12 с, а не 4: на dev-стенде гейт отвечает после ответа о
+          // правах, а тот идёт за только что скомпилированным маршрутом.
+          // Замерено — «Администрирование» отказывало на шестой секунде, и
+          // четырёх не хватало. На прод-стенде тот же ассерт укладывается в
+          // сотни миллисекунд; лишнее терпение стоит только тогда, когда
+          // экран и правда открыт.
+          { timeout: 12_000, intervals: [200, 300, 500, 1000] },
+        )
+        .toBeGreaterThanOrEqual(visible ? 0 : 1)
+        .catch(() => {})
+      expect(
+        denied === 0,
+        `«${item.name}»: в меню ${visible ? 'есть' : 'нет'}, а экран ${denied ? 'закрыт' : 'открыт'} — меню и гейт разошлись`,
+      ).toBe(visible)
+    }
+  })
+
+  test('администратор видит все пункты раздела', async ({ page }) => {
+    await signIn(page, 'acc_admin')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+    for (const item of ITEMS) {
+      await expect(
+        itemByHref(menu, item.href),
+        `администратору «${item.name}» закрывать нечем`,
+      ).toBeVisible()
+    }
+  })
+
+  test('отчёт CSV службы начальника второго департамента ограничен его областью', async ({ page }) => {
+    // Не администратор: `acc_dept_head_d2` несёт scoped HEAD_OPS_UNIT. Его
+    // старый глобальный OM_CATEGORY_ORG не должен расширить содержимое CSV.
+    await signIn(page, 'acc_dept_head_d2')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    const serviceReports = itemByHref(menu, '/security-ops/service-reports')
+    const expenseHeading = menu.getByRole('heading', { name: 'Ежедневный расход' })
+    const expenseListId = await expenseHeading.getAttribute('id')
+
+    await expect(serviceReports).toHaveAccessibleName('Отчёты по Службе')
+    await expect(menu.locator(`ul[aria-labelledby="${expenseListId}"]`).getByRole('link', {
+      name: 'Отчёты по Службе',
+    })).toBeVisible()
+    await expect(menu.getByRole('link', { name: 'Отчеты по ОМ' })).toHaveCount(0)
+
+    await serviceReports.click()
+    await expect(page).toHaveURL(/\/security-ops\/service-reports\/?$/)
+    await expect(page.getByRole('heading', { name: 'Отчёты службы' })).toBeVisible()
+    await page.getByLabel('Начало периода').fill('2026-09-09')
+    await page.getByLabel('Конец периода').fill('2026-09-10')
+    const create = page.getByRole('button', { name: 'Сформировать отчёт' })
+    await expect(create).toBeEnabled()
+    await create.click()
+
+    const jobLink = page.getByRole('link', { name: 'Карточка работы' }).first()
+    await expect(jobLink).toBeVisible({ timeout: 30_000 })
+    await jobLink.click()
+    await expect(page).toHaveURL(/\/security-ops\/service-reports\/report-job-/)
+    const ownJobPath = new URL(page.url()).pathname
+
+    const download = page.getByRole('button', { name: 'Скачать', exact: true })
+    await expect(download).toBeEnabled({ timeout: 30_000 })
+    // Клиент получает JSON с содержимым и сохраняет Blob сам: Playwright
+    // не обязан сообщать событие native-download. Проверяем реальную выдачу
+    // CSV по защищённой ручке, а не внутренний механизм браузерной загрузки.
+    const saved = page.waitForResponse((response) =>
+      response.request().method() === 'POST' &&
+      /\/service-report-artifacts\/[^/]+\/download\/?$/.test(response.url()),
+    )
+    await download.click()
+    const savedResponse = await saved
+    expect(savedResponse.status()).toBe(200)
+    const savedFile = (await savedResponse.json()) as {
+      fileName: string
+      content: string
+    }
+    // Это содержимое именно того CSV, который `saveFile` сразу передаёт в
+    // Blob: проверка не может стать зелёной от одного HTTP 200 без файла.
+    expect(savedFile.fileName).toMatch(/\.csv$/)
+    expect(savedFile.content).toContain('# Расход личного состава за период')
+    expect(savedFile.content).toContain('Дата;Сотрудник;Объект;Пост;Состояние')
+    if (SCOPE_PROBE) {
+      // Две реальные смены в соседних департаментах подготовлены до Chromium:
+      // файл второго департамента обязан содержать свою и не содержать чужую.
+      expect(savedFile.content).toContain(SECOND_SCOPE_MARKER)
+      expect(savedFile.content).not.toContain(FIRST_SCOPE_MARKER)
+    }
+
+    // У начальника первого департамента то же право, но другая scoped
+    // область. Прямая карточка не должна раскрывать чужой CSV: это серверный
+    // гейт, а не скрытая кнопка клиента.
+    await signIn(page, 'acc_dept_head')
+    await page.goto(`${APP}${ownJobPath}`)
+    await expect(page.getByRole('heading', { name: 'Работа недоступна' })).toBeVisible()
+  })
+
+  test('отчёты службы закрыты начальнику управления', async ({ page }) => {
+    // Соседняя роль отличается уровнем области, но не должна получить
+    // `report.generate`: отчёт формирует начальник департамента, не управления.
+    await signIn(page, 'acc_dir_head')
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const menu = page.locator('aside')
+    await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+    await expect(itemByHref(menu, '/security-ops/service-reports')).toHaveCount(0)
+
+    await page.goto(`${APP}/security-ops/service-reports`)
+    await expect(page.getByText(DENIED)).toBeVisible()
+  })
+
+  test('карта прав покрывает каждый пункт меню', async () => {
+    // Пункт, забытый в карте, ведёт себя как «права не требует» и виден всем —
+    // отказ пришёл бы только от экрана. Ловится здесь, а не человеком.
+    for (const item of ITEMS) {
+      expect(
+        Object.prototype.hasOwnProperty.call(MODULE_PERMISSION, item.href),
+        `«${item.name}» (${item.href}) не назван в MODULE_PERMISSION`,
+      ).toBe(true)
+    }
+  })
+})
