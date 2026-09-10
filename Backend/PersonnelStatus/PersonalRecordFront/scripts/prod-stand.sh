@@ -7,16 +7,16 @@
 # конца не доходил НИ РАЗУ (Plane №155, №172). Прод-сборка того же кода держит
 # 300-450 МБ и проходит весь смоук за 3,3 минуты (Plane №173).
 #
-#   bash scripts/prod-stand.sh            # собрать и поднять на :3108
-#   bash scripts/prod-stand.sh --no-build # поднять уже собранное
+#   npm run stand:prod                    # собрать и поднять на :3108
+#   npm run stand:prod -- --no-build      # поднять уже собранное
 #
-#   BACKEND_URL=http://localhost:8101 bash scripts/prod-stand.sh
+#   BACKEND_URL=http://localhost:8101 npm run stand:prod
 #                                         # собрать на отдельный бэкенд (№843)
 #
 # Гонять по нему:
 #   SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3108 \
 #     SMOKE_APP=http://localhost:3108 \
-#     npx playwright test --config playwright.smoke.config.ts
+#     npm run playwright -- --config playwright.smoke.config.ts
 #
 # ⚠️ BACKEND_URL ДЕЙСТВУЕТ НА СБОРКУ, а не на запуск: переписи запекаются в
 # `routes-manifest.json` во время `next build`. С `--no-build` скрипт сверяет
