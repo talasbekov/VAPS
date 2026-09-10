@@ -110,7 +110,7 @@ class TestGate:
         assert admin_api.get(f"{ROLES_URL}VIEWER/").status_code == 200
 
     def test_anonymous_denied(self, db):
-        assert APIClient().get(ROLES_URL).status_code == 403
+        assert APIClient().get(ROLES_URL).status_code == 401
 
 
 @pytest.mark.django_db

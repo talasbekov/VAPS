@@ -71,7 +71,7 @@ def post(api, url=RELEASE_URL, division=None, business_date=TODAY, **body):
 
 
 def test_anonymous_is_refused(storage, submitted):
-    assert post(APIClient(), division=submitted).status_code == 403
+    assert post(APIClient(), division=submitted).status_code == 401
 
 
 def test_an_authenticated_user_without_the_permission_is_refused(storage, submitted):

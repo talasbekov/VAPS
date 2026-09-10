@@ -60,11 +60,11 @@ def get(api, division_id, **params):
 
 # ── Гейт и гарды ─────────────────────────────────────────────────────────
 
-def test_anonymous_403(types, tree):
+def test_anonymous_401(types, tree):
     root, _ = tree
     response = get(APIClient(), root.id)
-    assert response.status_code == 403
-    assert response.data["detail"] == "PERMISSION_DENIED"
+    assert response.status_code == 401
+    assert response.data["detail"].code == "not_authenticated"
 
 
 def test_write_right_alone_does_not_open_the_node(types, tree):

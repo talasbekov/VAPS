@@ -62,8 +62,8 @@ def get(api, business_date=TOMORROW, **params):
 # ── Гейт ─────────────────────────────────────────────────────────────────
 
 
-def test_anonymous_403():
-    assert get(APIClient()).status_code == 403
+def test_anonymous_401():
+    assert get(APIClient()).status_code == 401
 
 
 def test_reading_the_block_does_not_require_the_right_to_override(types, division):

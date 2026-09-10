@@ -13,10 +13,11 @@
 Проверка, которую обходят другим клиентом, проверкой не является (№757, №840):
 дверь закрывается на сервере.
 
-ПРАВИЛО — то же, что у ручки раздела ОМ (`operations/api/views.py`,
+ПРАВИЛО №938 — то же, что у ручки раздела ОМ (`operations/api/views.py`,
 `StatusViewSet._assert_employee_in_scope`): право `status.manage` И сотрудник
-в области гранта. Чтение НЕ трогается — оно открыто как было; карточка про
-правку, и сужать список читателей ею нельзя.
+в области гранта. На момент №938 чтение намеренно не менялось: это была
+отдельная release-blocking находка, закрываемая Plane №953 ниже правом
+`status.view` и его областью.
 
 КРАСНАЯ ПРОБА: сними гейт права — красными станут пробы «без права»; сними
 проверку области — красной станет проба «чужое управление»; закрой чтение —
@@ -242,13 +243,150 @@ def test_the_head_cancels_own_status_row(world, head):
     assert row.state == EmployeeStatus.StatusState.CANCELLED
 
 
-# ── чтение не сужено ──────────────────────────────────────────────────────────
+# ── чтение: отдельная граница Plane №953 ─────────────────────────────────────
 
 
-def test_reading_stays_open_to_the_viewer(world, viewer):
-    """Карточка — про правку. Список, история и текущий статус читаются как
-    прежде: «он должен только наблюдать» означает, что наблюдать он должен."""
-    _planned(world["people"]["own"])
+def test_reading_is_limited_to_the_status_view_scope(world, viewer):
+    """Читатель своего управления не получает строку соседнего управления.
+
+    КРАСНАЯ ПРОБА №953: до правки список содержит обе строки.
+    """
+    own = _planned(world["people"]["own"])
+    _planned(world["people"]["foreign"])
+
     listed = viewer.get(URL)
     assert listed.status_code == 200, listed.content
     assert listed.json()["count"] == 1
+    assert [row["id"] for row in listed.json()["results"]] == [own.pk]
+
+
+def test_employee_filter_does_not_reveal_a_foreign_employee(world, viewer):
+    """Foreign existing и nonexistent дают неразличимый ответ.
+
+    КРАСНАЯ ПРОБА по adversarial review №953: django-filter проверял
+    `employee` по глобальному Employee queryset, поэтому чужой существующий
+    id давал 200/пусто, а отсутствующий — 400 и становился existence oracle.
+    """
+    foreign_id = world["people"]["foreign"].pk
+    nonexistent_id = max(person.pk for person in world["people"].values()) + 10_000
+
+    foreign = viewer.get(URL, {"employee": foreign_id})
+    nonexistent = viewer.get(URL, {"employee": nonexistent_id})
+
+    assert foreign.status_code == nonexistent.status_code == 400
+    assert foreign.json() == nonexistent.json()
+
+
+def test_a_foreign_status_cannot_be_retrieved_by_id(world, viewer):
+    foreign = _planned(world["people"]["foreign"])
+
+    response = viewer.get(f"{URL}{foreign.pk}/")
+
+    assert response.status_code == 404, response.content
+
+
+@pytest.mark.parametrize("action", ["history", "planned"])
+def test_employee_reader_actions_refuse_a_foreign_employee(world, viewer, action):
+    foreign_employee_id = world["people"]["foreign"].pk
+
+    response = viewer.get(f"{URL}{action}/?employee_id={foreign_employee_id}")
+
+    assert response.status_code == 403, response.content
+
+
+@pytest.mark.parametrize("action", ["history", "planned"])
+def test_employee_reader_actions_allow_an_own_employee(world, viewer, action):
+    own = _planned(world["people"]["own"])
+    if action == "history":
+        # History по контракту содержит только завершённые/отменённые строки;
+        # прямой update нужен, чтобы model.save не пересчитал будущий период
+        # обратно в PLANNED и проба проверяла именно доступ, а не календарь.
+        EmployeeStatus.objects.filter(pk=own.pk).update(
+            state=EmployeeStatus.StatusState.COMPLETED
+        )
+
+    response = viewer.get(f"{URL}{action}/?employee_id={own.employee_id}")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    rows = body if action == "history" else body["planned"]
+    assert [row["id"] for row in rows] == [own.pk]
+
+
+def test_division_headcount_refuses_a_foreign_division(world, viewer):
+    response = viewer.get(
+        f"{URL}division_headcount/?division_id={world['foreign'].pk}"
+    )
+
+    assert response.status_code == 403, response.content
+
+
+def test_division_headcount_allows_an_own_division(world, viewer):
+    response = viewer.get(
+        f"{URL}division_headcount/?division_id={world['own'].pk}"
+    )
+
+    assert response.status_code == 200, response.content
+    assert response.json()["division_id"] == world["own"].pk
+
+
+def test_absence_statistics_refuse_an_account_scoped_elsewhere(world):
+    user = User.objects.create_user(username="mis-scoped-reader", password="x")
+    world["people"]["own"].user = user
+    world["people"]["own"].save(update_fields=["user"])
+    seed_role("MIS_SCOPED_READER", ("status.view",))
+    RoleAdminService.assign_role(
+        str(user.pk), "MIS_SCOPED_READER", world["foreign"].pk, actor="test"
+    )
+    api = APIClient()
+    api.force_authenticate(user)
+
+    response = api.get(f"{URL}absence_statistics/")
+
+    assert response.status_code == 403, response.content
+
+
+def test_absence_statistics_allow_the_accounts_own_scope(world):
+    user = User.objects.create_user(username="own-scope-reader", password="x")
+    world["people"]["own"].user = user
+    world["people"]["own"].save(update_fields=["user"])
+    seed_role("OWN_SCOPE_READER", ("status.view",))
+    RoleAdminService.assign_role(
+        str(user.pk), "OWN_SCOPE_READER", world["own"].pk, actor="test"
+    )
+    api = APIClient()
+    api.force_authenticate(user)
+
+    response = api.get(f"{URL}absence_statistics/")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["division_id"] == world["own"].pk
+
+
+def test_own_status_detail_stays_readable(world, viewer):
+    own = _planned(world["people"]["own"])
+
+    assert viewer.get(f"{URL}{own.pk}/").status_code == 200
+
+
+def test_an_authenticated_user_without_status_view_cannot_read(world):
+    user = User.objects.create_user(username="no-status-view", password="x")
+    api = APIClient()
+    api.force_authenticate(user)
+
+    response = api.get(URL)
+
+    assert response.status_code == 403, response.content
+    assert response.json() == {"detail": "PERMISSION_DENIED"}
+
+
+def test_an_unscoped_reader_sees_the_whole_catalog(world):
+    own = _planned(world["people"]["own"])
+    foreign = _planned(world["people"]["foreign"])
+    admin = _client("status-admin", ("*",), None)
+
+    response = admin.get(URL)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["count"] == 2
+    assert {row["id"] for row in response.json()["results"]} == {own.pk, foreign.pk}

@@ -39,3 +39,14 @@ class SecondmentRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = SecondmentRequest
         fields = '__all__'
+        # Эти поля принадлежат workflow, а не телу create. Иначе клиент мог
+        # сам назначить источник/актора и сразу создать «одобренный» запрос,
+        # обойдя approve/reject (Plane №958).
+        read_only_fields = (
+            'from_division',
+            'requested_by',
+            'status',
+            'approved_by',
+            'approved_at',
+            'rejection_reason',
+        )

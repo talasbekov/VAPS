@@ -1,11 +1,11 @@
 from rest_framework import viewsets, permissions
 from rest_framework import status as status_codes
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from .serializers import SecondmentRequestSerializer
 from organization_management.apps.secondments.models import SecondmentRequest
 
-from organization_management.apps.divisions.models import Division
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
@@ -14,66 +14,93 @@ from organization_management.apps.statuses.models import EmployeeStatus
 from organization_management.apps.statuses.application.services import (
     StatusApplicationService,
 )
+from organization_management.apps.operations.api.permissions import (
+    RequirePermissionMixin,
+    resolve_actor_id,
+)
+from organization_management.apps.operations.services import (
+    PermissionService as OpsPermissionService,
+)
 
-class SecondmentRequestViewSet(viewsets.ModelViewSet):
+
+class SecondmentRequestViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     """
     ViewSet для управления запросами на прикомандирование.
 
-    Донорская версия резолвила область через кастомного пользователя
-    (user.role/user.division), которого в этом бэке нет — здесь область
-    считается цепочкой User → Employee → StaffUnit → Division, как в
-    statuses; суперпользователь видит всё.
+    Право и область берутся из того же grant-каталога, что у канонического
+    operations API: чтение — status.view, действия — status.manage.
     """
     queryset = SecondmentRequest.objects.all()
     serializer_class = SecondmentRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    permission_map = {
+        'list': 'status.view',
+        'retrieve': 'status.view',
+        'incoming': 'status.view',
+        'outgoing': 'status.view',
+        'create': 'status.manage',
+        'approve': 'status.manage',
+        'reject': 'status.manage',
+        'return_employee': 'status.manage',
+    }
+    # Generic rewrite/delete обходят workflow approve/reject/return. У
+    # канонического operations API они тоже не обслуживаются.
+    http_method_names = ['get', 'post', 'options']
 
-    def _get_department_root(self, division: Division) -> Division:
-        node = division
-        while node.parent and node.division_type != Division.DivisionType.DEPARTMENT:
-            node = node.parent
-        return node
-
-    def _user_division(self, user):
-        employee = getattr(user, "employee", None)
-        staff_unit = getattr(employee, "staff_unit", None) if employee else None
-        return getattr(staff_unit, "division", None) if staff_unit else None
+    def _visible_division_ids(self, permission_code):
+        actor_id = resolve_actor_id(self.request)
+        if actor_id is None:
+            return set()
+        return OpsPermissionService.visible_division_ids(
+            actor_id, permission_code
+        )
 
     def get_queryset(self):
-        user = self.request.user
         qs = super().get_queryset()
-        if not user.is_authenticated:
+        permission_code = self.permission_map.get(self.action)
+        if permission_code is None:
             return qs.none()
-        if user.is_superuser:
+        allowed_ids = self._visible_division_ids(permission_code)
+        if allowed_ids is None:
             return qs
-        division = self._user_division(user)
-        if division is None:
-            return qs.none()
-        # Для остальных — запросы, где источник/приемник в зоне видимости департамента пользователя
-        dept_root = self._get_department_root(division)
-        allowed = dept_root.get_descendants(include_self=True)
-        allowed_ids = allowed.values_list("id", flat=True)
-        return qs.filter(Q(from_division_id__in=allowed_ids) | Q(to_division_id__in=allowed_ids))
+        return qs.filter(
+            Q(from_division_id__in=allowed_ids)
+            | Q(to_division_id__in=allowed_ids)
+        )
 
-    def get_permissions(self):
-        """
-        Определение прав доступа в зависимости от действия.
-        """
-        if self.action in ['create', 'approve', 'reject', 'return']:
-            self.permission_classes = [permissions.IsAuthenticated]
-        else:
-            self.permission_classes = [permissions.IsAuthenticated]
-        return super().get_permissions()
+    def perform_create(self, serializer):
+        """Источник и актор выводятся из серверных данных, не из payload."""
+        employee = serializer.validated_data.get('employee')
+        staff_unit = getattr(employee, 'staff_unit', None) if employee else None
+        from_division = (
+            getattr(staff_unit, 'division', None) if staff_unit else None
+        )
+        if from_division is None:
+            raise ValidationError({
+                'employee': 'Сотрудник не назначен в подразделение.'
+            })
+        allowed_ids = self._visible_division_ids('status.manage')
+        if allowed_ids is not None and from_division.pk not in allowed_ids:
+            raise PermissionDenied('PERMISSION_DENIED')
+        serializer.save(
+            from_division=from_division,
+            requested_by=self.request.user,
+            status=SecondmentRequest.ApprovalStatus.PENDING,
+            approved_by=None,
+            approved_at=None,
+            rejection_reason='',
+        )
 
     def _receiving_side_forbidden(self, request, instance):
         """Принимающая сторона: to_division должен быть в области актора."""
-        if request.user.is_superuser:
+        allowed_ids = self._visible_division_ids('status.manage')
+        if allowed_ids is None:
             return None
-        division = self._user_division(request.user)
-        if division is None:
-            return Response({'detail': 'Пользователь не привязан к сотруднику.'}, status=403)
-        allowed = division.get_descendants(include_self=True)
-        if instance.to_division_id not in allowed.values_list('id', flat=True):
-            return Response({'detail': 'Решение вне вашего подразделения запрещено.'}, status=403)
+        if instance.to_division_id not in allowed_ids:
+            return Response(
+                {'detail': 'Решение вне вашего подразделения запрещено.'},
+                status=403,
+            )
         return None
 
     @action(detail=True, methods=['post'])
@@ -213,16 +240,10 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         """
         Список входящих запросов для текущего пользователя.
         """
-        user = request.user
         queryset = self.get_queryset()
-        if not user.is_superuser:
-            division = self._user_division(user)
-            if division is None:
-                queryset = queryset.none()
-            else:
-                queryset = queryset.filter(
-                    to_division__in=division.get_descendants(include_self=True)
-                )
+        allowed_ids = self._visible_division_ids('status.view')
+        if allowed_ids is not None:
+            queryset = queryset.filter(to_division_id__in=allowed_ids)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -232,6 +253,10 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         Список исходящих запросов от текущего пользователя.
         """
         user = request.user
-        queryset = self.get_queryset().filter(requested_by=user)
+        queryset = self.get_queryset()
+        allowed_ids = self._visible_division_ids('status.view')
+        if allowed_ids is not None:
+            queryset = queryset.filter(from_division_id__in=allowed_ids)
+        queryset = queryset.filter(requested_by=user)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)

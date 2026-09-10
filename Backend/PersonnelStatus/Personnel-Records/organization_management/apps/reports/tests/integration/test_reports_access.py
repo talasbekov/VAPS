@@ -1,5 +1,6 @@
 import pytest
 from django.urls import reverse
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from organization_management.apps.divisions.models import Division
@@ -10,6 +11,7 @@ from organization_management.apps.operations.models import (
 )
 from organization_management.apps.operations.services import RoleAdminService
 from organization_management.apps.reports.models import Report
+from organization_management.apps.reports.api.views import ReportViewSet
 
 User = get_user_model()
 
@@ -68,6 +70,64 @@ def test_data():
 
 @pytest.mark.django_db
 class TestReportsAccess:
+
+    def test_viewset_owns_fail_closed_permission_policy(self):
+        """Защита отчётов не должна зависеть только от global default.
+
+        №976 страхует весь DRF системно, а этот пин держит решение №957 у
+        владельца route: будущая смена settings не переоткроет generate и
+        download молча.
+        """
+        assert ReportViewSet.__dict__.get("permission_classes") == [
+            IsAuthenticated
+        ]
+
+    def test_unauthenticated_cannot_use_any_report_action(
+        self, api_client, test_data
+    ):
+        report = Report.objects.create(
+            job_id="anonymous-policy-probe",
+            division=test_data["dept1"],
+            created_by=test_data["u_admin"],
+        )
+        requests = {
+            "list": lambda: api_client.get(reverse("report-list")),
+            "retrieve": lambda: api_client.get(
+                reverse("report-detail", kwargs={"pk": report.pk})
+            ),
+            "generate": lambda: api_client.post(
+                reverse("report-generate"),
+                {
+                    "division": test_data["dept1"].pk,
+                    "report_type": Report.ReportType.PERSONNEL_ROSTER,
+                },
+            ),
+            "status": lambda: api_client.get(
+                reverse("report-status", kwargs={"pk": report.pk})
+            ),
+            "download": lambda: api_client.get(
+                reverse("report-download", kwargs={"pk": report.pk})
+            ),
+            "expense": lambda: api_client.get(
+                reverse(
+                    "report-expense",
+                    kwargs={"department_id": test_data["dept1"].pk},
+                )
+            ),
+        }
+
+        assert {
+            action: request().status_code
+            for action, request in requests.items()
+        } == {
+            "list": 401,
+            "retrieve": 401,
+            "generate": 401,
+            "status": 401,
+            "download": 401,
+            "expense": 401,
+        }
+        assert Report.objects.filter(job_id="anonymous-policy-probe").count() == 1
 
     def test_unauthenticated_gets_401(self, api_client, test_data):
         url = reverse('report-expense', kwargs={'department_id': test_data['dept1'].id})

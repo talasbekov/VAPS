@@ -15,10 +15,9 @@
 from datetime import date
 
 import pytest
-from django.contrib.auth.models import User
-from rest_framework.test import APIClient
 
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.operations.tests.test_bulk_status_api import client_for
 from organization_management.apps.statuses.models import EmployeeStatus
 
 pytestmark = pytest.mark.django_db
@@ -41,8 +40,9 @@ def make_employee(seq):
 
 @pytest.fixture
 def api():
-    client = APIClient()
-    client.force_authenticate(User.objects.create_user("status-filter-reader"))
+    client, _user = client_for(
+        "status-filter-reader", "STATUS_FILTER_READER", ["status.view"]
+    )
     return client
 
 

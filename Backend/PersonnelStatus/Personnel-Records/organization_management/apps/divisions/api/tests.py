@@ -1,14 +1,19 @@
 from rest_framework.test import APITestCase
-from django.contrib.auth import get_user_model
 from organization_management.apps.divisions.models import Division
+from organization_management.apps.operations.tests.test_bulk_status_api import (
+    client_for,
+)
 
 DivisionType = Division.DivisionType
 
 
 class DivisionViewSetTest(APITestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username='testuser', is_staff=True)
-        self.client.force_authenticate(user=self.user)
+        # Предмет пробы create — валидный CRUD, а не обход
+        # RBAC обычным staff-user. Поэтому manager-право явное.
+        self.client, self.user = client_for(
+            "testuser", "DIVISION_TEST_MANAGER", ["orgstructure.manage"]
+        )
         # `parent` is the real FK name; `code` is unique; enum values are lowercase.
         self.company = Division.objects.create(
             name='Test Company',

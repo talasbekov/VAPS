@@ -14,6 +14,12 @@ from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.operations.models import (
+    Permission,
+    Role,
+    RolePermission,
+)
+from organization_management.apps.operations.services import RoleAdminService
 from organization_management.apps.secondments.models import SecondmentRequest
 from organization_management.apps.staff_unit.models import StaffUnit
 from organization_management.apps.statuses.models import EmployeeStatus
@@ -23,9 +29,18 @@ _ST = EmployeeStatus.StatusType
 
 @pytest.fixture
 def actor(db):
-    return get_user_model().objects.create_superuser(
+    user = get_user_model().objects.create_superuser(
         username="sec-admin", password="x"
     )
+    role = Role.objects.create(code="T958_FLOW", name="№958 flow")
+    permission, _ = Permission.objects.get_or_create(
+        code="status.manage", defaults={"name": "status.manage"}
+    )
+    RolePermission.objects.create(role_code=role, permission_code=permission)
+    RoleAdminService.assign_role(
+        str(user.pk), role.code, actor="test-958-flow"
+    )
+    return user
 
 
 @pytest.fixture

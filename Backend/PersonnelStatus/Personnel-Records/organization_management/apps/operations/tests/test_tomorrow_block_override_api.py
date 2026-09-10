@@ -64,10 +64,10 @@ def post(api, business_date=TOMORROW, reason=REASON, **body):
 # ── Гейт права ───────────────────────────────────────────────────────────
 
 
-def test_anonymous_403():
+def test_anonymous_401():
     response = post(APIClient())
 
-    assert response.status_code == 403
+    assert response.status_code == 401
     assert OpsTomorrowBlockOverride.objects.count() == 0
 
 

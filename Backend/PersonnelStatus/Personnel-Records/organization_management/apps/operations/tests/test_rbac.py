@@ -189,7 +189,7 @@ class TestMyPermissionsApi:
         return api_client, user
 
     def test_anonymous_denied(self, client):
-        assert client.get(self.URL).status_code == 403
+        assert client.get(self.URL).status_code == 401
 
     def test_returns_sorted_codes(self):
         api_client, user = self._client()

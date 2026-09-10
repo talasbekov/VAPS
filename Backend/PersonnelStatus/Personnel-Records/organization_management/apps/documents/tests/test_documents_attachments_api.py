@@ -112,7 +112,7 @@ def orphan_attachment():
 
 
 def test_anonymous_is_refused(storage, issued):
-    assert APIClient().get(URL).status_code == 403
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_an_authenticated_user_without_the_permission_is_refused(storage, issued):

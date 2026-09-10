@@ -73,8 +73,8 @@ def assert_denied_by_gate(response):
     assert "error_code" not in response.data
 
 
-def test_anonymous_403(types, division):
-    assert_denied_by_gate(get(APIClient()))
+def test_anonymous_401(types, division):
+    assert get(APIClient()).status_code == 401
 
 
 def test_without_status_view_403(types, division):

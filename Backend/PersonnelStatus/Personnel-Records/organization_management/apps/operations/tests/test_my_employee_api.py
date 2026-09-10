@@ -19,7 +19,7 @@ URL = "/api/operations/my-employee/"
 
 
 def test_anonymous_is_denied():
-    assert APIClient().get(URL).status_code == 403
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_linked_account_gets_its_own_card():

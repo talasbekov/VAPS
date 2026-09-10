@@ -169,9 +169,11 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
 
-    # разрешаем доступ к публичным эндпоинтам (например /api/token/)
+    # Закрыто по умолчанию (Plane №976): новый ViewSet без собственной
+    # политики не должен становиться публичным из-за забытой строки. Реально
+    # публичные ручки (token/refresh/schema) открываются явно на своих views.
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
 
     'DEFAULT_PAGINATION_CLASS': 'organization_management.apps.common.pagination.StandardResultsSetPagination',

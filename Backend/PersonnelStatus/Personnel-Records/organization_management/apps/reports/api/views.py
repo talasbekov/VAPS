@@ -22,6 +22,7 @@ class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     """
     queryset = Report.objects.all()
     serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
     http_method_names = ['get', 'post']
 
     def get_queryset(self):

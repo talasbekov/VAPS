@@ -24,8 +24,6 @@ from datetime import date, timedelta
 
 import pytest
 from django.utils import timezone
-from django.contrib.auth.models import User
-from rest_framework.test import APIClient
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
@@ -87,8 +85,9 @@ def ops_row(division, types):  # noqa: F811 — фикстуры pytest
 
 
 def test_personnel_catalog_reports_state_lowercase(personnel_row):
-    api = APIClient()
-    api.force_authenticate(User.objects.create_user("state-case-personnel"))
+    api, _ = client_for(
+        "state-case-personnel", "PERSONNEL_STATE_READER", ["status.view"]
+    )
 
     row = api.get(f"{PERSONNEL_URL}?employee={personnel_row.employee_id}").json()["results"][0]
 
@@ -112,8 +111,9 @@ def test_two_catalogs_disagree_on_case_and_this_is_pinned(personnel_row, ops_row
     прогоне, а не всплывать у того, кто первым сведёт два каталога на одном
     экране (этого требует №314).
     """
-    personnel_api = APIClient()
-    personnel_api.force_authenticate(User.objects.create_user("state-case-both"))
+    personnel_api, _ = client_for(
+        "state-case-both", "PERSONNEL_STATE_BOTH", ["status.view"]
+    )
     ops_api, _ = client_for("state-case-both-ops", "ORGD", ["status.view"])
 
     personnel_state = personnel_api.get(

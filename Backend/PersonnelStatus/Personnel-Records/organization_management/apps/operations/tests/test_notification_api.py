@@ -56,8 +56,8 @@ def ids_of(response):
 # ── Чья лента ────────────────────────────────────────────────────────────
 
 
-def test_anonymous_403():
-    assert APIClient().get(URL).status_code == 403
+def test_anonymous_401():
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_an_authenticated_actor_without_any_role_reads_own_feed():
@@ -291,7 +291,7 @@ def test_marking_read_is_refused_without_an_identity():
     api, me = reader()
     row = send(me)
 
-    assert APIClient().post(read_url(row.pk)).status_code == 403
+    assert APIClient().post(read_url(row.pk)).status_code == 401
 
 
 def test_the_owner_marks_it_read_and_gets_the_moment_back():
@@ -394,7 +394,7 @@ READ_ALL_URL = f"{URL}read-all/"
 
 
 def test_read_all_is_refused_without_an_identity():
-    assert APIClient().post(READ_ALL_URL).status_code == 403
+    assert APIClient().post(READ_ALL_URL).status_code == 401
 
 
 def test_read_all_marks_the_whole_feed_and_reports_how_many():
@@ -623,7 +623,7 @@ def test_the_counter_never_leaks_another_persons_feed():
 
 
 def test_the_counter_is_refused_without_an_identity():
-    assert APIClient().get(UNREAD_URL).status_code == 403
+    assert APIClient().get(UNREAD_URL).status_code == 401
 
 
 def test_reading_everything_zeroes_the_counter():

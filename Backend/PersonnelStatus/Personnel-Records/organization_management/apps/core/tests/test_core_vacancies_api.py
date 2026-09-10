@@ -114,7 +114,7 @@ def by_id(response, pk):
 
 
 def test_anonymous_is_refused(staff):
-    assert APIClient().get(URL).status_code == 403
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_permission_is_required(staff):

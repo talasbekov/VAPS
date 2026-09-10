@@ -1,10 +1,16 @@
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from .serializers import DivisionSerializer
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.employees.api.serializers import EmployeeSerializer
+from organization_management.apps.operations.api.permissions import (
+    require_permission,
+    resolve_actor_id,
+)
+from organization_management.apps.operations.services import PermissionService
 
 from django.utils import timezone
 
@@ -39,6 +45,71 @@ class DivisionViewSet(viewsets.ModelViewSet):
     serializer_class = DivisionSerializer
 
     permission_classes = [permissions.IsAuthenticated]
+    WRITE_PERMISSION = "orgstructure.manage"
+    EMPLOYEES_PERMISSION = "personnel.view"
+    WRITE_ACTIONS = frozenset(
+        {
+            "create", "update", "partial_update", "destroy", "restore", "move",
+        }
+    )
+
+    def initial(self, request, *args, **kwargs):
+        """Одного факта входа недостаточно для правки дерева (№955).
+
+        На запись требуется явный код оргструктуры; action
+        employees отдаёт кадровые карточки и потому гейтится
+        отдельным `personnel.view`. Прочие legacy read-actions не меняются.
+        """
+        super().initial(request, *args, **kwargs)
+        if self.action in self.WRITE_ACTIONS:
+            require_permission(request, self.WRITE_PERMISSION)
+        elif self.action == "employees":
+            require_permission(request, self.EMPLOYEES_PERMISSION)
+
+    def _scope_for(self, permission_code):
+        return PermissionService.visible_division_ids(
+            resolve_actor_id(self.request), permission_code
+        )
+
+    def _write_scope(self):
+        return self._scope_for(self.WRITE_PERMISSION)
+
+    def get_queryset(self):
+        """Write-object и employees-source адресуются только в своём scope."""
+        qs = super().get_queryset()
+        scope_permission = None
+        if self.action in self.WRITE_ACTIONS:
+            scope_permission = self.WRITE_PERMISSION
+        elif self.action == "employees":
+            scope_permission = self.EMPLOYEES_PERMISSION
+        if scope_permission is not None:
+            allowed = self._scope_for(scope_permission)
+            if allowed is not None:
+                qs = qs.filter(pk__in=allowed)
+        return qs
+
+    def _assert_parent_in_write_scope(self, parent_id):
+        """Новый parent тоже должен быть в области записи.
+
+        Scoped-manager не может создать второй корень или вынести
+        свой узел за границу обычным PATCH `parent`/action `move`.
+        """
+        allowed = self._write_scope()
+        if allowed is None:
+            return
+        if parent_id is None or int(parent_id) not in allowed:
+            raise PermissionDenied("PERMISSION_DENIED")
+
+    def perform_create(self, serializer):
+        parent = serializer.validated_data.get("parent")
+        self._assert_parent_in_write_scope(parent.pk if parent else None)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        if "parent" in serializer.validated_data:
+            parent = serializer.validated_data["parent"]
+            self._assert_parent_in_write_scope(parent.pk if parent else None)
+        serializer.save()
 
     @action(detail=True, methods=['get'])
     def employees(self, request, pk=None):
@@ -90,6 +161,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
         instance: Division = self.get_object()
         parent_id = request.data.get('parent_id')
         if parent_id is None:
+            self._assert_parent_in_write_scope(parent_id)
             instance.parent = None
             instance.save()
             return Response({'status': 'moved'})
@@ -97,6 +169,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
             parent_id = int(parent_id)
         except (TypeError, ValueError):
             return Response({'detail': 'Параметр parent_id должен быть числом.'}, status=400)
+        self._assert_parent_in_write_scope(parent_id)
         if parent_id == instance.id:
             return Response({'detail': 'Нельзя переместить подразделение само в себя.'}, status=400)
         try:

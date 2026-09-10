@@ -61,7 +61,7 @@ def operator(name="single-op", scope=None):
 
 
 def test_anonymous_is_refused(types, division):  # noqa: F811
-    assert post(APIClient(), body(make_employee(division))).status_code == 403
+    assert post(APIClient(), body(make_employee(division))).status_code == 401
 
 
 def test_the_read_permission_is_not_enough(types, division):  # noqa: F811
