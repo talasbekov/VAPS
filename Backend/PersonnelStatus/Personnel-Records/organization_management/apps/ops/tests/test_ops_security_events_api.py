@@ -313,6 +313,42 @@ def test_create_without_object(manager):
     assert failed.json()["error_code"] == "VISIT_OBJECT_REQUIRED"
 
 
+def test_event_creator_reserves_distinct_fixture_dates(manager):
+    """Убранный DB-курсор вернёт один и тот же день двум подготовки.
+
+    Проверяется контракт обычного создателя ОМ, а не Django-admin: дата нужна
+    ему как вход существующего POST создания, и только серверная атомарная
+    выдача может развести два Playwright worker-процесса.
+    """
+    first = manager.post(f"{URL}fixture-date/", {}, format="json")
+    second = manager.post(f"{URL}fixture-date/", {}, format="json")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["businessDate"] != second.json()["businessDate"]
+
+
+def test_event_creator_can_reserve_one_whole_e2e_run_range(manager):
+    """Один запуск получает свой диапазон, а не вероятностную random-базу."""
+    response = manager.post(f"{URL}fixture-date/", {"count": 3650}, format="json")
+
+    assert response.status_code == 201
+    assert response.json()["businessDate"] == "2027-02-01"
+
+
+def test_fixture_date_reservation_rejects_an_invalid_count(manager):
+    response = manager.post(f"{URL}fixture-date/", {"count": 0}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+def test_event_viewer_cannot_reserve_fixture_dates(viewer):
+    """Дата — ресурс подготовки нового ОМ, поэтому `event.view` недостаточно."""
+    response = viewer.post(f"{URL}fixture-date/", {}, format="json")
+    assert response.status_code == 403
+
+
 def test_create_with_unknown_object_still_refused(manager):
     """Необязательное поле не значит «любое значение»: чужой id — ошибка."""
     resp = manager.post(
