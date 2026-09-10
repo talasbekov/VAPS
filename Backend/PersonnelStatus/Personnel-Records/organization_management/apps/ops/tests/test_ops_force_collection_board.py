@@ -995,6 +995,82 @@ def test_the_listing_reads_status_members_once(manager, hq):  # noqa: F811
     )
 
 
+def test_the_listing_reads_stored_allocation_members_once(manager, hq):  # noqa: F811
+    """Записанный состав трёх ОМ не возвращает `divisions_of` к N+1 (№1021).
+
+    Строка `forceAllocation.members` остаётся источником состава и тогда,
+    когда участие в статусе уже не найдено. Это возможно у исторической
+    записи после чистки участия; листинг обязан показать сохранённого человека
+    и брать его живое подразделение одной пачкой на весь ответ.
+    """
+    import re
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+    from organization_management.apps.ops.tests.test_ops_forces_gathering import (
+        make_assignment_status_type,
+    )
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_employee,
+    )
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    make_assignment_status_type()
+    department = make_department()
+    directorate = make_directorate(department, "Управление сохранённого состава")
+    event_bases = []
+    for index, business_date in enumerate(("2027-01-10", "2027-02-10", "2027-03-10"), start=1):
+        base, allocation_id = allocated_event(manager, department, business_date=business_date)
+        notified = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+        assert notified.status_code == 200, notified.content
+        employee = make_employee(f"Сохранённый-{index}")
+        StaffUnit.objects.create(division=directorate, employee=employee, index=index)
+        added = manager.post(
+            f"{base}forces/allocation/{allocation_id}/members/",
+            {"employeeId": str(employee.pk)},
+            format="json",
+        )
+        assert added.status_code == 200, added.content
+        # Состав в JSON создан настоящей ручкой; убираем только связь статуса
+        # с этим ОМ, чтобы проверить независимый путь сохранённой строки.
+        OpsStatusParticipation.objects.filter(event_id=int(_event_id(base))).delete()
+        event_bases.append(base)
+        if index < 3:
+            _free_object_code()
+
+    with CaptureQueriesContext(connection) as queries:
+        response = hq.get(LIST)
+
+    assert response.status_code == 200, response.content
+    rows = {row["eventId"]: row for row in response.json()["results"]}
+    for base in event_bases:
+        assert rows[str(_event_id(base))]["sent"] == 1
+
+    def touching(table):
+        return [
+            query
+            for query in queries.captured_queries
+            if re.search(rf'(?:FROM|JOIN)\s+"{table}"', query["sql"])
+        ]
+
+    staff_units = touching("staff_units")
+    employees = touching("employees")
+    assert len(staff_units) <= 2, (
+        f"штатные единицы прочитаны {len(staff_units)} раз(а) на "
+        f"{len(event_bases)} сохранённых состава — `divisions_of` вызван по строке: "
+        + "; ".join(query["sql"][:120] for query in staff_units)
+    )
+    assert len(employees) <= 1, (
+        f"сотрудники прочитаны {len(employees)} раз(а) на "
+        f"{len(event_bases)} сохранённых состава — `denorm_for` вызван по строке: "
+        + "; ".join(query["sql"][:120] for query in employees)
+    )
+
+
 def test_the_collection_card_reads_visit_objects_once(manager, hq):  # noqa: F811
     """Карточка сбора читает объекты посещения ОДИН раз, а не по разу на объект
     (Plane №908).
