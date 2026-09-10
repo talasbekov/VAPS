@@ -77,31 +77,63 @@ export function localIsoDate(date: Date = new Date()): string {
  * мероприятия. Диапазон — десять лет от 2027-02-01.
  */
 const DAY_MS = 86_400_000
-const RANGE_DAYS = 3650
+const MAX_RANGE_DAYS = 16_384
 
 /**
  * Каждая e2e-сессия получает свой диапазон через `global-setup.ts` и хранит
  * его начало в E2E_FIXTURE_DATE_RANGE_START. БД защищает бронь singleton-
- * курсором под транзакцией; `workers: 1` остаётся только настройкой живого
- * стенда, а TEST_WORKER_INDEX лишь делит уже эксклюзивный диапазон.
+ * курсором под транзакцией; `TEST_PARALLEL_INDEX` и фактическое число workers
+ * делят уже эксклюзивный диапазон без скрытого предела количества воркеров.
  */
-const WORKERS_MAX = 16
-const BLOCK_DAYS = Math.floor(RANGE_DAYS / WORKERS_MAX)
-const workerIndex = Number(process.env.TEST_WORKER_INDEX ?? 0) % WORKERS_MAX
-const blockStart = workerIndex * BLOCK_DAYS
 let issued = 0
 
-export function uniqueBusinessDate(): string {
-  if (issued >= BLOCK_DAYS) {
-    throw new Error(`e2e-worker ${workerIndex} исчерпал свой диапазон из ${BLOCK_DAYS} дат`)
+function asPositiveInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`e2e ${name} должен быть положительным целым числом`)
   }
+  return value
+}
+
+/** Выдаёт дату внутри непересекающегося среза конкретного worker-slot. */
+export function businessDateForWorker(
+  rangeStart: string,
+  rangeDays: number,
+  parallelIndex: number,
+  workerCount: number,
+  issuedByWorker: number,
+): string {
+  const days = asPositiveInteger(rangeDays, 'rangeDays')
+  const workers = asPositiveInteger(workerCount, 'workers')
+  const index = asPositiveInteger(parallelIndex + 1, 'parallelIndex') - 1
+  const issued = asPositiveInteger(issuedByWorker + 1, 'issued') - 1
+  if (days > MAX_RANGE_DAYS) {
+    throw new Error(`e2e rangeDays (${days}) больше допустимого значения (${MAX_RANGE_DAYS})`)
+  }
+  if (workers > days) {
+    throw new Error(`e2e workers (${workers}) больше доступных дат (${days})`)
+  }
+  if (index >= workers) {
+    throw new Error(`e2e parallelIndex ${index} вне диапазона workers=${workers}`)
+  }
+  const sliceStart = Math.floor((days * index) / workers)
+  const sliceEnd = Math.floor((days * (index + 1)) / workers)
+  if (issued >= sliceEnd - sliceStart) {
+    throw new Error(`e2e-worker ${index} исчерпал свой диапазон из ${sliceEnd - sliceStart} дат`)
+  }
+  const start = Date.parse(`${rangeStart}T00:00:00Z`)
+  if (Number.isNaN(start)) throw new Error(`некорректное начало e2e-диапазона: ${rangeStart}`)
+  return new Date(start + (sliceStart + issued) * DAY_MS).toISOString().slice(0, 10)
+}
+
+export function uniqueBusinessDate(): string {
   const rangeStart = process.env.E2E_FIXTURE_DATE_RANGE_START
   if (rangeStart === undefined) {
     throw new Error('e2e-диапазон дат не забронирован: global-setup.ts не выдал E2E_FIXTURE_DATE_RANGE_START')
   }
-  const start = Date.parse(`${rangeStart}T00:00:00Z`)
-  if (Number.isNaN(start)) throw new Error(`некорректное начало e2e-диапазона: ${rangeStart}`)
-  const offset = blockStart + issued
+  const parallelIndex = Number(process.env.TEST_PARALLEL_INDEX ?? 0)
+  const workers = Number(process.env.E2E_FIXTURE_DATE_WORKERS)
+  const rangeDays = Number(process.env.E2E_FIXTURE_DATE_RANGE_DAYS)
+  const businessDate = businessDateForWorker(rangeStart, rangeDays, parallelIndex, workers, issued)
   issued += 1
-  return new Date(start + offset * DAY_MS).toISOString().slice(0, 10)
+  return businessDate
 }

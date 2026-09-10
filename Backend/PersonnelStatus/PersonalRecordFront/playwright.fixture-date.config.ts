@@ -3,5 +3,5 @@ import smokeConfig from './playwright.smoke.config'
 
 export default {
   ...smokeConfig,
-  testMatch: ['fixture-date-reservation.spec.ts'],
+  testMatch: ['fixture-date-reservation.spec.ts', 'business-date-slices.spec.ts'],
 }

@@ -9,8 +9,11 @@
  *
  * Без `SMOKE_LIVE=1` живые спеки скипаются сами, и проверять нечего.
  */
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import type { FullConfig } from '@playwright/test'
+import { resolvePurgeTarget } from './purge-python'
 import { standVerdict } from './stand-alive'
-import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 /** Отметка для уборки: предполётная отказала, проб не было вовсе (ревью №823).
  *  Без неё `globalTeardown` — он выполняется и после отказа `globalSetup` —
@@ -18,36 +21,45 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
  *  выполнилось ни одной пробы, и съедал бы собственную же цель «одна внятная
  *  строка вместо пятидесяти». */
 export const PREFLIGHT_FAILED = 'STAND_PREFLIGHT_FAILED'
-const FIXTURE_RANGE_DAYS = 3650
+const DATES_PER_WORKER = 256
+const MAX_FIXTURE_WORKERS = 64
+// Совпадает с global-teardown: локальная команда обязана работать с той же
+// PostgreSQL-базой, что и временный Django-стенд, а не с manage.py default.
+const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
+const execFileAsync = promisify(execFile)
 
-async function reserveFixtureDateRange(): Promise<void> {
-  const api = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-  const login = await fetch(`${api}/api/token/`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
-  })
-  const token = (await login.json().catch(() => ({}))) as { access?: string }
-  if (!login.ok || token.access === undefined) {
-    throw new Error(`не удалось получить токен для брони e2e-дат (${login.status})`)
+export function fixtureRangeSize(workers: number): number {
+  if (!Number.isSafeInteger(workers) || workers < 1 || workers > MAX_FIXTURE_WORKERS) {
+    throw new Error(`workers должен быть целым числом от 1 до ${MAX_FIXTURE_WORKERS}; получено ${workers}`)
   }
-  const reservation = await fetch(`${api}/api/ops/security-events/fixture-date/`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token.access}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ count: FIXTURE_RANGE_DAYS }),
-  })
-  const body = (await reservation.json().catch(() => ({}))) as { businessDate?: string }
-  if (!reservation.ok || body.businessDate === undefined) {
-    throw new Error(`не удалось забронировать e2e-диапазон дат (${reservation.status})`)
-  }
-  process.env.E2E_FIXTURE_DATE_RANGE_START = body.businessDate
+  return workers * DATES_PER_WORKER
 }
 
-export default async function globalSetup(): Promise<void> {
+async function reserveFixtureDateRange(workers: number): Promise<void> {
+  const rangeDays = fixtureRangeSize(workers)
+  const target = await resolvePurgeTarget()
+  if (target === null) {
+    throw new Error('не найден Django venv для локальной брони e2e-дат')
+  }
+  const { stdout } = await execFileAsync(
+    target.python,
+    ['manage.py', 'reserve_e2e_fixture_dates', '--count', String(rangeDays), `--settings=${DJANGO_SETTINGS}`],
+    { cwd: target.backendRoot, timeout: 120_000 },
+  )
+  const body = JSON.parse(stdout.trim()) as { businessDate?: string; count?: number }
+  if (typeof body.businessDate !== 'string' || body.count !== rangeDays) {
+    throw new Error('локальная команда вернула некорректную бронь e2e-дат')
+  }
+  process.env.E2E_FIXTURE_DATE_RANGE_START = body.businessDate
+  process.env.E2E_FIXTURE_DATE_WORKERS = String(workers)
+  process.env.E2E_FIXTURE_DATE_RANGE_DAYS = String(rangeDays)
+}
+
+export default async function globalSetup(config: FullConfig): Promise<void> {
   if (process.env.SMOKE_LIVE !== '1') return
   const verdict = await standVerdict()
   if (verdict.alive) {
-    await reserveFixtureDateRange()
+    await reserveFixtureDateRange(config.workers)
     return
   }
   process.env[PREFLIGHT_FAILED] = '1'
