@@ -20,20 +20,15 @@ REPO = Path(__file__).resolve().parents[3]
 BASE = "c637e8264c2a"
 
 
-def main():
-    bundle_source = Path(sys.argv[1]).resolve(strict=True)
-    previous_bundle = (
-        Path(sys.argv[3]).resolve(strict=True) if len(sys.argv) > 3 else None
-    )
-    image_tag = sys.argv[2] if len(sys.argv) > 2 else BASE
+def bundle_password(path):
+    if path is None:
+        return None
     with zipfile.ZipFile(
         io.BytesIO(
-            base64.b64decode(
-                bundle_source.read_bytes().split(b"\n__STAFFING_PAYLOAD__\n", 1)[1]
-            )
+            base64.b64decode(path.read_bytes().split(b"\n__STAFFING_PAYLOAD__\n", 1)[1])
         )
     ) as archive:
-        password = (
+        return (
             archive.read("account-password.txt")
             .decode("utf-8-sig")
             .removesuffix("\n")
@@ -41,6 +36,16 @@ def main():
             if "account-password.txt" in archive.namelist()
             else None
         )
+
+
+def main():
+    bundle_source = Path(sys.argv[1]).resolve(strict=True)
+    previous_bundle = (
+        Path(sys.argv[3]).resolve(strict=True) if len(sys.argv) > 3 else None
+    )
+    image_tag = sys.argv[2] if len(sys.argv) > 2 else BASE
+    password = bundle_password(bundle_source)
+    previous_password = bundle_password(previous_bundle)
     os.umask(0o077)
     with tempfile.TemporaryDirectory(prefix="staffing-docker-test-") as folder:
         root = Path(folder)
@@ -168,9 +173,10 @@ def main():
 
             if password is not None:
                 shell(
-                    'from django.contrib.auth import get_user_model; U=get_user_model(); U.objects.create_user(username="password-smoke-user",password="Synthetic-old_1187"); U.objects.create_superuser(username="password-smoke-admin",password="Synthetic-old_1187"); U.objects.create_user(username="password-smoke-inactive",password=None,is_active=False)'
+                    'from django.contrib.auth import get_user_model; U=get_user_model(); U.objects.create_user(username="password-smoke-user",password="Synthetic-old_1187"); U.objects.create_superuser(username="password-smoke-admin",password="Synthetic-old_1187"); U.objects.create_user(username="password-smoke-inactive",password=None,is_active=False); U.objects.create_user(username="000042",password="Synthetic-old_1187")'
                 )
                 original_accounts = account_snapshot()
+                accounts_before_apply = original_accounts
 
             def dictionary_snapshot():
                 output = shell(
@@ -326,7 +332,9 @@ def main():
                     if line.startswith(b"IDS=")
                 )
                 if password is not None:
-                    assert account_snapshot() == original_accounts
+                    accounts_before_apply = account_snapshot()
+                    if previous_password is None:
+                        assert accounts_before_apply == original_accounts
             out = importer("staff.xlsx", "--apply")
             assert "ПРИМЕНЕНО".encode() in out
             if password is not None:
@@ -335,9 +343,13 @@ def main():
                 assert [r[:-1] for r in original_accounts] == [
                     r[:-1] for r in changed_accounts
                 ]
-                assert all(
-                    a[-1] != b[-1] for a, b in zip(original_accounts, changed_accounts)
-                )
+                if previous_password == password:
+                    assert accounts_before_apply == changed_accounts
+                else:
+                    assert all(
+                        a[-1] != b[-1]
+                        for a, b in zip(accounts_before_apply, changed_accounts)
+                    )
                 from urllib.error import HTTPError
                 from urllib.request import Request, urlopen
 
@@ -362,6 +374,63 @@ def main():
                 assert login_status("password-smoke-inactive", password) == 401
                 print(
                     "PASS: all account passwords reset; live JWT login succeeds for user/admin, old passwords rejected and inactive account stays inactive",
+                    flush=True,
+                )
+
+                def verify_exports():
+                    paths = sorted(
+                        (stack / ".staffing-import/reports").glob("*/accounts.xlsx")
+                    )
+                    assert paths
+                    assert all(
+                        p.stat().st_mode & 0o777 == 0o600
+                        and p.parent.stat().st_mode & 0o777 == 0o700
+                        for p in paths
+                    )
+                    code = """import base64,io,zipfile,json
+from pathlib import Path
+from openpyxl import load_workbook
+from hashlib import sha256
+with zipfile.ZipFile(io.BytesIO(base64.b64decode(Path('/data/import-staffing.sh').read_bytes().split(b'\\n__STAFFING_PAYLOAD__\\n',1)[1]))) as archive:
+    secret=archive.read('account-password.txt').decode('utf-8-sig').removesuffix('\\n').removesuffix('\\r')
+hashes={}
+for path in Path('/data/stack/.staffing-import/reports').glob('*/accounts.xlsx'):
+    book=load_workbook(path)
+    rows=list(book.active.rows)
+    assert [c.value for c in rows[0]]==['Логин','Пароль']
+    assert [[c.value for c in row] for row in rows[1:]]==[[name,secret] for name in EXPECTED_LOGINS]
+    assert all(c.data_type=='s' and c.number_format=='@' for row in rows[1:] for c in row)
+    book.close()
+    hashes[str(path.relative_to('/data'))]=sha256(path.read_bytes()).hexdigest()
+for path in Path('/data/stack/.staffing-import/reports').glob('*/*.json'):
+    assert secret not in path.read_text()
+print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
+""".replace("EXPECTED_LOGINS", repr([a[1] for a in changed_accounts]))
+                    result = ctl(
+                        "run",
+                        "--rm",
+                        "--no-deps",
+                        "-T",
+                        "--entrypoint",
+                        "python",
+                        "-v",
+                        f"{root}:/data:ro",
+                        "backend",
+                        "-c",
+                        code,
+                    )
+                    return json.loads(
+                        next(
+                            line[14:]
+                            for line in result.splitlines()
+                            if line.startswith(b"EXPORT_HASHES=")
+                        )
+                    )
+
+                first_exports = verify_exports()
+                assert len(first_exports) == 1
+                print(
+                    "PASS: private accounts.xlsx contains every login and installed password as literal text; JSON/log output contains no password",
                     flush=True,
                 )
             if previous_bundle:
@@ -469,6 +538,9 @@ def main():
             assert photos_snapshot() == pictures
             if password is not None:
                 assert account_snapshot() == changed_accounts
+                exports = verify_exports()
+                assert len(exports) == len(first_exports) + 1
+                assert all(exports[p] == data for p, data in first_exports.items())
             print(
                 "PASS: repeat creates no duplicates and changes no prior records",
                 flush=True,
@@ -500,6 +572,7 @@ def main():
             importer()
             if password is not None:
                 assert account_snapshot() == changed_accounts
+                verify_exports()
             print(
                 "PASS: recreation retains mounted loader and imported data", flush=True
             )

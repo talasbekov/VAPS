@@ -371,6 +371,24 @@ class PortableUpdates(unittest.TestCase):
     def test_no_bundled_password_keeps_accounts_untouched(self):
         self.assertNotIn("--account-password-file", self.installer().roster_args())
 
+    def test_export_path_is_requested_only_with_bundled_password(self):
+        (self.package / "account-password.txt").write_text("Synthetic-export_1188")
+        self.installer().run()
+        commands = [
+            e for e in self.events if len(e) > 1 and e[1] == "import_staffing_xlsx"
+        ]
+        self.assertEqual(len(commands), 2)
+        self.assertTrue(all("--accounts-export" in e for e in commands))
+        self.assertTrue(
+            all(
+                e[e.index("--accounts-export") + 1]
+                == "/opt/staffing-reports/accounts.xlsx"
+                for e in commands
+            )
+        )
+        probes = [e for e in self.events if e[0].endswith("probe.py")]
+        self.assertTrue(all("--accounts-export" not in e for e in probes))
+
     def test_photos_discovered_next_to_original_shell_and_only_source_mounts(self):
         photos = self.shell.parent / "photos"
         photos.mkdir()
@@ -659,10 +677,11 @@ class BuilderHistory(unittest.TestCase):
         builder = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(builder)
         versions = builder.previous_versions()
-        self.assertEqual(len(versions), 4)
+        self.assertEqual(len(versions), 5)
         self.assertEqual(
             {v["manifest_sha256"] for v in versions},
             {
+                "04f7dd1d8f3e65d81aa1736bab187a0cb30b387cefe0dcc3e44c20bca6de08e3",
                 "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f",
                 "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41",
                 "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d",
@@ -672,6 +691,7 @@ class BuilderHistory(unittest.TestCase):
         self.assertEqual(
             {v["manifest_sha256"]: len(v["files"]) for v in versions},
             {
+                "04f7dd1d8f3e65d81aa1736bab187a0cb30b387cefe0dcc3e44c20bca6de08e3": 13,
                 "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f": 13,
                 "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41": 13,
                 "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d": 12,

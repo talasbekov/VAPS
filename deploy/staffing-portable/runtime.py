@@ -625,6 +625,9 @@ class Installer:
         )
         report_dir.mkdir(parents=True, mode=0o700)
         command = ["manage.py", "import_staffing_xlsx", *self.roster_args()]
+        accounts_export = (self.package / "account-password.txt").is_file()
+        if accounts_export:
+            command += ["--accounts-export", "/opt/staffing-reports/accounts.xlsx"]
         self.oneoff(
             *command,
             "--report",
@@ -642,6 +645,8 @@ class Installer:
                 reports=report_dir,
             )
             print("Импорт завершён. Отчёты: " + str(report_dir))
+            if accounts_export:
+                print("Логины и пароли: " + str(report_dir / "accounts.xlsx"))
         else:
             print("Сверка с базой выполнена без записи. Отчёт: " + str(report_dir))
 
