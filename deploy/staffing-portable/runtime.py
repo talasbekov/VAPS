@@ -203,6 +203,11 @@ class Installer:
 
     def roster_args(self):
         result = ["/opt/staffing.xlsx", "--match-dictionary-names"]
+        if (self.package / "account-password.txt").is_file():
+            result += [
+                "--account-password-file",
+                "/opt/staffing-package/account-password.txt",
+            ]
         if self.args.missing_parent_code:
             result += ["--missing-parent-code", self.args.missing_parent_code]
         if self.photos_dir:

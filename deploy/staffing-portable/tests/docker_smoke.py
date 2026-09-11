@@ -4,13 +4,16 @@ python3 deploy/staffing-portable/tests/docker_smoke.py /path/import-staffing.sh
 Creates a separate Compose project and removes only that project's test volumes.
 """
 
+import base64
 import hashlib
+import io
 import json
 import os
 import secrets
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -23,6 +26,21 @@ def main():
         Path(sys.argv[3]).resolve(strict=True) if len(sys.argv) > 3 else None
     )
     image_tag = sys.argv[2] if len(sys.argv) > 2 else BASE
+    with zipfile.ZipFile(
+        io.BytesIO(
+            base64.b64decode(
+                bundle_source.read_bytes().split(b"\n__STAFFING_PAYLOAD__\n", 1)[1]
+            )
+        )
+    ) as archive:
+        password = (
+            archive.read("account-password.txt")
+            .decode("utf-8-sig")
+            .removesuffix("\n")
+            .removesuffix("\r")
+            if "account-password.txt" in archive.namelist()
+            else None
+        )
     os.umask(0o077)
     with tempfile.TemporaryDirectory(prefix="staffing-docker-test-") as folder:
         root = Path(folder)
@@ -135,6 +153,24 @@ def main():
             shell(
                 'from organization_management.apps.dictionaries.models import Position, Rank; Position.objects.create(code="SAVED-P",name="Начальник отдела",level=6); Rank.objects.create(code="SAVED-R",name="Полковник",level=7)'
             )
+
+            def account_snapshot():
+                out = shell(
+                    'import json; from django.contrib.auth import get_user_model; print("ACCOUNTS="+json.dumps(list(get_user_model().objects.order_by("pk").values_list("pk","username","is_active","is_staff","is_superuser","password"))))'
+                )
+                return json.loads(
+                    next(
+                        line[9:]
+                        for line in out.splitlines()
+                        if line.startswith(b"ACCOUNTS=")
+                    )
+                )
+
+            if password is not None:
+                shell(
+                    'from django.contrib.auth import get_user_model; U=get_user_model(); U.objects.create_user(username="password-smoke-user",password="Synthetic-old_1187"); U.objects.create_superuser(username="password-smoke-admin",password="Synthetic-old_1187"); U.objects.create_user(username="password-smoke-inactive",password=None,is_active=False)'
+                )
+                original_accounts = account_snapshot()
 
             def dictionary_snapshot():
                 output = shell(
@@ -255,6 +291,8 @@ def main():
 
             importer("invalid.xlsx", expected=1)
             importer()
+            if password is not None:
+                assert account_snapshot() == original_accounts
             assert not (stack / ".staffing-import/manifest.json").exists()
             shell(
                 "from organization_management.apps.employees.models import Employee; assert Employee.objects.count()==1"
@@ -287,8 +325,45 @@ def main():
                     for line in previous_ids.splitlines()
                     if line.startswith(b"IDS=")
                 )
+                if password is not None:
+                    assert account_snapshot() == original_accounts
             out = importer("staff.xlsx", "--apply")
             assert "ПРИМЕНЕНО".encode() in out
+            if password is not None:
+                assert password.encode() not in out
+                changed_accounts = account_snapshot()
+                assert [r[:-1] for r in original_accounts] == [
+                    r[:-1] for r in changed_accounts
+                ]
+                assert all(
+                    a[-1] != b[-1] for a, b in zip(original_accounts, changed_accounts)
+                )
+                from urllib.error import HTTPError
+                from urllib.request import Request, urlopen
+
+                def login_status(username, login_password):
+                    request = Request(
+                        f"http://127.0.0.1:{ports[0]}/api/token/",
+                        data=json.dumps(
+                            {"username": username, "password": login_password}
+                        ).encode(),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    try:
+                        with urlopen(request) as response:
+                            assert "access" in json.loads(response.read())
+                            return response.status
+                    except HTTPError as exc:
+                        return exc.code
+
+                for name in ("password-smoke-user", "password-smoke-admin"):
+                    assert login_status(name, password) == 200
+                    assert login_status(name, "Synthetic-old_1187") == 401
+                assert login_status("password-smoke-inactive", password) == 401
+                print(
+                    "PASS: all account passwords reset; live JWT login succeeds for user/admin, old passwords rejected and inactive account stays inactive",
+                    flush=True,
+                )
             if previous_bundle:
                 current_ids = shell(
                     'from organization_management.apps.employees.models import Employee; print("IDS="+str(list(Employee.objects.order_by("pk").values_list("pk",flat=True))))'
@@ -374,11 +449,26 @@ def main():
                 'psql -U "$POSTGRES_USER" -d staffing_backup_check -Atc "SELECT count(*) FROM employees"',
             )
             assert restored.strip() == b"1", restored
+            if password is not None:
+                restored_accounts = ctl(
+                    "exec",
+                    "-T",
+                    "db",
+                    "sh",
+                    "-c",
+                    'psql -U "$POSTGRES_USER" -d staffing_backup_check -Atc "SELECT row_to_json(a) FROM (SELECT id,password FROM auth_user ORDER BY id) a"',
+                )
+                actual = [json.loads(line) for line in restored_accounts.splitlines()]
+                assert actual == [
+                    {"id": row[0], "password": row[-1]} for row in original_accounts
+                ]
             print("PASS: backup actually restores pre-import database", flush=True)
             out = importer("staff.xlsx", "--apply")
             assert "создать: 0; обновить: 0; без изменений: 13".encode() in out
             shell(validation)
             assert photos_snapshot() == pictures
+            if password is not None:
+                assert account_snapshot() == changed_accounts
             print(
                 "PASS: repeat creates no duplicates and changes no prior records",
                 flush=True,
@@ -408,6 +498,8 @@ def main():
             shell(validation)
             assert photos_snapshot() == pictures
             importer()
+            if password is not None:
+                assert account_snapshot() == changed_accounts
             print(
                 "PASS: recreation retains mounted loader and imported data", flush=True
             )
@@ -467,6 +559,8 @@ def main():
             importer("missing.xlsx", "--apply")
             shell(orphan_validation)
             assert photos_snapshot() == pictures
+            if password is not None:
+                assert account_snapshot() == changed_accounts
             print(
                 "PASS: missing parent becomes6769, root0 cleared, actual codes/photos preserved and repeat idempotent",
                 flush=True,

@@ -357,6 +357,20 @@ class PortableUpdates(unittest.TestCase):
         self.assertIn("--missing-parent-code", args)
         self.assertEqual(args[args.index("--missing-parent-code") + 1], "6769")
 
+    def test_bundled_password_is_passed_by_file_without_exposing_value(self):
+        secret = "Synthetic-bundle-only_1187"
+        (self.package / "account-password.txt").write_text(secret)
+        args = self.installer().roster_args()
+        self.assertIn("--account-password-file", args)
+        self.assertEqual(
+            args[args.index("--account-password-file") + 1],
+            "/opt/staffing-package/account-password.txt",
+        )
+        self.assertNotIn(secret, str(args))
+
+    def test_no_bundled_password_keeps_accounts_untouched(self):
+        self.assertNotIn("--account-password-file", self.installer().roster_args())
+
     def test_photos_discovered_next_to_original_shell_and_only_source_mounts(self):
         photos = self.shell.parent / "photos"
         photos.mkdir()
@@ -622,6 +636,22 @@ class PortableUpdates(unittest.TestCase):
 
 
 class BuilderHistory(unittest.TestCase):
+    def test_password_file_validation_before_build(self):
+        spec = importlib.util.spec_from_file_location(
+            "builder", Path(__file__).parents[1] / "build.py"
+        )
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        with tempfile.TemporaryDirectory() as root:
+            secret = Path(root) / "password.txt"
+            for invalid in (b"", b"\n", b"two\nlines", b"x\0y", b"\xff", b"x" * 1025):
+                secret.write_bytes(invalid)
+                with self.subTest(size=len(invalid)), self.assertRaises(SystemExit):
+                    builder.read_password_file(secret)
+            valid = b"\xef\xbb\xbfSynthetic-only_1187\r\n"
+            secret.write_bytes(valid)
+            self.assertEqual(builder.read_password_file(secret), valid)
+
     def test_previous_maps_come_from_pinned_git_and_match_delivered_manifest(self):
         spec = importlib.util.spec_from_file_location(
             "builder", Path(__file__).parents[1] / "build.py"
@@ -629,10 +659,11 @@ class BuilderHistory(unittest.TestCase):
         builder = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(builder)
         versions = builder.previous_versions()
-        self.assertEqual(len(versions), 3)
+        self.assertEqual(len(versions), 4)
         self.assertEqual(
             {v["manifest_sha256"] for v in versions},
             {
+                "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f",
                 "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41",
                 "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d",
                 "b3c9deee03303eae8d5bf0a9d147f8bf4941c4cf06b8958c665a31826b00fe80",
@@ -641,6 +672,7 @@ class BuilderHistory(unittest.TestCase):
         self.assertEqual(
             {v["manifest_sha256"]: len(v["files"]) for v in versions},
             {
+                "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f": 13,
                 "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41": 13,
                 "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d": 12,
                 "b3c9deee03303eae8d5bf0a9d147f8bf4941c4cf06b8958c665a31826b00fe80": 12,
@@ -661,6 +693,8 @@ class BuilderHistory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
             output = root / "delivery with spaces" / "import-staffing.sh"
+            password_file = root / "private-password.txt"
+            password_file.write_bytes(b"Synthetic-build-only_1187")
             real_check_output = subprocess.check_output
 
             def no_docker(command, **kwargs):
@@ -671,12 +705,26 @@ class BuilderHistory(unittest.TestCase):
 
             with (
                 patch.object(builder.subprocess, "check_output", no_docker),
-                patch("sys.argv", ["build.py", "--output", str(output)]),
+                patch(
+                    "sys.argv",
+                    [
+                        "build.py",
+                        "--output",
+                        str(output),
+                        "--account-password-file",
+                        str(password_file),
+                    ],
+                ),
             ):
                 builder.main()
             shell, payload = output.read_bytes().split(b"\n__STAFFING_PAYLOAD__\n", 1)
             archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(payload)))
             manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual(
+                archive.read("account-password.txt"), password_file.read_bytes()
+            )
+            self.assertNotIn(password_file.read_bytes(), archive.read("manifest.json"))
+            self.assertEqual(output.stat().st_mode & 0o777, 0o700)
             self.assertEqual(manifest["previous_versions"], builder.previous_versions())
             # Exercise the real generated launcher with a recorder instead of Docker runtime.
             replacement = io.BytesIO()
