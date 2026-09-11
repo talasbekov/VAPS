@@ -465,3 +465,25 @@ def test_name_matching_does_not_merge_distinct_source_dictionary_codes(xlsx):
     with pytest.raises(CommandError, match="Несколько кодов position"):
         run(xlsx(rows), apply=True, match_dictionary_names=True)
     assert Employee.objects.count() == 0
+
+
+@pytest.mark.parametrize("cycle", [False, True])
+def test_organization_parent_from_later_row_is_applied_or_cycle_rejected(xlsx, cycle):
+    child = sample()
+    child[5:8] = ["6935", "Служба охраны Примера", "9000"]
+    root = sample("43", "101", "000000000043")
+    root[5:8] = ["9000", "Организация Примера", "6935" if cycle else None]
+    path = xlsx([child, root])
+    if cycle:
+        before = [m.objects.count() for m in (Division, Employee, StaffUnit)]
+        with pytest.raises(CommandError, match="[Цц]икл"):
+            run(path, apply=True)
+        assert [m.objects.count() for m in (Division, Employee, StaffUnit)] == before
+    else:
+        run(path, apply=True)
+        division = Division.objects.get(code="6935")
+        assert division.parent.code == "9000"
+        assert division.parent.parent is None
+        assert StaffUnit.objects.get(external_id="100").division == division
+        run(path, apply=True)
+        assert Division.objects.filter(code__in=["6935", "9000"]).count() == 2

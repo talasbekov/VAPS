@@ -177,6 +177,30 @@ def test_invalid_zip_is_reported(tmp_path):
     assert result.errors and not result.rows
 
 
+@pytest.mark.parametrize("order", [(0, 1, 2, 3), (3, 2, 1, 0), (2, 0, 3, 1)])
+def test_organization_parent_below_children_preserves_complete_tree(tmp_path, order):
+    parent = sample("43", "101", "000000000043")
+    parent[5:8] = ["6984", "2 управление Службы охраны Примера", "6935"]
+    organization = sample("44", "102", "000000000044")
+    organization[5:8] = ["6935", "Служба охраны Примера", "9000"]
+    root = sample("45", "103", "000000000045")
+    root[5:8] = ["9000", "Организация Примера", None]
+    rows = [sample(), parent, organization, root]
+    roster = read_roster(workbook(tmp_path, [rows[i] for i in order]))
+    assert not roster.errors
+    nodes, errors, warnings = infer_divisions(roster.rows)
+    assert not errors
+    assert not warnings
+    assert {code: node["parent_code"] for code, node in nodes.items()} == {
+        "6661": "6984",
+        "6984": "6935",
+        "6935": "9000",
+        "9000": None,
+    }
+    assert nodes["6935"]["name"] == "Служба охраны Примера"
+    assert nodes["6935"]["division_type"] == "organization"
+
+
 def test_unexpected_reader_failure_is_not_hidden(tmp_path, monkeypatch):
     from organization_management.apps.staff_unit import roster_xlsx
 

@@ -263,6 +263,7 @@ def name_path(name):
 
 def infer_divisions(rows):
     nodes, errors, warnings, paths, known = {}, [], [], {}, {}
+    declared_parents = {}
 
     def path_key(parts):
         return tuple((name.casefold(), kind) for name, kind in parts)
@@ -301,17 +302,16 @@ def infer_divisions(rows):
 
     for row in rows:
         code = row["division_code"]
+        parent = row["parent_code"] or None
+        if code in declared_parents and declared_parents[code] != parent:
+            errors.append(f"Противоречие дерева для подразделения {code}.")
+        declared_parents[code] = parent
         parts = name_path(row["division_name"])
         paths[code] = parts
         if parts:
             register(path_key(parts), code)
-            if row["parent_code"]:
-                if len(parts) == 1:
-                    errors.append(
-                        f"Организация {code} имеет родителя; задайте явную структуру в config.divisions."
-                    )
-                else:
-                    register(path_key(parts[1:]), row["parent_code"])
+            if parent and len(parts) > 1:
+                register(path_key(parts[1:]), parent)
     for row in rows:
         parts = paths[row["division_code"]]
         if not parts:
@@ -341,7 +341,13 @@ def infer_divisions(rows):
                 "code": code,
                 "name": name,
                 "division_type": kind,
-                "parent_code": codes[index + 1] if index + 1 < len(codes) else None,
+                # A name suffix ends the named path, not necessarily the tree.
+                # Its declared parent may appear anywhere in the workbook.
+                "parent_code": (
+                    codes[index + 1]
+                    if index + 1 < len(codes)
+                    else declared_parents.get(code)
+                ),
                 "inferred": True,
             }
             merge_node(node)
