@@ -46,6 +46,7 @@ class ImportPlan:
     photos: dict = field(default_factory=dict)
     parent_replacements: list = field(default_factory=list)
     password_reset: dict = field(default_factory=dict)
+    account_logins: list = field(default_factory=list, repr=False)
 
     def report(self):
         # Do not leak names/IIN through command logs. Row numbers locate input.
@@ -619,6 +620,7 @@ def _apply_import(
 
             users = get_user_model().objects.select_for_update().order_by("pk")
             for user in users:
+                plan.account_logins.append(user.get_username())
                 # No setter: an already matching hash must remain byte-identical.
                 if check_password(account_password, user.password):
                     plan.password_reset["unchanged"] += 1

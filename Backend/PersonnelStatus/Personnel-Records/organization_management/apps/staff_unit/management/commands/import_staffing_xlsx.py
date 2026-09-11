@@ -2,11 +2,14 @@
 
 import json
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
+from openpyxl.utils.exceptions import IllegalCharacterError
 
 from organization_management.apps.staff_unit.roster_import import (
     apply_import,
@@ -91,12 +94,55 @@ def read_account_password(path):
     return password
 
 
+def write_accounts_export(path, logins, password):
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Учётные записи"
+    sheet.freeze_panes = "A2"
+    sheet.column_dimensions["A"].width = 36
+    sheet.column_dimensions["B"].width = 28
+    sheet.append(["Логин", "Пароль"])
+    for row, login in enumerate(logins, 2):
+        for column, value in enumerate((login, password), 1):
+            cell = sheet.cell(row, column, value)
+            # Literal text preserves leading zeros and prevents Excel formulas.
+            cell.data_type = "s"
+            cell.number_format = "@"
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, prefix=".accounts-", suffix=".xlsx", delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            os.fchmod(stream.fileno(), 0o600)
+            book.save(stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Publish a complete file without replacing any existing export/symlink.
+        os.link(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        book.close()
+
+
 class Command(BaseCommand):
     help = "Штатка XLSX: проверка дерева/сотрудников, затем явное --apply; без удаления отсутствующих строк."
     requires_system_checks = ()
 
     def add_arguments(self, parser):
         parser.add_argument("xlsx_path")
+        parser.add_argument(
+            "--accounts-export",
+            help="Новый XLSX с логинами и установленным паролем всех учёток; только после успешного --apply, права600.",
+        )
         parser.add_argument(
             "--account-password-file",
             help="Файл пароля для ВСЕХ учётных записей, включая администраторов; запись только с --apply.",
@@ -144,6 +190,29 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         account_password = read_account_password(options["account_password_file"])
+        export_path = (
+            Path(options["accounts_export"]).absolute()
+            if options["accounts_export"]
+            else None
+        )
+        if export_path:
+            if account_password is None:
+                raise CommandError(
+                    "Для выгрузки учётных записей нужен файл устанавливаемого пароля."
+                )
+            if os.path.lexists(export_path):
+                raise CommandError("Файл выгрузки уже существует; выберите новый путь.")
+            if export_path.suffix.lower() != ".xlsx" or not export_path.parent.is_dir():
+                raise CommandError(
+                    "Для выгрузки нужен новый файл .xlsx в существующем каталоге."
+                )
+            if (
+                options["report"]
+                and Path(options["report"]).resolve() == export_path.resolve()
+            ):
+                raise CommandError(
+                    "Файл выгрузки и JSON-отчёт должны иметь разные пути."
+                )
         config = read_config(options["config"])
         roster = read_roster(
             options["xlsx_path"],
@@ -199,6 +268,23 @@ class Command(BaseCommand):
                 raise CommandError(
                     "Не удалось создать новый файл отчёта; существующий файл не перезаписывается."
                 ) from exc
+        export_error = None
+
+        def report_failure_message():
+            if export_error:
+                state = export_error
+            elif report and report.get("applied"):
+                state = (
+                    "Импорт и смена паролей выполнены."
+                    if account_password is not None
+                    else "Импорт выполнен."
+                )
+                if report.get("accounts_export", {}).get("written"):
+                    state += " Выгрузка сохранена."
+            else:
+                state = "Импорт не применён."
+            return state + " JSON-отчёт сохранить не удалось."
+
         try:
             if report is None:
                 try:
@@ -233,6 +319,32 @@ class Command(BaseCommand):
                     if report["applied"]
                     else "ПРОВЕРКА — данные не изменены"
                 )
+            if export_path:
+                report["accounts_export"] = {
+                    "file": str(export_path),
+                    "rows": 0,
+                    "written": False,
+                }
+                if report["applied"]:
+                    try:
+                        write_accounts_export(
+                            export_path, plan.account_logins, account_password
+                        )
+                    except (OSError, ValueError, IllegalCharacterError):
+                        # The database transaction has committed. Never claim a rollback
+                        # or include values from a workbook exception in the message.
+                        export_error = "Импорт и смена паролей выполнены; не удалось сохранить выгрузку учётных записей. Проверьте доступ и свободное место, затем повторите запуск с новым путём выгрузки."
+                    else:
+                        report["accounts_export"].update(
+                            rows=len(plan.account_logins), written=True
+                        )
+                        self.stdout.write(
+                            f"Выгрузка учётных записей: {export_path}; строк: {len(plan.account_logins)}."
+                        )
+                else:
+                    self.stdout.write(
+                        "Выгрузка логинов и паролей будет создана только после успешного --apply."
+                    )
             report["rows"] = len(roster.rows)
             for node in report["divisions"]:
                 self.stdout.write(
@@ -265,11 +377,21 @@ class Command(BaseCommand):
             for warning in report["warnings"]:
                 self.stdout.write(self.style.WARNING(warning))
             if output:
-                json.dump(report, output, ensure_ascii=False, indent=2)
-                output.write("\n")
-                output.flush()
+                try:
+                    json.dump(report, output, ensure_ascii=False, indent=2)
+                    output.write("\n")
+                    output.flush()
+                except OSError:
+                    raise CommandError(report_failure_message()) from None
             if report["errors"]:
                 raise CommandError("\n".join(report["errors"]))
+            if export_error:
+                raise CommandError(export_error)
         finally:
             if output:
-                output.close()
+                error_in_flight = sys.exc_info()[0] is not None
+                try:
+                    output.close()
+                except OSError:
+                    if not error_in_flight:
+                        raise CommandError(report_failure_message()) from None
