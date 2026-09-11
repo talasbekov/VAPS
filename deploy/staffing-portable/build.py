@@ -12,7 +12,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 BACKEND = REPO / "Backend/PersonnelStatus/Personnel-Records"
-SOURCE_COMMIT = "cbac0f704fdfa2cf9d5c711ff2a1974b174522de"
+SOURCE_COMMIT = "05e4d78b1f5a8da47c2ab9e8cb3db50af4e410a3"
+SOURCE_BASE = "cbac0f704fdfa2cf9d5c711ff2a1974b174522de^"
 PREFIX = "Backend/PersonnelStatus/Personnel-Records/"
 CTL = """#!/usr/bin/env bash
 set -euo pipefail
@@ -30,7 +31,7 @@ def main():
     parser.add_argument("--compatible-image", action="append", default=[])
     args = parser.parse_args()
     files = subprocess.check_output(
-        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", SOURCE_COMMIT],
+        ["git", "diff", "--name-only", SOURCE_BASE, SOURCE_COMMIT],
         cwd=REPO,
         text=True,
     ).splitlines()

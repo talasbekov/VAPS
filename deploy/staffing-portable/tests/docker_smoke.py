@@ -127,6 +127,9 @@ def main():
             shell(
                 'from organization_management.apps.employees.models import Employee; Employee.objects.create(personnel_number="UNCHANGED",last_name="Synthetic",first_name="Existing",notes="retain-me")'
             )
+            shell(
+                'from organization_management.apps.dictionaries.models import Position, Rank; Position.objects.create(code="SAVED-P",name="Начальник отдела",level=6); Rank.objects.create(code="SAVED-R",name="Полковник",level=7)'
+            )
             headers = [
                 "ИИН (табельный номер)",
                 "personId",
@@ -206,8 +209,11 @@ def main():
             assert (stack / "ctl.sh").stat().st_mode & 0o111
             validation = 'from organization_management.apps.employees.models import Employee; from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Employee.objects.count()==3; assert Employee.objects.get(personnel_number="UNCHANGED").notes=="retain-me"; assert Division.objects.count()==3; assert StaffUnit.objects.count()==2; assert Employee.objects.filter(external_id__in=["42","43"],birth_date__isnull=True,hire_date__isnull=True,gender__isnull=True).count()==2; assert StaffUnit.objects.filter(import_order=8,position_category="C-S-5").count()==2'
             shell(validation)
+            shell(
+                'from organization_management.apps.dictionaries.models import Position, Rank; from organization_management.apps.staff_unit.models import StaffUnit; assert Position.objects.count()==1; assert Rank.objects.count()==1; assert StaffUnit.objects.filter(position__code="SAVED-P",employee__rank__code="SAVED-R").count()==2; assert Position.objects.get(code="SAVED-P").level==6; assert Rank.objects.get(code="SAVED-R").level==7'
+            )
             print(
-                "PASS: install old image, migrate, preserve existing person, import hierarchy/slots, checksum and executable mode",
+                "PASS: install old image, migrate, reuse saved dictionaries, preserve existing person, import hierarchy/slots, checksum and executable mode",
                 flush=True,
             )
             backup = next((stack / ".staffing-import/backups").glob("*.dump"))

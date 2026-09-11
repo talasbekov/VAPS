@@ -173,7 +173,7 @@ class Installer:
         )
 
     def roster_args(self):
-        result = ["/opt/staffing.xlsx"]
+        result = ["/opt/staffing.xlsx", "--match-dictionary-names"]
         if self.args.skip_invalid_iin:
             result.append("--skip-invalid-iin")
         if self.args.sheet:
