@@ -299,6 +299,7 @@ def main():
                 )
 
             importer("invalid.xlsx", expected=1)
+            assert list((stack / ".staffing-import/reports").glob("*/file-check.json"))
             importer()
             if password is not None:
                 assert account_snapshot() == original_accounts
@@ -643,6 +644,9 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                     None,
                 ],
             ]
+            orphan_rows[0][:5] = ["000000000044", "44", "Синтетический", "Тест", "44"]
+            orphan_rows[1][:5] = ["000000000045", "45", "Синтетический", "Тест", "45"]
+            (root / "photos" / "000000000044.jpg").write_bytes(b"corrupted JPEG")
             orphan_rows[0][8] = "OTHER-P1"
             orphan_rows[1][8] = "OTHER-P2"
             ctl(
@@ -656,10 +660,14 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                 f"{root}:/data",
                 "backend",
                 "-c",
-                f'from openpyxl import Workbook; w=Workbook(); w.active.append({headers!r}); [w.active.append(r) for r in {orphan_rows!r}]; w.save("/data/missing.xlsx")',
+                f'from openpyxl import Workbook; w=Workbook(); w.active.append({headers!r}); [w.active.append(r) for r in {orphan_rows!r}]; w.save("/data/missing.xlsx"); from PIL import Image; Image.new("RGB",(16,16),"green").save("/data/photos/000000000045.jpg")',
             )
             output = importer("missing.xlsx", "--apply")
             assert "6701 заменён на 6769".encode() in output
+            assert "Фото пропущено".encode() in output
+            shell(
+                'from organization_management.apps.employees.models import Employee; assert Employee.objects.count()==5; assert not Employee.objects.get(external_id="44").photo; assert Employee.objects.get(external_id="45").photo'
+            )
             orphan_validation = 'from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Division.objects.get(code="6950").parent.code=="6769"; assert Division.objects.get(code="6769").parent_id is None; assert not Division.objects.filter(code="6701").exists(); assert Division.objects.count()==6; assert StaffUnit.objects.count()==7'
             shell(orphan_validation)
             shell(
@@ -671,6 +679,13 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
             assert photos_snapshot() == pictures
             if password is not None:
                 assert account_snapshot() == changed_accounts
+            shell(
+                'from organization_management.apps.employees.models import Employee; assert Employee.objects.count()==5; assert not Employee.objects.get(external_id="44").photo; assert Employee.objects.get(external_id="45").photo'
+            )
+            print(
+                "PASS: corrupt photo skipped, both employees imported, good photo attached, repeat no duplicates",
+                flush=True,
+            )
             print(
                 "PASS: unknown division types, identical positions with distinct source codes, parent6769/root0 and repeat idempotent",
                 flush=True,

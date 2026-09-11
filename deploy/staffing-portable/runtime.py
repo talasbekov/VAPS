@@ -205,6 +205,7 @@ class Installer:
         result = [
             "/opt/staffing.xlsx",
             "--match-dictionary-names",
+            "--skip-invalid-photos",
             "--default-division-type",
             "division",
             "--root-division-code",
@@ -573,7 +574,21 @@ class Installer:
 
     def run(self):
         self.verify()
-        self.oneoff("/opt/staffing-package/probe.py", *self.roster_args(), source=True)
+        report_dir = (
+            self.home
+            / "reports"
+            / (time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])
+        )
+        report_dir.mkdir(parents=True, mode=0o700)
+        print("Отчёт текущего запуска: " + str(report_dir), flush=True)
+        self.oneoff(
+            "/opt/staffing-package/probe.py",
+            *self.roster_args(),
+            "--report",
+            "/opt/staffing-reports/file-check.json",
+            source=True,
+            reports=report_dir,
+        )
         if not self.args.apply and self.pending:
             raise InstallError(
                 "Установка прервалась. Повторите эту команду с --apply для её завершения."
@@ -625,12 +640,6 @@ class Installer:
                 # Also resumes a previously interrupted migration/start on our exact version.
                 self.oneoff("manage.py", "migrate", "--noinput")
                 self.start()
-        report_dir = (
-            self.home
-            / "reports"
-            / (time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])
-        )
-        report_dir.mkdir(parents=True, mode=0o700)
         command = ["manage.py", "import_staffing_xlsx", *self.roster_args()]
         accounts_export = (self.package / "account-password.txt").is_file()
         if accounts_export:

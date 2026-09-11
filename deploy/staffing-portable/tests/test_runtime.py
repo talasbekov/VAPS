@@ -352,6 +352,38 @@ class PortableUpdates(unittest.TestCase):
         obj.compose, obj.oneoff, obj.backup = compose, oneoff, backup
         return obj
 
+    def test_default_skips_individual_invalid_photos(self):
+        self.assertIn("--skip-invalid-photos", self.installer().roster_args())
+
+    def test_failed_probe_leaves_current_report_without_applying(self):
+        obj = self.installer()
+        old = obj.home / "reports" / "old" / "preview.json"
+        portable.write_private(old, b'{"errors":["old failure"]}')
+        oneoff = obj.oneoff
+
+        def fail_probe(*args, **kwargs):
+            if args[0].endswith("probe.py"):
+                destination = kwargs.get("reports")
+                self.assertIsNotNone(destination)
+                report = Path(args[args.index("--report") + 1]).name
+                portable.write_private(
+                    destination / report, b'{"errors":["current failure"]}'
+                )
+                raise portable.InstallError("probe failed")
+            return oneoff(*args, **kwargs)
+
+        obj.oneoff = fail_probe
+        with self.assertRaisesRegex(portable.InstallError, "probe failed"):
+            obj.run()
+        reports = list((obj.home / "reports").glob("*/file-check.json"))
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(
+            json.loads(reports[0].read_text())["errors"], ["current failure"]
+        )
+        self.assertEqual(json.loads(old.read_text())["errors"], ["old failure"])
+        self.assertFalse(obj.pending_path.exists())
+        self.assertFalse((obj.home / "backups").exists())
+
     def test_unknown_division_types_use_authorized_defaults(self):
         args = self.installer().roster_args()
         self.assertEqual(args[args.index("--default-division-type") + 1], "division")
@@ -682,10 +714,11 @@ class BuilderHistory(unittest.TestCase):
         builder = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(builder)
         versions = builder.previous_versions()
-        self.assertEqual(len(versions), 6)
+        self.assertEqual(len(versions), 7)
         self.assertEqual(
             {v["manifest_sha256"] for v in versions},
             {
+                "8e6161f794eb5754427b6f65878156d80ece340578fba57ce37ededdd8fe1641",
                 "e010f8b030f35546de7c140fe862a3fa4b81b838e953001506a0025c1cf3cfed",
                 "04f7dd1d8f3e65d81aa1736bab187a0cb30b387cefe0dcc3e44c20bca6de08e3",
                 "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f",
@@ -697,6 +730,7 @@ class BuilderHistory(unittest.TestCase):
         self.assertEqual(
             {v["manifest_sha256"]: len(v["files"]) for v in versions},
             {
+                "8e6161f794eb5754427b6f65878156d80ece340578fba57ce37ededdd8fe1641": 13,
                 "e010f8b030f35546de7c140fe862a3fa4b81b838e953001506a0025c1cf3cfed": 13,
                 "04f7dd1d8f3e65d81aa1736bab187a0cb30b387cefe0dcc3e44c20bca6de08e3": 13,
                 "2e238226f1309b36c57c8c47fe9448f9f7711e1428637554e86f8386e4f2de0f": 13,
