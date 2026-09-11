@@ -75,12 +75,32 @@ def read_config(path):
     return data
 
 
+def read_account_password(path):
+    if not path:
+        return None
+    try:
+        with Path(path).open("rb") as stream:
+            raw = stream.read(1025)
+        password = raw.decode("utf-8-sig").removesuffix("\n").removesuffix("\r")
+    except (OSError, UnicodeError) as exc:
+        raise CommandError("Не удалось прочитать файл пароля.") from exc
+    if not password or len(raw) > 1024 or any(c in password for c in "\r\n\0"):
+        raise CommandError(
+            "Файл пароля должен содержать одну непустую строку, не более 1024 байт."
+        )
+    return password
+
+
 class Command(BaseCommand):
     help = "Штатка XLSX: проверка дерева/сотрудников, затем явное --apply; без удаления отсутствующих строк."
     requires_system_checks = ()
 
     def add_arguments(self, parser):
         parser.add_argument("xlsx_path")
+        parser.add_argument(
+            "--account-password-file",
+            help="Файл пароля для ВСЕХ учётных записей, включая администраторов; запись только с --apply.",
+        )
         parser.add_argument(
             "--missing-parent-code",
             help="Код для отсутствующих родителей; родитель0 у этого кода означает корень.",
@@ -123,6 +143,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        account_password = read_account_password(options["account_password_file"])
         config = read_config(options["config"])
         roster = read_roster(
             options["xlsx_path"],
@@ -148,6 +169,14 @@ class Command(BaseCommand):
                 "errors": roster.errors + errors + photos.errors,
                 "photos": photos.counts,
                 "parent_replacements": changes,
+                "password_reset": {
+                    "scope": "all",
+                    "accounts": None,
+                    "updated": 0,
+                    "unchanged": 0,
+                }
+                if account_password is not None
+                else {},
                 "warnings": roster.warnings + warnings + photos.warnings,
                 "divisions": list(tree.values()),
                 "counts": {},
@@ -180,6 +209,7 @@ class Command(BaseCommand):
                             match_dictionary_names=options["match_dictionary_names"],
                             photos_dir=options["photos_dir"],
                             missing_parent_code=options["missing_parent_code"],
+                            account_password=account_password,
                         )
                         if options["apply"]
                         else prepare_import(
@@ -188,6 +218,7 @@ class Command(BaseCommand):
                             match_dictionary_names=options["match_dictionary_names"],
                             photos_dir=options["photos_dir"],
                             missing_parent_code=options["missing_parent_code"],
+                            reset_account_passwords=account_password is not None,
                         )
                     )
                 except (DatabaseError, ValidationError, PhotoError) as exc:
@@ -220,6 +251,17 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"Фото сопоставлено: {report['photos'].get('matched', 0)}."
                 )
+            if report.get("password_reset"):
+                reset = report["password_reset"]
+                if report["applied"]:
+                    self.stdout.write(
+                        f"Пароли всех учётных записей: изменено {reset['updated']}; уже совпадали {reset['unchanged']}."
+                    )
+                else:
+                    count = reset["accounts"]
+                    self.stdout.write(
+                        f"Планируется смена пароля ВСЕХ учётных записей, включая администраторов: {count if count is not None else 'число уточнится при сверке с БД'}. Пароли пока не изменены."
+                    )
             for warning in report["warnings"]:
                 self.stdout.write(self.style.WARNING(warning))
             if output:

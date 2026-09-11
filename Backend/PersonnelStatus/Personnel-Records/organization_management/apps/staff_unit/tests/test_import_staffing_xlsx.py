@@ -464,13 +464,18 @@ def test_rank_save_failure_rolls_back_already_created_divisions(xlsx, monkeypatc
 def test_explicit_name_matching_reuses_existing_dictionary_codes(xlsx):
     position = Position.objects.create(code="SAVED-P", name="Начальник отдела", level=6)
     rank = Rank.objects.create(code="SAVED-R", name="Капитан", level=7)
+    before = {
+        model: list(model.objects.order_by("pk").values()) for model in (Position, Rank)
+    }
     with pytest.raises(CommandError):
         run(xlsx())
     out = run(xlsx(), apply=True, match_dictionary_names=True)
     employee = Employee.objects.get(external_id="42")
     unit = StaffUnit.objects.get(external_id="100")
     assert unit.position == position and employee.rank == rank
-    assert Position.objects.count() == 1 and Rank.objects.count() == 1
+    assert {
+        model: list(model.objects.order_by("pk").values()) for model in (Position, Rank)
+    } == before
     assert "SAVED-P" in out and "SAVED-R" in out
     again = run(xlsx(), apply=True, match_dictionary_names=True)
     assert "создать: 0; обновить: 0" in again

@@ -5,6 +5,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from hashlib import sha256
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password
 from django.db import connection, transaction
 
 from organization_management.apps.dictionaries.management.commands.seed_positions_ranks import (
@@ -43,12 +45,14 @@ class ImportPlan:
     tree: dict = field(default_factory=dict)
     photos: dict = field(default_factory=dict)
     parent_replacements: list = field(default_factory=list)
+    password_reset: dict = field(default_factory=dict)
 
     def report(self):
         # Do not leak names/IIN through command logs. Row numbers locate input.
         return {
             "photos": self.photos,
             "parent_replacements": self.parent_replacements,
+            "password_reset": self.password_reset,
             "errors": self.errors,
             "warnings": self.warnings,
             "divisions": list(self.tree.values()),
@@ -82,6 +86,7 @@ def prepare_import(
     match_dictionary_names=False,
     photos_dir=None,
     missing_parent_code=None,
+    reset_account_passwords=False,
 ):
     config = config or {}
     nodes, errors, warnings = infer_divisions(
@@ -90,6 +95,13 @@ def prepare_import(
     plan = ImportPlan(
         errors=list(roster.errors) + errors, warnings=list(roster.warnings) + warnings
     )
+    if reset_account_passwords:
+        plan.password_reset = {
+            "scope": "all",
+            "accounts": get_user_model().objects.count(),
+            "updated": 0,
+            "unchanged": 0,
+        }
     photos = scan_photos(roster.rows, photos_dir)
     plan.photos = photos.counts
     plan.errors.extend(photos.errors)
@@ -488,6 +500,7 @@ def apply_import(
     match_dictionary_names=False,
     photos_dir=None,
     missing_parent_code=None,
+    account_password=None,
 ):
     created_files = []
     try:
@@ -497,6 +510,7 @@ def apply_import(
             match_dictionary_names=match_dictionary_names,
             photos_dir=photos_dir,
             missing_parent_code=missing_parent_code,
+            account_password=account_password,
             created_files=created_files,
         )
     except BaseException:
@@ -519,6 +533,7 @@ def _apply_import(
     match_dictionary_names,
     photos_dir,
     missing_parent_code,
+    account_password,
     created_files,
 ):
     """Re-plan under a transaction: stale previews are never applied blindly."""
@@ -528,10 +543,13 @@ def _apply_import(
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", [11750001])
                 # Lock related tables against concurrent manual/API writes while
                 # reconciling identities; all locks last only this transaction.
-                names = ", ".join(
-                    connection.ops.quote_name(MODELS[k]._meta.db_table)
+                tables = [
+                    MODELS[k]._meta.db_table
                     for k in ("division", "position", "rank", "employee", "slot")
-                )
+                ]
+                if account_password is not None:
+                    tables.append(get_user_model()._meta.db_table)
+                names = ", ".join(connection.ops.quote_name(name) for name in tables)
                 cursor.execute(f"LOCK TABLE {names} IN SHARE ROW EXCLUSIVE MODE")
         plan = prepare_import(
             roster,
@@ -539,6 +557,7 @@ def _apply_import(
             match_dictionary_names=match_dictionary_names,
             photos_dir=photos_dir,
             missing_parent_code=missing_parent_code,
+            reset_account_passwords=account_password is not None,
         )
         if plan.errors:
             return plan
@@ -595,4 +614,23 @@ def _apply_import(
 
         for employee in created_employees:
             ensure_active_status(employee)
+        if account_password is not None:
+            from organization_management.apps.operations import audit_service
+
+            users = get_user_model().objects.select_for_update().order_by("pk")
+            for user in users:
+                # No setter: an already matching hash must remain byte-identical.
+                if check_password(account_password, user.password):
+                    plan.password_reset["unchanged"] += 1
+                    continue
+                user.set_password(account_password)
+                user.save(update_fields=["password"])
+                audit_service.record(
+                    actor="staffing-import",
+                    action=audit_service.ACCESS_ACCOUNT_PASSWORD_RESET,
+                    entity_type=audit_service.ENTITY_ACCOUNT,
+                    entity_id=user.pk,
+                    new_value={"source": "staffing-import"},
+                )
+                plan.password_reset["updated"] += 1
         return plan
