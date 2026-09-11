@@ -18,7 +18,9 @@ from organization_management.apps.staff_unit.roster_photos import (
 )
 from organization_management.apps.staff_unit.roster_xlsx import (
     infer_divisions,
+    parent_replacement_warnings,
     read_roster,
+    replace_missing_parents,
 )
 
 CONFIG_KEYS = {
@@ -80,6 +82,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("xlsx_path")
         parser.add_argument(
+            "--missing-parent-code",
+            help="Код для отсутствующих родителей; родитель0 у этого кода означает корень.",
+        )
+        parser.add_argument(
             "--photos-dir",
             help="Папка с фото: ИИН.jpg/jpeg/png; отсутствие файла сохраняет прежнее фото.",
         )
@@ -125,11 +131,23 @@ class Command(BaseCommand):
             iin_overrides=config.get("iin_overrides"),
         )
         if options["check_file"]:
-            tree, errors, warnings = infer_divisions(roster.rows)
+            tree, errors, warnings = infer_divisions(
+                roster.rows, explicit_hierarchy=bool(options["missing_parent_code"])
+            )
+            changes, replacement_errors = replace_missing_parents(
+                tree, set(tree), options["missing_parent_code"], require_target=False
+            )
+            errors.extend(replacement_errors)
+            warnings.extend(parent_replacement_warnings(changes))
+            if options["missing_parent_code"]:
+                warnings.append(
+                    "Замены родителей при проверке файла предварительные: существующие родители в БД будут сохранены при сверке."
+                )
             photos = scan_photos(roster.rows, options["photos_dir"])
             report = {
                 "errors": roster.errors + errors + photos.errors,
                 "photos": photos.counts,
+                "parent_replacements": changes,
                 "warnings": roster.warnings + warnings + photos.warnings,
                 "divisions": list(tree.values()),
                 "counts": {},
@@ -161,6 +179,7 @@ class Command(BaseCommand):
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
                             photos_dir=options["photos_dir"],
+                            missing_parent_code=options["missing_parent_code"],
                         )
                         if options["apply"]
                         else prepare_import(
@@ -168,6 +187,7 @@ class Command(BaseCommand):
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
                             photos_dir=options["photos_dir"],
+                            missing_parent_code=options["missing_parent_code"],
                         )
                     )
                 except (DatabaseError, ValidationError, PhotoError) as exc:

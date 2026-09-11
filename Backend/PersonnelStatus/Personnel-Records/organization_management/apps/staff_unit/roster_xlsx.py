@@ -269,7 +269,7 @@ def name_path(name):
     return parts
 
 
-def infer_divisions(rows):
+def infer_divisions(rows, *, explicit_hierarchy=False):
     nodes, errors, warnings, paths, known = {}, [], [], {}, {}
     declared_parents = {}
 
@@ -307,6 +307,22 @@ def infer_divisions(rows):
             previous["name"] = node["name"]
         previous["division_type"] = previous["division_type"] or node["division_type"]
         previous["inferred"] = previous["inferred"] or node["inferred"]
+
+    if explicit_hierarchy:
+        # When the operator supplies a fallback, source codes own the tree.
+        # Names may describe missing ancestors but must not recreate those codes.
+        for row in rows:
+            parts = name_path(row["division_name"])
+            merge_node(
+                {
+                    "code": row["division_code"],
+                    "name": parts[0][0] if parts else row["division_name"],
+                    "division_type": parts[0][1] if parts else None,
+                    "parent_code": row["parent_code"] or None,
+                    "inferred": bool(parts),
+                }
+            )
+        return nodes, errors, warnings
 
     for row in rows:
         code = row["division_code"]
@@ -360,3 +376,38 @@ def infer_divisions(rows):
             }
             merge_node(node)
     return nodes, errors, list(dict.fromkeys(warnings))
+
+
+def replace_missing_parents(nodes, known_codes, fallback_code, *, require_target=True):
+    """Apply an explicit operator policy without changing actual division codes."""
+    changes, errors = [], []
+    if not fallback_code:
+        return changes, errors
+    for code, node in nodes.items():
+        parent = node["parent_code"]
+        if code == fallback_code and parent == "0" and "0" not in known_codes:
+            replacement = None
+        elif parent and parent not in known_codes:
+            if require_target and fallback_code not in known_codes:
+                errors.append(
+                    f"Не найдено подразделение для замены родителей {fallback_code}."
+                )
+                continue
+            if code == fallback_code:
+                errors.append(f"Нельзя заменить родителя {code} ссылкой на себя.")
+                continue
+            replacement = fallback_code
+        else:
+            continue
+        node["parent_code"] = replacement
+        changes.append(
+            {"code": code, "previous_parent_code": parent, "parent_code": replacement}
+        )
+    return changes, list(dict.fromkeys(errors))
+
+
+def parent_replacement_warnings(changes):
+    return [
+        f"Подразделение {c['code']}: родитель {c['previous_parent_code']} заменён на {c['parent_code'] or 'корень'} по настройке загрузки."
+        for c in changes
+    ]

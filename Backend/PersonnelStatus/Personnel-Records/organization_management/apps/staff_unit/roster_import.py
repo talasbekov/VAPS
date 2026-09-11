@@ -20,7 +20,11 @@ from organization_management.apps.staff_unit.roster_photos import (
     save_photo,
     scan_photos,
 )
-from organization_management.apps.staff_unit.roster_xlsx import infer_divisions
+from organization_management.apps.staff_unit.roster_xlsx import (
+    infer_divisions,
+    parent_replacement_warnings,
+    replace_missing_parents,
+)
 
 MODELS = {
     "division": Division,
@@ -38,11 +42,13 @@ class ImportPlan:
     actions: list = field(default_factory=list)
     tree: dict = field(default_factory=dict)
     photos: dict = field(default_factory=dict)
+    parent_replacements: list = field(default_factory=list)
 
     def report(self):
         # Do not leak names/IIN through command logs. Row numbers locate input.
         return {
             "photos": self.photos,
+            "parent_replacements": self.parent_replacements,
             "errors": self.errors,
             "warnings": self.warnings,
             "divisions": list(self.tree.values()),
@@ -70,10 +76,17 @@ def add_action(plan, entity, key, obj, data):
 
 
 def prepare_import(
-    roster, config=None, *, match_dictionary_names=False, photos_dir=None
+    roster,
+    config=None,
+    *,
+    match_dictionary_names=False,
+    photos_dir=None,
+    missing_parent_code=None,
 ):
     config = config or {}
-    nodes, errors, warnings = infer_divisions(roster.rows)
+    nodes, errors, warnings = infer_divisions(
+        roster.rows, explicit_hierarchy=bool(missing_parent_code)
+    )
     plan = ImportPlan(
         errors=list(roster.errors) + errors, warnings=list(roster.warnings) + warnings
     )
@@ -136,6 +149,15 @@ def prepare_import(
             )
         remapped[node["code"]] = node
     nodes = remapped
+    changes, errors = replace_missing_parents(
+        nodes,
+        set(nodes) | set(db_divisions),
+        mapping.get(missing_parent_code, missing_parent_code),
+    )
+    plan.parent_replacements = changes
+    plan.errors.extend(errors)
+    plan.warnings.extend(parent_replacement_warnings(changes))
+    changed_parents = {c["code"] for c in changes}
     plan.tree = nodes
     # Validate the complete graph, including existing ancestors of a partial export.
     parents = {code: d.parent_id and d.parent.code for code, d in db_divisions.items()}
@@ -170,7 +192,11 @@ def prepare_import(
             explicit = any(
                 mapping.get(k, k) == code for k in config.get("divisions", {})
             )
-            if not explicit and (obj.parent.code if obj.parent_id else None) != parent:
+            if (
+                not explicit
+                and code not in changed_parents
+                and (obj.parent.code if obj.parent_id else None) != parent
+            ):
                 plan.errors.append(
                     f"Родитель существующего подразделения {code} отличается; подтвердите через config.divisions."
                 )
@@ -455,7 +481,14 @@ def prepare_import(
     return plan
 
 
-def apply_import(roster, config=None, *, match_dictionary_names=False, photos_dir=None):
+def apply_import(
+    roster,
+    config=None,
+    *,
+    match_dictionary_names=False,
+    photos_dir=None,
+    missing_parent_code=None,
+):
     created_files = []
     try:
         return _apply_import(
@@ -463,6 +496,7 @@ def apply_import(roster, config=None, *, match_dictionary_names=False, photos_di
             config,
             match_dictionary_names=match_dictionary_names,
             photos_dir=photos_dir,
+            missing_parent_code=missing_parent_code,
             created_files=created_files,
         )
     except BaseException:
@@ -478,7 +512,15 @@ def apply_import(roster, config=None, *, match_dictionary_names=False, photos_di
         raise
 
 
-def _apply_import(roster, config, *, match_dictionary_names, photos_dir, created_files):
+def _apply_import(
+    roster,
+    config,
+    *,
+    match_dictionary_names,
+    photos_dir,
+    missing_parent_code,
+    created_files,
+):
     """Re-plan under a transaction: stale previews are never applied blindly."""
     with transaction.atomic():
         with connection.cursor() as cursor:
@@ -496,6 +538,7 @@ def _apply_import(roster, config, *, match_dictionary_names, photos_dir, created
             config,
             match_dictionary_names=match_dictionary_names,
             photos_dir=photos_dir,
+            missing_parent_code=missing_parent_code,
         )
         if plan.errors:
             return plan
