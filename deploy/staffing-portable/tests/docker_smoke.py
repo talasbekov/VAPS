@@ -175,6 +175,9 @@ def main():
                 shell(
                     'from django.contrib.auth import get_user_model; U=get_user_model(); U.objects.create_user(username="password-smoke-user",password="Synthetic-old_1187"); U.objects.create_superuser(username="password-smoke-admin",password="Synthetic-old_1187"); U.objects.create_user(username="password-smoke-inactive",password=None,is_active=False); U.objects.create_user(username="000042",password="Synthetic-old_1187")'
                 )
+                shell(
+                    'from django.contrib.auth import get_user_model; from organization_management.apps.operations.models import Role, Permission, RolePermission; from organization_management.apps.operations.services import RoleAdminService; role,_=Role.objects.get_or_create(code="IMPORT-READER",defaults={"name":"Import reader"}); perm,_=Permission.objects.get_or_create(code="personnel.view",defaults={"name":"Read personnel"}); RolePermission.objects.get_or_create(role_code=role,permission_code=perm); RoleAdminService.assign_role(str(get_user_model().objects.get(username="password-smoke-admin").pk),role.code,None,actor="test")'
+                )
                 original_accounts = account_snapshot()
                 accounts_before_apply = original_accounts
 
@@ -335,6 +338,9 @@ def main():
                     accounts_before_apply = account_snapshot()
                     if previous_password is None:
                         assert accounts_before_apply == original_accounts
+            prior_exports = list(
+                (stack / ".staffing-import/reports").glob("*/accounts.xlsx")
+            )
             out = importer("staff.xlsx", "--apply")
             assert "ПРИМЕНЕНО".encode() in out
             if password is not None:
@@ -374,6 +380,31 @@ def main():
                 assert login_status("password-smoke-inactive", password) == 401
                 print(
                     "PASS: all account passwords reset; live JWT login succeeds for user/admin, old passwords rejected and inactive account stays inactive",
+                    flush=True,
+                )
+
+                request = Request(
+                    f"http://127.0.0.1:{ports[0]}/api/token/",
+                    data=json.dumps(
+                        {"username": "password-smoke-admin", "password": password}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urlopen(request) as response:
+                    access = json.loads(response.read())["access"]
+                request = Request(
+                    f"http://127.0.0.1:{ports[0]}/api/core/employees/",
+                    headers={"Authorization": "Bearer " + access},
+                )
+                with urlopen(request) as response:
+                    body = json.loads(response.read())
+                    employees = body["results"] if isinstance(body, dict) else body
+                    assert response.status == 200 and len(employees) == 3
+                    assert {
+                        e["external_id"] for e in employees if e["external_id"]
+                    } >= {"42", "43"}
+                print(
+                    "PASS: live portal employee list HTTP200 includes both imported employees",
                     flush=True,
                 )
 
@@ -428,7 +459,7 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                     )
 
                 first_exports = verify_exports()
-                assert len(first_exports) == 1
+                assert len(first_exports) == len(prior_exports) + 1
                 print(
                     "PASS: private accounts.xlsx contains every login and installed password as literal text; JSON/log output contains no password",
                     flush=True,
@@ -584,7 +615,7 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                     None,
                     None,
                     "6950",
-                    "4 отдел Службы дополнительных подразделений",
+                    "Альфа",
                     "6701",
                     "P1",
                     "Начальник отдела",
@@ -601,7 +632,7 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                     None,
                     None,
                     "6769",
-                    "Служба дополнительных подразделений",
+                    "Бета",
                     "0",
                     "P1",
                     "Начальник отдела",
@@ -612,6 +643,8 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
                     None,
                 ],
             ]
+            orphan_rows[0][8] = "OTHER-P1"
+            orphan_rows[1][8] = "OTHER-P2"
             ctl(
                 "run",
                 "--rm",
@@ -629,13 +662,17 @@ print('EXPORT_HASHES='+json.dumps(hashes,sort_keys=True))
             assert "6701 заменён на 6769".encode() in output
             orphan_validation = 'from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Division.objects.get(code="6950").parent.code=="6769"; assert Division.objects.get(code="6769").parent_id is None; assert not Division.objects.filter(code="6701").exists(); assert Division.objects.count()==6; assert StaffUnit.objects.count()==7'
             shell(orphan_validation)
+            shell(
+                'from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Division.objects.get(code="6950").division_type=="division"; assert Division.objects.get(code="6769").division_type=="organization"; assert Division.objects.get(code="6950").name=="Альфа"; assert StaffUnit.objects.filter(external_id__in=["9004","9005"], position__code="SAVED-P").count()==2'
+            )
+            assert dictionary_snapshot() == dictionaries_before
             importer("missing.xlsx", "--apply")
             shell(orphan_validation)
             assert photos_snapshot() == pictures
             if password is not None:
                 assert account_snapshot() == changed_accounts
             print(
-                "PASS: missing parent becomes6769, root0 cleared, actual codes/photos preserved and repeat idempotent",
+                "PASS: unknown division types, identical positions with distinct source codes, parent6769/root0 and repeat idempotent",
                 flush=True,
             )
             # A source/version mismatch must fail before any additional backups/import.

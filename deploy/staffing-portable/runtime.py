@@ -202,7 +202,14 @@ class Installer:
         )
 
     def roster_args(self):
-        result = ["/opt/staffing.xlsx", "--match-dictionary-names"]
+        result = [
+            "/opt/staffing.xlsx",
+            "--match-dictionary-names",
+            "--default-division-type",
+            "division",
+            "--root-division-code",
+            "6769",
+        ]
         if (self.package / "account-password.txt").is_file():
             result += [
                 "--account-password-file",
