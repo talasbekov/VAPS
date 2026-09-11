@@ -425,3 +425,43 @@ def test_rank_save_failure_rolls_back_already_created_divisions(xlsx, monkeypatc
     assert {
         model: list(model.objects.order_by("pk").values()) for model in models
     } == before
+
+
+def test_explicit_name_matching_reuses_existing_dictionary_codes(xlsx):
+    position = Position.objects.create(code="SAVED-P", name="Начальник отдела", level=6)
+    rank = Rank.objects.create(code="SAVED-R", name="Капитан", level=7)
+    with pytest.raises(CommandError):
+        run(xlsx())
+    out = run(xlsx(), apply=True, match_dictionary_names=True)
+    employee = Employee.objects.get(external_id="42")
+    unit = StaffUnit.objects.get(external_id="100")
+    assert unit.position == position and employee.rank == rank
+    assert Position.objects.count() == 1 and Rank.objects.count() == 1
+    assert "SAVED-P" in out and "SAVED-R" in out
+    again = run(xlsx(), apply=True, match_dictionary_names=True)
+    assert "создать: 0; обновить: 0" in again
+    position.refresh_from_db()
+    rank.refresh_from_db()
+    assert position.level == 6 and rank.level == 7
+
+
+def test_name_matching_rejects_ambiguous_names_and_conflicting_code(xlsx):
+    Position.objects.create(code="SAVED-A", name="Начальник отдела", level=1)
+    Position.objects.create(code="SAVED-B", name="НАЧАЛЬНИК ОТДЕЛА", level=2)
+    with pytest.raises(CommandError):
+        run(xlsx(), apply=True, match_dictionary_names=True)
+    assert Employee.objects.count() == 0
+    Position.objects.filter(code="SAVED-B").delete()
+    Position.objects.create(code="P1", name="Другая должность", level=3)
+    with pytest.raises(CommandError):
+        run(xlsx(), apply=True, match_dictionary_names=True)
+    assert Employee.objects.count() == 0
+
+
+def test_name_matching_does_not_merge_distinct_source_dictionary_codes(xlsx):
+    Position.objects.create(code="SAVED-P", name="Начальник отдела", level=1)
+    rows = [sample(), sample("43", "101", "000000000043")]
+    rows[1][8] = "P2"
+    with pytest.raises(CommandError, match="Несколько кодов position"):
+        run(xlsx(rows), apply=True, match_dictionary_names=True)
+    assert Employee.objects.count() == 0

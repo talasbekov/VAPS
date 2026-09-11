@@ -99,6 +99,11 @@ class Command(BaseCommand):
             help="Явно оставить неверный ИИН пустым; существующий ИИН не стирается.",
         )
         parser.add_argument(
+            "--match-dictionary-names",
+            action="store_true",
+            help="Использовать существующий код по единственному точному названию должности/звания.",
+        )
+        parser.add_argument(
             "--report",
             help="Новый JSON-файл отчёта (права 600); существующий файл не перезаписывается.",
         )
@@ -141,9 +146,17 @@ class Command(BaseCommand):
             if report is None:
                 try:
                     plan = (
-                        apply_import(roster, config)
+                        apply_import(
+                            roster,
+                            config,
+                            match_dictionary_names=options["match_dictionary_names"],
+                        )
                         if options["apply"]
-                        else prepare_import(roster, config)
+                        else prepare_import(
+                            roster,
+                            config,
+                            match_dictionary_names=options["match_dictionary_names"],
+                        )
                     )
                 except (DatabaseError, ValidationError) as exc:
                     # Avoid dumping SQL parameters (including personal identifiers).

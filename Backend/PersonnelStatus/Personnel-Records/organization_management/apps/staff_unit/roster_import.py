@@ -61,7 +61,7 @@ def add_action(plan, entity, key, obj, data):
     )
 
 
-def prepare_import(roster, config=None):
+def prepare_import(roster, config=None, *, match_dictionary_names=False):
     config = config or {}
     nodes, errors, warnings = infer_divisions(roster.rows)
     plan = ImportPlan(
@@ -220,15 +220,26 @@ def prepare_import(roster, config=None):
         planned_rank_names = {}
         for original, name in definitions.items():
             code = aliases.get(original, original)
+            obj = existing.get(code)
+            by_name = [
+                o for o in existing.values() if o.name.casefold() == name.casefold()
+            ]
+            if (
+                match_dictionary_names
+                and original not in aliases
+                and obj is None
+                and len(by_name) == 1
+            ):
+                obj = by_name[0]
+                code = obj.code
+                plan.warnings.append(
+                    f"{entity} {original}: по единственному точному названию используется существующий код {code}."
+                )
             if code in targets and targets[code] != original:
                 plan.errors.append(
                     f"Несколько кодов {entity} сопоставлены одному {code}."
                 )
             targets[code] = original
-            obj = existing.get(code)
-            by_name = [
-                o for o in existing.values() if o.name.casefold() == name.casefold()
-            ]
             if obj is None and by_name:
                 candidates = ", ".join(sorted(o.code for o in by_name))
                 plan.errors.append(
@@ -430,7 +441,7 @@ def prepare_import(roster, config=None):
     return plan
 
 
-def apply_import(roster, config=None):
+def apply_import(roster, config=None, *, match_dictionary_names=False):
     """Re-plan under a transaction: stale previews are never applied blindly."""
     with transaction.atomic():
         with connection.cursor() as cursor:
@@ -443,7 +454,9 @@ def apply_import(roster, config=None):
                     for k in ("division", "position", "rank", "employee", "slot")
                 )
                 cursor.execute(f"LOCK TABLE {names} IN SHARE ROW EXCLUSIVE MODE")
-        plan = prepare_import(roster, config)
+        plan = prepare_import(
+            roster, config, match_dictionary_names=match_dictionary_names
+        )
         if plan.errors:
             return plan
         objects = {
