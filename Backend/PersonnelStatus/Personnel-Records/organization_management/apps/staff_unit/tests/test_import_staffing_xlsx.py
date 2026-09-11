@@ -175,12 +175,46 @@ def test_existing_employee_adopted_by_iin_without_duplicates(xlsx):
     assert StaffUnit.objects.get(external_id="100").employee == e
 
 
-def test_existing_person_with_conflicting_external_id_rejected(xlsx):
-    Employee.objects.create(
-        personnel_number="REAL-42", external_id="other", iin="000000000042"
+def test_existing_person_with_same_iin_updates_in_place(xlsx):
+    e = Employee.objects.create(
+        personnel_number="REAL-42",
+        external_id="other",
+        iin="000000000042",
+        last_name="Прежняя",
+        first_name="Старое",
+        work_phone="retain-me",
     )
-    with pytest.raises(CommandError, match="идентификатор"):
+    run(xlsx(), apply=True)
+    e.refresh_from_db()
+    assert (e.external_id, e.last_name, e.first_name) == ("42", "Тестов", "Тест")
+    assert e.personnel_number == "REAL-42" and e.work_phone == "retain-me"
+    assert Employee.objects.count() == 1
+    assert StaffUnit.objects.get(external_id="100").employee_id == e.pk
+    run(xlsx(), apply=True)
+    assert Employee.objects.count() == 1
+
+
+def test_distinct_iin_and_external_id_matches_are_not_merged(xlsx):
+    a = Employee.objects.create(
+        personnel_number="A", external_id="42", iin="000000000041"
+    )
+    b = Employee.objects.create(personnel_number="B", iin="000000000042")
+    with pytest.raises(CommandError, match="ИИН"):
         run(xlsx(), apply=True)
+    a.refresh_from_db()
+    b.refresh_from_db()
+    assert a.iin == "000000000041" and b.external_id is None
+    assert not StaffUnit.objects.exists()
+
+
+def test_existing_external_id_cannot_change_known_iin(xlsx):
+    e = Employee.objects.create(
+        personnel_number="A", external_id="42", iin="000000000041"
+    )
+    with pytest.raises(CommandError, match="ИИН"):
+        run(xlsx(), apply=True)
+    e.refresh_from_db()
+    assert e.iin == "000000000041"
 
 
 def test_does_not_steal_employee_from_an_existing_slot(xlsx):
@@ -487,3 +521,9 @@ def test_organization_parent_from_later_row_is_applied_or_cycle_rejected(xlsx, c
         assert StaffUnit.objects.get(external_id="100").division == division
         run(path, apply=True)
         assert Division.objects.filter(code__in=["6935", "9000"]).count() == 2
+
+
+def test_same_names_with_distinct_identifiers_are_distinct_employees(xlsx):
+    run(xlsx([sample(), sample("43", "101", "000000000043")]), apply=True)
+    assert Employee.objects.count() == 2
+    assert StaffUnit.objects.values("employee_id").distinct().count() == 2

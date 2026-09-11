@@ -90,6 +90,7 @@ def read_roster(path, *, sheet=None, skip_invalid_iin=False, iin_overrides=None)
                 "rank_code",
             )
         }
+        seen_rows = set()
         for number, cells_row in enumerate(cells, 2):
             if not any(c.value is not None for c in cells_row):
                 continue
@@ -187,6 +188,13 @@ def read_roster(path, *, sheet=None, skip_invalid_iin=False, iin_overrides=None)
                     result.errors.append(
                         f"Строка {number}: {key} длиннее {maximum} символов."
                     )
+            row_signature = tuple((k, v) for k, v in row.items() if k != "row_number")
+            if row_signature in seen_rows:
+                result.warnings.append(
+                    f"Строка {number}: полный повтор строки пропущен."
+                )
+                continue
+            seen_rows.add(row_signature)
             for key, signatures in seen.items():
                 value = row[key]
                 if not value:

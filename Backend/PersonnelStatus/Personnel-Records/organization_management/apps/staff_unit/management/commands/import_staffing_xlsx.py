@@ -12,6 +12,10 @@ from organization_management.apps.staff_unit.roster_import import (
     apply_import,
     prepare_import,
 )
+from organization_management.apps.staff_unit.roster_photos import (
+    PhotoError,
+    scan_photos,
+)
 from organization_management.apps.staff_unit.roster_xlsx import (
     infer_divisions,
     read_roster,
@@ -76,6 +80,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("xlsx_path")
         parser.add_argument(
+            "--photos-dir",
+            help="Папка с фото: ИИН.jpg/jpeg/png; отсутствие файла сохраняет прежнее фото.",
+        )
+        parser.add_argument(
             "--sheet", help="Имя листа; обязательно для книги с несколькими листами."
         )
         parser.add_argument(
@@ -118,9 +126,11 @@ class Command(BaseCommand):
         )
         if options["check_file"]:
             tree, errors, warnings = infer_divisions(roster.rows)
+            photos = scan_photos(roster.rows, options["photos_dir"])
             report = {
-                "errors": roster.errors + errors,
-                "warnings": roster.warnings + warnings,
+                "errors": roster.errors + errors + photos.errors,
+                "photos": photos.counts,
+                "warnings": roster.warnings + warnings + photos.warnings,
                 "divisions": list(tree.values()),
                 "counts": {},
                 "actions": [],
@@ -150,15 +160,17 @@ class Command(BaseCommand):
                             roster,
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
+                            photos_dir=options["photos_dir"],
                         )
                         if options["apply"]
                         else prepare_import(
                             roster,
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
+                            photos_dir=options["photos_dir"],
                         )
                     )
-                except (DatabaseError, ValidationError) as exc:
+                except (DatabaseError, ValidationError, PhotoError) as exc:
                     # Avoid dumping SQL parameters (including personal identifiers).
                     raise CommandError(
                         f"Импорт не выполнен ({type(exc).__name__}); проверьте миграции и ограничения данных. Транзакция записи отменена."
@@ -183,6 +195,10 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(
                     f"Строк: {len(roster.rows)}; создать: {counts.get('create', 0)}; обновить: {counts.get('update', 0)}; без изменений: {counts.get('keep', 0)}."
+                )
+            if report.get("photos"):
+                self.stdout.write(
+                    f"Фото сопоставлено: {report['photos'].get('matched', 0)}."
                 )
             for warning in report["warnings"]:
                 self.stdout.write(self.style.WARNING(warning))

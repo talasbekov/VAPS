@@ -1,5 +1,6 @@
 """Read-only import plan and atomic reconciliation of an XLSX roster."""
 
+import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -14,6 +15,11 @@ from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.staff_unit.models import StaffUnit
+from organization_management.apps.staff_unit.roster_photos import (
+    PhotoError,
+    save_photo,
+    scan_photos,
+)
 from organization_management.apps.staff_unit.roster_xlsx import infer_divisions
 
 MODELS = {
@@ -31,10 +37,12 @@ class ImportPlan:
     warnings: list = field(default_factory=list)
     actions: list = field(default_factory=list)
     tree: dict = field(default_factory=dict)
+    photos: dict = field(default_factory=dict)
 
     def report(self):
         # Do not leak names/IIN through command logs. Row numbers locate input.
         return {
+            "photos": self.photos,
             "errors": self.errors,
             "warnings": self.warnings,
             "divisions": list(self.tree.values()),
@@ -61,12 +69,18 @@ def add_action(plan, entity, key, obj, data):
     )
 
 
-def prepare_import(roster, config=None, *, match_dictionary_names=False):
+def prepare_import(
+    roster, config=None, *, match_dictionary_names=False, photos_dir=None
+):
     config = config or {}
     nodes, errors, warnings = infer_divisions(roster.rows)
     plan = ImportPlan(
         errors=list(roster.errors) + errors, warnings=list(roster.warnings) + warnings
     )
+    photos = scan_photos(roster.rows, photos_dir)
+    plan.photos = photos.counts
+    plan.errors.extend(photos.errors)
+    plan.warnings.extend(photos.warnings)
     if plan.errors:
         return plan
     for code, override in config.get("divisions", {}).items():
@@ -310,19 +324,13 @@ def prepare_import(roster, config=None, *, match_dictionary_names=False):
                 plan.errors.append(
                     f"Строка {row['row_number']}: ИИН принадлежит другому сотруднику."
                 )
+            if employee and employee.iin and row["iin"] and employee.iin != row["iin"]:
+                plan.errors.append(
+                    f"Строка {row['row_number']}: ИИН не совпадает с существующим personId."
+                )
             if not employee and iin_match:
+                # IIN is the identity; source IDs and names may have changed.
                 employee = iin_match
-                if employee.external_id and employee.external_id != person:
-                    plan.errors.append(
-                        f"Строка {row['row_number']}: конфликт внешнего идентификатора сотрудника."
-                    )
-                elif (
-                    employee.last_name.casefold(),
-                    employee.first_name.casefold(),
-                ) != (row["last_name"].casefold(), row["first_name"].casefold()):
-                    plan.errors.append(
-                        f"Строка {row['row_number']}: ФИО существующего сотрудника с этим ИИН отличается."
-                    )
             if employee:
                 if employee.pk in used_people:
                     plan.errors.append(
@@ -362,6 +370,12 @@ def prepare_import(roster, config=None, *, match_dictionary_names=False):
             add_action(plan, "employee", person, employee, values)
             action = plan.actions[-1]
             action["rank_code"] = row["rank_code"]
+            photo = photos.people.get(person)
+            if photo and (not employee or not photo.matches(employee.photo)):
+                action["photo"] = photo
+                action["changed_fields"].append("photo")
+                if employee:
+                    action["operation"] = "update"
             if employee and row["rank_code"] and not rank:
                 action["operation"] = "update"
                 if "rank_id" not in action["changed_fields"]:
@@ -441,7 +455,30 @@ def prepare_import(roster, config=None, *, match_dictionary_names=False):
     return plan
 
 
-def apply_import(roster, config=None, *, match_dictionary_names=False):
+def apply_import(roster, config=None, *, match_dictionary_names=False, photos_dir=None):
+    created_files = []
+    try:
+        return _apply_import(
+            roster,
+            config,
+            match_dictionary_names=match_dictionary_names,
+            photos_dir=photos_dir,
+            created_files=created_files,
+        )
+    except BaseException:
+        # Files are not transactional. Remove only new files created by this run;
+        # previous photos stay available, including for database backup restore.
+        for storage, name in created_files:
+            try:
+                storage.delete(name)
+            except OSError:
+                logging.getLogger(__name__).warning(
+                    "Не удалось удалить новое фото после отмены импорта."
+                )
+        raise
+
+
+def _apply_import(roster, config, *, match_dictionary_names, photos_dir, created_files):
     """Re-plan under a transaction: stale previews are never applied blindly."""
     with transaction.atomic():
         with connection.cursor() as cursor:
@@ -455,7 +492,10 @@ def apply_import(roster, config=None, *, match_dictionary_names=False):
                 )
                 cursor.execute(f"LOCK TABLE {names} IN SHARE ROW EXCLUSIVE MODE")
         plan = prepare_import(
-            roster, config, match_dictionary_names=match_dictionary_names
+            roster,
+            config,
+            match_dictionary_names=match_dictionary_names,
+            photos_dir=photos_dir,
         )
         if plan.errors:
             return plan
@@ -481,6 +521,17 @@ def apply_import(roster, config=None, *, match_dictionary_names=False):
                 values["position_id"] = objects["position"][action["position_code"]].pk
                 employee = objects["employee"].get(action["person_id"])
                 values["employee_id"] = employee.pk if employee else None
+            if entity == "employee" and action.get("photo"):
+                photo = action["photo"]
+                storage = Employee._meta.get_field("photo").storage
+                try:
+                    name = save_photo(photo, storage)
+                except OSError as exc:
+                    raise PhotoError(
+                        "Не удалось сохранить фото; импорт отменён."
+                    ) from exc
+                created_files.append((storage, name))
+                values["photo"] = name
             if obj is None:
                 if entity in ("division", "position", "rank"):
                     values["code"] = action.get("code", key)

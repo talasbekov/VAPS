@@ -210,3 +210,10 @@ def test_unexpected_reader_failure_is_not_hidden(tmp_path, monkeypatch):
     monkeypatch.setattr(roster_xlsx, "load_workbook", broken_reader)
     with pytest.raises(RuntimeError, match="unexpected reader bug"):
         read_roster(tmp_path / "input.xlsx")
+
+
+def test_identical_rows_are_read_once(tmp_path):
+    roster = read_roster(workbook(tmp_path, [sample(), sample()]))
+    assert not roster.errors
+    assert len(roster.rows) == 1
+    assert any("повтор строки" in w for w in roster.warnings)
