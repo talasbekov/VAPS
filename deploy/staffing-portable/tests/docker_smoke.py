@@ -179,6 +179,35 @@ def main():
                 ]
                 for i in (42, 43)
             ]
+            # Parents deliberately follow the employee rows. The organization
+            # suffix is itself a child, rather than an implicit root.
+            for slot, (code, name, parent) in enumerate(
+                [
+                    ("6984", "2 управление Службы тестовой организации", "6935"),
+                    ("6935", "Служба тестовой организации", "9000"),
+                    ("9000", "Организация Примера", None),
+                ],
+                start=9001,
+            ):
+                rows.append(
+                    [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        code,
+                        name,
+                        parent,
+                        "P1",
+                        "Начальник отдела",
+                        str(slot),
+                        1,
+                        None,
+                        None,
+                        None,
+                    ]
+                )
             create = f'from openpyxl import Workbook; w=Workbook(); w.active.append({headers!r}); [w.active.append(r) for r in {rows!r}]; w.save("/data/staff.xlsx"); w.active.cell(3,1,"123456789"); w.save("/data/invalid.xlsx")'
             ctl(
                 "run",
@@ -219,7 +248,7 @@ def main():
             assert "ПРИМЕНЕНО".encode() in out
             run("sha256sum", "-c", "sha256sums.txt")
             assert (stack / "ctl.sh").stat().st_mode & 0o111
-            validation = 'from organization_management.apps.employees.models import Employee; from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Employee.objects.count()==3; assert Employee.objects.get(personnel_number="UNCHANGED").notes=="retain-me"; assert Division.objects.count()==3; assert StaffUnit.objects.count()==2; assert Employee.objects.filter(external_id__in=["42","43"],birth_date__isnull=True,hire_date__isnull=True,gender__isnull=True).count()==2; assert StaffUnit.objects.filter(import_order=8,position_category="C-S-5").count()==2'
+            validation = 'from organization_management.apps.employees.models import Employee; from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Employee.objects.count()==3; assert Employee.objects.get(personnel_number="UNCHANGED").notes=="retain-me"; assert Division.objects.count()==4; assert StaffUnit.objects.count()==5; assert dict(Division.objects.values_list("code","parent__code"))=={"6661":"6984","6984":"6935","6935":"9000","9000":None}; assert Employee.objects.filter(external_id__in=["42","43"],birth_date__isnull=True,hire_date__isnull=True,gender__isnull=True).count()==2; assert StaffUnit.objects.filter(import_order=8,position_category="C-S-5").count()==2'
             shell(validation)
             assert dictionary_snapshot() == dictionaries_before
             shell(
@@ -258,7 +287,7 @@ def main():
             assert restored.strip() == b"1"
             print("PASS: backup actually restores pre-import database", flush=True)
             out = importer("staff.xlsx", "--apply")
-            assert "создать: 0; обновить: 0; без изменений: 9".encode() in out
+            assert "создать: 0; обновить: 0; без изменений: 13".encode() in out
             shell(validation)
             print(
                 "PASS: repeat creates no duplicates and changes no prior records",
