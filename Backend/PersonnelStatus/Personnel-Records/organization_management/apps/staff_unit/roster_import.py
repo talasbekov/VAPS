@@ -80,6 +80,14 @@ def add_action(plan, entity, key, obj, data):
     )
 
 
+def warn_skipped_photo(plan, row_number):
+    plan.photos["matched"] = max(0, plan.photos.get("matched", 0) - 1)
+    plan.photos["skipped"] = plan.photos.get("skipped", 0) + 1
+    plan.warnings.append(
+        f"Строка {row_number}: проверка фото не пройдена; фото пропущено, прежнее фото сохраняется."
+    )
+
+
 def prepare_import(
     roster,
     config=None,
@@ -88,6 +96,7 @@ def prepare_import(
     default_division_type=None,
     root_division_code=None,
     photos_dir=None,
+    skip_invalid_photos=False,
     missing_parent_code=None,
     reset_account_passwords=False,
 ):
@@ -105,7 +114,7 @@ def prepare_import(
             "updated": 0,
             "unchanged": 0,
         }
-    photos = scan_photos(roster.rows, photos_dir)
+    photos = scan_photos(roster.rows, photos_dir, skip_invalid=skip_invalid_photos)
     plan.photos = photos.counts
     plan.errors.extend(photos.errors)
     plan.warnings.extend(photos.warnings)
@@ -430,7 +439,17 @@ def prepare_import(
             action = plan.actions[-1]
             action["rank_code"] = row["rank_code"]
             photo = photos.people.get(person)
-            if photo and (not employee or not photo.matches(employee.photo)):
+            action["row_number"] = row["row_number"]
+            try:
+                replace_photo = photo and (
+                    not employee or not photo.matches(employee.photo)
+                )
+            except PhotoError:
+                if not skip_invalid_photos:
+                    raise
+                warn_skipped_photo(plan, row["row_number"])
+                replace_photo = False
+            if replace_photo:
                 action["photo"] = photo
                 action["changed_fields"].append("photo")
                 if employee:
@@ -522,6 +541,7 @@ def apply_import(
     default_division_type=None,
     root_division_code=None,
     photos_dir=None,
+    skip_invalid_photos=False,
     missing_parent_code=None,
     account_password=None,
 ):
@@ -534,6 +554,7 @@ def apply_import(
             default_division_type=default_division_type,
             root_division_code=root_division_code,
             photos_dir=photos_dir,
+            skip_invalid_photos=skip_invalid_photos,
             missing_parent_code=missing_parent_code,
             account_password=account_password,
             created_files=created_files,
@@ -559,6 +580,7 @@ def _apply_import(
     default_division_type,
     root_division_code,
     photos_dir,
+    skip_invalid_photos,
     missing_parent_code,
     account_password,
     created_files,
@@ -585,6 +607,7 @@ def _apply_import(
             default_division_type=default_division_type,
             root_division_code=root_division_code,
             photos_dir=photos_dir,
+            skip_invalid_photos=skip_invalid_photos,
             missing_parent_code=missing_parent_code,
             reset_account_passwords=account_password is not None,
         )
@@ -617,12 +640,20 @@ def _apply_import(
                 storage = Employee._meta.get_field("photo").storage
                 try:
                     name = save_photo(photo, storage)
+                except PhotoError:
+                    if not skip_invalid_photos:
+                        raise
+                    warn_skipped_photo(plan, action["row_number"])
+                    action["changed_fields"].remove("photo")
+                    if obj is not None and not action["changed_fields"]:
+                        action["operation"] = "keep"
                 except OSError as exc:
                     raise PhotoError(
                         "Не удалось сохранить фото; импорт отменён."
                     ) from exc
-                created_files.append((storage, name))
-                values["photo"] = name
+                else:
+                    created_files.append((storage, name))
+                    values["photo"] = name
             if obj is None:
                 if entity in ("division", "position", "rank"):
                     values["code"] = action.get("code", key)

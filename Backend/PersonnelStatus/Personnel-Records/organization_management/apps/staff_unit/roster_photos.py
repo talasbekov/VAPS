@@ -68,7 +68,7 @@ class Photos:
     counts: dict = field(default_factory=dict)
 
 
-def scan_photos(rows, folder):
+def scan_photos(rows, folder, *, skip_invalid=False):
     result = Photos()
     if folder is None:
         return result
@@ -83,7 +83,18 @@ def scan_photos(rows, folder):
         match = PHOTO_NAME.fullmatch(path.name)
         if match:
             by_iin.setdefault(match[1], []).append(path)
-    missing, invalid_iin = 0, 0
+    missing, invalid_iin, skipped = 0, 0, 0
+
+    def reject(message):
+        nonlocal skipped
+        if skip_invalid:
+            skipped += 1
+            result.warnings.append(
+                message + " Фото пропущено; прежнее фото сохраняется."
+            )
+        else:
+            result.errors.append(message)
+
     for row in rows:
         if not row["person_id"]:
             continue
@@ -95,9 +106,7 @@ def scan_photos(rows, folder):
             missing += 1
             continue
         if len(matches) != 1:
-            result.errors.append(
-                f"Строка {row['row_number']}: несколько фото для одного ИИН."
-            )
+            reject(f"Строка {row['row_number']}: несколько фото для одного ИИН.")
             continue
         path = matches[0]
         try:
@@ -122,7 +131,7 @@ def scan_photos(rows, folder):
             Image.DecompressionBombWarning,
             PhotoError,
         ):
-            result.errors.append(
+            reject(
                 f"Строка {row['row_number']}: фото недоступно или повреждено; нужен обычный JPEG/PNG до 10 МБ и 20 Мп."
             )
             continue
@@ -133,6 +142,7 @@ def scan_photos(rows, folder):
         "matched": len(result.people),
         "missing": missing,
         "without_iin": invalid_iin,
+        "skipped": skipped,
     }
     if missing or invalid_iin:
         result.warnings.append(

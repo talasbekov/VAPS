@@ -187,3 +187,77 @@ def test_partial_storage_write_does_not_leave_orphan(photo_roster, monkeypatch):
         run(path, folder, apply=True)
     assert not Employee.objects.exists()
     assert not [p for p in media.rglob("*") if p.is_file()]
+
+
+@pytest.mark.parametrize("bad", ["corrupt", "duplicate", "wrong_format", "symlink"])
+def test_skip_invalid_photo_imports_people_and_keeps_good_photo(photo_roster, bad):
+    import json
+
+    path, folder, media = photo_roster
+    path = workbook(path.parent, [sample(), sample("43", "101", "000000000043")])
+    bad_photo = folder / "000000000043.jpg"
+    if bad == "corrupt":
+        bad_photo.write_bytes(b"broken jpeg")
+    elif bad == "duplicate":
+        Image.new("RGB", (12, 12)).save(bad_photo)
+        Image.new("RGB", (12, 12)).save(folder / "000000000043.png")
+    elif bad == "wrong_format":
+        Image.new("RGB", (12, 12)).save(bad_photo, format="GIF")
+    else:
+        bad_photo.symlink_to(folder / "000000000042.jpg")
+    check_report = path.parent / "check.json"
+    run(
+        path,
+        folder,
+        check_file=True,
+        skip_invalid_photos=True,
+        report=str(check_report),
+    )
+    assert not json.loads(check_report.read_text())["errors"]
+    report = path.parent / "applied.json"
+    run(path, folder, apply=True, skip_invalid_photos=True, report=str(report))
+    data = json.loads(report.read_text())
+    assert data["applied"] and data["photos"]["skipped"] == 1
+    assert Employee.objects.count() == 2
+    assert StaffUnit.objects.count() == 2
+    assert not Employee.objects.get(external_id="43").photo
+    good = Employee.objects.get(external_id="42")
+    assert good.photo.read() == (folder / "000000000042.jpg").read_bytes()
+    before = (good.photo.name, good.updated_at, sorted(media.rglob("*")))
+    run(path, folder, apply=True, skip_invalid_photos=True)
+    good.refresh_from_db()
+    assert (good.photo.name, good.updated_at, sorted(media.rglob("*"))) == before
+    assert Employee.objects.count() == 2
+
+
+def test_skipping_corrupt_replacement_preserves_existing_photo(photo_roster):
+    path, folder, _ = photo_roster
+    run(path, folder, apply=True)
+    e = Employee.objects.get(external_id="42")
+    original = (e.photo.name, e.photo.read(), e.updated_at)
+    (folder / "000000000042.jpg").write_bytes(b"broken replacement")
+    run(path, folder, apply=True, skip_invalid_photos=True)
+    e.refresh_from_db()
+    assert (e.photo.name, e.photo.read(), e.updated_at) == original
+
+
+def test_late_corruption_skips_photo_but_imports_employee(photo_roster, monkeypatch):
+    import json
+
+    from organization_management.apps.staff_unit import roster_import
+
+    path, folder, media = photo_roster
+    original = roster_import.prepare_import
+
+    def prepare_then_corrupt(*args, **kwargs):
+        plan = original(*args, **kwargs)
+        (folder / "000000000042.jpg").write_bytes(b"corrupt after scan")
+        return plan
+
+    monkeypatch.setattr(roster_import, "prepare_import", prepare_then_corrupt)
+    report = path.parent / "late.json"
+    run(path, folder, apply=True, skip_invalid_photos=True, report=str(report))
+    assert Employee.objects.count() == 1
+    assert not Employee.objects.get(external_id="42").photo
+    assert not [p for p in media.rglob("*") if p.is_file()]
+    assert json.loads(report.read_text())["photos"]["skipped"] == 1

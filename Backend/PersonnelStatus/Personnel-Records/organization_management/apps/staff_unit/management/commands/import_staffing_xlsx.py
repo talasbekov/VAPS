@@ -152,6 +152,11 @@ class Command(BaseCommand):
             help="Код для отсутствующих родителей; родитель0 у этого кода означает корень.",
         )
         parser.add_argument(
+            "--skip-invalid-photos",
+            action="store_true",
+            help="Пропускать повреждённые/неоднозначные фото, сохраняя сотрудника и прежнее фото.",
+        )
+        parser.add_argument(
             "--photos-dir",
             help="Папка с фото: ИИН.jpg/jpeg/png; отсутствие файла сохраняет прежнее фото.",
         )
@@ -254,7 +259,11 @@ class Command(BaseCommand):
                     or node["division_type"]
                     or options["default_division_type"]
                 )
-            photos = scan_photos(roster.rows, options["photos_dir"])
+            photos = scan_photos(
+                roster.rows,
+                options["photos_dir"],
+                skip_invalid=options["skip_invalid_photos"],
+            )
             report = {
                 "errors": roster.errors + errors + photos.errors,
                 "photos": photos.counts,
@@ -317,6 +326,7 @@ class Command(BaseCommand):
                             default_division_type=options["default_division_type"],
                             root_division_code=options["root_division_code"],
                             photos_dir=options["photos_dir"],
+                            skip_invalid_photos=options["skip_invalid_photos"],
                             missing_parent_code=options["missing_parent_code"],
                             account_password=account_password,
                         )
@@ -328,6 +338,7 @@ class Command(BaseCommand):
                             default_division_type=options["default_division_type"],
                             root_division_code=options["root_division_code"],
                             photos_dir=options["photos_dir"],
+                            skip_invalid_photos=options["skip_invalid_photos"],
                             missing_parent_code=options["missing_parent_code"],
                             reset_account_passwords=account_password is not None,
                         )
@@ -386,7 +397,8 @@ class Command(BaseCommand):
                 )
             if report.get("photos"):
                 self.stdout.write(
-                    f"Фото сопоставлено: {report['photos'].get('matched', 0)}."
+                    f"Фото сопоставлено: {report['photos'].get('matched', 0)}; "
+                    f"пропущено: {report['photos'].get('skipped', 0)}."
                 )
             if report.get("password_reset"):
                 reset = report["password_reset"]
