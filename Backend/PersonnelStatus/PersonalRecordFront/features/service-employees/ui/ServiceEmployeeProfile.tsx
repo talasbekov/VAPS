@@ -36,7 +36,7 @@ export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: s
           <p className="font-medium">{[data.rank, data.position].filter(Boolean).join(' · ')}</p>
           <p className="text-sm text-muted-foreground">{data.division?.name ?? 'Без подразделения'}</p>
           <p className="mt-2 text-sm">Таб. №{data.personnel_number}{data.callsign && ` · Позывной: ${data.callsign}`}</p>
-          <p className="text-sm">В Службе с {formatIsoDate(data.hire_date)}</p>
+          <p className="text-sm">В Службе с {formatIsoDate(data.hire_date ?? '')}</p>
           {data.work_phone && <p className="text-sm">Служебный телефон: {data.work_phone}</p>}
           {data.work_email && <p className="break-all text-sm">Служебная почта: {data.work_email}</p>}
         </div>

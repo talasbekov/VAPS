@@ -82,6 +82,11 @@ class StaffUnit(MPTTModel):
         related_name='children'
     )
     index = models.PositiveIntegerField(verbose_name=_('Номер слота'))
+    # Stable identities from the personnel export; order is not a slot number.
+    external_id = models.CharField(max_length=100, null=True, blank=True, unique=True, default=None)
+    import_order = models.PositiveIntegerField(null=True, blank=True)
+    position_category = models.CharField(max_length=100, blank=True, default='')
+
 
     class MPTTMeta:
         # Сортировка только по index для правильного порядка

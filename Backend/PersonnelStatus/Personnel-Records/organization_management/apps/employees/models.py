@@ -15,11 +15,12 @@ class Employee(models.Model):
 
     # Основная информация
     personnel_number = models.CharField(max_length=20, unique=True, default='000000')
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True, default=None)
     last_name = models.CharField(max_length=100, default='')
     first_name = models.CharField(max_length=100, default='')
     middle_name = models.CharField(max_length=100, blank=True)
-    birth_date = models.DateField(default='1970-01-01')
-    gender = models.CharField(max_length=1, choices=Gender.choices, default='M')
+    birth_date = models.DateField(default='1970-01-01', null=True, blank=True)
+    gender = models.CharField(max_length=1, choices=Gender.choices, default='M', null=True, blank=True)
     iin = models.CharField(max_length=12, unique=True, null=True, blank=True)
     photo = models.ImageField(upload_to='employees/photos/', null=True, blank=True)
 
@@ -35,7 +36,7 @@ class Employee(models.Model):
     callsign = models.CharField(max_length=64, blank=True, default='')
     rank = models.ForeignKey('dictionaries.Rank', on_delete=models.SET_NULL, null=True, blank=True)
     user = models.OneToOneField('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='employee')
-    hire_date = models.DateField(default='1970-01-01')
+    hire_date = models.DateField(default='1970-01-01', null=True, blank=True)
     dismissal_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     archived_at = models.DateTimeField(null=True, blank=True)

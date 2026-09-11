@@ -112,7 +112,7 @@ class EvaluationBrief(serializers.Serializer):
 
 
 class EmployeeDirectoryDetail(EmployeeBrief):
-    hire_date = serializers.DateField()
+    hire_date = serializers.DateField(allow_null=True)
     work_phone = serializers.CharField(allow_null=True)
     work_email = serializers.EmailField(allow_null=True)
     assignments = AssignmentBrief(many=True)
@@ -189,7 +189,7 @@ class ServiceEmployeeViewSet(viewsets.ViewSet):
         row['history'] = [a for a in assignments if a['closed']][::-1]
         closed_ids = {a['event_id'] for a in row['history']}
         row['evaluations'] = [e for e in service.evaluations_for(employee.pk) if e['event_id'] in closed_ids]
-        row['hire_date'] = employee.hire_date.isoformat()
+        row['hire_date'] = employee.hire_date.isoformat() if employee.hire_date is not None else None
         row['work_phone'] = employee.work_phone
         row['work_email'] = employee.work_email
         return Response(row)

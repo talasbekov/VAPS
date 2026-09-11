@@ -58,7 +58,7 @@ export interface ServiceEmployeePage {
 }
 
 export interface ServiceEmployeeDetail extends ServiceEmployee {
-  hire_date: string;
+  hire_date: string | null;
   work_phone: string | null;
   work_email: string | null;
   assignments: ServiceAssignment[];

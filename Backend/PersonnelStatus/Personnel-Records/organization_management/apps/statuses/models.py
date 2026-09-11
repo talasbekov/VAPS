@@ -200,7 +200,7 @@ class EmployeeStatus(models.Model):
             from organization_management.apps.employees.models import Employee
             try:
                 employee = Employee.objects.get(pk=self.employee_id)
-                if self.start_date < employee.hire_date:
+                if employee.hire_date is not None and self.start_date < employee.hire_date:
                     raise ValidationError({
                         'start_date': f"Дата начала статуса не может быть раньше даты приема сотрудника ({employee.hire_date})."
                     })

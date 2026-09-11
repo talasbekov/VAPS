@@ -5,13 +5,13 @@
 
 Три группы полей ведут себя по-разному, и тесты разводят их намеренно:
 
-  * ЛЕЖАТ ГОТОВЫМИ — iin, gender, personnel_number, даты, контакты, notes,
+  * ЛЕЖАТ ГОТОВЫМИ — external_id, iin, gender, personnel_number, даты, контакты, notes,
     employment_status: прямое чтение.
   * СОБИРАЮТСЯ — full_name из трёх частей; rank_code/rank_index из
     справочника звания; position_code и division ЧЕРЕЗ ШТАТНУЮ ЕДИНИЦУ, а не
     из самой Employee (в старой схеме должность и подразделение висят на
     StaffUnit).
-  * ИСТОЧНИКА НЕТ — external_id, phone, height_cm, is_attached_force,
+  * ИСТОЧНИКА НЕТ — phone, height_cm, is_attached_force,
     data_source. Отдаются null по решению Bratan. Это честнее, чем подставить
     похожее поле: `phone` рядом с work_phone/personal_phone выглядел бы
     заполненным, но означал бы не то, и клиент не отличил бы «нет данных» от
@@ -46,7 +46,7 @@ CONTRACT_FIELDS = {
 
 # Поля, которым в старой схеме соответствия нет вовсе.
 SOURCELESS_FIELDS = {
-    "external_id", "phone", "height_cm", "is_attached_force", "data_source",
+    "phone", "height_cm", "is_attached_force", "data_source",
 }
 
 

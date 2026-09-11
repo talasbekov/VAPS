@@ -730,7 +730,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
     expect(people.length, 'на стенде нет сотрудников — проба вакуумна').toBeGreaterThan(1)
     const hired = people.map((p) => p.hire_date).filter((v): v is string => !!v)
-    expect(hired.length, 'ручка не отдаёт hire_date — колонке неоткуда взяться').toBe(people.length)
+    // №1175: кадровая выгрузка может не содержать дату приёма. Поле API
+    // остаётся обязательным, но null означает неизвестную дату, а не дефект.
+    expect(people.every((p) => Object.prototype.hasOwnProperty.call(p, 'hire_date')),
+      'ручка не отдаёт поле hire_date — колонке неоткуда взяться').toBe(true)
     expect(new Set(hired).size, 'дата найма одинакова у всех — проба не различает поля')
       .toBeGreaterThan(1)
 

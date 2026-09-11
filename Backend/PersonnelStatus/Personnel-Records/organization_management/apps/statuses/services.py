@@ -14,6 +14,7 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.utils import timezone
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
@@ -37,6 +38,8 @@ def default_status_start(employee: Employee):
 
     Дата приёма — правда о том, с какого дня человек в строю; `today` объявил
     бы «в строю с сегодня» тому, кто работает пятый год.
+    Если дата приёма неизвестна, новый статус начинается с местного сегодня:
+    это начало учёта статуса, а не восстановленная дата приёма сотрудника.
 
     Но если у сотрудника уже есть статусы, начинать с даты приёма нельзя:
     `EmployeeStatus.clean()` запрещает пересечение периодов, и создание упало
@@ -61,9 +64,10 @@ def default_status_start(employee: Employee):
         ).values_list('actual_end_date', 'end_date')
         if (actual or end) is not None
     ]
+    start = employee.hire_date or timezone.localdate()
     if not ends:
-        return employee.hire_date
-    return max(employee.hire_date, max(ends) + timedelta(days=1))
+        return start
+    return max(start, max(ends) + timedelta(days=1))
 
 
 @transaction.atomic

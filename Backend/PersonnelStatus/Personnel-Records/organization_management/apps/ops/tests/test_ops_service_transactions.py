@@ -69,7 +69,7 @@ APPS = pathlib.Path(__file__).resolve().parents[2]
 #: Разделы, чьи сервисы читаются. Не весь проект: у моделей, миграций и
 #: сериализаторов замков нет, а обход всего дерева стоил бы секунд на каждом
 #: прогоне ради тех же файлов.
-SERVICE_PACKAGES = ("ops", "operations", "statuses", "employees")
+SERVICE_PACKAGES = ("ops", "operations", "statuses", "employees", "staff_unit")
 
 #: Как в коде берут построчный замок. `pg_advisory_xact_lock` — второй способ
 #: (`operations/locks.py`), и он тоже живёт ровно до конца транзакции.

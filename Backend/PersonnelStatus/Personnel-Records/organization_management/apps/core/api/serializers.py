@@ -64,7 +64,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     в старой схеме должность и подразделение висят на StaffUnit, а не на
     самой Employee.
 
-    ИСТОЧНИКА НЕТ — `external_id`, `phone`, `height_cm`, `is_attached_force`,
+    ИСТОЧНИКА НЕТ — `phone`, `height_cm`, `is_attached_force`,
     `data_source`. Отдаются null. Подставить сюда похожее поле было бы хуже
     молчания: `phone` рядом с work_phone выглядел бы заполненным, но означал
     бы не то, и клиент не отличил бы «нет данных» от «данные есть, но другие».
@@ -79,9 +79,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
     division = serializers.SerializerMethodField()
     photo_file_path = serializers.SerializerMethodField()
 
-    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
-    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    # Идентификатор из кадровой выгрузки появился в модели (Plane №1175).
     external_id = serializers.SerializerMethodField()
+    # Для остальных полей источника по-прежнему нет.
     phone = serializers.SerializerMethodField()
     height_cm = serializers.SerializerMethodField()
     is_attached_force = serializers.SerializerMethodField()
@@ -133,8 +133,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
         # Путь файла, а не URL: контракт донора хранит именно путь.
         return obj.photo.name or None if obj.photo else None
 
-    def get_external_id(self, obj: Employee) -> None:
-        return None
+    def get_external_id(self, obj: Employee) -> str | None:
+        return obj.external_id
 
     def get_phone(self, obj: Employee) -> None:
         return None
