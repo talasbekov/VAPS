@@ -263,6 +263,7 @@ def main():
                 "PASS: strict invalid-IIN rejection and default check leave original schema/data unchanged",
                 flush=True,
             )
+            initial_backup = None
             if previous_bundle:
                 run(
                     "bash",
@@ -272,6 +273,9 @@ def main():
                     str(stack),
                     "--apply",
                 )
+                backups = list((stack / ".staffing-import/backups").glob("*.dump"))
+                assert len(backups) == 1
+                initial_backup = backups[0]
                 shell(
                     'from organization_management.apps.employees.models import Employee; Employee.objects.filter(external_id="42").update(external_id="old-42",last_name="Прежняя фамилия")'
                 )
@@ -340,7 +344,10 @@ def main():
                 "PASS: install old image, migrate, reuse saved dictionaries, preserve existing person, import hierarchy/slots, checksum and executable mode",
                 flush=True,
             )
-            backup = next((stack / ".staffing-import/backups").glob("*.dump"))
+            if initial_backup is None:
+                backups = list((stack / ".staffing-import/backups").glob("*.dump"))
+                assert len(backups) == 1
+                initial_backup = backups[0]
             ctl(
                 "exec",
                 "-T",
@@ -356,7 +363,7 @@ def main():
                 "sh",
                 "-c",
                 'pg_restore -U "$POSTGRES_USER" -d staffing_backup_check --no-owner',
-                input_data=backup.read_bytes(),
+                input_data=initial_backup.read_bytes(),
             )
             restored = ctl(
                 "exec",
@@ -366,7 +373,7 @@ def main():
                 "-c",
                 'psql -U "$POSTGRES_USER" -d staffing_backup_check -Atc "SELECT count(*) FROM employees"',
             )
-            assert restored.strip() == b"1"
+            assert restored.strip() == b"1", restored
             print("PASS: backup actually restores pre-import database", flush=True)
             out = importer("staff.xlsx", "--apply")
             assert "создать: 0; обновить: 0; без изменений: 13".encode() in out
@@ -403,6 +410,66 @@ def main():
             importer()
             print(
                 "PASS: recreation retains mounted loader and imported data", flush=True
+            )
+            orphan_rows = [
+                [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "6950",
+                    "4 отдел Службы дополнительных подразделений",
+                    "6701",
+                    "P1",
+                    "Начальник отдела",
+                    "9004",
+                    1,
+                    None,
+                    None,
+                    None,
+                ],
+                [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "6769",
+                    "Служба дополнительных подразделений",
+                    "0",
+                    "P1",
+                    "Начальник отдела",
+                    "9005",
+                    1,
+                    None,
+                    None,
+                    None,
+                ],
+            ]
+            ctl(
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--entrypoint",
+                "python",
+                "-v",
+                f"{root}:/data",
+                "backend",
+                "-c",
+                f'from openpyxl import Workbook; w=Workbook(); w.active.append({headers!r}); [w.active.append(r) for r in {orphan_rows!r}]; w.save("/data/missing.xlsx")',
+            )
+            output = importer("missing.xlsx", "--apply")
+            assert "6701 заменён на 6769".encode() in output
+            orphan_validation = 'from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Division.objects.get(code="6950").parent.code=="6769"; assert Division.objects.get(code="6769").parent_id is None; assert not Division.objects.filter(code="6701").exists(); assert Division.objects.count()==6; assert StaffUnit.objects.count()==7'
+            shell(orphan_validation)
+            importer("missing.xlsx", "--apply")
+            shell(orphan_validation)
+            assert photos_snapshot() == pictures
+            print(
+                "PASS: missing parent becomes6769, root0 cleared, actual codes/photos preserved and repeat idempotent",
+                flush=True,
             )
             # A source/version mismatch must fail before any additional backups/import.
             backup_count = len(

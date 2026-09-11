@@ -203,6 +203,8 @@ class Installer:
 
     def roster_args(self):
         result = ["/opt/staffing.xlsx", "--match-dictionary-names"]
+        if self.args.missing_parent_code:
+            result += ["--missing-parent-code", self.args.missing_parent_code]
         if self.photos_dir:
             result += ["--photos-dir", "/opt/staffing-photos"]
         if self.args.skip_invalid_iin:
@@ -660,6 +662,11 @@ def main():
         "--skip-invalid-iin",
         action="store_true",
         help="Загрузить неверный ИИН как незаполненный",
+    )
+    parser.add_argument(
+        "--missing-parent-code",
+        default="6769",
+        help="Отсутствующих родителей привязать к этому коду (по умолчанию6769).",
     )
     parser.add_argument("--sheet")
     parser.add_argument("--config", type=Path)

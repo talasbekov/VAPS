@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 BACKEND = REPO / "Backend/PersonnelStatus/Personnel-Records"
-SOURCE_COMMIT = "f3d03fc3acae676a76f1bfbd10219813b2a66b45"
+SOURCE_COMMIT = "c1f852312059cd3d98e13d654338c1e6378499d9"
 SOURCE_BASE = "cbac0f704fdfa2cf9d5c711ff2a1974b174522de^"
 PREFIX = "Backend/PersonnelStatus/Personnel-Records/"
 CTL = """#!/usr/bin/env bash
@@ -25,6 +25,10 @@ exec docker compose --env-file images.env --env-file .env -f docker-compose.yml 
 # Exact delivered manifests; maps are rebuilt from reviewed historical Git bytes.
 # The older digest uses the same delivered base/compatibility fingerprints.
 PREVIOUS_RELEASES = (
+    (
+        "f3d03fc3acae676a76f1bfbd10219813b2a66b45",
+        "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41",
+    ),
     (
         "dbd9a0c3c7e08e641ca9743656150cc245af8d78",
         "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d",

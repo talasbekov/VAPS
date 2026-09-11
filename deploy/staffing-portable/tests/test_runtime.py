@@ -248,6 +248,7 @@ class PortableUpdates(unittest.TestCase):
             xlsx=self.xlsx,
             config=None,
             photos_dir=None,
+            missing_parent_code="6769",
             apply=True,
             skip_invalid_iin=False,
             sheet=None,
@@ -350,6 +351,11 @@ class PortableUpdates(unittest.TestCase):
 
         obj.compose, obj.oneoff, obj.backup = compose, oneoff, backup
         return obj
+
+    def test_missing_parent_target_is_passed_to_command(self):
+        args = self.installer().roster_args()
+        self.assertIn("--missing-parent-code", args)
+        self.assertEqual(args[args.index("--missing-parent-code") + 1], "6769")
 
     def test_photos_discovered_next_to_original_shell_and_only_source_mounts(self):
         photos = self.shell.parent / "photos"
@@ -623,15 +629,23 @@ class BuilderHistory(unittest.TestCase):
         builder = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(builder)
         versions = builder.previous_versions()
-        self.assertEqual(len(versions), 2)
+        self.assertEqual(len(versions), 3)
         self.assertEqual(
             {v["manifest_sha256"] for v in versions},
             {
+                "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41",
                 "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d",
                 "b3c9deee03303eae8d5bf0a9d147f8bf4941c4cf06b8958c665a31826b00fe80",
             },
         )
-        self.assertTrue(all(len(v["files"]) == 12 for v in versions))
+        self.assertEqual(
+            {v["manifest_sha256"]: len(v["files"]) for v in versions},
+            {
+                "70b30e60678355315604ba093ae13683680a4c23bdca6d8a85382da1cccf5a41": 13,
+                "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d": 12,
+                "b3c9deee03303eae8d5bf0a9d147f8bf4941c4cf06b8958c665a31826b00fe80": 12,
+            },
+        )
 
     def test_built_launcher_preserves_original_location_from_different_cwd(self):
         import base64
