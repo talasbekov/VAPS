@@ -18,11 +18,16 @@ BASE = "c637e8264c2a"
 
 
 def main():
-    bundle = Path(sys.argv[1]).resolve(strict=True)
+    bundle_source = Path(sys.argv[1]).resolve(strict=True)
+    previous_bundle = (
+        Path(sys.argv[3]).resolve(strict=True) if len(sys.argv) > 3 else None
+    )
     image_tag = sys.argv[2] if len(sys.argv) > 2 else BASE
     os.umask(0o077)
     with tempfile.TemporaryDirectory(prefix="staffing-docker-test-") as folder:
         root = Path(folder)
+        bundle = root / "import-staffing.sh"
+        bundle.write_bytes(bundle_source.read_bytes())
         stack = root / "stack"
         stack.mkdir()
         project = "staffing-test-" + secrets.token_hex(4)
@@ -222,6 +227,20 @@ def main():
                 "-c",
                 create,
             )
+            (root / "photos").mkdir()
+            ctl(
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--entrypoint",
+                "python",
+                "-v",
+                f"{root}:/data",
+                "backend",
+                "-c",
+                'from PIL import Image; [Image.new("RGB",(24,32),color).save("/data/photos/"+iin+".jpg") for iin,color in [("000000000042","red"),("000000000043","blue")]]',
+            )
 
             def importer(file="staff.xlsx", *options, expected=0):
                 return run(
@@ -244,12 +263,75 @@ def main():
                 "PASS: strict invalid-IIN rejection and default check leave original schema/data unchanged",
                 flush=True,
             )
+            if previous_bundle:
+                run(
+                    "bash",
+                    str(previous_bundle),
+                    str(root / "staff.xlsx"),
+                    "--stack",
+                    str(stack),
+                    "--apply",
+                )
+                shell(
+                    'from organization_management.apps.employees.models import Employee; Employee.objects.filter(external_id="42").update(external_id="old-42",last_name="Прежняя фамилия")'
+                )
+                previous_ids = shell(
+                    'from organization_management.apps.employees.models import Employee; print("IDS="+str(list(Employee.objects.order_by("pk").values_list("pk",flat=True))))'
+                )
+                previous_ids = next(
+                    line
+                    for line in previous_ids.splitlines()
+                    if line.startswith(b"IDS=")
+                )
             out = importer("staff.xlsx", "--apply")
             assert "ПРИМЕНЕНО".encode() in out
+            if previous_bundle:
+                current_ids = shell(
+                    'from organization_management.apps.employees.models import Employee; print("IDS="+str(list(Employee.objects.order_by("pk").values_list("pk",flat=True))))'
+                )
+                current_ids = next(
+                    line
+                    for line in current_ids.splitlines()
+                    if line.startswith(b"IDS=")
+                )
+                assert previous_ids == current_ids, (previous_ids, current_ids)
+                shell(
+                    'from organization_management.apps.employees.models import Employee; assert Employee.objects.get(external_id="42").last_name=="Синтетический"'
+                )
+                print(
+                    "PASS: upgrade prior installed bundle; update same IIN without replacing employee IDs",
+                    flush=True,
+                )
             run("sha256sum", "-c", "sha256sums.txt")
             assert (stack / "ctl.sh").stat().st_mode & 0o111
             validation = 'from organization_management.apps.employees.models import Employee; from organization_management.apps.divisions.models import Division; from organization_management.apps.staff_unit.models import StaffUnit; assert Employee.objects.count()==3; assert Employee.objects.get(personnel_number="UNCHANGED").notes=="retain-me"; assert Division.objects.count()==4; assert StaffUnit.objects.count()==5; assert dict(Division.objects.values_list("code","parent__code"))=={"6661":"6984","6984":"6935","6935":"9000","9000":None}; assert Employee.objects.filter(external_id__in=["42","43"],birth_date__isnull=True,hire_date__isnull=True,gender__isnull=True).count()==2; assert StaffUnit.objects.filter(import_order=8,position_category="C-S-5").count()==2'
             shell(validation)
+
+            def photos_snapshot():
+                out = shell(
+                    'import json; from hashlib import sha256; from organization_management.apps.employees.models import Employee; from organization_management.apps.employees.api.serializers import EmployeeSerializer; print("PHOTOS="+json.dumps([[e.pk,e.photo.name,sha256(e.photo.read()).hexdigest(),e.updated_at.isoformat(),EmployeeSerializer(e).data["photo"]] for e in Employee.objects.filter(external_id__in=["42","43"]).order_by("external_id")]))'
+                )
+                return json.loads(
+                    next(
+                        line[7:]
+                        for line in out.splitlines()
+                        if line.startswith(b"PHOTOS=")
+                    )
+                )
+
+            pictures = photos_snapshot()
+            from urllib.request import urlopen
+
+            for picture, iin in zip(pictures, ("000000000042", "000000000043")):
+                expected = (root / "photos" / (iin + ".jpg")).read_bytes()
+                assert picture[2] == hashlib.sha256(expected).hexdigest()
+                assert iin not in picture[1]
+                with urlopen(f"http://127.0.0.1:{ports[0]}" + picture[4]) as response:
+                    assert response.read() == expected
+            print(
+                "PASS: photos by IIN from folder beside shell, served through existing serializer/proxy",
+                flush=True,
+            )
             assert dictionary_snapshot() == dictionaries_before
             shell(
                 'from organization_management.apps.dictionaries.models import Position, Rank; from organization_management.apps.staff_unit.models import StaffUnit; assert StaffUnit.objects.filter(position__code="SAVED-P",employee__rank__code="SAVED-R").count()==2; assert Position.objects.get(code="SAVED-P").level==6; assert Rank.objects.get(code="SAVED-R").level==7'
@@ -289,6 +371,7 @@ def main():
             out = importer("staff.xlsx", "--apply")
             assert "создать: 0; обновить: 0; без изменений: 13".encode() in out
             shell(validation)
+            assert photos_snapshot() == pictures
             print(
                 "PASS: repeat creates no duplicates and changes no prior records",
                 flush=True,
@@ -316,6 +399,7 @@ def main():
                 "beat",
             )
             shell(validation)
+            assert photos_snapshot() == pictures
             importer()
             print(
                 "PASS: recreation retains mounted loader and imported data", flush=True

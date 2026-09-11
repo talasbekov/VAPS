@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 BACKEND = REPO / "Backend/PersonnelStatus/Personnel-Records"
-SOURCE_COMMIT = "dbd9a0c3c7e08e641ca9743656150cc245af8d78"
+SOURCE_COMMIT = "f3d03fc3acae676a76f1bfbd10219813b2a66b45"
 SOURCE_BASE = "cbac0f704fdfa2cf9d5c711ff2a1974b174522de^"
 PREFIX = "Backend/PersonnelStatus/Personnel-Records/"
 CTL = """#!/usr/bin/env bash
@@ -20,6 +20,37 @@ set -euo pipefail
 cd -- "$(dirname -- "$0")"
 exec docker compose --env-file images.env --env-file .env -f docker-compose.yml "$@"
 """
+
+
+# Exact delivered manifests; maps are rebuilt from reviewed historical Git bytes.
+# The older digest uses the same delivered base/compatibility fingerprints.
+PREVIOUS_RELEASES = (
+    (
+        "dbd9a0c3c7e08e641ca9743656150cc245af8d78",
+        "b0881be67dc144a6cb2d2cf2eb3e33660af40ff6ec4cda9c06e64395fd75ae8d",
+    ),
+    (
+        "05e4d78b1f5a8da47c2ab9e8cb3db50af4e410a3",
+        "b3c9deee03303eae8d5bf0a9d147f8bf4941c4cf06b8958c665a31826b00fe80",
+    ),
+)
+
+
+def previous_versions():
+    versions = []
+    for commit, digest in PREVIOUS_RELEASES:
+        paths = subprocess.check_output(
+            ["git", "diff", "--name-only", SOURCE_BASE, commit], cwd=REPO, text=True
+        ).splitlines()
+        files = {}
+        for path in paths:
+            if path.startswith(PREFIX) and "/tests/" not in path:
+                data = subprocess.check_output(
+                    ["git", "show", commit + ":" + path], cwd=REPO
+                )
+                files[path[len(PREFIX) :]] = hashlib.sha256(data).hexdigest()
+        versions.append({"manifest_sha256": digest, "files": files})
+    return versions
 
 
 def main():
@@ -45,6 +76,7 @@ def main():
                 "docker",
                 "run",
                 "--rm",
+                "--pull=never",
                 "--network",
                 "none",
                 "--entrypoint",
@@ -63,6 +95,7 @@ def main():
                     "docker",
                     "run",
                     "--rm",
+                    "--pull=never",
                     "--network",
                     "none",
                     "--entrypoint",
@@ -92,6 +125,7 @@ def main():
         )
     manifest = {
         "source_commit": SOURCE_COMMIT,
+        "previous_versions": previous_versions(),
         "base_image": args.base_image,
         "ctl": CTL,
         "base_files": base,
@@ -119,7 +153,9 @@ python3 - "$0" "$@" <<'PYTHON_LAUNCHER'
 import base64, hashlib, io, os, runpy, sys, tempfile, zipfile
 from pathlib import Path
 os.umask(0o077)
-raw = Path(sys.argv[1]).read_bytes().split(b"\\n__STAFFING_PAYLOAD__\\n", 1)[1]
+original_shell = Path(sys.argv[1]).absolute()
+os.environ["STAFFING_ORIGINAL_SHELL"] = str(original_shell)
+raw = original_shell.read_bytes().split(b"\\n__STAFFING_PAYLOAD__\\n", 1)[1]
 payload = base64.b64decode(raw)
 if hashlib.sha256(payload).hexdigest() != "PAYLOAD_SHA256":
     raise SystemExit("Повреждён скрипт: контрольная сумма не совпадает.")

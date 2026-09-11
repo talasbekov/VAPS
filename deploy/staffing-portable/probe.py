@@ -11,6 +11,7 @@ django.setup()
 root = Path(__file__).parent / "files"
 modules = [
     "organization_management.apps.staff_unit.roster_xlsx",
+    "organization_management.apps.staff_unit.roster_photos",
     "organization_management.apps.staff_unit.roster_import",
     "organization_management.apps.staff_unit.management.commands.import_staffing_xlsx",
 ]

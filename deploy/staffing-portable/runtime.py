@@ -120,8 +120,27 @@ class Installer:
         self.stack = args.stack.resolve()
         self.xlsx = args.xlsx.resolve(strict=True)
         self.config_path = args.config.resolve(strict=True) if args.config else None
+        photos = getattr(args, "photos_dir", None)
+        if photos is None:
+            shell = os.environ.get("STAFFING_ORIGINAL_SHELL")
+            candidate = Path(shell).absolute().parent / "photos" if shell else None
+            photos = (
+                candidate
+                if candidate and (candidate.exists() or candidate.is_symlink())
+                else None
+            )
+        if photos is not None and not photos.is_dir():
+            raise InstallError(
+                "Каталог фотографий отсутствует или не является папкой: " + str(photos)
+            )
+        self.photos_dir = photos.resolve(strict=True) if photos is not None else None
         self.home = self.stack / ".staffing-import"
         self.manifest = json.loads((self.package / "manifest.json").read_text())
+        self.package_hash = hashlib.sha256(
+            (self.package / "manifest.json").read_bytes()
+        ).hexdigest()
+        self.previous = None
+        self.upgrading = False
         self.original_ctl = self.manifest["ctl"]
         self.ctl = self.stack / "ctl.sh"
         self.pending_path = self.home / "pending.json"
@@ -129,7 +148,13 @@ class Installer:
         self.installed = False
         self.stopped = False
         self.started_install = self.pending
-        for path in (self.stack, self.package, self.xlsx, self.config_path):
+        for path in (
+            self.stack,
+            self.package,
+            self.xlsx,
+            self.config_path,
+            self.photos_dir,
+        ):
             if path and any(c in str(path) for c in (":", "\n", "\r")):
                 raise InstallError(
                     "Пути для Docker не должны содержать двоеточие или перевод строки."
@@ -154,6 +179,10 @@ class Installer:
     def oneoff(self, *command, capture=False, source=False, reports=None):
         mounts = ["-v", f"{self.package}:/opt/staffing-package:ro"]
         if source:
+            if self.photos_dir:
+                if not self.photos_dir.is_dir():
+                    raise InstallError("Каталог фотографий исчез после проверки.")
+                mounts += ["-v", f"{self.photos_dir}:/opt/staffing-photos:ro"]
             mounts += ["-v", f"{self.xlsx}:/opt/staffing.xlsx:ro"]
             if self.config_path:
                 mounts += ["-v", f"{self.config_path}:/opt/staffing-config.json:ro"]
@@ -174,6 +203,8 @@ class Installer:
 
     def roster_args(self):
         result = ["/opt/staffing.xlsx", "--match-dictionary-names"]
+        if self.photos_dir:
+            result += ["--photos-dir", "/opt/staffing-photos"]
         if self.args.skip_invalid_iin:
             result.append("--skip-invalid-iin")
         if self.args.sheet:
@@ -191,48 +222,7 @@ class Installer:
         current_ctl = self.ctl.read_text()
         patched = patched_ctl(current_ctl, self.original_ctl)
         self.installed = current_ctl == patched
-        if self.pending:
-            marker = json.loads(self.pending_path.read_text())
-            if (
-                marker.get("package_sha256")
-                != hashlib.sha256(
-                    (self.package / "manifest.json").read_bytes()
-                ).hexdigest()
-            ):
-                raise InstallError(
-                    "Незавершённая установка относится к другому выпуску загрузчика."
-                )
-        if (
-            not self.pending
-            and self.installed != (self.home / "manifest.json").is_file()
-        ):
-            raise InstallError(
-                "Незавершённая установка: ctl.sh и .staffing-import не согласованы. "
-                "Сохраните каталог и журнал для восстановления."
-            )
-        if self.installed or self.pending:
-            expected_overlay = overlay_config(self.manifest["files"])
-            overlay_path = self.stack / "docker-compose.staffing.yml"
-            if (self.installed and not overlay_path.is_file()) or (
-                overlay_path.exists()
-                and json.loads(overlay_path.read_text()) != expected_overlay
-            ):
-                raise InstallError(
-                    "Подключение файлов загрузчика изменено или отсутствует."
-                )
-            saved_manifest = self.home / "manifest.json"
-            if (
-                saved_manifest.exists()
-                and saved_manifest.read_bytes()
-                != (self.package / "manifest.json").read_bytes()
-            ):
-                raise InstallError(
-                    "На сервере уже установлен другой выпуск загрузчика."
-                )
-        elif (self.stack / "docker-compose.staffing.yml").exists():
-            raise InstallError(
-                "docker-compose.staffing.yml уже существует и не принадлежит установщику."
-            )
+        self.verify_overlay()
         checksums = self.stack / "sha256sums.txt"
         if checksums.exists():
             patched_checksums(checksums.read_text(), self.original_ctl)
@@ -265,31 +255,44 @@ class Installer:
             raise InstallError(
                 "backend, worker и beat должны использовать один образ приложения."
             )
-        check_mounts(config, self.manifest["files"], installed=self.installed)
+        paths = set(self.manifest["files"]) | set(
+            self.previous["files"] if self.previous else {}
+        )
+        check_mounts(config, paths, installed=self.installed)
         if self.installed:
             for name in ("backend", "worker", "beat"):
                 mounts = {
                     v["target"]: v for v in config["services"][name].get("volumes", [])
                 }
-                for rel in self.manifest["files"]:
+                for rel in self.active_files:
                     mount = mounts.get("/app/" + rel, {})
                     if (
-                        Path(mount.get("source", "/missing")).resolve()
+                        mount.get("type") != "bind"
+                        or not mount.get("read_only")
+                        or Path(mount.get("source", "/missing")).resolve()
                         != (self.home / "files" / rel).resolve()
                     ):
                         raise InstallError(
                             f"{name}: подключён другой источник файла {rel}."
                         )
+                for rel in paths - set(self.active_files):
+                    if "/app/" + rel in mounts:
+                        raise InstallError(
+                            f"{name}: неожиданное подключение файла {rel}."
+                        )
         actual = json.loads(
             self.oneoff("/opt/staffing-package/fingerprint.py", capture=True)
+        )
+        replacements = (
+            {rel: self.disk_files[rel] for rel in self.active_files}
+            if self.installed
+            else {}
         )
         mismatch = None
         for variant in self.manifest.get("base_variants", [{}]):
             base = {**self.manifest["base_files"], **variant}
             try:
-                check_hashes(
-                    actual, base, self.manifest["files"], installed=self.installed
-                )
+                check_hashes(actual, base, replacements, installed=self.installed)
                 break
             except InstallError as exc:
                 mismatch = exc
@@ -298,6 +301,151 @@ class Installer:
         if not self.installed:
             self.oneoff("manage.py", "migrate", "--check", capture=True)
         print("Версия контейнера и настройки комплекта подходят.", flush=True)
+
+    def verify_overlay(self):
+        """Trust only this package and its embedded historical hashes, never saved metadata."""
+        known = {
+            v["manifest_sha256"]: v for v in self.manifest.get("previous_versions", [])
+        }
+        marker = json.loads(self.pending_path.read_text()) if self.pending else {}
+        if self.pending and marker.get("package_sha256") != self.package_hash:
+            raise InstallError(
+                "Незавершённая установка относится к другому выпуску загрузчика."
+            )
+        prior_hash = marker.get("previous_sha256")
+        if prior_hash is not None:
+            if prior_hash not in known:
+                raise InstallError(
+                    "Неизвестная предыдущая версия в маркере обновления."
+                )
+            self.previous = known[prior_hash]
+            self.check_previous_backup()
+            backup_name = marker.get("database_backup", "")
+            if (
+                not backup_name
+                or Path(backup_name).name != backup_name
+                or not (self.home / "backups" / backup_name).is_file()
+                or (self.home / "backups" / backup_name).stat().st_size == 0
+            ):
+                raise InstallError(
+                    "Отсутствует резервная копия базы перед обновлением."
+                )
+        saved = self.home / "manifest.json"
+        saved_hash = (
+            hashlib.sha256(saved.read_bytes()).hexdigest() if saved.is_file() else None
+        )
+        if not self.pending and self.installed != (saved_hash is not None):
+            raise InstallError(
+                "Незавершённая установка: ctl.sh и .staffing-import не согласованы."
+            )
+        if saved_hash not in (None, self.package_hash):
+            if saved_hash not in known or (self.pending and saved_hash != prior_hash):
+                raise InstallError(
+                    "На сервере уже установлен другой выпуск загрузчика."
+                )
+            self.previous = known[saved_hash]
+        self.upgrading = self.previous is not None
+        if self.upgrading and (not self.installed or saved_hash is None):
+            raise InstallError("Предыдущая установка неполна; обновление остановлено.")
+        old = self.previous["files"] if self.previous else {}
+        new = self.manifest["files"]
+        if set(old) - set(new):
+            raise InstallError("Обновление с удалением файлов не поддерживается.")
+        overlay = self.stack / "docker-compose.staffing.yml"
+        candidates = [old] if self.upgrading and not self.pending else [new]
+        if self.pending and self.previous:
+            candidates.append(old)
+        self.active_files = {}
+        if overlay.exists():
+            if not self.installed and not self.pending:
+                raise InstallError(
+                    "docker-compose.staffing.yml уже существует и не принадлежит установщику."
+                )
+            actual_config = json.loads(overlay.read_text())
+            for files in candidates:
+                if actual_config == overlay_config(files):
+                    self.active_files = files
+                    break
+            else:
+                raise InstallError(
+                    "Подключение файлов загрузчика изменено или отсутствует."
+                )
+        elif self.installed:
+            raise InstallError(
+                "Подключение файлов загрузчика изменено или отсутствует."
+            )
+        self.disk_files = {}
+        for rel in set(old) | set(new):
+            path = self.home / "files" / rel
+            digest = (
+                hashlib.sha256(path.read_bytes()).hexdigest()
+                if path.is_file()
+                else None
+            )
+            if self.pending:
+                allowed = {new.get(rel), old.get(rel)}
+                if self.previous and rel in old:
+                    allowed.discard(None)
+                if rel in self.active_files:
+                    allowed.discard(None)
+            elif self.installed:
+                allowed = {old.get(rel) if self.upgrading else new.get(rel)}
+            else:
+                allowed = {None}
+            if digest not in allowed:
+                raise InstallError("Файлы установленного загрузчика изменены: " + rel)
+            if digest is not None:
+                self.disk_files[rel] = digest
+
+    def previous_backup_path(self):
+        return self.home / "backups" / ("overlay-" + self.previous["manifest_sha256"])
+
+    def check_previous_backup(self):
+        directory = self.previous_backup_path()
+        expected = {
+            "files/" + rel: digest for rel, digest in self.previous["files"].items()
+        }
+        expected["manifest.json"] = self.previous["manifest_sha256"]
+        for rel, digest in expected.items():
+            path = directory / rel
+            if (
+                not path.is_file()
+                or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+            ):
+                raise InstallError(
+                    "Резервная копия предыдущего загрузчика отсутствует или повреждена."
+                )
+        overlay = directory / "docker-compose.staffing.yml"
+        if not overlay.is_file() or json.loads(overlay.read_text()) != overlay_config(
+            self.previous["files"]
+        ):
+            raise InstallError(
+                "Резервная копия подключения предыдущего загрузчика повреждена."
+            )
+
+    def backup_previous(self):
+        directory = self.previous_backup_path()
+        sources = {
+            "manifest.json": self.home / "manifest.json",
+            "docker-compose.staffing.yml": self.stack / "docker-compose.staffing.yml",
+        }
+        sources.update(
+            {
+                "files/" + rel: self.home / "files" / rel
+                for rel in self.previous["files"]
+            }
+        )
+        for rel, source in sources.items():
+            destination = directory / rel
+            data = source.read_bytes()
+            if destination.exists():
+                if destination.read_bytes() != data:
+                    raise InstallError(
+                        "Существующая резервная копия загрузчика отличается от исходной."
+                    )
+            else:
+                write_private(destination, data, exclusive=True)
+        self.check_previous_backup()
 
     def backup(self):
         directory = self.home / "backups"
@@ -317,6 +465,8 @@ class Installer:
                 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc',
                 output=stream,
             )
+            stream.flush()
+            os.fsync(stream.fileno())
         # Ask pg_restore to read the archive before marking the backup complete.
         with partial.open("rb") as stream:
             result = subprocess.run(
@@ -332,6 +482,11 @@ class Installer:
                 "Не удалось проверить резервную копию. Запись в базу не начата."
             )
         os.replace(partial, path)
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
         print(f"Резервная копия базы: {path}", flush=True)
         return path
 
@@ -383,13 +538,14 @@ class Installer:
         self.oneoff("manage.py", "migrate", "--noinput")
         self.installed = True
 
-    def start(self):
+    def start(self, *, recreate=False):
         self.compose(
             "up",
             "-d",
             "--pull",
             "never",
             "--no-build",
+            *(["--force-recreate"] if recreate else []),
             "--wait",
             "--wait-timeout",
             "600",
@@ -408,28 +564,15 @@ class Installer:
             raise InstallError(
                 "Установка прервалась. Повторите эту команду с --apply для её завершения."
             )
-        if not self.args.apply and not self.installed:
+        if not self.args.apply and (not self.installed or self.upgrading):
             print(
                 "Файл проверен. База и приложение не изменены. "
                 "Для установки загрузчика и импорта повторите команду с --apply."
             )
             return
         if self.args.apply:
-            needs_install = not self.installed or self.pending
+            needs_install = not self.installed or self.pending or self.upgrading
             if needs_install:
-                if not self.pending:
-                    write_private(
-                        self.pending_path,
-                        json.dumps(
-                            {
-                                "package_sha256": hashlib.sha256(
-                                    (self.package / "manifest.json").read_bytes()
-                                ).hexdigest()
-                            }
-                        ).encode(),
-                        exclusive=True,
-                    )
-                    self.pending = True
                 print(
                     "Подключение загрузчика: краткая остановка приложения, резервная копия и миграции.",
                     flush=True,
@@ -445,10 +588,23 @@ class Installer:
                     "worker",
                     "backend",
                 )
-            self.backup()
+            database_backup = self.backup()
             if needs_install:
+                if not self.pending:
+                    marker = {"package_sha256": self.package_hash}
+                    if self.previous:
+                        self.backup_previous()
+                        marker.update(
+                            previous_sha256=self.previous["manifest_sha256"],
+                            database_backup=database_backup.name,
+                        )
+                    write_private(
+                        self.pending_path, json.dumps(marker).encode(), exclusive=True
+                    )
+                    self.pending = True
                 self.install()
-                self.start()
+                # Atomic replacement leaves existing bind mounts on the old inodes.
+                self.start(recreate=True)
                 self.pending_path.unlink()
                 self.pending = False
             else:
@@ -507,6 +663,11 @@ def main():
     )
     parser.add_argument("--sheet")
     parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--photos-dir",
+        type=Path,
+        help="Фотографии по ИИН; по умолчанию photos рядом с исходным shell-файлом",
+    )
     args = parser.parse_args()
     installer = None
     lock = None
