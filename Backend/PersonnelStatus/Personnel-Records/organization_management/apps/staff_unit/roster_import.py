@@ -19,6 +19,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.staff_unit.models import StaffUnit
 from organization_management.apps.staff_unit.roster_photos import (
     PhotoError,
+    PhotoSourceError,
     save_photo,
     scan_photos,
 )
@@ -440,15 +441,9 @@ def prepare_import(
             action["rank_code"] = row["rank_code"]
             photo = photos.people.get(person)
             action["row_number"] = row["row_number"]
-            try:
-                replace_photo = photo and (
-                    not employee or not photo.matches(employee.photo)
-                )
-            except PhotoError:
-                if not skip_invalid_photos:
-                    raise
-                warn_skipped_photo(plan, row["row_number"])
-                replace_photo = False
+            replace_photo = photo and (
+                not employee or not photo.matches(employee.photo)
+            )
             if replace_photo:
                 action["photo"] = photo
                 action["changed_fields"].append("photo")
@@ -640,7 +635,7 @@ def _apply_import(
                 storage = Employee._meta.get_field("photo").storage
                 try:
                     name = save_photo(photo, storage)
-                except PhotoError:
+                except PhotoSourceError:
                     if not skip_invalid_photos:
                         raise
                     warn_skipped_photo(plan, action["row_number"])

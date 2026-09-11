@@ -21,16 +21,20 @@ class PhotoError(Exception):
     pass
 
 
+class PhotoSourceError(PhotoError):
+    """An individual input photo failed validation, not the destination storage."""
+
+
 def read_photo(path):
     try:
         if path.is_symlink() or not path.is_file():
-            raise PhotoError("Фото должно быть обычным файлом, не ссылкой.")
+            raise PhotoSourceError("Фото должно быть обычным файлом, не ссылкой.")
         with path.open("rb") as stream:
             data = stream.read(MAX_BYTES + 1)
     except OSError as exc:
-        raise PhotoError("Не удалось прочитать фото.") from exc
+        raise PhotoSourceError("Не удалось прочитать фото.") from exc
     if not data or len(data) > MAX_BYTES:
-        raise PhotoError("Фото должно быть непустым и не больше 10 МБ.")
+        raise PhotoSourceError("Фото должно быть непустым и не больше 10 МБ.")
     return data
 
 
@@ -44,7 +48,9 @@ class Photo:
     def read_verified(self):
         data = read_photo(self.path)
         if sha256(data).hexdigest() != self.digest:
-            raise PhotoError("Фото изменилось во время импорта. Повторите проверку.")
+            raise PhotoSourceError(
+                "Фото изменилось во время импорта. Повторите проверку."
+            )
         return data
 
     def matches(self, existing):

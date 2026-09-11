@@ -261,3 +261,20 @@ def test_late_corruption_skips_photo_but_imports_employee(photo_roster, monkeypa
     assert not Employee.objects.get(external_id="42").photo
     assert not [p for p in media.rglob("*") if p.is_file()]
     assert json.loads(report.read_text())["photos"]["skipped"] == 1
+
+
+def test_skip_mode_does_not_hide_storage_read_failure(photo_roster, monkeypatch):
+    path, folder, _ = photo_roster
+    run(path, folder, apply=True)
+    e = Employee.objects.get(external_id="42")
+    before = (e.photo.name, e.updated_at)
+    storage = Employee._meta.get_field("photo").storage
+
+    def inaccessible(*args, **kwargs):
+        raise OSError("synthetic storage permission failure")
+
+    monkeypatch.setattr(storage, "open", inaccessible)
+    with pytest.raises(CommandError, match="Импорт не выполнен"):
+        run(path, folder, apply=True, skip_invalid_photos=True)
+    e.refresh_from_db()
+    assert (e.photo.name, e.updated_at) == before
