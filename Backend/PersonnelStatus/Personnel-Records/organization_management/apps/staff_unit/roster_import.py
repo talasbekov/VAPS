@@ -85,6 +85,8 @@ def prepare_import(
     config=None,
     *,
     match_dictionary_names=False,
+    default_division_type=None,
+    root_division_code=None,
     photos_dir=None,
     missing_parent_code=None,
     reset_account_passwords=False,
@@ -179,6 +181,20 @@ def prepare_import(
         obj = db_divisions.get(code)
         if not node["division_type"] and obj:
             node["division_type"] = obj.division_type
+        if root_division_code and code == mapping.get(
+            root_division_code, root_division_code
+        ):
+            explicit_type = any(
+                mapping.get(k, k) == code and "division_type" in override
+                for k, override in config.get("divisions", {}).items()
+            )
+            if not explicit_type:
+                node["division_type"] = "organization"
+        if not node["division_type"] and default_division_type:
+            node["division_type"] = default_division_type
+            plan.warnings.append(
+                f"Подразделение {code}: применён тип по умолчанию {default_division_type}."
+            )
         if not node["name"] or len(node["name"]) > 255 or len(code) > 50:
             plan.errors.append(f"Некорректное название/код подразделения {code}.")
         if node["division_type"] not in Division.DivisionType.values:
@@ -288,11 +304,6 @@ def prepare_import(
                 plan.warnings.append(
                     f"{entity} {original}: по единственному точному названию используется существующий код {code}."
                 )
-            if code in targets and targets[code] != original:
-                plan.errors.append(
-                    f"Несколько кодов {entity} сопоставлены одному {code}."
-                )
-            targets[code] = original
             if obj is None and by_name:
                 candidates = ", ".join(sorted(o.code for o in by_name))
                 plan.errors.append(
@@ -332,6 +343,15 @@ def prepare_import(
                     f"{entity} {original}: уровень должен быть целым 0..32767."
                 )
                 level = 32767
+            # Multiple source codes may reference one existing dictionary entry.
+            # Reuse it only when both source meaning and desired level agree;
+            # otherwise order-dependent writes would silently win.
+            signature = (name.casefold(), level)
+            if code in targets and (obj is None or targets[code] != signature):
+                plan.errors.append(
+                    f"Несколько кодов {entity} сопоставлены одному {code} с разными названиями/уровнями."
+                )
+            targets[code] = signature
             if level == 32767:
                 plan.warnings.append(
                     f"{entity} {original}: старшинство не определено, уровень 32767; настройте {entity}_levels."
@@ -499,6 +519,8 @@ def apply_import(
     config=None,
     *,
     match_dictionary_names=False,
+    default_division_type=None,
+    root_division_code=None,
     photos_dir=None,
     missing_parent_code=None,
     account_password=None,
@@ -509,6 +531,8 @@ def apply_import(
             roster,
             config,
             match_dictionary_names=match_dictionary_names,
+            default_division_type=default_division_type,
+            root_division_code=root_division_code,
             photos_dir=photos_dir,
             missing_parent_code=missing_parent_code,
             account_password=account_password,
@@ -532,6 +556,8 @@ def _apply_import(
     config,
     *,
     match_dictionary_names,
+    default_division_type,
+    root_division_code,
     photos_dir,
     missing_parent_code,
     account_password,
@@ -556,6 +582,8 @@ def _apply_import(
             roster,
             config,
             match_dictionary_names=match_dictionary_names,
+            default_division_type=default_division_type,
+            root_division_code=root_division_code,
             photos_dir=photos_dir,
             missing_parent_code=missing_parent_code,
             reset_account_passwords=account_password is not None,

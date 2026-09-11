@@ -156,6 +156,15 @@ class Command(BaseCommand):
             help="Папка с фото: ИИН.jpg/jpeg/png; отсутствие файла сохраняет прежнее фото.",
         )
         parser.add_argument(
+            "--default-division-type",
+            choices=["organization", "department", "directorate", "division"],
+            help="Тип для подразделений без распознанного или существующего типа.",
+        )
+        parser.add_argument(
+            "--root-division-code",
+            help="Указанному коду назначить тип organization; явный config имеет приоритет.",
+        )
+        parser.add_argument(
             "--sheet", help="Имя листа; обязательно для книги с несколькими листами."
         )
         parser.add_argument(
@@ -233,6 +242,18 @@ class Command(BaseCommand):
                 warnings.append(
                     "Замены родителей при проверке файла предварительные: существующие родители в БД будут сохранены при сверке."
                 )
+            for code, node in tree.items():
+                override = config.get("divisions", {}).get(code, {})
+                node["division_type"] = (
+                    override.get("division_type")
+                    or (
+                        "organization"
+                        if code == options["root_division_code"]
+                        else None
+                    )
+                    or node["division_type"]
+                    or options["default_division_type"]
+                )
             photos = scan_photos(roster.rows, options["photos_dir"])
             report = {
                 "errors": roster.errors + errors + photos.errors,
@@ -293,6 +314,8 @@ class Command(BaseCommand):
                             roster,
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
+                            default_division_type=options["default_division_type"],
+                            root_division_code=options["root_division_code"],
                             photos_dir=options["photos_dir"],
                             missing_parent_code=options["missing_parent_code"],
                             account_password=account_password,
@@ -302,6 +325,8 @@ class Command(BaseCommand):
                             roster,
                             config,
                             match_dictionary_names=options["match_dictionary_names"],
+                            default_division_type=options["default_division_type"],
+                            root_division_code=options["root_division_code"],
                             photos_dir=options["photos_dir"],
                             missing_parent_code=options["missing_parent_code"],
                             reset_account_passwords=account_password is not None,

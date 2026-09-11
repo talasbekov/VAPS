@@ -497,13 +497,15 @@ def test_name_matching_rejects_ambiguous_names_and_conflicting_code(xlsx):
     assert Employee.objects.count() == 0
 
 
-def test_name_matching_does_not_merge_distinct_source_dictionary_codes(xlsx):
+def test_name_matching_reuses_identical_positions_from_distinct_source_codes(xlsx):
     Position.objects.create(code="SAVED-P", name="Начальник отдела", level=1)
+    before = list(Position.objects.order_by("pk").values())
     rows = [sample(), sample("43", "101", "000000000043")]
     rows[1][8] = "P2"
-    with pytest.raises(CommandError, match="Несколько кодов position"):
-        run(xlsx(rows), apply=True, match_dictionary_names=True)
-    assert Employee.objects.count() == 0
+    run(xlsx(rows), apply=True, match_dictionary_names=True)
+    assert Employee.objects.count() == 2
+    assert StaffUnit.objects.filter(position__code="SAVED-P").count() == 2
+    assert list(Position.objects.order_by("pk").values()) == before
 
 
 @pytest.mark.parametrize("cycle", [False, True])
