@@ -184,7 +184,8 @@ def submit_day(
     # (rows ⊆ roster) при этом держится построением, а секундный зазор между
     # чтением списка и чтением фактов принят осознанно; строгий момент
     # потребовал бы REPEATABLE READ на этой транзакции.
-    snapshot = build_division_snapshot(division_id, business_date)
+    # Сдача накрывает поддерево (отделы не сдают, Plane №1209) — см. билдер.
+    snapshot = build_division_snapshot(division_id, business_date, subtree=True)
     previous = DailySubmissionSelector.previous_for(division_id, business_date)
     event = _compute_event(snapshot, previous)
     # Контрольный час — из СПРАВОЧНИКА, а не из константы кода: перенести
@@ -335,7 +336,8 @@ def amend_day(
     # рассказывал бы, что вытесненная версия и до поправки не была текущей.
     before = audit_service.submission_snapshot(latest)
 
-    snapshot = build_division_snapshot(division_id, business_date)
+    # Сдача накрывает поддерево (отделы не сдают, Plane №1209) — см. билдер.
+    snapshot = build_division_snapshot(division_id, business_date, subtree=True)
     version = latest.version + 1
 
     # Гашение ДО вставки: частичная уникальность немедленная, и обратный

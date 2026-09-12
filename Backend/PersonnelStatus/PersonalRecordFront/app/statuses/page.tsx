@@ -81,6 +81,9 @@ export default function StatusesPage() {
     // 28.08.2026, и «Обновить» обязано освежить оба (Plane №231).
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] })
     queryClient.invalidateQueries({ queryKey: ["staff-units-page"] })
+    // Расход на деловую дату в карточке сдачи (Plane №1209): поставленный в
+    // таблице статус обязан отразиться в числах, которые начальник сдаёт.
+    queryClient.invalidateQueries({ queryKey: ["ops-daily", "expense-preview"] })
     refetch()
   }
 

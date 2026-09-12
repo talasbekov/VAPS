@@ -116,7 +116,7 @@ strength_report), и снимок наследует это ограничени
 SCHEMA_VERSION = 8
 
 
-def build_division_snapshot(division_id, business_date):
+def build_division_snapshot(division_id, business_date, *, subtree=False):
     """Собрать снимок одного подразделения на дату.
 
     Порядок детерминирован (roster по employee_id, rows по (employee_id,
@@ -124,6 +124,17 @@ def build_division_snapshot(division_id, business_date):
     порядке» выглядело бы изменением.
 
     JSON-безопасно: даты — строками ISO, никаких объектов модели.
+
+    🔴 `subtree=True` — СДАЧА ДНЯ НАКРЫВАЕТ ПОДДЕРЕВО (Plane №1209, 12.09.2026).
+    По канону расхода (RAW/README §20, `[РАСХ-РШ-02]`) сдающая единица —
+    управление, а отделы «отдельными сдающими не являются». Билдер же брал
+    слоты ТОЛЬКО самого подразделения, и на стенде каждая сдача управления
+    «Управление объектами» (люди сидят в отделах) подписывала ПУСТОЙ день:
+    roster 0, rows 0 — при живом расходе на экране 10 человек. Поэтому
+    `submit_day`/`amend_day` зовут билдер с поддеревом. Сводка
+    (`summary_service`) по-прежнему берёт СВОЙ уровень: состав детей уже
+    описан их сдачами, и объединение считало бы людей дважды
+    (`test_the_summary_roster_is_own_level_only`).
     """
     # Импорты внутри функции: уровень модуля остаётся без ORM (тот же приём,
     # что и у расхода) и не образует цикла селекторы ↔ сервисы.
@@ -139,7 +150,14 @@ def build_division_snapshot(division_id, business_date):
     # владельцем одного правила: снять её оказалось невозможно заметить
     # тестом (проверено красной пробой — сюита осталась зелёной), а
     # дублирующий гард живёт ровно до первого расхождения с настоящим.
-    slots, _dismissed = StaffUnitSelector.slots_with_working_occupants([division_id])
+    from organization_management.apps.operations.selectors import (
+        DivisionTreeSelector as _Tree,
+    )
+
+    slot_divisions = (
+        sorted(_Tree.subtree_ids(division_id)) if subtree else [division_id]
+    )
+    slots, _dismissed = StaffUnitSelector.slots_with_working_occupants(slot_divisions)
     # Уволенный обитатель приходит из селектора как пустой слот: он не в
     # списке, и в знаменателе сдачи ему тоже не место (одно правило на расход
     # и на сдачу).
@@ -238,9 +256,11 @@ def build_division_snapshot(division_id, business_date):
     )
     # «+N» — тем же селектором, что зовёт живой расход: свой подсчёт разошёлся
     # бы с экраном, на который оператор смотрел, нажимая «сдать».
-    attached = SecondmentSelector.attached_counts_on(
-        business_date, division_ids=[division_id]
-    ).get(division_id, 0)
+    attached = sum(
+        SecondmentSelector.attached_counts_on(
+            business_date, division_ids=slot_divisions
+        ).values()
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "roster": roster,

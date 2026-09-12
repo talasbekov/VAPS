@@ -404,6 +404,9 @@ export interface CoreDivision {
  * легаси-список получил фильтры `?employee=`/`?status_type=`/`?state=`, и
  * неизвестное значение теперь отбивается 400, а не тихой выдачей всего.
  */
+/** Факт раздела, порождённый кадровым статусом (Plane №1209). */
+export const PERSONNEL_STATUS_SOURCE = "PERSONNEL";
+
 export interface OpsEmployeeStatusRow {
   id: number;
   employee_id: number;
@@ -411,6 +414,12 @@ export interface OpsEmployeeStatusRow {
   date_start: string;
   date_end: string;
   state: "PLANNED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  /** Происхождение факта: `USER` — оператор раздела; `OM_AUTO` — проекция
+   *  мероприятий; `PERSONNEL` — проекция КАДРОВОГО статуса (Plane №1209):
+   *  то, что начальник управления поставил в «Статусах сотрудников». Такую
+   *  строку раздел не правит (сервер отвечает 422 `AUTO_STATUS_READONLY`), и
+   *  экраны, где рядом уже стоит кадровая строка, её не дублируют —
+   *  см. `PERSONNEL_STATUS_SOURCE`. */
   source: string;
   comment: string;
   document_basis: string;

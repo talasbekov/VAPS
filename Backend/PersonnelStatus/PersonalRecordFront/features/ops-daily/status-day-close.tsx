@@ -13,12 +13,22 @@
 // контрактом, что и на борде (`DivisionGroup`): состояние дня читается ОДНИМ
 // запросом под ключом `["ops-daily","day-submission",divisionId,businessDate]`,
 // который панель сама инвалидирует после сдачи/исправления.
-import { Suspense, useCallback } from "react";
+//
+// «РАСХОД НА ДАТУ» (Plane №1209). Над панелью сдачи — числа расхода управления
+// на выбранную дату из того же источника, что читает ответственный и снимок
+// сдачи (`GET strength-report/?business_date=&division_id=`). Начальник видит,
+// ЧТО именно сдаёт, до нажатия кнопки; с проекцией кадровых статусов в раздел
+// (`operations/personnel_mirror.py`) сюда входят и отпуск/больничный/
+// командировка, поставленные в таблице ниже. Ключ `["ops-daily",
+// "expense-preview", …]` инвалидирует «Обновить» страницы и закрытие окон
+// статусов (через `onRefresh` таблицы).
+import { Suspense, useCallback, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useBusinessDate } from "@/features/daily-expense/model/business-date";
+import { apiClient, type StrengthReport } from "@/lib/api";
 import {
   DAILY_SUBMISSIONS_PATH,
   SUBMIT_HORIZON_DAYS,
@@ -166,24 +176,121 @@ function StatusDayCloseInner({ employeeCount }: { employeeCount: number }) {
           Обратитесь к администратору.
         </p>
       ) : dateValid ? (
-        <DaySubmissionPanel
-          key={`${divisionId}-${businessDate}`}
-          divisionId={divisionId}
-          businessDate={businessDate as string}
-          dateValid={true}
-          rowCount={employeeCount}
-          dirtyCount={0}
-          localDrift={[]}
-          submission={currentSubmission(list)}
-          submissions={list}
-          isLoading={submissions.isPending}
-          isError={submissions.isError}
-        />
+        <div className="grid gap-4">
+          <ExpensePreview divisionId={divisionId} businessDate={businessDate as string} />
+          <DaySubmissionPanel
+            key={`${divisionId}-${businessDate}`}
+            divisionId={divisionId}
+            businessDate={businessDate as string}
+            dateValid={true}
+            rowCount={employeeCount}
+            dirtyCount={0}
+            localDrift={[]}
+            submission={currentSubmission(list)}
+            submissions={list}
+            isLoading={submissions.isPending}
+            isError={submissions.isError}
+          />
+        </div>
       ) : (
         <p role="status" className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
           Загрузка деловой даты…
         </p>
       )}
+    </section>
+  );
+}
+
+/** Одна цифра расхода: подпись сверху, число снизу — так же читаются плитки
+ *  шапки страницы (`StatCard`), только компактнее. */
+function Figure({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-[72px]">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-xl font-semibold tabular-nums leading-tight">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Расход управления на деловую дату — то, что уйдёт в снимок при сдаче.
+ *
+ * Показываются «Список», «В строю» (колонка `IN_SERVICE`) и все НЕНУЛЕВЫЕ
+ * колонки расхода в порядке сервера с его же подписями (`column_labels`):
+ * свой словарь разошёлся бы с выгрузками. Нулевые колонки не печатаются —
+ * начальнику нужно увидеть, кто отсутствует, а не пересчитать тринадцать
+ * нулей. Высота блока зарезервирована (`min-h`), чтобы числа не сдвигали
+ * кнопку «Сдать день» при загрузке.
+ */
+function ExpensePreview({
+  divisionId,
+  businessDate,
+}: {
+  divisionId: string;
+  businessDate: string;
+}) {
+  const report = useQuery<StrengthReport>({
+    queryKey: ["ops-daily", "expense-preview", divisionId, businessDate],
+    queryFn: () =>
+      apiClient.getStrengthReport({ businessDate, divisionId: Number(divisionId) }),
+  });
+
+  let body: ReactNode;
+  if (report.isPending) {
+    body = (
+      <p role="status" className="text-sm text-muted-foreground">
+        Считаем расход на {formatIsoDate(businessDate)}…
+      </p>
+    );
+  } else if (report.isError || !report.data) {
+    body = (
+      <p role="alert" className="text-sm text-destructive-ink">
+        Расход на {formatIsoDate(businessDate)} не загрузился. Сдавать день
+        можно, но проверьте числа на экране ответственного.
+      </p>
+    );
+  } else {
+    const { totals, columns, column_labels: labels } = report.data;
+    const inService = totals.columns["IN_SERVICE"] ?? 0;
+    const absent = columns
+      .filter((code) => code !== "IN_SERVICE" && (totals.columns[code] ?? 0) > 0)
+      .map((code) => ({ code, label: labels[code] ?? code, value: totals.columns[code] }));
+    body = (
+      <dl className="flex flex-wrap gap-x-6 gap-y-3" aria-label="Числа расхода">
+        <Figure label="Список" value={totals.list_total} />
+        <Figure label="В строю" value={inService} />
+        {absent.map((column) => (
+          <Figure key={column.code} label={column.label} value={column.value} />
+        ))}
+        {totals.attached > 0 && <Figure label="Приданы" value={totals.attached} />}
+        {absent.length === 0 && (
+          <p className="self-end text-sm text-muted-foreground">
+            Отсутствующих на эту дату нет — все в строю.
+          </p>
+        )}
+      </dl>
+    );
+  }
+
+  return (
+    <section
+      aria-label="Расход на дату"
+      className="min-h-[96px] rounded-xl border bg-card p-4"
+    >
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-base font-semibold">
+          Расход на {formatIsoDate(businessDate)}
+        </h3>
+        <span className="text-xs text-muted-foreground">
+          так день увидит ответственный за сбор сил
+        </span>
+      </div>
+      {body}
+      <p className="mt-3 text-xs text-muted-foreground">
+        В расход входят кадровые статусы, действующие на эту дату (отпуск,
+        больничный, командировка, дежурство…), и участие в ОМ. Поставьте
+        статус в таблице ниже — числа обновятся.
+      </p>
     </section>
   );
 }

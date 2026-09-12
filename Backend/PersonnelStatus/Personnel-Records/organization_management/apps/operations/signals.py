@@ -25,8 +25,10 @@
 уволенного и так считается вакансией). Закрытие идемпотентно, поэтому
 повторяется командой без последствий.
 """
+import logging
+
 from django.db.models.deletion import ProtectedError
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from organization_management.apps.employees.models import Employee
@@ -35,11 +37,18 @@ from organization_management.apps.operations.dismissal import (
     close_statuses_on_dismissal,
 )
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.personnel_mirror import (
+    mirror_personnel_status,
+    unmirror_personnel_status,
+)
 from organization_management.apps.operations.status_types import StatusType
+from organization_management.apps.statuses.models import EmployeeStatus
 
 # Актор системного закрытия. Живого пользователя в сигнале нет (request сюда
 # не доходит), поэтому метка НЕ ЧИСЛОВАЯ — её нельзя спутать с str(User.pk),
 # которым раздел записывает людей.
+logger = logging.getLogger(__name__)
+
 SYSTEM_ACTOR = "system:dismissal"
 
 # Куда pre_save кладёт дату для post_save. Атрибут экземпляра, а не
@@ -166,3 +175,31 @@ def project_forces_ledger(sender, instance, update_fields=None, created=False, *
     from organization_management.apps.ops import forces_ledger
 
     forces_ledger.project(instance)
+
+
+# ── Кадровый статус → факт раздела (Plane №1209) ────────────────────────────
+#
+# Приёмник на модели, а не врезка в `/api/statuses/statuses/`: кадровые строки
+# пишут вьюха, продление/завершение/отмена методами модели, сиды и админка —
+# сигнал ловит их все. Правила проекции — в `personnel_mirror`; здесь только
+# сшивка. Проекция НИКОГДА не поднимает исключений в кадровое сохранение:
+# фоновая проекция, упавшая на ошибке, не должна отнимать у начальника
+# возможность поставить статус.
+
+
+@receiver(post_save, sender=EmployeeStatus)
+def project_personnel_status(sender, instance, **kwargs):
+    if kwargs.get("raw"):
+        return
+    try:
+        mirror_personnel_status(instance)
+    except Exception:  # noqa: BLE001 — фоновая проекция, см. докстринг модуля
+        logger.exception("Проекция кадрового статуса №%s не удалась", instance.pk)
+
+
+@receiver(post_delete, sender=EmployeeStatus)
+def unproject_personnel_status(sender, instance, **kwargs):
+    try:
+        unmirror_personnel_status(instance.pk)
+    except Exception:  # noqa: BLE001
+        logger.exception("Снятие проекции кадрового статуса №%s не удалось", instance.pk)

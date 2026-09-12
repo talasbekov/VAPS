@@ -43,7 +43,7 @@ import {
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
-import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
+import { PERSONNEL_STATUS_SOURCE, apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -259,6 +259,11 @@ export function PlannedStatusesDialog({
     );
     return opsStatuses.filter((row) => {
       if (row.state !== "PLANNED") return false;
+      // Проекция кадрового статуса (Plane №1209) — та же карточка уже
+      // показана выше из кадрового каталога, где её и правят; сравнение по
+      // датам её не поймало бы (раздел хранит [start, end), кадровая дата
+      // окончания включительная).
+      if (row.source === PERSONNEL_STATUS_SOURCE) return false;
       const canonicalCode =
         legacyCodeByOpsCode.get(row.status_type_code) ?? row.status_type_code;
       return !employeeKeys.has(
