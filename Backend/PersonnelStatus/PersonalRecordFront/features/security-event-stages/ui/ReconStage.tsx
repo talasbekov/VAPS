@@ -252,6 +252,23 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     0
   );
 
+  /** Потребность в СПЕЦИАЛЬНЫХ ГРУППАХ показанного объекта — по видам,
+   *  отдельно от физнаряда (`[ОМ-РШ-08]`: группы идут сверх). Заказчик по
+   *  проходке №1142 (`[ОМ-РШ-15]`): «да, группы тоже нужны» — диалог
+   *  завершения раньше называл одно число и считал в нём только физнаряд. */
+  const groupNeedsOfVisit = useMemo(() => {
+    const byKind = new Map<string, number>();
+    for (const row of visibleRows) {
+      const kind = row.demandKindCode ?? "PHYSICAL_SQUAD";
+      if (kind === "PHYSICAL_SQUAD") continue;
+      byKind.set(kind, (byKind.get(kind) ?? 0) + (row.need || 0));
+    }
+    return byKind;
+  }, [visibleRows]);
+  const groupNeedTotal = [...groupNeedsOfVisit.values()].reduce((sum, n) => sum + n, 0);
+  const kindLabelOf = (code: string) =>
+    (participationCatalog.data ?? []).find((kind) => kind.code === code)?.label ?? code;
+
   /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
    * дописываются в хвост. */
   const groups: SectorGroup[] = useMemo(() => {
@@ -1046,6 +1063,11 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           <p className="text-sm">
             Потребность по объекту{activeVisitObject !== null ? ` «${activeVisitObject.objectName}»` : ""}:{" "}
             <b className="tabular-nums" data-slot="recon-need">{activeVisitObject !== null ? needOfVisit : needFromPosts}</b>{" "}
+            {groupNeedTotal > 0 && (
+              <span className="text-muted-foreground" data-slot="recon-need-groups">
+                · группы <b className="tabular-nums text-foreground">{groupNeedTotal}</b>{" "}
+              </span>
+            )}
             <span className="text-muted-foreground">
               →{" "}
               {needOfVisit !== needFromPosts && activeVisitObject !== null && (
@@ -1121,9 +1143,19 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                   мероприятию. Потребность показанного объекта названа ниже,
                   когда она отличается, — чтобы разница не выглядела опечаткой. */}
               <DialogTitle>
-                Завершить рекогносцировку объекта с потребностью {needOfVisit} сотрудников?
+                Завершить рекогносцировку объекта с потребностью: физнаряд {needOfVisit}
+                {groupNeedTotal > 0 ? `, группы ${groupNeedTotal}` : ""}?
               </DialogTitle>
               <DialogDescription>
+                {groupNeedTotal > 0 && (
+                  <span data-slot="recon-confirm-groups">
+                    Группы сверх физнаряда:{" "}
+                    {[...groupNeedsOfVisit.entries()]
+                      .map(([code, need]) => `${kindLabelOf(code)} — ${need}`)
+                      .join(", ")}
+                    .{" "}
+                  </span>
+                )}
                 Потребность объекта зафиксируется, и он перейдёт к расстановке.
                 {activeVisitObject !== null && needOfVisit !== needFromPosts && (
                   <>
