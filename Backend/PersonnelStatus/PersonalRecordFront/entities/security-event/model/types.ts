@@ -559,6 +559,12 @@ export interface DocumentVersionDiff {
 export interface PersonnelSummarySnapshot {
   id: string;
   name: string;
+  /** «Фамилия Имя Отчество» и путь «департамент / управление / отдел»
+   *  (Plane №1247): по инициалам и одному отделу однофамильцы неразличимы.
+   *  Необязательны по той же причине, что и `callsign`: состав сил этих
+   *  полей не несёт. */
+  fullName?: string;
+  unitPath?: string;
   rankLabel: string;
   /** Позывной (`[МД-10]`, Plane №456); пустая строка — не вписан.
    *

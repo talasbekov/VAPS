@@ -138,13 +138,16 @@ export function PersonnelPicker({
                   }`}
                 >
                   <span className="min-w-0">
-                    <span className="block font-medium">{person.name}</span>
+                    {/* Полное имя и путь подразделения (Plane №1247): среди
+                        четырнадцати «Оралбаев А. · Первый отдел» нужного не
+                        выбрать — «Первый отдел» есть в каждом управлении. */}
+                    <span className="block font-medium">{person.fullName || person.name}</span>
                     {/* Разделитель ставится только МЕЖДУ непустыми частями: у
                         сотрудника без звания строка начиналась с висящей
                         точки («· Управление»), и это читалось как потерянное
                         значение. */}
                     <span className="block text-[11px] text-muted-foreground">
-                      {[person.rankLabel, person.unit]
+                      {[person.rankLabel, person.unitPath || person.unit]
                         .filter((part) => part !== "")
                         .join(" · ")}
                     </span>

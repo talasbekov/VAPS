@@ -604,7 +604,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     expect(saved.kind).toBe('FOREIGN')
     expect(saved.eventTime).toContain('09:30')
     expect(saved.location).toBe('Казахстан, Алматы, пр. Абая, 1')
-    expect(saved.chiefName).toContain(chiefLabel.split(' · ')[0]!.trim())
+    // Список печатает полное имя (Plane №1247), сервер хранит «Фамилия И.»:
+    // сверяем по фамилии.
+    expect(saved.chiefName).toContain(chiefLabel.split(' · ')[0]!.trim().split(' ')[0])
     const personShort = personName.split(' · ')[0]!.trim()
     const savedPersons = [
       saved.protectedPersonName,
@@ -1480,7 +1482,9 @@ async function createEvent(
     await assign.click()
     await expect(chiefDialog).toHaveCount(0, { timeout: 15_000 })
 
-    await expect(chief).toContainText(`Старший объекта:${personName}`, {
+    // Список печатает полное имя (Plane №1247), а подпись строки — «Фамилия
+    // И.» с сервера: сверяем по фамилии, она есть в обоих.
+    await expect(chief).toContainText(`Старший объекта:${personName.split(' ')[0]}`, {
       timeout: 15_000,
     })
     // И это видит сервер, а не только экран.
@@ -1488,12 +1492,14 @@ async function createEvent(
     const assignedVisit = (afterAssign?.visitObjects ?? []).find(
       (v) => v.id === visit.id,
     )
-    expect(assignedVisit?.chiefName).toEqual(personName)
+    // Полное имя из списка против «Фамилия И.» сервера (Plane №1247) — по фамилии.
+    expect(assignedVisit?.chiefName).toContain(personName.split(' ')[0])
 
     // Снятие уносит имя — и фикстура не копится между прогонами.
+    // Кнопка называет «Фамилия И.» с сервера, список — полное имя (Plane №1247).
     await chief
       .getByRole('button', {
-        name: `Снять старшего ${personName} с объекта ${visit.objectName}`,
+        name: new RegExp(`^Снять старшего ${personName.split(' ')[0]}.* с объекта ${visit.objectName}$`),
       })
       .click()
     await expect(chief).toHaveText('Старший объекта:не назначен+ Старший', {
@@ -1594,7 +1600,9 @@ async function createEvent(
 
     // Право названо СЛОВОМ, а не только присутствием в списке: наблюдателя от
     // правящего по одному имени в строке не отличить.
-    await expect(row).toContainText(personName, { timeout: 15_000 })
+    // Фамилия, а не полное имя из списка (Plane №1247): строка печатает
+    // «Фамилия И.» с сервера.
+    await expect(row).toContainText(personName.split(' ')[0], { timeout: 15_000 })
     await expect(row).toContainText('правит расстановку')
 
     // И это видит сервер, а не только экран.
@@ -1603,9 +1611,10 @@ async function createEvent(
     expect(savedVisit?.deputies.map((d) => d.canEditPlacement)).toEqual([true])
 
     // Снятие уносит право — фикстура не копится между прогонами.
+    // Кнопка называет «Фамилия И.» с сервера, список — полное имя (Plane №1247).
     await row
       .getByRole('button', {
-        name: `Снять замещающего ${personName} с объекта ${visit.objectName}`,
+        name: new RegExp(`^Снять замещающего ${personName.split(' ')[0]}.* с объекта ${visit.objectName}$`),
       })
       .click()
     await expect(row).toContainText('не назначены', { timeout: 15_000 })

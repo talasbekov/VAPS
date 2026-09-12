@@ -5756,6 +5756,35 @@ def personnel_display_name(employee):
     return f"{employee.last_name}{initial}"
 
 
+def personnel_full_name(employee):
+    """«Фамилия Имя Отчество» без пустых частей (Plane №1247)."""
+    return " ".join(
+        part for part in (employee.last_name, employee.first_name, employee.middle_name)
+        if part
+    )
+
+
+def unit_path_of(division, *, cache=None):
+    """Путь подразделения «департамент / управление / отдел» (Plane №1247).
+
+    Корень дерева (организация, уровень 0) опускается: он у всех один и
+    только удлиняет строку. `cache` — словарь на один запрос: предки читаются
+    по одному запросу на подразделение, а подразделений на странице подбора
+    куда меньше, чем людей.
+    """
+    if division is None:
+        return ""
+    if cache is not None and division.pk in cache:
+        return cache[division.pk]
+    nodes = [node for node in division.get_ancestors(include_self=True) if node.level > 0]
+    if not nodes:
+        nodes = [division]
+    path = " / ".join(node.name for node in nodes)
+    if cache is not None:
+        cache[division.pk] = path
+    return path
+
+
 def actor_display_name(actor):
     """Подпись актора для ЭКРАНА: ФИО из кадровой записи, иначе username
     учётки, иначе сам идентификатор.

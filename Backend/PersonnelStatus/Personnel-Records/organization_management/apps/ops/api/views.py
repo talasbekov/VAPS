@@ -3384,6 +3384,8 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
+            personnel_full_name,
+            unit_path_of,
         )
 
         employees = (
@@ -3416,14 +3418,20 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # отдавать строки, про которые непонятно, почему они нашлись.
         search = (request.query_params.get("search") or "").strip()
         if search != "":
-            employees = employees.filter(
-                Q(last_name__icontains=search)
-                | Q(first_name__icontains=search)
-                | Q(middle_name__icontains=search)
-                | Q(personnel_number__icontains=search)
-                | Q(rank__name__icontains=search)
-                | Q(staff_unit__division__name__icontains=search)
-            ).distinct()
+            # Каждое слово запроса обязано найтись в какой-то из видимых
+            # колонок (Plane №1247, проходка №1142): «Оралбаев Арман» раньше
+            # искался ОДНОЙ строкой по каждому полю и не находил никого —
+            # среди четырнадцати «Оралбаев А.» выбрать нужного было нечем.
+            for token in search.split():
+                employees = employees.filter(
+                    Q(last_name__icontains=token)
+                    | Q(first_name__icontains=token)
+                    | Q(middle_name__icontains=token)
+                    | Q(personnel_number__icontains=token)
+                    | Q(rank__name__icontains=token)
+                    | Q(staff_unit__division__name__icontains=token)
+                )
+            employees = employees.distinct()
 
         # ── Рейтинг (Plane №67, шаг РЙ-4) ───────────────────────────────
         # Заказчик: «Научи отдавать рейтинг». До этой правки доска подбора
@@ -3577,6 +3585,7 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         results = []
+        unit_paths = {}
         for employee in rows:
             # обратный OneToOne без строки бросает RelatedObjectDoesNotExist
             try:
@@ -3593,6 +3602,13 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 {
                     "id": str(employee.pk),
                     "name": personnel_display_name(employee),
+                    # Полное имя и путь подразделения (Plane №1247): по
+                    # инициалам и одному отделу однофамильцы неразличимы.
+                    "fullName": personnel_full_name(employee),
+                    "unitPath": unit_path_of(
+                        staff_unit.division if staff_unit is not None else None,
+                        cache=unit_paths,
+                    ),
                     "rankLabel": employee.rank.name if employee.rank else "",
                     # Позывной (`[МД-10]`, Plane №456): пустая строка — «не
                     # вписан», и это единственное, чем «нет позывного»
@@ -3643,6 +3659,8 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
+            personnel_full_name,
+            unit_path_of,
         )
 
         employee = getattr(request.user, "employee", None)
@@ -3667,6 +3685,10 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             {
                 "id": str(employee.pk),
                 "name": personnel_display_name(employee),
+                "fullName": personnel_full_name(employee),
+                "unitPath": unit_path_of(
+                    staff_unit.division if staff_unit is not None else None
+                ),
                 "rankLabel": employee.rank.name if employee.rank else "",
                 "callsign": employee.callsign or "",
                 "unit": unit,
