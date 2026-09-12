@@ -8,6 +8,7 @@ import { Controller } from "react-hook-form";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { employeeIdOfKey } from "../model/row-key";
 import { useRanks } from "@/hooks/use-ranks";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   Dialog,
   DialogContent,
@@ -125,7 +126,12 @@ export function EditStatusDialog({
   // при открытии ЭКРАНА. У ролевых учёток раздела права `dictionary.view` нет,
   // и экран отдавал 403 в консоль ещё до первого клика. Тот же приём, что у
   // состава строкой выше (№234).
-  const { data: ranks } = useRanks(open);
+  // Звания — справочник раздела ОМ под правом `dictionary.view`; у ролей свода
+  // (ответственный, дежурный — Plane №1233) и у начальника управления его нет,
+  // и запрос отвечал 403 в консоль при каждом открытии окна. Звание здесь —
+  // подпись в снимке наряда, не условие сохранения: без права не спрашиваем.
+  const { hasPermission: hasOpsPermission } = useOpsPermissions();
+  const { data: ranks } = useRanks(open && hasOpsPermission("dictionary.view"));
   const existingDuty = useDutyAssignment(employeeId);
 
   // Ветки формы зависят только от статуса: у «В строю» дат нет, у «На
@@ -375,8 +381,10 @@ export function EditStatusDialog({
   const submit = async (values: EditStatusFormValues) => {
     if (!employeeId) return;
 
-    // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
-    const [, employeeIdStr] = employeeId.split("-");
+    // Парсим ID - формат: unitId-employeeId, unitId-vacant-index либо голый
+    // employeeId (экраны свода, Plane №1233) — как в `employeeIdOfKey`.
+    const idParts = employeeId.split("-");
+    const employeeIdStr = idParts.length > 1 ? idParts[1] : idParts[0];
     const employeeIdNum =
       employeeIdStr && !employeeIdStr.startsWith("vacant")
         ? parseInt(employeeIdStr, 10)

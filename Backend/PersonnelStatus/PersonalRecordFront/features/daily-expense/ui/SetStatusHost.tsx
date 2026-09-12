@@ -1,53 +1,45 @@
 "use client";
 
-// Общий хост окна «Проставить статус» (Plane №1223): ОДИН владелец на
-// экран — кому ставим, мутация, полуинтервал дат — и тот же `SetStatusDialog`,
-// что у борда расхода (`DailyExpenseBoard`). Экраны ответственного и
-// дежурного не заводят по своей копии: две копии разошлись бы на первой же
-// правке правила дат ([ДОП-20-04]: не копия таблицы — не копия и окна).
+// Общий хост окна «Проставить статус» с экранов свода (Plane №1223 → №1233):
+// ОДИН владелец на экран — кому ставим и как освежить расход после сохранения.
+//
+// Окно — ТО ЖЕ, что «Изменить статус» в модуле «Статусы сотрудников»
+// (`EditStatusDialog`, решение заказчика 12.09.2026, `[РАСХ-РШ-11]`): период,
+// комментарий, наряд/участие в ОМ, те же правила. До №1233 здесь стояло
+// урезанное окно борда (`SetStatusDialog`: одна дата, только код) — заказчик
+// назвал его «неполной окошкой». Кадровый статус попадает в расход зеркалом
+// на сервере (№1209), поэтому после сохранения освежаются те же ключи, что у
+// `useCreateOpsStatus`: сам диалог инвалидирует только кадровые списки.
 import { useState, type ReactNode } from "react";
-import { useCreateOpsStatus } from "@/hooks/use-ops-status-write";
-import { SetStatusDialog } from "./SetStatusDialog";
+import { useQueryClient } from "@tanstack/react-query";
+import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
 
 export interface StatusPerson {
   id: string;
   name: string;
 }
 
-/** Следующий календарный день в ISO — для полуинтервала бэка `[начало, конец)`. */
-export function addOneDay(iso: string): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10);
-}
-
 export function useSetStatusHost(businessDate: string): { pick: (person: StatusPerson) => void; dialog: ReactNode } {
   const [person, setPerson] = useState<StatusPerson | null>(null);
-  const createStatus = useCreateOpsStatus();
+  const client = useQueryClient();
+  const refresh = () => {
+    for (const key of ["daily-expense-board", "strength-report", "ops-statuses", "service-summary", "ops-daily", "traffic-light"]) {
+      void client.invalidateQueries({ queryKey: [key] });
+    }
+  };
+  const initialStartDate = /^\d{4}-\d{2}-\d{2}$/.test(businessDate) ? new Date(`${businessDate}T00:00:00`) : undefined;
   const dialog =
     person === null ? null : (
-      <SetStatusDialog
+      <EditStatusDialog
         open
         onOpenChange={(next) => {
-          if (!next) {
-            setPerson(null);
-            createStatus.reset();
-          }
+          if (!next) setPerson(null);
         }}
         employeeId={person.id}
         employeeName={person.name}
-        businessDate={businessDate}
-        isSaving={createStatus.isPending}
-        failure={createStatus.error?.message ?? null}
-        onSubmit={async ({ statusCode, participations }) => {
-          await createStatus.mutateAsync({
-            employee_id: Number(person.id),
-            status_type_code: statusCode,
-            date_start: businessDate,
-            // Статус на ОДИН день закрывается СЛЕДУЮЩИМ днём: полуинтервал.
-            date_end: addOneDay(businessDate),
-            participations,
-          });
+        initialStartDate={initialStartDate}
+        onSuccess={() => {
+          refresh();
           setPerson(null);
         }}
       />
