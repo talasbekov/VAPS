@@ -8721,9 +8721,9 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
 
     Спецификация: «Кнопка „Закрыть объект“. Подтверждение: „… После закрытия
     изменения невозможны“». Итоговый комментарий по объекту — `[ЗАК-04]`,
-    необязателен. Оценки и инциденты (`[ЗАК-02]`/`[ЗАК-03]`) этот шаг не
-    заводит — их карточек в очереди нет; подтверждение «оценено K из N» на
-    экране появится вместе с ними.
+    необязателен. Инциденты (`[ЗАК-03]`) этот шаг не заводит. Оценки: всем
+    неоценённым назначениям объекта ставится 7 методом SYSTEM_DEFAULT
+    (`[ОМ-РШ-16]`, решение заказчика 12.09.2026) — ручные не трогаются.
 
     Последний закрытый объект закрывает МЕРОПРИЯТИЕ (`[ЗАК-12]`): стадия
     мероприятия — наименьшая среди объектов, и «Закрыто» у всех даёт
@@ -8740,6 +8740,12 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
             422,
             message="Объект уже закрыт — изменения после закрытия невозможны.",
         )
+    # Неоценённым — 7 автоматически (`[ОМ-РШ-16]`, решение заказчика
+    # 12.09.2026 по проходке №1142): закрыть без ручных оценок можно, но
+    # никто не остаётся без балла. Импорт локальный: модуль оценок сам
+    # импортирует этот, и верхний импорт замкнул бы круг.
+    from organization_management.apps.ops import conduct_evaluations
+    default_scored = conduct_evaluations.score_unscored_on_close(event, visit, actor=actor)
     visit.stage = "CLOSED"
     visit.closed_at = Clock.now()
     visit.closing_comment = str(comment or "").strip()
@@ -8754,6 +8760,7 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
             "objectName": visit.object_name,
             "code": event.code,
             "comment": visit.closing_comment,
+            "defaultScored": default_scored,
         },
     )
     old_stage = event.stage

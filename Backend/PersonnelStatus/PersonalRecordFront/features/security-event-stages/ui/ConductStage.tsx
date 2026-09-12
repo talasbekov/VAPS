@@ -817,8 +817,9 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                       className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
                       data-slot="close-unrated"
                     >
-                      {unrated} сотрудников без оценки. Закрыть? Неоценённые в средний балл не
-                      войдут.
+                      {unrated} сотрудников без оценки. Закрыть? Им автоматически будет
+                      поставлена оценка 7 — в реестре она помечена как поставленная системой
+                      (решение заказчика 12.09.2026, `[ОМ-РШ-16]`).
                     </p>
                   )}
                 </DialogHeader>
