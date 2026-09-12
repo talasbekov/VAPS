@@ -202,14 +202,12 @@ function NavLink({
   icon: Icon,
   active,
   counter,
-  disabled = false,
 }: {
   href: string;
   name: string;
   icon: LucideIcon;
   active: boolean;
   counter?: { value: number; hint: string };
-  disabled?: boolean;
 }) {
   // Метка «В разработке» у пункта (Plane №450) — из того же реестра, что и у
   // шапки экрана. Внутри ссылки она СКРЫТА от скринридера, а список читается
@@ -218,22 +216,6 @@ function NavLink({
   // следом, а не вклинивается в имя.
   const note = inDevelopmentOfRoute(href);
   const noteId = useId();
-  if (disabled) {
-    return (
-      <span
-        role="link"
-        aria-disabled="true"
-        aria-describedby={noteId}
-        tabIndex={0}
-        title="Нет доступа. Обратитесь к администратору за назначением роли."
-        className={`${ITEM_CLASS} cursor-not-allowed text-sidebar-foreground/50`}
-      >
-        <Icon className="mr-3 h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="flex-1">{name}</span>
-        <span id={noteId} className="sr-only">Нет доступа. Обратитесь к администратору за назначением роли.</span>
-      </span>
-    );
-  }
   return (
     <>
     <Link
@@ -387,16 +369,20 @@ function SidebarContent() {
     .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
     .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.href;
 
-  // FIX: на /security-ops пользователь может быть не залогинен в хост
-  // (middleware эти пути не закрывает) — фильтр по правам оставлял меню
-  // пустым, и модули «исчезали». Без host-логина показываем навигацию целиком
-  // (страницы защищают себя сами); для залогиненных фильтр работает как раньше.
+  // 🔴 ПУНКТ БЕЗ ПРАВА НЕ ПОКАЗЫВАЕТСЯ (Plane №1203, решение заказчика
+  // 12.09.2026: «пусть каждой роли будут видны те модули, которые прописаны в
+  // документации»). Это закрывает вилку №350 и отменяет правило №1158 от
+  // 10.09.2026 (пункт виден, но погашен) и часть `[РЕЕ-09]` про «пункты меню
+  // видны всем». Заказчик проверял учётки руками и читал серые пункты как
+  // «модули, которые не должны быть доступны, видны».
   //
-  // ПРАВА РАЗДЕЛА ждут ответа сервера, и пока он не пришёл, пункты раздела
-  // показываются ВСЕ. Спрятать их на время загрузки значило бы устроить
-  // мигание меню на каждом открытии приложения — и, что хуже, показать
-  // человеку неполное меню как окончательное, если запрос прав не ответит
-  // вовсе. Отказ страницы остаётся вторым рубежом: он никуда не делся.
+  // Пока права раздела не пришли, скрытые правами пункты НЕ рисуются: до
+  // ответа сервера у меню есть только «Личный кабинет», и оно дорастает до
+  // полного, когда права известны. Показать всё, а потом убрать — мигание
+  // хуже, чем короткое меню, а показать серым — ровно то, от чего заказчик
+  // отказался. Отказ страницы остаётся вторым рубежом: прямой адрес без
+  // права по-прежнему отвечает «Доступ закрыт» (`e2e/menu-access.spec.ts`
+  // держит оба конца: спрятано ⇔ закрыто).
   const access = useOpsPermissions();
   const {
     hasPermission: hasOpsPermission,
@@ -438,20 +424,23 @@ function SidebarContent() {
   ] : workspaceRole === 'headquarters' ? [
     { name: 'Распределения', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
   ] : [];
-  const categories = CATEGORIES.map(category => ({ ...category,
-    items: category.items.flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item]),
-  }));
-  const activeHref = pathname === '/employees' && workspace
-    ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
-    : activeRouteHref;
-  // №1158: разделы остаются видимыми по правилу блока2 от 10.09.2026.
-  // Закрытый пункт не содержит href, не загружает страницу и не показывает счётчик.
-  const itemDisabled = (item: NavItem) => user === null || opsPermissionsLoading || !moduleOpenFor(
+  // Пункт остаётся в меню, только если модуль за ним открыт человеку (одна
+  // карта для меню и страницы — `entities/portal-access`). Категория без
+  // единого пункта не рисуется: заголовок над пустотой читался бы как
+  // «здесь что-то пропало».
+  const itemOpen = (item: NavItem) => user !== null && !opsPermissionsLoading && moduleOpenFor(
     item.href.split("?")[0],
     hasOpsPermission,
     (code) => sectionRoles.some((role) => role.code === code),
   );
-
+  const categories = CATEGORIES.map(category => ({ ...category,
+    items: category.items
+      .flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item])
+      .filter(itemOpen),
+  })).filter(category => category.items.length > 0);
+  const activeHref = pathname === '/employees' && workspace
+    ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
+    : activeRouteHref;
   // Сквозной счётчик для stagger-анимации: задержка считается от начала
   // меню, а не от начала своей категории, иначе пункты разных категорий
   // выезжали бы одновременно.
@@ -618,7 +607,6 @@ function SidebarContent() {
                           name={item.name}
                           icon={item.icon}
                           active={item.href === activeHref}
-                          disabled={itemDisabled(item)}
                           counter={
                             item.counter === undefined
                               ? undefined

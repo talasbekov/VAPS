@@ -2,6 +2,7 @@
 // В dev используем полный URL бэкенда (NEXT_PUBLIC_API_URL)
 // В prod используем относительные пути (Next.js rewrites проксируют на backend)
 import { BACKEND_URL } from "@/shared/config/env";
+import { photoSrc } from "@/entities/employee/model/photo-src";
 // Токен берётся из ОБЩЕГО кэша (`lib/access-token.ts`), а не спрашивается у
 // сессии заново на каждый запрос (Plane №343). Здесь стоял собственный
 // `getSession()` без памяти, и каждое обращение к бэку стоило лишний
@@ -2434,29 +2435,7 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
         statusStartDate: headEmployee.employee?.current_status?.start_date,
         statusEndDate:
           headEmployee.employee?.current_status?.end_date || undefined,
-        avatar: (() => {
-          const photoUrl = headEmployee.employee?.photo_url;
-          const photo = headEmployee.employee?.photo;
-
-          // Если есть photo_url и это не null/пустая строка, используем его
-          if (photoUrl && photoUrl !== "null" && photoUrl.trim() !== "") {
-            return photoUrl;
-          }
-
-          // Если есть photo и это не null/пустая строка, добавляем MEDIA_URL
-          if (photo && photo !== "null" && photo.trim() !== "") {
-            const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL || "";
-            // Если photo уже начинается с http, используем как есть
-            if (photo.startsWith("http://") || photo.startsWith("https://")) {
-              return photo;
-            }
-            // Иначе добавляем MEDIA_URL
-            return mediaUrl ? `${mediaUrl}${photo}` : photo;
-          }
-
-          // Иначе используем заглушку
-          return "/placeholder.svg";
-        })(),
+        avatar: photoSrc(headEmployee.employee?.photo_url, headEmployee.employee?.photo),
       }
     : {
         id: staffUnit.id.toString(),
@@ -2495,29 +2474,7 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
       statusState: emp.employee!.current_status?.state,
       statusStartDate: emp.employee!.current_status?.start_date,
       statusEndDate: emp.employee!.current_status?.end_date || undefined,
-      avatar: (() => {
-        const photoUrl = (emp.employee as any)?.photo_url;
-        const photo = emp.employee!.photo;
-
-        // Если есть photo_url и это не null/пустая строка, используем его
-        if (photoUrl && photoUrl !== "null" && photoUrl.trim() !== "") {
-          return photoUrl;
-        }
-
-        // Если есть photo и это не null/пустая строка, добавляем MEDIA_URL
-        if (photo && photo !== "null" && photo.trim() !== "") {
-          const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL || "";
-          // Если photo уже начинается с http, используем как есть
-          if (photo.startsWith("http://") || photo.startsWith("https://")) {
-            return photo;
-          }
-          // Иначе добавляем MEDIA_URL
-          return mediaUrl ? `${mediaUrl}${photo}` : photo;
-        }
-
-        // Иначе используем заглушку
-        return "/placeholder.svg";
-      })(),
+      avatar: photoSrc((emp.employee as any)?.photo_url, emp.employee!.photo),
       };
     });
 

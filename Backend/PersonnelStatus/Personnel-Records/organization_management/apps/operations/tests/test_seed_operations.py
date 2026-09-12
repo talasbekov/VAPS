@@ -165,8 +165,17 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
         "HEAD_OPS_UNIT",
         "FORCES_GATHERING_OFFICER",
     }
-    assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
-    assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}
+    # СДАЧУ ДНЯ ДЕРЖАТ ТРОЕ с 12.09.2026 (Plane №1202): персоны заказчика
+    # «Начальник управления» (`HEAD_DIRECTORATE_LINE`, `HEAD_OPS_UNIT`) по
+    # канону расхода (RAW/README §19–20) сами сдают день своего управления, а
+    # до этого право было только у технической `DIRECTORATE_HEAD` — и на
+    # кнопке «Сдать день» персона получала 403.
+    assert holders("daily_report.mark_update") == {
+        "DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT",
+    }
+    assert holders("daily_report.correct") == {
+        "DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT",
+    }
     assert holders("daily_report.override_block") == {"DUTY_OFFICER"}
     assert holders("audit.view") == {"SECURITY_ADMIN", "AUDITOR"}
     # Раздача ролей — у своей роли, а не только через «*»: это и есть смысл

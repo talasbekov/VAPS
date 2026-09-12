@@ -10,8 +10,8 @@ import { useStaffUnits } from "@/hooks/use-staff-units";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { useStatusNaming } from "@/entities/status";
 import styles from "./org-board.module.css";
+import { PHOTO_PLACEHOLDER, photoSrc } from "@/entities/employee/model/photo-src";
 
-const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 
 
 
@@ -486,18 +486,12 @@ export default function OrgBoard() {
                       {managementHead && (
                         <div className="flex flex-col items-center justify-center text-center mt-2">
                           <img
-                            src={
-                              managementHead.photo_url
-                                ? managementHead.photo_url
-                                : managementHead.photo
-                                ? `${MEDIA_URL}${managementHead.photo}`
-                                : "/placeholder.svg"
-                            }
+                            src={photoSrc(managementHead.photo_url, managementHead.photo)}
                             alt={`${managementHead.last_name} ${managementHead.first_name}`}
                             className="w-16 h-16 rounded-full object-cover object-top mb-2"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src =
-                                "/placeholder.svg";
+                                PHOTO_PLACEHOLDER;
                             }}
                           />
                           <div className="text-blue-600 dark:text-blue-400 mt-2">
@@ -561,22 +555,14 @@ export default function OrgBoard() {
                           {employeeData ? (
                             <div className="flex flex-col items-center justify-between text-center cursor-pointer">
                               <img
-                                src={
-                                  employeeData.employee
-                                    ? employeeData.employee.photo_url
-                                      ? employeeData.employee.photo_url
-                                      : employeeData.employee.photo
-                                      ? `${MEDIA_URL}${employeeData.employee.photo}`
-                                      : "/placeholder.svg"
-                                    : "/placeholder.svg"
-                                }
+                                src={photoSrc(employeeData.employee?.photo_url, employeeData.employee?.photo)}
                                 alt={`${
                                   employeeData.employee?.last_name || ""
                                 } ${employeeData.employee?.first_name || ""}`}
                                 className="w-16 h-16 rounded-full object-cover object-top mb-2"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src =
-                                    "/placeholder.svg";
+                                    PHOTO_PLACEHOLDER;
                                 }}
                               />
                               <span className="ml-3">
@@ -642,22 +628,14 @@ export default function OrgBoard() {
                             {employeeData ? (
                               <div className="flex flex-col items-center justify-between text-center cursor-pointer">
                                 <img
-                                  src={
-                                    employeeData.employee
-                                      ? employeeData.employee.photo_url
-                                        ? employeeData.employee.photo_url
-                                        : employeeData.employee.photo
-                                        ? `${MEDIA_URL}${employeeData.employee.photo}`
-                                        : "/placeholder.svg"
-                                      : "/placeholder.svg"
-                                  }
+                                  src={photoSrc(employeeData.employee?.photo_url, employeeData.employee?.photo)}
                                   alt={`${
                                     employeeData.employee?.last_name || ""
                                   } ${employeeData.employee?.first_name || ""}`}
                                   className="w-16 h-16 rounded-full object-cover object-top mb-2"
                                   onError={(e) => {
                                     (e.target as HTMLImageElement).src =
-                                      "/placeholder.svg";
+                                      PHOTO_PLACEHOLDER;
                                   }}
                                 />
                                 <span className="ml-3">

@@ -109,8 +109,10 @@ async function dismissPopup(page: Page): Promise<void> {
 }
 
 // ─────────────────────────── персоны ───────────────────────────
-// Учётки стенда (сид RBAC + ручные пользователи). Пароли стендовые,
-// секретами не являются: контур локальный.
+// Учётки стенда (сид RBAC + ручные пользователи). С 12.09.2026 (Plane
+// №1202) у `admin`, `observer` и `erda` ОДИН пароль — тот же, что у учёток
+// закрытой сети, — и читается он из защищённого файла стенда
+// (`stand-credentials`), а не из этого текста.
 interface Persona {
   key: string
   username: string
@@ -123,13 +125,13 @@ const ALL_PERSONAS: readonly Persona[] = [
   {
     key: 'observer',
     username: 'observer',
-    password: 'observer123',
+    password: STAND_PASSWORD,
     role: 'OPS_READER (object.view + duty.view + event.view)',
   },
   {
     key: 'erda',
     username: 'erda',
-    password: 'erda123',
+    password: STAND_PASSWORD,
     role: 'DIVISION_OPERATOR (ОМ-прав нет)',
   },
   {

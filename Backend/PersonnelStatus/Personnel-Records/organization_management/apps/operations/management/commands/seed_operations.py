@@ -181,7 +181,7 @@ ROLES = [
     ("DUTY_OFFICER", "Оперативный дежурный"),
     # ── Охранные мероприятия ────────────────────────────────────────────
     ("EVENT_OFFICER", "Офицер ОМ"),
-    ("OPS_STAFF", "Штаб сбора сил"),
+    ("OPS_STAFF", "Штаб второго департамента"),
     ("PATROL_LEAD", "Старший наряда"),
     ("GVO_LEAD", "Старший ГВО"),
     ("EVENT_APPROVER", "Утверждающий расстановку"),
@@ -208,8 +208,8 @@ ROLES = [
     # Ключевое различие профилей — ВТОРОЙ ДЕПАРТАМЕНТ: он ведёт охранные
     # мероприятия, остальные — нет, поэтому `event.view` есть ровно у его
     # руководителей.
-    ("HEAD_DIRECTORATE_LINE", "Начальник управления (линейный департамент)"),
-    ("HEAD_DEPARTMENT_LINE", "Начальник департамента (линейный)"),
+    ("HEAD_DIRECTORATE_LINE", "Начальник управления (не второй департамент)"),
+    ("HEAD_DEPARTMENT_LINE", "Начальник департамента (не второй)"),
     ("HEAD_OPS_UNIT", "Начальник подразделения второго департамента"),
     ("FORCES_GATHERING_OFFICER", "Ответственный за сбор сил"),
     # Восьмая персона (Plane №382, решение заказчика 02.09.2026): «сотрудник
@@ -396,6 +396,11 @@ ROLE_PERMISSIONS = {
     # ГОН; нет `analytics.view` — нет Аналитики службы; нет `report.generate` —
     # нет Отчётов по ОМ.
     "HEAD_DIRECTORATE_LINE": [
+        # Сдача дня своего управления (Plane №1202, 12.09.2026): по канону
+        # расхода (RAW/README §19–20) начальник управления сам ставит статусы
+        # и сдаёт день; до этого право держала только техническая
+        # `DIRECTORATE_HEAD`, и персона заказчика получала 403 на «Сдать день».
+        "daily_report.mark_update", "daily_report.correct",
         "status.view", "status.manage", "orgstructure.manage",
         "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
@@ -414,6 +419,9 @@ ROLE_PERMISSIONS = {
     # (департамент против управления) — она живёт в назначении, а не в роли.
     # Сбора сил, Аналитики службы и Ежедневного отчёта здесь нет.
     "HEAD_OPS_UNIT": [
+        # Сдача дня — та же причина, что у `HEAD_DIRECTORATE_LINE` (№1202):
+        # начальник управления второго департамента тоже сдаёт свой день.
+        "daily_report.mark_update", "daily_report.correct",
         "status.view", "status.manage", "orgstructure.manage",
         "object.view", "analytics.operations",
         "report.generate", "feedback.view", "feedback.create", *OPS_READ,

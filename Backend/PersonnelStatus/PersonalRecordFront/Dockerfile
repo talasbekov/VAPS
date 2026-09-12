@@ -19,8 +19,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # NEXT_PUBLIC_* встраиваются в бандл на этапе сборки
-ARG NEXT_PUBLIC_MEDIA_URL=http://10.15.3.187:8100
-ENV NEXT_PUBLIC_MEDIA_URL=$NEXT_PUBLIC_MEDIA_URL
 ENV NODE_ENV=production
 # Сборке нужен запас кучи (рантайму — нет, см. runner)
 ENV NODE_OPTIONS=--max-old-space-size=2048

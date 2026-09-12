@@ -38,14 +38,24 @@ class EmployeeStatusBriefSerializer(serializers.ModelSerializer):
 class EmployeeSerializer(serializers.ModelSerializer):
     rank = serializers.PrimaryKeyRelatedField(queryset=Rank.objects.all())
     current_status = serializers.SerializerMethodField(read_only=True)
+    # Адрес аватарки — тем же правилом, что у списка управления
+    # (`views._directorate_get`): адрес, а не путь файла, `null` — фото нет.
+    # До 12.09.2026 (Plane №1201) общий список штатных единиц фото не отдавал
+    # вовсе, и «Обзор» рисовал заглушки при 426 фото в базе — заказчик
+    # прочитал это как «в закрытой сети фото не подтягивались».
+    photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Employee
-        fields = ["id", "first_name", "last_name", "current_status", "rank"]
+        fields = ["id", "first_name", "last_name", "current_status", "rank", "photo_url"]
         extra_kwargs = {
             "first_name": {"required": True},
             "last_name": {"required": True},
         }
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_photo_url(self, obj: Employee) -> Optional[str]:
+        return obj.photo.url if obj.photo else None
 
     @extend_schema_field(EmployeeStatusBriefSerializer(allow_null=True))
     def get_current_status(self, obj: Employee) -> Optional[Dict[str, Any]]:

@@ -4,7 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_MEDIA_URL=http://10.115.70.56:8100
         - PORT=3100
     ports:
       - "3100:3100"
