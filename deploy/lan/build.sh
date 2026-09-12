@@ -24,7 +24,7 @@ printf '%s\n' "$REV" > "$OUT/source-revision.txt"
 docker version --format '{{.Server.Os}}/{{.Server.Arch}}' > "$OUT/platform.txt"
 python3 "$ROOT/deploy/contour/snapshot.py" "$ROOT" "$OUT/source"
 mkdir -p "$OUT/source/deploy/lan"
-for file in docker-compose.yml .env.example settings.py nginx-backend.conf configure.py ctl.sh install.sh data.sh sanitize-copy.py prepare-assets.py ui-assets.lock.json redoc.html build.sh; do
+for file in docker-compose.yml .env.example settings.py nginx-backend.conf configure.py ctl.sh install.sh data.sh sanitize-copy.py prepare-assets.py ui-assets.lock.json redoc.html INSTALL-RU.md build.sh; do
   cp "$HERE/$file" "$OUT/$file"
   cp "$HERE/$file" "$OUT/source/deploy/lan/$file"
 done
@@ -61,5 +61,5 @@ docker image inspect "${IMAGES[@]}" --format '{{json .RepoTags}} {{.Id}} {{.Os}}
 docker save "${IMAGES[@]}" | gzip -1 > "$OUT/runtime-images.tar.gz"
 # Source snapshot is included for traceability; build dependencies are not required to run.
 (cd "$OUT" && find source -type f -print0 | sort -z | xargs -0 sha256sum > source-sha256sums.txt)
-(cd "$OUT" && sha256sum runtime-images.tar.gz source-revision.txt platform.txt images.env images-manifest.txt source-sha256sums.txt docker-compose.yml .env.example settings.py nginx-backend.conf configure.py ctl.sh install.sh data.sh sanitize-copy.py prepare-assets.py ui-assets.lock.json redoc.html build.sh > sha256sums.txt)
+(cd "$OUT" && sha256sum runtime-images.tar.gz source-revision.txt platform.txt images.env images-manifest.txt source-sha256sums.txt docker-compose.yml .env.example settings.py nginx-backend.conf configure.py ctl.sh install.sh data.sh sanitize-copy.py prepare-assets.py ui-assets.lock.json redoc.html INSTALL-RU.md build.sh > sha256sums.txt)
 echo "Runtime bundle ready: $OUT"
