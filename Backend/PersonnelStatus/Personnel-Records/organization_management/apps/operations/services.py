@@ -319,6 +319,27 @@ class PermissionService:
         return permission_code in perms
 
     @classmethod
+    def status_write_division_ids(cls, user_id):
+        """Область ЗАПИСИ статусов: подразделения `status.manage` плюс — при
+        праве `status.manage_root` — ровно корень организации (Plane №1223,
+        `[РАСХ-РШ-07]`).
+
+        Сотрудники департаментов носят `division_id` своего департамента,
+        поэтому «корень в разрешённых» и есть «только Руководство Службы»
+        — без обхода дерева и особых случаев в проверке. None — как у
+        :meth:`visible_division_ids`: безскоуповый `status.manage`/wildcard
+        видит всё, и корень добавлять не к чему.
+        """
+        allowed = cls.visible_division_ids(user_id, "status.manage")
+        if allowed is None:
+            return None
+        if cls.active_grants_for_permission(user_id, "status.manage_root"):
+            root_id = DivisionTreeSelector.root_id()
+            if root_id is not None:
+                allowed = set(allowed) | {root_id}
+        return allowed
+
+    @classmethod
     def visible_division_ids(cls, user_id, permission_code):
         """ОБРАТНЫЙ вопрос к has_permission для списочных селекторов: какие
         подразделения пользователь видит под permission_code? None — глобальная

@@ -42,6 +42,7 @@ import { useStrengthReportPeriod } from '@/hooks/use-strength-report'
 import { childrenOf, descendantsOf, effectiveDailyStatus, summarizeDivision, useResponsibleDaily, type DirectorateSummary, type ResponsibleDivision } from '../model/directorate-summary'
 import { SummaryVersions } from './SummaryVersions'
 import { SummaryActionBar } from './SummaryActionBar'
+import { useSetStatusHost, type StatusPerson } from './SetStatusHost'
 import styles from './responsible-daily.module.css'
 
 export function DailyRetry({ label, onRetry, action = 'Повторить' }: { label: string; onRetry: () => unknown; action?: string }) {
@@ -100,7 +101,11 @@ function NumberCells({ row, columns, inServiceColumn }: { row: DirectorateSummar
 
 // ── Люди под отделом ────────────────────────────────────────────────────────
 interface Employee { id: string; full_name: string; rank_code: string }
-function People({ ids, divisionId, date, labelOf }: { ids: string[]; divisionId: string; date: string; labelOf: (code: string) => string }) {
+// `onPick` — кому можно поставить статус отсюда (Plane №1223, `[РАСХ-ПЛН-04]`,
+// `[РАСХ-РШ-06]`): у ответственного право `status.manage` в области своего
+// департамента, поэтому кнопка есть у КАЖДОГО человека департамента, а не
+// только у «Руководства»; область стережёт сервер.
+function People({ ids, divisionId, date, labelOf, onPick }: { ids: string[]; divisionId: string; date: string; labelOf: (code: string) => string; onPick?: (person: StatusPerson) => void }) {
   const catalog = useOpsStatusTypes()
   const employees = useQuery({ queryKey: ['daily-expense-board', 'responsible-people', date, ids], queryFn: async () => {
     const result: Employee[] = []
@@ -133,25 +138,40 @@ function People({ ids, divisionId, date, labelOf }: { ids: string[]; divisionId:
     return start === end ? start : `${start} – ${end}`
   }
   return <div className={styles.people}>
-    {lines.map(({ person, status }) => <div key={person.id} className={styles.person}>
+    {lines.map(({ person, status }) => <div key={person.id} className={styles.person} data-slot="person">
       {status === undefined ? <span className={styles.bad}>Статус не найден в справочнике</span>
         : <span className={status ? styles.statusLabel : styles.neutral}>{status ? labelOf(status.status_type_code) : 'Без отдельной отметки: в строю'}</span>}
       <span>{person.rank_code || '—'}</span>
       <strong>{person.full_name}</strong>
-      {status && <span className={styles.period}>{period(status)}</span>}
+      <span className={styles.period}>{status ? period(status) : ''}</span>
+      {onPick && <Button type="button" variant="outline" size="sm" className={styles.pick} aria-label={`Проставить статус: ${person.full_name}`} onClick={() => onPick({ id: person.id, name: person.full_name })}>Проставить</Button>}
     </div>)}
   </div>
 }
 
 // ── Отдел — второй уровень ─────────────────────────────────────────────────
-function SectionRow({ row, date, columns, inServiceColumn, labelOf, colSpan }: { row: DirectorateSummary; date: string; columns: string[]; inServiceColumn: string | undefined; labelOf: (code: string) => string; colSpan: number }) {
+function SectionRow({ row, date, columns, inServiceColumn, labelOf, colSpan, onPick }: { row: DirectorateSummary; date: string; columns: string[]; inServiceColumn: string | undefined; labelOf: (code: string) => string; colSpan: number; onPick?: (person: StatusPerson) => void }) {
   const [open, setOpen] = useState(false)
   return <>
     <tr className={styles.dept}>
       <td className={styles.name}><button type="button" className={styles.rowbtn} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronRight aria-hidden size={14} className={open ? styles.chevronOpen : ''} />{row.division.name}</button></td>
       <NumberCells row={row} columns={columns} inServiceColumn={inServiceColumn} />
     </tr>
-    {open && <tr className={styles.peopleRow}><td colSpan={colSpan}><People ids={row.ids} divisionId={row.division.id} date={date} labelOf={labelOf} /></td></tr>}
+    {open && <tr className={styles.peopleRow}><td colSpan={colSpan}><People ids={row.ids} divisionId={row.division.id} date={date} labelOf={labelOf} onPick={onPick} /></td></tr>}
+  </>
+}
+
+// ── Руководство департамента — люди, прикреплённые к департаменту напрямую ──
+// Раскрывается до людей с правкой статусов (Plane №1223, `[РАСХ-РШ-06]`):
+// до этого строка была статичной, и поставить статус руководству было негде.
+function LeadRow({ row, date, columns, inServiceColumn, labelOf, colSpan, onPick }: { row: DirectorateSummary; date: string; columns: string[]; inServiceColumn: string | undefined; labelOf: (code: string) => string; colSpan: number; onPick?: (person: StatusPerson) => void }) {
+  const [open, setOpen] = useState(false)
+  return <>
+    <tr className={styles.lead} aria-expanded={open}>
+      <td className={styles.name}><span role="img" aria-label="Сдача не требуется" className={`${styles.dot} ${styles.dotOff}`} /><button type="button" className={`${styles.rowbtn} ${styles.leadName}`} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronRight aria-hidden size={14} className={open ? styles.chevronOpen : ''} />Руководство департамента</button><span className={styles.tag}>в знаменатель не входит</span></td>
+      <NumberCells row={row} columns={columns} inServiceColumn={inServiceColumn} />
+    </tr>
+    {open && <tr className={styles.peopleRow}><td colSpan={colSpan} data-slot="lead-people"><People ids={row.ids} divisionId={row.division.id} date={date} labelOf={labelOf} onPick={onPick} /></td></tr>}
   </>
 }
 
@@ -162,9 +182,9 @@ function Indicator({ submission, ready }: { submission: DaySubmission | null; re
   return <span role="img" aria-label="Сдача: Не сдано" className={`${styles.dot} ${styles.dotBad}`} title="Не сдано" />
 }
 
-function DirectorateRow({ row, date, divisions, rows, submissions, columns, inServiceColumn, labelOf, submissionReady, colSpan }: {
+function DirectorateRow({ row, date, divisions, rows, submissions, columns, inServiceColumn, labelOf, submissionReady, colSpan, onPick }: {
   row: DirectorateSummary; date: string; divisions: ResponsibleDivision[]; rows: Parameters<typeof summarizeDivision>[2]; submissions: DaySubmission[]
-  columns: string[]; inServiceColumn: string | undefined; labelOf: (code: string) => string; submissionReady: boolean; colSpan: number
+  columns: string[]; inServiceColumn: string | undefined; labelOf: (code: string) => string; submissionReady: boolean; colSpan: number; onPick?: (person: StatusPerson) => void
 }) {
   const [open, setOpen] = useState(false)
   const sections = useMemo(() => {
@@ -184,7 +204,7 @@ function DirectorateRow({ row, date, divisions, rows, submissions, columns, inSe
       </td>
       <NumberCells row={row} columns={columns} inServiceColumn={inServiceColumn} />
     </tr>
-    {open && sections.map(section => <SectionRow key={section.division.id} row={section} date={date} columns={columns} inServiceColumn={inServiceColumn} labelOf={labelOf} colSpan={colSpan} />)}
+    {open && sections.map(section => <SectionRow key={section.division.id} row={section} date={date} columns={columns} inServiceColumn={inServiceColumn} labelOf={labelOf} colSpan={colSpan} onPick={onPick} />)}
   </>
 }
 
@@ -262,6 +282,11 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
   const labels = report.data?.column_labels ?? {}
   const colSpan = 1 + 4 + columns.length
   const groups = columnGroups(columns)
+  // Правка статусов — право `status.manage` в области департамента (Plane
+  // №1223): кнопка есть, когда право есть; область стережёт сервер.
+  const canEditStatus = state.access.hasPermission('status.manage')
+  const statusHost = useSetStatusHost(date ?? '')
+  const onPick = canEditStatus && date ? statusHost.pick : undefined
   return <section aria-label="Расход департамента" className={styles.screen}>
     <div className={styles.title}>
       <div><h2>Расход{date ? ` на ${formatIsoDate(date)}` : ''}</h2><p>Соберите сдачи управлений и отправьте единый свод дежурному.</p></div>
@@ -321,11 +346,8 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
                 </tr>
               </thead>
               <tbody>
-                <tr className={styles.lead}>
-                  <td className={styles.name}><span role="img" aria-label="Сдача не требуется" className={`${styles.dot} ${styles.dotOff}`} /><span className={styles.leadName}>Руководство департамента</span><span className={styles.tag}>в знаменатель не входит</span></td>
-                  <NumberCells row={data.direct} columns={columns} inServiceColumn={inServiceColumn} />
-                </tr>
-                {data.sources.map(row => <DirectorateRow key={`${date}:${row.division.id}`} row={row} date={date} divisions={divisions.data ?? []} rows={report.data?.rows ?? []} submissions={submissions.data ?? []} columns={columns} inServiceColumn={inServiceColumn} labelOf={catalog.labelOf} submissionReady={submissionReady} colSpan={colSpan} />)}
+                <LeadRow row={data.direct} date={date} columns={columns} inServiceColumn={inServiceColumn} labelOf={catalog.labelOf} colSpan={colSpan} onPick={onPick} />
+                {data.sources.map(row => <DirectorateRow key={`${date}:${row.division.id}`} row={row} date={date} divisions={divisions.data ?? []} rows={report.data?.rows ?? []} submissions={submissions.data ?? []} columns={columns} inServiceColumn={inServiceColumn} labelOf={catalog.labelOf} submissionReady={submissionReady} colSpan={colSpan} onPick={onPick} />)}
                 {data.sources.length === 0 && <tr><td colSpan={colSpan} className={styles.hint}>Нет управлений с сотрудниками на выбранную дату.</td></tr>}
                 <tr className={styles.total}>
                   <td className={styles.name}>ИТОГО по департаменту</td>
@@ -337,6 +359,7 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
         </div>
         {data.sources.some(row => row.division.division_type !== 'directorate') && <p className={styles.hint}>В список включены также прямые подразделения другого типа: они участвуют в полноте свода.</p>}
         {data.total.attached > 0 && <p className={styles.hint}>Придано сверх списка: {data.total.attached}.</p>}
+        {statusHost.dialog}
         <SummaryVersions key={`${date}:${state.scopeId}`} variant="history" businessDate={date} boardDivisionIds={data.sources.map(row => Number(row.division.id))} labelOfDivision={nameOf} scopeDivisionId={state.scopeId ?? undefined} />
       </>}
   </section>

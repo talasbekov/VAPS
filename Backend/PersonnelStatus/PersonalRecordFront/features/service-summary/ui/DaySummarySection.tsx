@@ -14,8 +14,40 @@ import {
   useSendSummary,
 } from "@/hooks/use-daily-summary-write";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { useSetStatusHost } from "@/features/daily-expense/ui/SetStatusHost";
 import { useServiceTree } from "../model/use-service-tree";
-import { DivisionRow } from "./DivisionRow";
+import { DivisionRow, LeafEmployees } from "./DivisionRow";
+import { ChevronRight } from "lucide-react";
+
+/** Право дежурного на статусы «Руководству Службы» (Plane №1223, `[РАСХ-РШ-07]`):
+ * сервер принимает его как второе право записи и добавляет к области ровно
+ * корень организации. */
+export const STATUS_MANAGE_ROOT_PERMISSION = "status.manage_root";
+
+/**
+ * «Руководство Службы» — сотрудники, прикреплённые к корню организации
+ * напрямую (Plane №1223). До этого в дереве их не было вовсе: срез рисовал
+ * только детей корня. Строка стоит ПЕРВОЙ, как «Руководство департамента» у
+ * ответственного, в знаменатель «сдали N из M» не входит.
+ */
+function LeadershipRow({ rootId, businessDate, onPick }: { rootId: number; businessDate: string; onPick?: (person: { id: string; name: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div role="group" aria-label="Руководство Службы" className="rounded-md border border-dashed">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex min-h-11 w-full items-center gap-2 px-2 py-1.5 text-left text-sm font-medium hover:bg-muted/50"
+      >
+        <ChevronRight aria-hidden size={16} className={open ? "rotate-90 transition-transform" : "transition-transform"} />
+        <span className="flex-1">Руководство Службы</span>
+        <span className="text-xs text-muted-foreground">в знаменатель не входит</span>
+      </button>
+      {open && <LeafEmployees divisionId={rootId} businessDate={businessDate} onPick={onPick} />}
+    </div>
+  );
+}
 
 export function DaySummarySection({ businessDate }: { businessDate: string }) {
   const tree = useServiceTree(businessDate);
@@ -24,6 +56,8 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
   const assemble = useAssembleSummary();
   const send = useSendSummary();
   const [reason, setReason] = useState("");
+  const canManageRoot = hasPermission(STATUS_MANAGE_ROOT_PERMISSION);
+  const statusHost = useSetStatusHost(businessDate);
 
   const departments =
     tree.rootId !== null ? tree.childrenOf.get(tree.rootId) ?? [] : [];
@@ -156,6 +190,9 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
             </p>
           )}
 
+          {tree.rootId !== null && (
+            <LeadershipRow rootId={tree.rootId} businessDate={businessDate} onPick={canManageRoot ? statusHost.pick : undefined} />
+          )}
           <div role="list" aria-label="Департаменты" className="space-y-0.5">
             {departments.map((department) => (
               <DivisionRow
@@ -171,6 +208,7 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
               <p className="text-sm text-muted-foreground">Департаментов не найдено</p>
             )}
           </div>
+          {statusHost.dialog}
         </>
       )}
       {!tree.isPending && !tree.isError && tree.rootId === null && (

@@ -40,6 +40,11 @@ export function useCreateOpsStatus() {
       // показать его было нечему. Префикс общий, поэтому оба ключа гасятся
       // одной строкой.
       void client.invalidateQueries({ queryKey: ["ops-statuses"] });
+      // «Свод по Службе» держит СВОЙ namespace (Plane №992); дежурный ставит
+      // статус «Руководству Службы» из его строки (№1223) — без сброса строка
+      // показывала бы прежний статус до перезагрузки, как уже было с кнопкой
+      // сборки (см. `use-daily-summary-write.ts`).
+      void client.invalidateQueries({ queryKey: ["service-summary"] });
     },
   });
 }

@@ -77,7 +77,7 @@ td.name { display:flex; align-items:center; gap:10px; min-height:44px; }
 
 /* Люди под отделом */
 .people { display:grid; gap:2px; max-width:1100px; }
-.person { display:grid; grid-template-columns:minmax(160px,.9fr) minmax(80px,.4fr) minmax(200px,1.2fr) minmax(120px,.8fr); gap:12px; padding:8px 0; align-items:center; border-top:1px solid var(--line); font-size:13px; color:var(--ink); }
+.person { display:grid; grid-template-columns:minmax(160px,.9fr) minmax(80px,.4fr) minmax(200px,1.2fr) minmax(120px,.8fr) auto; gap:12px; padding:8px 0; align-items:center; border-top:1px solid var(--line); font-size:13px; color:var(--ink); }
 .person:first-child { border-top:0; }
 .statusLabel { color:var(--rd-muted); }
 .neutral { display:inline-block; border-radius:6px; padding:3px 8px; font-size:12px; line-height:1.5; color:#47618b; background:#edf2fa; }
@@ -115,3 +115,6 @@ td.name { display:flex; align-items:center; gap:10px; min-height:44px; }
 .reason input { flex:1 1 220px; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); min-height:44px; }
 .reason input:focus-visible { outline:3px solid #4776ce; outline-offset:2px; }
 @media(max-width:900px) { .hero { grid-template-columns:1fr; } }
+
+/* «Проставить» у человека (Plane №1223): вторичная кнопка справа, не ломает сетку строки. */
+.pick { margin-left:auto; justify-self:end; }

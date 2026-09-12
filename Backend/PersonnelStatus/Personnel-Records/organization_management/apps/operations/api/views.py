@@ -190,6 +190,7 @@ from organization_management.apps.operations.traffic_light import (
 
 # Право на запись статусов; им же резолвится область видимости пачки.
 _BULK_STATUS_PERMISSION = "status.manage"
+_ROOT_STATUS_PERMISSION = "status.manage_root"
 # Право чтения журнала раздела — существующий код каталога (seed_operations),
 # нового не заводим: каталог прав закрытый мир.
 _AUDIT_PERMISSION = "audit.view"
@@ -1105,22 +1106,28 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
     pagination_class = DefaultPagination
 
+    # Запись — ЛЮБОЕ из двух прав (Plane №1223): `status.manage` (область —
+    # поддерево гранта) либо `status.manage_root` (дежурный: ровно корень
+    # организации, «Руководство Службы»). Гейт пропускает по любому, а
+    # ОБЛАСТЬ считает `PermissionService.status_write_division_ids` — одно
+    # место на оба кода, иначе два правила разошлись бы.
+    _WRITE_STATUS_PERMISSIONS = (_BULK_STATUS_PERMISSION, _ROOT_STATUS_PERMISSION)
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
         "retrieve": _READ_STATUS_PERMISSION,
-        "bulk": _BULK_STATUS_PERMISSION,
-        "partial_update": _BULK_STATUS_PERMISSION,
-        "create": _BULK_STATUS_PERMISSION,
-        "cancel": _BULK_STATUS_PERMISSION,
+        "bulk": _WRITE_STATUS_PERMISSIONS,
+        "partial_update": _WRITE_STATUS_PERMISSIONS,
+        "create": _WRITE_STATUS_PERMISSIONS,
+        "cancel": _WRITE_STATUS_PERMISSIONS,
         # Досрочное завершение и продление — такие же операторские правки
         # чужой строки, что отмена и PATCH: своего права им не заводится,
         # иначе одно и то же полномочие раздавалось бы тремя разными кодами.
-        "complete": _BULK_STATUS_PERMISSION,
-        "extend": _BULK_STATUS_PERMISSION,
+        "complete": _WRITE_STATUS_PERMISSIONS,
+        "extend": _WRITE_STATUS_PERMISSIONS,
         # Разрешение заглушки — та же операторская запись, что и правка: оно
         # не переписывает чужой факт, а доводит до конца свою же неясность.
         # Своего кода права не заводим — каталог закрытый мир.
-        "resolve": _BULK_STATUS_PERMISSION,
+        "resolve": _WRITE_STATUS_PERMISSIONS,
     }
     # Поверхность: чтение, пачка, правка, отмена, разрешение заглушки. PUT
     # не открыт намеренно
@@ -1186,8 +1193,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         иначе два места, считающие область, разойдутся ровно тогда, когда
         правило поменяют в одном из них.
         """
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), permission_code
+        actor_id = resolve_actor_id(request)
+        allowed = (
+            PermissionService.status_write_division_ids(actor_id)
+            if permission_code == _BULK_STATUS_PERMISSION
+            else PermissionService.visible_division_ids(actor_id, permission_code)
         )
         if allowed is None:
             return
@@ -1611,9 +1621,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # может охватывать разные подразделения, сервис проверяет построчно).
         # None = безскоуповый/wildcard грант → все подразделения: сервис ждёт
         # множество, None уронил бы его TypeError'ом.
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), _BULK_STATUS_PERMISSION
-        )
+        allowed = PermissionService.status_write_division_ids(resolve_actor_id(request))
         if allowed is None:
             allowed = DivisionTreeSelector.all_ids()
         created = bulk_create_statuses(

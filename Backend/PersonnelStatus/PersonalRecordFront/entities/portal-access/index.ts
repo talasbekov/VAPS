@@ -96,7 +96,11 @@ export const MODULE_PERMISSION = {
  * отдельная граница рабочего места и должна быть общей для меню и страницы.
  */
 export const MODULE_ROLE = {
-  "/security-ops/service-summary": "FORCES_GATHERING_OFFICER",
+  // Plane №1223 (решение заказчика 12.09.2026, `[РАСХ-РШ-05]`): «ответственному
+  // оставить свой, а дежурному другой». №1115 закрывал экран ролью
+  // ответственного за сбор сил — теперь это рабочее место оперативного
+  // дежурного; у ответственного — «Свод департамента» в `/employees`.
+  "/security-ops/service-summary": "DUTY_OFFICER",
 } as const satisfies Record<string, string | readonly string[]>;
 
 export type ModuleHref = keyof typeof MODULE_PERMISSION;

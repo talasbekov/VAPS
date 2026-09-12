@@ -87,12 +87,7 @@ def test_without_status_manage_403(types, division):
     assert status_row.comment == ""
 
 
-def test_duty_officer_reads_but_cannot_write_a_status(types, division):
-    """Негативная проба Plane №992: «Свод по Службе» — рабочее место
-    read-only, дежурный сводит департаменты, но не правит чужие статусы
-    (`[РАСХ-РШ-05]`/§20.4 п.10). Роль — НАСТОЯЩАЯ (`seed_operations`, не
-    рукописный набор прав из `client_for`): это проверка реальной раскладки
-    ролей, а не гипотетической «роль без права»."""
+def _seeded_duty_officer():
     from django.core.management import call_command
 
     from organization_management.apps.operations.services import RoleAdminService
@@ -102,13 +97,48 @@ def test_duty_officer_reads_but_cannot_write_a_status(types, division):
     RoleAdminService.assign_role(str(user.pk), "DUTY_OFFICER", None, actor="test")
     api = APIClient()
     api.force_authenticate(user)
+    return api
 
-    employee = make_employee(division)
+
+def test_duty_officer_cannot_write_a_department_status(types):
+    """Негативная проба Plane №992, уточнённая №1223 (решение заказчика
+    12.09.2026, `[РАСХ-РШ-07]`): дежурный сводит департаменты и правит статусы
+    ТОЛЬКО «Руководству Службы» — сотрудникам, прикреплённым к корню
+    организации. Сотрудник департамента — 403 ОБЛАСТИ (право у роли теперь
+    есть, а область — ровно корень), не гейта. Роль — НАСТОЯЩАЯ
+    (`seed_operations`): проверяется реальная раскладка."""
+    from organization_management.apps.divisions.models import Division
+
+    root = Division.objects.create(
+        name="Служба", division_type=Division.DivisionType.ORGANIZATION
+    )
+    department = Division.objects.create(
+        name="Департамент", division_type=Division.DivisionType.DEPARTMENT, parent=root
+    )
+    api = _seeded_duty_officer()
+    employee = make_employee(department)
     status_row = make_status(employee)
     response = patch(api, status_row.pk, {"comment": "дежурный не правит"})
-    assert_denied_by_gate(response)
+    assert response.status_code == 403, response.data
+    assert response.data["error_code"] == "PERMISSION_DENIED"
     status_row.refresh_from_db()
     assert status_row.comment == ""
+
+
+def test_duty_officer_writes_a_status_of_the_service_leadership(types):
+    """Обратная сторона №1223: сотрудник «Руководства Службы» — 200."""
+    from organization_management.apps.divisions.models import Division
+
+    root = Division.objects.create(
+        name="Служба", division_type=Division.DivisionType.ORGANIZATION
+    )
+    api = _seeded_duty_officer()
+    employee = make_employee(root)
+    status_row = make_status(employee)
+    response = patch(api, status_row.pk, {"comment": "дежурный правит руководство"})
+    assert response.status_code == 200, response.data
+    status_row.refresh_from_db()
+    assert status_row.comment == "дежурный правит руководство"
 
 
 # ── Успех ────────────────────────────────────────────────────────────────

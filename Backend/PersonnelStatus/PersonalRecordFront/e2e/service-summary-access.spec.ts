@@ -7,21 +7,24 @@ type ModuleOpenFor = (
   hasRole?: (code: string) => boolean,
 ) => boolean
 
-test('«Свод по Службе» требует роль ответственного за сбор сил', () => {
+// Plane №1223 (решение заказчика 12.09.2026): экран — оперативному дежурному;
+// ответственному за сбор сил — свой «Свод департамента». До этого гейт держала
+// роль FORCES_GATHERING_OFFICER (№1115).
+test('«Свод по Службе» требует роль оперативного дежурного', () => {
   const openFor = moduleOpenFor as ModuleOpenFor
 
   expect(
     openFor(
       '/security-ops/service-summary',
       (code) => code === 'status.view',
-      (code) => code === 'FORCES_GATHERING_OFFICER',
+      (code) => code === 'DUTY_OFFICER',
     ),
   ).toBe(true)
   expect(
     openFor(
       '/security-ops/service-summary',
       (code) => code === 'status.view',
-      (code) => code !== 'FORCES_GATHERING_OFFICER',
+      (code) => code !== 'DUTY_OFFICER',
     ),
   ).toBe(false)
   expect(

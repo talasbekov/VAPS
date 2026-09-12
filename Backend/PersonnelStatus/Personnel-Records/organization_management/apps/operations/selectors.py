@@ -165,6 +165,24 @@ class DivisionTreeSelector:
         return set(queryset.values_list("id", flat=True))
 
     @staticmethod
+    def root_id():
+        """Корень организации — подразделение типа «организация» БЕЗ родителя
+        (младшее по id при нескольких), либо None.
+
+        Не «любое без родителя»: тестовые деревья и переносы данных заводят
+        департаменты без родителя, и такой «корень» открыл бы дежурному
+        (`status.manage_root`, Plane №1223) чужой департамент.
+        """
+        return (
+            Division.objects.filter(
+                parent__isnull=True, division_type=Division.DivisionType.ORGANIZATION
+            )
+            .order_by("id")
+            .values_list("id", flat=True)
+            .first()
+        )
+
+    @staticmethod
     def all_ids() -> set:
         """Все подразделения дерева, ОДИН запрос.
 

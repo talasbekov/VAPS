@@ -177,6 +177,8 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
         "DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT",
     }
     assert holders("daily_report.override_block") == {"DUTY_OFFICER"}
+    # Plane №1223 (`[РАСХ-РШ-07]`): статусы «Руководству Службы» — только дежурный.
+    assert holders("status.manage_root") == {"DUTY_OFFICER"}
     assert holders("audit.view") == {"SECURITY_ADMIN", "AUDITOR"}
     # Раздача ролей — у своей роли, а не только через «*»: это и есть смысл
     # SECURITY_ADMIN.

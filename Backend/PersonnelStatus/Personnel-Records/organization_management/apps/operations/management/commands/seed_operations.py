@@ -24,6 +24,13 @@ PERMISSIONS = [
     ("*", "Все права"),
     ("admin.roles", "Управление ролями"),
     ("status.manage", "Управление статусами"),
+    # Plane №1223 (`[РАСХ-РШ-07]`, решение заказчика 12.09.2026): оперативный
+    # дежурный правит статусы ТОЛЬКО «Руководству Службы» — сотрудникам,
+    # прикреплённым к корню организации напрямую. Своё право, а не
+    # `status.manage` с областью «корень»: область гранта — ПОДДЕРЕВО, и корень
+    # накрыл бы всю Службу. Ручки статусов принимают этот код как второй и
+    # добавляют к области ровно корень (`PermissionService.status_write_division_ids`).
+    ("status.manage_root", "Статусы руководству Службы"),
     ("status.view", "Просмотр статусов"),
     # Решение согласующего по расстановке. С 28.08.2026 эти два кода —
     # РАБОЧИЕ: они охраняют возврат и подпись, разведённые с ведением
@@ -294,7 +301,8 @@ ROLE_PERMISSIONS = {
     ],
     # Сводит департаменты в расход организации; снимает блокировку опоздавшим.
     "DUTY_OFFICER": [
-        "status.view", "daily_report.generate", "daily_report.override_block",
+        "status.view", "status.manage_root",
+        "daily_report.generate", "daily_report.override_block",
         "analytics.view", "report.generate", "duty.view", "object.view",
         "feedback.create", *OPS_READ,
     ],

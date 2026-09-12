@@ -4,13 +4,17 @@
 // которого есть потомки в лесу (`childrenOf`), раскрывается в свои дочерние
 // узлы; узел БЕЗ потомков — лист (управление/отдел без вложенных
 // подразделений) — раскрывается в поимённый список сотрудников со статусом
-// на дату. READ-ONLY по всей глубине: ни окна правки статуса, ни кнопки
-// сдачи здесь нет вовсе — рабочее место дежурного смотрит, а не правит
-// (§20.4 п.10, `[РАСХ-РШ-05]`).
+// на дату. Департаменты и всё под ними — READ-ONLY: ни окна правки статуса,
+// ни кнопки сдачи (§20.4 п.10). Единственное исключение — «Руководство
+// Службы» (Plane №1223, `[РАСХ-РШ-07]`): дежурный ставит статусы сотрудникам,
+// прикреплённым к корню организации, — `LeafEmployees` рисует «Проставить»
+// ТОЛЬКО когда вызывающий передал `onPick` (право `status.manage_root`
+// проверяет он, а сервер — область).
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { apiClient, type TrafficLightNode } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { DAILY_EMPLOYEES_PATH, type DaySubmission } from "@/entities/daily-grid";
@@ -38,12 +42,15 @@ function submissionBadge(submission: DaySubmission | undefined, isLeaf: boolean)
   return <Badge>{isLeaf ? "Сдано" : "Собран"}</Badge>;
 }
 
-function LeafEmployees({
+export function LeafEmployees({
   divisionId,
   businessDate,
+  onPick,
 }: {
   divisionId: number;
   businessDate: string;
+  /** Кому можно поставить статус отсюда — есть ТОЛЬКО у «Руководства Службы». */
+  onPick?: (person: { id: string; name: string }) => void;
 }) {
   const employeesQuery = useQuery({
     queryKey: ["service-summary", "employees", divisionId],
@@ -83,6 +90,17 @@ function LeafEmployees({
           <Badge variant="outline">
             {statusByEmployee.get(person.id) ?? "В строю"}
           </Badge>
+          {onPick && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Проставить статус: ${person.full_name}`}
+              onClick={() => onPick({ id: person.id, name: person.full_name })}
+            >
+              Проставить
+            </Button>
+          )}
         </li>
       ))}
     </ul>

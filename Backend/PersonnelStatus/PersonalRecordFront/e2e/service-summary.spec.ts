@@ -85,8 +85,9 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
   test.skip(ROLE_PASSWORD === '', 'нужен ROLE_ACCOUNTS_PASSWORD')
 
-  test('открыт только ответственному за сбор сил', async ({ page }) => {
-    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
+    // Plane №1223: экран — оперативному дежурному (был — ответственному, №1115).
+  test('открыт только оперативному дежурному', async ({ page }) => {
+    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     await expect(
       page.getByRole('region', { name: 'Свод по Службе', exact: true }),
@@ -106,7 +107,7 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
   test('дерево показывает реальную структуру, раскрытие листа — поимённый состав без правки', async ({
     page,
   }) => {
-    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
+    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     const region = page.getByRole('region', { name: 'Свод по Службе', exact: true })
     await expect(region).toBeVisible({ timeout: 25_000 })
@@ -168,7 +169,7 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     const adminToken = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const date = await freshRootDate(adminToken)
 
-    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
+    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary?dateFrom=${date}`, {
       waitUntil: 'domcontentloaded',
     })
