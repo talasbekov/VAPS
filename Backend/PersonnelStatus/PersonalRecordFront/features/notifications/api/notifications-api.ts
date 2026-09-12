@@ -1,6 +1,7 @@
 import { getAccessToken } from "@/lib/api";
 import { apiClient, type OpsNotification as OpsNotificationRow } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
+import { formatIsoDate } from "@/shared/lib/date";
 import {
   DIRECTORATES_DATIVE,
   EMPLOYEES,
@@ -267,6 +268,23 @@ export function describeOpsNotification(row: OpsNotificationRow): {
       // Ссылка — в карточку ОМ: этап «Ознакомление» там же, и руководитель
       // видит весь список и может отметить «лично» за позвонившего.
       link: p.eventId ? `/security-ops/events/${p.eventId}/` : null,
+    };
+  }
+  if (row.kind === "SUMMARY_SENT") {
+    // Ответственный отправил свод департамента оперативному дежурному
+    // (Plane №1222, `[ДОП-20-09]`). Ссылка — «Свод по Службе» на ту же
+    // деловую дату: там дежурный видит департамент в дереве и собирает свод
+    // Службы. Неполный свод назван неполным ЗДЕСЬ, а не только на экране:
+    // дежурный читает ленту раньше, чем откроет дерево.
+    const p = row.payload;
+    const version = p.version !== undefined ? ` · v${p.version}` : "";
+    const incomplete = p.incomplete
+      ? ` — неполный свод${p.incomplete_reason ? `: «${p.incomplete_reason}»` : ""}`
+      : "";
+    return {
+      title: `Свод департамента отправлен: ${p.division_name ?? "департамент"}`,
+      message: `Расход на ${formatIsoDate(row.business_date)}${version} · отправил ${p.sent_by ?? "—"}${incomplete}`,
+      link: `/security-ops/service-summary?businessDate=${encodeURIComponent(row.business_date)}`,
     };
   }
   if (row.kind === "SUBMISSION_LAGGING") {

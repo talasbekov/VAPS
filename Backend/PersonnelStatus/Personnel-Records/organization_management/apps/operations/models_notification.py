@@ -93,6 +93,15 @@ class OpsNotification(TimeStampedModel):
         # заявки. Свой вид: `FORCES_REQUEST_DEPARTMENT` — СВОДКА начальнику
         # департамента по управлениям (№922), другой адресат и другой текст.
         FORCES_REQUEST_SENT = "FORCES_REQUEST_SENT", "Запрос сил департаменту от штаба"
+        # Ответственный отправил свод департамента оперативному дежурному
+        # (Plane №1222, `[ДОП-20-09]`, решение заказчика 12.09.2026). До этого
+        # `send_summary` писал только аудит, и дежурный узнавал о своде, лишь
+        # открыв «Свод по Службе». Получатели — все активные `DUTY_OFFICER` и
+        # получатель по умолчанию из настроек контроля. Ключ — «одна строка на
+        # версию свода в день» (`summary:<department>:v<N>`): пересданный свод
+        # — новая версия и новое письмо, повтор той же версии сервер и так
+        # отвергает 409.
+        SUMMARY_SENT = "SUMMARY_SENT", "Свод департамента отправлен дежурному"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -160,6 +169,7 @@ class OpsNotification(TimeStampedModel):
                         "FORCES_RESPONSE",
                         "ASSIGNMENT_DECLINED",
                         "FORCES_REQUEST_SENT",
+                        "SUMMARY_SENT",
                     ]
                 ),
                 name="chk_ops_notif_kind",

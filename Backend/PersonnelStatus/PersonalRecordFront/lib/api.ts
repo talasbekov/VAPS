@@ -596,7 +596,8 @@ export interface OpsNotification {
     | "ACKNOWLEDGEMENT_DUE_SOON"
     | "FORCES_RESPONSE"
     | "ASSIGNMENT_DECLINED"
-    | "FORCES_REQUEST_SENT";
+    | "FORCES_REQUEST_SENT"
+    | "SUMMARY_SENT";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -638,6 +639,16 @@ export interface OpsNotification {
     comment?: string;
     remarksOpen?: number;
     urgent?: boolean;
+    /** `SUMMARY_SENT` (Plane №1222, `[ДОП-20-09]`): ответственный отправил
+     *  свод департамента оперативному дежурному. Ключи — snake_case, как у
+     *  `laggard_division_ids`: их пишет `summary_service`, а не адаптер. */
+    division_id?: number;
+    division_name?: string;
+    submission_id?: number;
+    version?: number;
+    sent_by?: string;
+    incomplete?: boolean;
+    incomplete_reason?: string;
     documentVersion?: number;
     /** `ASSIGNMENT_DECLINED` (Plane №451, `[ПРФ-04]`): сотрудник ответил
      *  «Не могу заступить». Старшему нужно ИМЯ и ПРИЧИНА — по ним он решает,

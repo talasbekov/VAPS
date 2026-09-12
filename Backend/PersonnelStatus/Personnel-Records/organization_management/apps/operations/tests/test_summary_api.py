@@ -286,3 +286,91 @@ def test_children_not_submitted_is_422_with_laggards(types, tree):
     assert response.status_code == 422
     assert response.data["error_code"] == "SUMMARY_CHILDREN_NOT_SUBMITTED"
     assert sorted(response.data["details"]["laggards"]) == sorted([left.id, right.id])
+
+
+# ── Отправка дежурному: право, область, форма отказов (Plane №1222) ───────
+
+SEND_URL = URL + "send/"
+
+
+def test_sending_needs_the_generate_right(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assembled(root)
+    api, _ = client("sender", ["daily_report.mark_update", "status.view"])
+
+    response = post(api, SEND_URL, division_id=root.id)
+
+    assert response.status_code == 403
+    assert OpsDailySubmission.objects.get(division_id=root.id).sent_at is None
+
+
+def test_sending_outside_scope_is_forbidden(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assembled(root)
+    other = Division.objects.create(name="Чужое управление")
+    api, _ = client("sender", ["daily_report.generate"], scope_division_id=other.id)
+
+    response = post(api, SEND_URL, division_id=root.id)
+
+    assert response.status_code == 403
+    assert OpsDailySubmission.objects.get(division_id=root.id).sent_at is None
+
+
+def test_sending_marks_the_current_summary_and_names_the_sender(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assembled(root)
+    api, user = client("sender", ["daily_report.generate"], scope_division_id=root.id)
+
+    response = post(api, SEND_URL, division_id=root.id)
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["sent_at"] is not None
+    assert body["sent_by"] == str(user.pk)
+    assert body["incomplete_reason"] == ""
+
+
+def test_sending_twice_is_a_conflict(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assembled(root)
+    api, _ = client("sender", ["daily_report.generate"], scope_division_id=root.id)
+    assert post(api, SEND_URL, division_id=root.id).status_code == 200
+
+    response = post(api, SEND_URL, division_id=root.id)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "SUMMARY_ALREADY_SENT"
+
+
+def test_sending_without_a_summary_is_not_found(types, tree):
+    root, left, _ = tree
+    submit(left)
+    api, _ = client("sender", ["daily_report.generate"], scope_division_id=root.id)
+
+    response = post(api, SEND_URL, division_id=root.id)
+
+    assert response.status_code == 404
+
+
+def test_sending_an_incomplete_summary_requires_a_reason_and_names_laggards(types, tree):
+    root, left, right = tree
+    submit(left)
+    with clock.override(MORNING):
+        assemble_summary(division_id=root.id, business_date=TODAY, actor=ACTOR, allow_incomplete=True)
+    api, _ = client("sender", ["daily_report.generate"], scope_division_id=root.id)
+
+    refused = post(api, SEND_URL, division_id=root.id)
+    assert refused.status_code == 400
+    assert refused.json()["details"]["laggards"] == [right.id]
+
+    accepted = post(api, SEND_URL, division_id=root.id, reason="штаб предупреждён")
+    assert accepted.status_code == 200, accepted.content
+    assert accepted.json()["incomplete_reason"] == "штаб предупреждён"
