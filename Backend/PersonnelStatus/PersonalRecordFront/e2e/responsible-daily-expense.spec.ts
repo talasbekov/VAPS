@@ -28,7 +28,11 @@ async function prepare(page: Page) {
   await page.route('**/api/ops/daily/daily-submissions/**', route => route.fulfill(reply({ results: [] })))
   await page.route('**/api/ops/daily/employees/**', route => {
     const query = new URL(route.request().url()).searchParams
-    expect(query.getAll('division_id').sort()).toEqual(['3', '4'])
+    // Люди запрашиваются ПО ОТДЕЛУ (второй уровень, Plane №1197): точные id
+    // отдела (или самого управления для «непосредственно в управлении»), а не
+    // всё поддерево управления разом.
+    expect(['3', '4']).toEqual(expect.arrayContaining(query.getAll('division_id')))
+    expect(query.getAll('division_id').length).toBeGreaterThan(0)
     expect(query.get('business_date')).toBe(date)
     return route.fulfill(reply({ results: [{ id: '41', full_name: 'Сотрудник из отдела', rank_code: 'Майор', division_id: '4' }] }))
   })
@@ -38,7 +42,10 @@ async function prepare(page: Page) {
 test.describe('ежедневный расход ответственного', () => {
   test.skip(process.env.SMOKE_LIVE !== '1', 'нужен живой стенд для входа')
   test.setTimeout(60_000)
-  test('считает поддерево один раз и раскрывает сотрудников без уровня отделов', async ({ page }) => {
+  // Пин переписан ОСОЗНАННО (Plane №1197, решение заказчика 12.09.2026):
+  // раньше проба требовала «раскрывает сотрудников БЕЗ уровня отделов», теперь
+  // отделы — второй уровень таблицы со своими числами, а люди — под отделом.
+  test('считает поддерево один раз; раскрывает управление до отделов, отдел — до людей', async ({ page }) => {
     await prepare(page)
     await page.goto(`${APP}/employees?view=daily&businessDate=${date}`)
     const screen = page.getByRole('region', { name: 'Расход департамента' })
@@ -46,9 +53,14 @@ test.describe('ежедневный расход ответственного', 
     await expect(screen.getByTestId('daily-ready-total')).toHaveText('4')
     await expect(screen.getByText('Без отдельной отметки · в строю', { exact: true }).locator('..').locator('dd')).toHaveText('4')
     await expect(screen.getByText('Сдали 0 из 1')).toBeVisible()
+    // Бланк: «Руководство» первой строкой (прямой состав департамента = 1), «ИТОГО» последней.
+    await expect(screen.getByRole('row', { name: /Руководство департамента/ })).toContainText('1')
+    await expect(screen.getByRole('row', { name: /ИТОГО по департаменту/ })).toContainText('4')
     await screen.getByRole('button', { name: 'Первое управление', exact: true }).click()
+    await expect(screen.getByRole('button', { name: 'Скрытый отдел', exact: true })).toBeVisible()
+    await expect(screen.getByText('Сотрудник из отдела')).toHaveCount(0)
+    await screen.getByRole('button', { name: 'Скрытый отдел', exact: true }).click()
     await expect(screen.getByText('Сотрудник из отдела')).toBeVisible()
-    await expect(screen.getByText('Скрытый отдел', { exact: true })).toHaveCount(0)
     await expect(screen.getByText('Без отдельной отметки: в строю')).toBeVisible()
     await page.screenshot({ path: path.join('/tmp', '1090-task2-responsible-daily.png'), fullPage: true })
   })
@@ -72,20 +84,30 @@ test.describe('ежедневный расход ответственного', 
     await page.route('**/api/operations/statuses/**', route => route.fulfill({ json: { count: 3, next: null, results: [status(1, 'DUTY', date, '2026-09-12'), status(2, 'EXPIRED', '2026-09-08', date), status(3, 'SICK_LEAVE', '2026-09-09', '2026-09-12')] } }))
     await page.goto(`${APP}/employees?view=daily&businessDate=${date}`)
     await page.getByRole('button', { name: 'Первое управление', exact: true }).click()
+    await page.getByRole('button', { name: 'Скрытый отдел', exact: true }).click()
     const person = page.getByText('Сотрудник из отдела', { exact: true }).locator('..')
     // Deactivated catalog entries still describe historical facts; date_end is exclusive.
     await expect(person.getByText('На больничном', { exact: true })).toBeVisible()
     await expect(person.getByText('На дежурстве', { exact: true })).toHaveCount(0)
   })
-  test('числа и состояние строки имеют доступные подписи на desktop', async ({ page }) => {
+  // Пин переписан ОСОЗНАННО (Plane №1197): вместо четырёх групп «По списку /
+  // В строю / Отклонения / Сдача» — строка таблицы с колонками бланка и
+  // индикатором-точкой, названным словами (`role="img"`, цвет не единственный сигнал).
+  test('строка управления: индикатор сдачи назван словами, числа в колонках бланка', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await prepare(page)
     await page.goto(`${APP}/employees?view=daily&businessDate=${date}`)
-    const unit = page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Первое управление', exact: true }) })
-    await expect(unit.getByRole('group', { name: 'По списку: 3', exact: true })).toBeVisible()
-    await expect(unit.getByRole('group', { name: 'В строю: 3', exact: true })).toBeVisible()
-    await expect(unit.getByRole('group', { name: 'Отклонения: 0', exact: true })).toBeVisible()
-    await expect(unit.getByRole('group', { name: 'Сдача: Не сдано', exact: true })).toBeVisible()
+    const unit = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Первое управление', exact: true }) })
+    await expect(unit.getByRole('img', { name: 'Сдача: Не сдано', exact: true })).toBeVisible()
+    await expect(unit.getByText('не сдано', { exact: true })).toBeVisible()
+    const cells = unit.getByRole('cell')
+    // Управление · Штат · Список · В строю · Вакансии · [колонки справочника: ready]
+    await expect(cells.nth(1)).toHaveText('3')
+    await expect(cells.nth(2)).toHaveText('3')
+    await expect(cells.nth(3)).toHaveText('3')
+    await expect(cells.nth(4)).toHaveText('0')
+    await expect(page.getByRole('columnheader', { name: 'Штат' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Вакансии' })).toBeVisible()
   })
   test('напоминает департаменту на выбранную дату, показывает отказ и неразрешённых получателей', async ({ page }) => {
     await prepare(page)

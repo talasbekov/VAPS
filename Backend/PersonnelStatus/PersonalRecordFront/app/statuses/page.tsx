@@ -21,6 +21,7 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import { ForcesRequestBanner } from "@/features/forces-request-banner/ui/ForcesRequestBanner";
+import { StatusDayClose } from "@/features/ops-daily/status-day-close";
 
 export default function StatusesPage() {
   // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
@@ -136,6 +137,13 @@ export default function StatusesPage() {
             }}
           />
         </Suspense>
+
+        {/* Сдача дня ЗДЕСЬ, а не только на борде расхода (Plane №1197,
+            решение заказчика 12.09.2026): начальник управления ставит
+            статусы и на той же странице выбирает дату и сдаёт день. Блок
+            рисуется только тому, у кого есть право сдачи
+            (`daily_report.mark_update`) — внутри компонента. */}
+        <StatusDayClose employeeCount={stats.totalEmployees} />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -190,7 +190,7 @@ export function DaySubmissionPanel({
     if (dirtyCount > 0) return `Сначала сохраните правки: изменено ${dirtyCount}`;
     // Клиентский гард — удобство; истина при расхождении зон — allowed из 422.
     if (!isWithinSubmitWindow(businessDate, todayLocalIso())) {
-      return "Сдать можно только за сегодня или завтра.";
+      return "Сдать можно за сегодня и на 62 дня вперёд; прошлые дни не сдаются.";
     }
     return null;
   }

@@ -2229,12 +2229,19 @@ class ApiClient {
     dateFrom: string;
     dateTo: string;
     divisionId?: number;
+    /** `PLAN` снимает серверный запрет на будущее (`expense_period.MODE_PLAN`):
+     * без него период, заходящий за сегодня, отвечает 400. Умолчание сервера —
+     * `FACT`, и здесь оно не подменяется: аналитика читает состоявшееся. */
+    mode?: "FACT" | "PLAN";
   }): Promise<StrengthReportPeriod> {
     const query = new URLSearchParams();
     query.append("date_from", params.dateFrom);
     query.append("date_to", params.dateTo);
     if (params.divisionId !== undefined) {
       query.append("division_id", String(params.divisionId));
+    }
+    if (params.mode !== undefined) {
+      query.append("mode", params.mode);
     }
     return this.getDomainJson<StrengthReportPeriod>(
       `/api/operations/strength-report/period/?${query.toString()}`

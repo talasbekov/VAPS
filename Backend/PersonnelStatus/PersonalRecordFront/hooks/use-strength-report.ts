@@ -37,14 +37,18 @@ export function useStrengthReport(enabled: boolean, businessDate?: string) {
  */
 export function useStrengthReportPeriod(
   period: { from: string; to: string } | null,
-  enabled: boolean
+  enabled: boolean,
+  // Плановые дни (Plane №1197): «расход по датам» у ответственного смотрит
+  // вперёд — на завтра и дальше, — а `FACT` (умолчание) закрыт для будущего.
+  mode?: "FACT" | "PLAN"
 ) {
   return useQuery<StrengthReportPeriod>({
-    queryKey: ["strength-report", "period", period?.from ?? "", period?.to ?? ""],
+    queryKey: ["strength-report", "period", period?.from ?? "", period?.to ?? "", mode ?? "FACT"],
     queryFn: () =>
       apiClient.getStrengthReportPeriod({
         dateFrom: (period as { from: string; to: string }).from,
         dateTo: (period as { from: string; to: string }).to,
+        mode,
       }),
     enabled: enabled && period !== null,
   });

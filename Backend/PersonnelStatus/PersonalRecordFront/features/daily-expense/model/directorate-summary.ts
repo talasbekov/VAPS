@@ -15,6 +15,7 @@ export interface ResponsibleDivision {
 }
 export interface DirectorateSummary {
   division: ResponsibleDivision; ids: string[]; listTotal: number; offList: number
+  staffTotal: number; vacancies: number; attached: number
   inService: number | null; deviations: number | null; withoutStatus: number
   columns: Record<string, number>; submission: DaySubmission | null
 }
@@ -33,37 +34,48 @@ export function effectiveDailyStatus(rows: OpsEmployeeStatusRow[], date: string,
   return active[0] ?? null
 }
 
+export const childrenOf = (divisions: ResponsibleDivision[], id: string) => divisions.filter(row => row.parent_id === id)
+export const descendantsOf = (divisions: ResponsibleDivision[], id: string) => {
+  const seen = new Set<string>(); const stack = [id]
+  while (stack.length) {
+    const next = stack.pop()!
+    if (seen.has(next)) continue
+    seen.add(next); stack.push(...childrenOf(divisions, next).map(row => row.id))
+  }
+  return [...seen]
+}
+
+/** Sum exact report rows of `ids` once (Plane №1197: shared by directorates,
+ * their sections — the second level of the responsible table — and totals).
+ * Staff/vacancies/attached are the blank's fixed head columns. */
+export function summarizeDivision(division: ResponsibleDivision, ids: string[], rows: StrengthReportRow[], submissions: DaySubmission[], inServiceColumn?: string): DirectorateSummary {
+  const wanted = new Set(ids)
+  const exactRows = rows.filter(row => wanted.has(String(row.division_id)))
+  const columns: Record<string, number> = {}
+  for (const row of exactRows) for (const [code, count] of Object.entries(row.columns)) columns[code] = (columns[code] ?? 0) + count
+  const listTotal = exactRows.reduce((sum, row) => sum + row.list_total, 0)
+  const offList = exactRows.reduce((sum, row) => sum + row.off_list, 0)
+  const inService = inServiceColumn ? columns[inServiceColumn] ?? 0 : null
+  return { division, ids, listTotal, offList, inService,
+    staffTotal: exactRows.reduce((sum, row) => sum + row.staff_total, 0),
+    vacancies: exactRows.reduce((sum, row) => sum + row.vacancies, 0),
+    attached: exactRows.reduce((sum, row) => sum + row.attached, 0),
+    deviations: inServiceColumn ? Object.entries(columns).reduce((sum, [code, count]) => sum + (code === inServiceColumn ? 0 : count), 0) : null,
+    // Unlike exact strength rows, this metadata already includes descendants.
+    withoutStatus: division.without_status, columns,
+    submission: currentSubmission(submissions.filter(row => row.division_id === division.id)) }
+}
+
 /** Report rows are exact divisions. Each subtree is summed once, including its root. */
 export function groupDirectorates(divisions: ResponsibleDivision[], rows: StrengthReportRow[], scopeId: number, submissions: DaySubmission[], inServiceColumn?: string) {
   const scope = divisions.find(row => row.id === String(scopeId) && row.division_type === 'department')
   if (!scope) throw new Error('Департамент роли не найден в доступной структуре')
-  const children = (id: string) => divisions.filter(row => row.parent_id === id)
-  const descendants = (id: string) => {
-    const seen = new Set<string>(); const stack = [id]
-    while (stack.length) {
-      const next = stack.pop()!
-      if (seen.has(next)) continue
-      seen.add(next); stack.push(...children(next).map(row => row.id))
-    }
-    return [...seen]
-  }
-  const summarize = (division: ResponsibleDivision, ids: string[]): DirectorateSummary => {
-    const wanted = new Set(ids)
-    const exactRows = rows.filter(row => wanted.has(String(row.division_id)))
-    const columns: Record<string, number> = {}
-    for (const row of exactRows) for (const [code, count] of Object.entries(row.columns)) columns[code] = (columns[code] ?? 0) + count
-    const listTotal = exactRows.reduce((sum, row) => sum + row.list_total, 0)
-    const offList = exactRows.reduce((sum, row) => sum + row.off_list, 0)
-    const inService = inServiceColumn ? columns[inServiceColumn] ?? 0 : null
-    return { division, ids, listTotal, offList, inService,
-      deviations: inServiceColumn ? Object.entries(columns).reduce((sum, [code, count]) => sum + (code === inServiceColumn ? 0 : count), 0) : null,
-      // Unlike exact strength rows, this metadata already includes descendants.
-      withoutStatus: division.without_status, columns,
-      submission: currentSubmission(submissions.filter(row => row.division_id === division.id)) }
-  }
-  const sources = children(scope.id).map(division => summarize(division, descendants(division.id))).filter(row => row.listTotal + row.offList > 0)
-  sources.sort((a, b) => Number(!!a.submission) - Number(!!b.submission) || a.division.name.localeCompare(b.division.name, 'ru'))
-  return { scope, sources, total: summarize(scope, descendants(scope.id)), direct: summarize(scope, [scope.id]) }
+  const summarize = (division: ResponsibleDivision, ids: string[]) => summarizeDivision(division, ids, rows, submissions, inServiceColumn)
+  // Порядок бланка — порядок структуры, а не «несдавшие первыми»: таблица
+  // читается вместе с бумажным расходом, и строка обязана стоять на том же
+  // месте каждый день (Plane №1197).
+  const sources = childrenOf(divisions, scope.id).map(division => summarize(division, descendantsOf(divisions, division.id))).filter(row => row.listTotal + row.offList > 0)
+  return { scope, sources, total: summarize(scope, descendantsOf(divisions, scope.id)), direct: summarize(scope, [scope.id]) }
 }
 
 export function useResponsibleDaily(selectedDate?: string) {

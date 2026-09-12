@@ -114,7 +114,13 @@ test.describe(LIVE ? 'вкладка «Свод департамента»' : '�
   test('вкладка видна ответственному за сбор сил и не видна оператору подразделения', async ({ page }) => {
     await signIn(page, FGO, ROLE_PASSWORD)
     await page.goto(`${APP}/employees`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('navigation', { name: 'Рабочее место' }).getByRole('link', { name: 'Ежедневный расход', exact: true })).toBeVisible({
+    // Пин поправлен ОСОЗНАННО (Plane №1197, 12.09.2026): навигации «Рабочее
+    // место» в коде нет ни в одном экране — пункты рабочего места ответственного
+    // («Рабочий стол», «Ежедневный расход», «Сбор сил на ОМ») живут в боковом
+    // меню «Основная навигация» (`components/navigation/sidebar.tsx`), и
+    // соседняя проба `forces-workspace.spec.ts` прямо требует, чтобы
+    // «Рабочее место» отсутствовало. Проба была красной с f466c51c.
+    await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('link', { name: 'Ежедневный расход', exact: true })).toBeVisible({
       timeout: 30_000,
     })
 
