@@ -349,13 +349,19 @@ interface SummaryVersionsProps {
    * «кого торопить». Блок своего списка подразделений не заводит: он уже
    * загружен бордом, и второй запрос за теми же именами был бы лишним. */
   labelOfDivision: (divisionId: number) => string;
+  /** `history` — ТОЛЬКО список версий, без кнопок ступеней и их сообщений
+   * (Plane №1221): на экране ответственного сборка/отправка живут в блоке
+   * `SummaryActionBar` наверху, и вторая пара тех же кнопок внизу означала
+   * бы два главных действия на одном экране. Умолчание `full` — прежнее
+   * поведение для `DailyExpenseBoard`. */
+  variant?: "full" | "history";
 }
 
 /** Отказ сборки СЛОВАМИ. Три случая названы отдельно, потому что человек
  * делает по ним РАЗНОЕ: «не все сдали» — торопить перечисленных, «уже
  * собран» — идти в пересборку (отдельное действие и отдельное право), всё
  * прочее — читать сообщение сервера. */
-function assembleFailureText(failure: OpsApiFailure): string {
+export function assembleFailureText(failure: OpsApiFailure): string {
   // `SUMMARY_CHILDREN_NOT_SUBMITTED` сюда больше не долетает (Plane №990):
   // кнопка всегда шлёт `allow_incomplete: true`, и недостающие управления
   // видны в СПИСКЕ версий/статусе отправки, а не как отказ сборки.
@@ -374,7 +380,7 @@ function assembleFailureText(failure: OpsApiFailure): string {
 /** Список несдавших из отказа ОТПРАВКИ — `null`, если отказ не про
  * неполноту (403/404/409/сеть): им поле причины не решает ничего, и
  * рисовать его значило бы обещать выход из тупика, которого нет. */
-function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
+export function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
   if (failure === null || !(failure instanceof OpsApiError)) return null;
   const raw = failure.details.laggards;
   if (!Array.isArray(raw)) return null;
@@ -383,7 +389,7 @@ function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
     .filter((value) => Number.isFinite(value));
 }
 
-function sendFailureText(
+export function sendFailureText(
   failure: OpsApiFailure | null,
   labelOfDivision: (divisionId: number) => string,
   laggards: number[] | null
@@ -414,8 +420,10 @@ export function SummaryVersions({
   boardDivisionIds,
   labelOfDivision,
   scopeDivisionId,
+  variant = "full",
 }: SummaryVersionsProps) {
   const [openId, setOpenId] = useState<number | null>(null);
+  const actions = variant !== "history";
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
   // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`), а не своим
@@ -496,11 +504,11 @@ export function SummaryVersions({
   const sendFailureMessage = sendFailureText(send.error, labelOfDivision, sendLaggards);
 
   return (
-    <section role="region" aria-label="Суточный свод" className="space-y-2">
+    <section role="region" aria-label={actions ? "Суточный свод" : "Версии свода"} className="space-y-2">
       <div className="rounded-lg border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
-          <h2 className="text-sm font-semibold">Суточный свод</h2>
-          {resolved && !permissionsLoading && canAssemble && !assembled && (
+          <h2 className="text-sm font-semibold">{actions ? "Суточный свод" : "Версии свода"}</h2>
+          {actions && resolved && !permissionsLoading && canAssemble && !assembled && (
             <Button
               type="button"
               size="sm"
@@ -516,7 +524,7 @@ export function SummaryVersions({
               {assemble.isPending ? "Собираем…" : "Собрать свод"}
             </Button>
           )}
-          {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+          {actions && resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
             <Button
               type="button"
               size="sm"
@@ -535,21 +543,21 @@ export function SummaryVersions({
         </div>
         {/* Кому уходит — сказано вслух и рядом с кнопкой: «отправить» без
             адресата не отвечает на вопрос, что случится по нажатию. */}
-        {resolved && !permissionsLoading && canAssemble && !assembled && (
+        {actions && resolved && !permissionsLoading && canAssemble && !assembled && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Свод собирается из действующих сдач управлений; недостающие
             остаются видны как «не сдали» — отправка неполного свода
             потребует явной причины.
           </p>
         )}
-        {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+        {actions && resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Свод собран. Отправка уходит оперативному дежурному, который
             сводит расход за организацию, — отдельным действием со своим
             моментом и автором.
           </p>
         )}
-        {resolved && !permissionsLoading && canAssemble && alreadySent && currentVersion !== null && (
+        {actions && resolved && !permissionsLoading && canAssemble && alreadySent && currentVersion !== null && (
           <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
             Отправлено {formatIsoDateTime(currentVersion.sent_at as string)} ·{" "}
             {currentVersion.sent_by}
@@ -558,28 +566,28 @@ export function SummaryVersions({
             )}
           </p>
         )}
-        {resolved && !permissionsLoading && !canAssemble && (
+        {actions && resolved && !permissionsLoading && !canAssemble && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Сборка и отправка свода закрыты правом «Суточный отчёт: генерация»
             — свод собирает и отправляет ответственный за расход департамента.
           </p>
         )}
-        {assembleFailureMessage !== null && (
+        {actions && assembleFailureMessage !== null && (
           <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
             {assembleFailureMessage}
           </p>
         )}
-        {assemble.isSuccess && (
+        {actions && assemble.isSuccess && (
           <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
             Свод собран — новая версия в списке ниже
           </p>
         )}
-        {sendFailureMessage !== null && (
+        {actions && sendFailureMessage !== null && (
           <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
             {sendFailureMessage}
           </p>
         )}
-        {sendNeedsReason && !send.isSuccess && (
+        {actions && sendNeedsReason && !send.isSuccess && (
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
             <input
               type="text"
@@ -605,7 +613,7 @@ export function SummaryVersions({
             </Button>
           </div>
         )}
-        {send.isSuccess && (
+        {actions && send.isSuccess && (
           <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
             Свод отправлен дежурному
           </p>

@@ -41,6 +41,7 @@ import { useOpsStatusTypes } from '@/hooks/use-ops-status-types'
 import { useStrengthReportPeriod } from '@/hooks/use-strength-report'
 import { childrenOf, descendantsOf, effectiveDailyStatus, summarizeDivision, useResponsibleDaily, type DirectorateSummary, type ResponsibleDivision } from '../model/directorate-summary'
 import { SummaryVersions } from './SummaryVersions'
+import { SummaryActionBar } from './SummaryActionBar'
 import styles from './responsible-daily.module.css'
 
 export function DailyRetry({ label, onRetry, action = 'Повторить' }: { label: string; onRetry: () => unknown; action?: string }) {
@@ -285,7 +286,13 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
           <p className={styles.hint}>Каждая дата — самостоятельный дневной срез, между днями ничего не суммируется. Щелчок по плитке открывает таблицу за этот день.</p>
         </div>}
         <div className={styles.hero}><div>{submissions.isError ? <DailyRetry label="Не удалось получить состояние сдачи" action="Повторить состояние сдачи" onRetry={submissions.refetch} /> : submissions.isPending ? <p role="status">Загрузка состояния сдачи…</p> : <><strong>Сдали {submitted} из {data.sources.length}</strong><progress aria-label="Сдача обязательных источников" max={Math.max(data.sources.length, 1)} value={submitted} /><p>{data.sources.length === 0 ? 'Нет обязательных источников с сотрудниками.' : submitted === data.sources.length ? 'Все обязательные источники сдали расход.' : `Ожидаем: ${data.sources.filter(row => !row.submission).map(row => row.division.name).join(', ')}.`}</p></> }</div>
-          {state.access.hasPermission('daily_report.generate') && state.scopeId != null && <Reminder key={`${date}:${state.scopeId}`} date={date} scopeId={state.scopeId} disabled={!submissionReady || submitted === data.sources.length} nameOf={nameOf} />}
+          {/* Главное действие экрана — свод (Plane №1221, [РАСХ-РШ-03]): чип
+              состояния и кнопка ступени стоят здесь, в блоке готовности, а не
+              под таблицей. «Напомнить» — вторичное действие, ниже него. */}
+          {state.scopeId != null && <div className={styles.heroActions}>
+            <SummaryActionBar key={`${date}:${state.scopeId}`} businessDate={date} divisionId={state.scopeId} labelOfDivision={nameOf} />
+            {state.access.hasPermission('daily_report.generate') && <Reminder key={`r:${date}:${state.scopeId}`} date={date} scopeId={state.scopeId} disabled={!submissionReady || submitted === data.sources.length} nameOf={nameOf} />}
+          </div>}
         </div>
         {catalog.isError && <DailyRetry label="Не удалось получить справочник статусов" onRetry={catalog.refetch} />}
         <dl className={styles.stats}><div><dt>По списку</dt><dd data-testid="daily-list-total">{data.total.listTotal}</dd></div><div><dt>В строю</dt><dd data-testid="daily-ready-total">{data.total.inService ?? '—'}</dd></div><div><dt>Всего отклонений</dt><dd>{data.total.deviations ?? '—'}</dd></div><div><dt>Без отдельной отметки · в строю</dt><dd>{data.total.withoutStatus}</dd></div></dl>
@@ -330,7 +337,7 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
         </div>
         {data.sources.some(row => row.division.division_type !== 'directorate') && <p className={styles.hint}>В список включены также прямые подразделения другого типа: они участвуют в полноте свода.</p>}
         {data.total.attached > 0 && <p className={styles.hint}>Придано сверх списка: {data.total.attached}.</p>}
-        <SummaryVersions key={`${date}:${state.scopeId}`} businessDate={date} boardDivisionIds={data.sources.map(row => Number(row.division.id))} labelOfDivision={nameOf} scopeDivisionId={state.scopeId ?? undefined} />
+        <SummaryVersions key={`${date}:${state.scopeId}`} variant="history" businessDate={date} boardDivisionIds={data.sources.map(row => Number(row.division.id))} labelOfDivision={nameOf} scopeDivisionId={state.scopeId ?? undefined} />
       </>}
   </section>
 }

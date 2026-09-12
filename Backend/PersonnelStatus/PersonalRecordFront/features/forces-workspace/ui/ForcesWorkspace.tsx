@@ -10,6 +10,7 @@ import { ForceCollectionsTable } from '@/features/force-collections'
 import { DailyExpenseBoard } from '@/features/daily-expense'
 import { ResponsibleDailyExpense, DailyRetry } from '@/features/daily-expense/ui/ResponsibleDailyExpense'
 import { useResponsibleDaily } from '@/features/daily-expense/model/directorate-summary'
+import { SUMMARY_ACTION_ANCHOR } from '@/features/daily-expense/ui/SummaryActionBar'
 import { useDepartmentRequests } from '@/hooks/use-department-requests'
 import { useOpsPermissions } from '@/hooks/use-ops-permissions'
 import { formatIsoDate, formatIsoDateTime } from '@/shared/lib/date'
@@ -53,7 +54,7 @@ function DailyActionQueue({ query }: { query: URLSearchParams }) {
   if (!data || submissions.isPending) return <p role="status" className={styles.pending}>Загрузка очереди расхода…</p>
   const missing = data.sources.filter(row => !row.submission)
   if (missing.length === 0 && data.total.submission?.sent_at) return <p className={styles.pending}>Ежедневный свод отправлен. Нет ожидающих сдач.</p>
-  return <div className={styles.queueRow}><span className={styles.badge}>Расход</span><div><strong>{missing.length ? `Ожидаем сдачу: ${missing.map(row => row.division.name).join(', ')}` : data.total.submission ? 'Отправить собранный свод' : 'Собрать свод департамента'}</strong><p>{businessDate ? formatIsoDate(businessDate) : ''} · сдали {data.sources.length - missing.length} из {data.sources.length}</p></div><div /><Link className={styles.action} href={workspaceHref(query, 'daily')}>Открыть свод</Link></div>
+  return <div className={styles.queueRow}><span className={styles.badge}>Расход</span><div><strong>{missing.length ? `Ожидаем сдачу: ${missing.map(row => row.division.name).join(', ')}` : data.total.submission ? 'Отправить собранный свод' : 'Собрать свод департамента'}</strong><p>{businessDate ? formatIsoDate(businessDate) : ''} · сдали {data.sources.length - missing.length} из {data.sources.length}</p></div><div /><Link className={styles.action} href={`${workspaceHref(query, 'daily')}#${SUMMARY_ACTION_ANCHOR}`}>Открыть свод</Link></div>
 }
 
 function ResponsibleDesk({ query }: { query: URLSearchParams }) {
