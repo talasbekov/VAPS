@@ -72,6 +72,12 @@ type NavItem = {
   name: string;
   href: string;
   icon: LucideIcon;
+  /** Пункт ВНУТРИ родительского (Plane №1199, решение заказчика 12.09.2026):
+   * «Ежедневный расход» и «Сбор сил на ОМ» открываются внутри «Рабочего
+   * стола» ответственного — в меню они стоят под ним с отступом, а экраны
+   * модулей несут кнопку «Назад» на рабочий стол. Ссылки остаются ссылками:
+   * прямые адреса `?view=daily` / `?view=forces` живут как прежде. */
+  nested?: boolean;
   // Право пункта здесь НЕ пишется: оно берётся по адресу из
   // `entities/portal-access` — того же источника, из которого его берёт гейт
   // самой страницы.
@@ -427,8 +433,8 @@ function SidebarContent() {
   const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query) : null;
   const workspaceItems: NavItem[] = workspaceRole === 'responsible' ? [
     { name: 'Рабочий стол', href: workspaceHref(query, 'desk'), icon: ClipboardList, workspaceView: 'desk' },
-    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const }] : []),
-    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
+    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const, nested: true }] : []),
+    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces', nested: true },
   ] : workspaceRole === 'headquarters' ? [
     { name: 'Распределения', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
   ] : [];
@@ -601,7 +607,8 @@ function SidebarContent() {
                     return (
                       <li
                         key={item.href}
-                        className="sidebar-nav-item"
+                        className={item.nested ? "sidebar-nav-item ml-4 border-l border-sidebar-border pl-2" : "sidebar-nav-item"}
+                        data-nested={item.nested ? "true" : undefined}
                         style={{
                           animationDelay: `${Math.min(itemIndex, MAX_STAGGER_STEPS) * 50}ms`,
                         }}

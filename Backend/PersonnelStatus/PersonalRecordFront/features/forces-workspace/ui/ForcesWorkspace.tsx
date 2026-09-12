@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Button } from '@/components/ui/button'
@@ -98,6 +99,17 @@ export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
   const scopedRole = access.roles.find(item => item.code === (role === 'responsible' ? 'FORCES_GATHERING_OFFICER' : 'OPS_STAFF'))
   const title = view === 'desk' ? 'Рабочий стол' : view === 'daily' ? 'Ежедневный расход' : role === 'headquarters' ? 'Распределения' : 'Сбор сил на ОМ'
   return <DashboardLayout><div className={styles.workspace}>
+    {/* «Назад» на рабочий стол (Plane №1199): оба модуля ответственного
+        открываются ВНУТРИ рабочего стола, и путь обратно должен быть на самом
+        экране, а не только в меню. Штабу (`headquarters`) рабочего стола
+        нет — ему кнопка не рисуется. Параметры адреса (дата, диапазон)
+        сохраняются: `workspaceHref` снимает только `request/collection/
+        campaign/tab`. */}
+    {role === 'responsible' && view !== 'desk' && (
+      <Link href={workspaceHref(query, 'desk')} className={styles.back} data-slot="workspace-back">
+        <ArrowLeft aria-hidden size={16} />Назад на рабочий стол
+      </Link>
+    )}
     <div className={styles.titleRow}><div><p className={styles.eyebrow}>{role === 'responsible' ? 'Мои задачи' : 'Штаб · сбор и распределение сил'}</p><h1>{title}</h1><p>{scopedRole?.name}</p></div><span className={styles.scope}>{scopedRole?.scope_division_name ?? (role === 'headquarters' ? 'Штаб' : 'Мой департамент')}</span></div>
     {view === 'desk' ? <ResponsibleDesk query={query} />
       : view === 'daily' ? access.hasPermission('status.view') ? role === 'responsible' ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {
