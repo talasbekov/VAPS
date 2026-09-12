@@ -104,6 +104,11 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     ).toHaveCount(0)
   })
 
+  // Пин переписан ОСОЗНАННО (Plane №1232, 12.09.2026): дерево стало ТАБЛИЦЕЙ
+  // с числовыми колонками — узлы больше не вложены друг в друга как
+  // `role="group"`, строки идут подряд с `aria-level`. Спуск в лист — по
+  // кнопкам «Раскрыть: …» с `aria-expanded="false"`, минуя «Руководство»
+  // (оно раскрывается в людей, а не в подразделения).
   test('дерево показывает реальную структуру, раскрытие листа — поимённый состав без правки', async ({
     page,
   }) => {
@@ -111,59 +116,38 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     const region = page.getByRole('region', { name: 'Свод по Службе', exact: true })
     await expect(region).toBeVisible({ timeout: 25_000 })
+    const table = region.getByRole('table', { name: 'Служба по департаментам' })
+    await expect(table).toBeVisible({ timeout: 25_000 })
 
-    const departments = region.getByRole('list', { name: 'Департаменты' }).getByRole('group')
-    await expect(departments.first()).toBeVisible()
-    const firstDeptCount = await departments.count()
-    expect(firstDeptCount, 'на стенде нет ни одного департамента').toBeGreaterThan(0)
+    const departmentButtons = table.getByRole('button', { name: /^Раскрыть: (?!Руководство)/ })
+    expect(await departmentButtons.count(), 'на стенде нет ни одного департамента').toBeGreaterThan(0)
 
-    // Раскрыть первый департамент — под ним появляются его дети.
-    const firstDept = departments.first()
-    await firstDept.getByRole('button').first().click()
-
-    // Спуск ГЛУБИНОЙ, а не однократным перебором соседей одного уровня:
-    // реальные данные стенда смешивают на одной глубине лист («управление»
-    // без вложенных отделов) и не-лист (управление С отделами) — плоский
-    // перебор `[role="group"] [role="group"]` считал бы узлы всех глубин
-    // сразу и упирался в гонку с асинхронной загрузкой личного состава
-    // (клик разворачивает узел мгновенно, а список людей приходит позже
-    // сетевым запросом — синхронная проверка счётчика сразу после клика
-    // читала пустоту как «не лист», отсюда и была первая версия пробы
-    // красной). Рекурсия построчно ждёт результат КАЖДОГО клика и умеет
-    // свернуть неверную ветку и попробовать следующую.
-    async function descendToLeaf(container: ReturnType<typeof region.locator>): Promise<boolean> {
-      const children = container.locator('> [role="group"]')
-      const childCount = await children.count()
-      for (let i = 0; i < childCount; i += 1) {
-        const candidate = children.nth(i)
-        await candidate.getByRole('button').first().click()
-        // Лист без сотрудников или лист с ними сначала рендерит «Загрузка
-        // личного состава…» (`LeafEmployees`) — ждать нужно ЕЁ ИСЧЕЗНОВЕНИЯ,
-        // а не появления первого попавшегося `<p>`: сама строка загрузки —
-        // тоже `<p>`, и `.or()` на «любой параграф» удовлетворялся ЕЮ ЖЕ,
-        // так и не дождавшись настоящего результата (первая правка гонки
-        // накрыла только СИНХРОННУЮ версию проверки, а не эту).
-        await expect(candidate.getByText('Загрузка личного состава…')).toHaveCount(0, {
-          timeout: 10_000,
-        })
-        const peopleList = candidate.locator('> ul[role="list"]')
-        if ((await peopleList.count()) > 0) {
-          await expect(peopleList.getByRole('listitem').first()).toBeVisible({ timeout: 10_000 })
-          // БЕЗ кнопок правки — только имя/звание/статус текстом.
-          await expect(peopleList.getByRole('button')).toHaveCount(0)
-          return true
-        }
-        if (await descendToLeaf(candidate)) return true
-        await candidate.getByRole('button').first().click() // свернуть обратно
+    // Спуск ГЛУБИНОЙ: раскрываем первую свёрнутую строку-подразделение, пока
+    // не появится список людей. Реальные данные стенда смешивают листы и
+    // не-листы на одной глубине, поэтому — по одной строке за шаг с ожиданием
+    // ИСЧЕЗНОВЕНИЯ «Загрузка личного состава…» (сама строка загрузки — тоже
+    // `<p>`, и ждать «любой параграф» значило бы дождаться её же).
+    let foundEmployees = false
+    for (let step = 0; step < 10 && !foundEmployees; step += 1) {
+      const next = table.getByRole('button', { name: /^Раскрыть: (?!Руководство)/ }).first()
+      if ((await next.count()) === 0) break
+      await next.click()
+      await expect(table.getByText('Загрузка личного состава…')).toHaveCount(0, { timeout: 10_000 })
+      const peopleList = table.locator('ul[role="list"]')
+      if ((await peopleList.count()) > 0) {
+        await expect(peopleList.first().getByRole('listitem').first()).toBeVisible({ timeout: 10_000 })
+        // БЕЗ кнопок правки — только имя/звание/статус текстом: люди
+        // департаментов дежурному только на просмотр (`[РАСХ-РШ-07]`).
+        await expect(peopleList.first().getByRole('button')).toHaveCount(0)
+        foundEmployees = true
       }
-      return false
     }
-
-    const foundEmployees = await descendToLeaf(firstDept)
     expect(foundEmployees, 'ни один лист не раскрылся в список сотрудников').toBe(true)
   })
 
-  test('«Собрать свод Службы» проходит при неполной готовности, «Отправить» требует причину', async ({
+  // Пин переписан ОСОЗНАННО (Plane №1232, `[РАСХ-РШ-09]`): дежурный свод
+  // Службы ТОЛЬКО собирает — «Отправить дежурному» на уровне Службы нет.
+  test('«Собрать свод Службы» проходит при неполной готовности; отправки на уровне Службы нет', async ({
     page,
   }) => {
     const adminToken = await apiToken(STAND_USERNAME, STAND_PASSWORD)
@@ -177,22 +161,10 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     await expect(section).toBeVisible({ timeout: 25_000 })
 
     await section.getByRole('button', { name: 'Собрать свод Службы' }).click()
-    const sendButton = section.getByRole('button', { name: 'Отправить дежурному' })
-    await expect(sendButton).toBeVisible({ timeout: 15_000 })
-
-    await sendButton.click()
-    await expect(
-      section.getByText('Свод неполный — укажите причину и подтвердите отправку'),
-    ).toBeVisible({ timeout: 15_000 })
-
-    const confirmButton = section.getByRole('button', { name: 'Подтвердить отправку' })
-    await expect(confirmButton).toBeDisabled()
-    await section
-      .getByPlaceholder('Причина неполной отправки — обязательна')
-      .fill('не все департаменты собрали свод, штаб предупреждён')
-    await expect(confirmButton).toBeEnabled()
-    await confirmButton.click()
-
-    await expect(section.getByText('Свод отправлен дежурному')).toBeVisible({ timeout: 15_000 })
+    await expect(section.getByText('Свод Службы собран — версия в списке ниже')).toBeVisible({ timeout: 15_000 })
+    await expect(section.getByRole('status').filter({ hasText: /^Свод Службы собран · v1/ })).toBeVisible({ timeout: 15_000 })
+    await expect(section.getByRole('button', { name: /Отправить дежурному/ })).toHaveCount(0)
+    await expect(section.getByRole('button', { name: 'Собрать свод Службы' })).toHaveCount(0)
+    await expect(section.getByRole('region', { name: 'Версии свода Службы' }).getByText('Версия 1')).toBeVisible({ timeout: 15_000 })
   })
 })

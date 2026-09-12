@@ -42,15 +42,17 @@ test.describe('№1223 — рабочие места дежурного и от�
     await expect(region).toBeVisible({ timeout: 30_000 })
     await expect(region.getByText('Загрузка структуры и сдач…')).toHaveCount(0, { timeout: 30_000 })
 
-    const leadership = region.getByRole('group', { name: 'Руководство Службы' }).first()
-    await expect(leadership).toBeVisible()
-    await leadership.getByRole('button', { name: /Руководство Службы/ }).click()
-    await expect(leadership.getByText('Загрузка личного состава…')).toHaveCount(0, { timeout: 15_000 })
-    const people = leadership.getByRole('listitem')
+    // Пин поправлен ОСОЗНАННО (Plane №1232): дерево стало таблицей, «Руководство
+    // Службы» — первая строка с кнопкой «Раскрыть: Руководство Службы».
+    const table = region.getByRole('table', { name: 'Служба по департаментам' })
+    await expect(table.getByRole('row', { name: /Руководство Службы/ })).toBeVisible()
+    await table.getByRole('button', { name: 'Раскрыть: Руководство Службы' }).click()
+    await expect(table.getByText('Загрузка личного состава…')).toHaveCount(0, { timeout: 15_000 })
+    const people = table.locator('ul[role="list"]').first().getByRole('listitem')
     if ((await people.count()) > 0) {
       await expect(people.first().getByRole('button', { name: /^Проставить/ })).toBeVisible()
     } else {
-      await expect(leadership.getByText('В подразделении никого нет')).toBeVisible()
+      await expect(table.getByText('В подразделении никого нет')).toBeVisible()
     }
   })
 

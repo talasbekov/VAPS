@@ -1,225 +1,253 @@
 "use client";
 
-// Один дневной срез «Свода по Службе» (Plane №992, §20.4 п.8): многодневный
-// диапазон рендерится КАРТОЧКОЙ НА ДАТУ, а не одним сложенным числом —
-// каждая дата хранит собственные версии и источники, и склейка их в общий
-// итог обесценила бы личный состав, посчитанный за несколько дней разом.
-import { useState } from "react";
+// Один дневной срез «Свода по Службе» (Plane №992 → №1232, макет одобрен
+// заказчиком 12.09.2026). Многодневный диапазон — срез НА ДАТУ (§20.4 п.8),
+// между днями ничего не суммируется.
+//
+// Дежурный свод Службы ТОЛЬКО СОБИРАЕТ (`[РАСХ-РШ-09]`, решение заказчика
+// 12.09.2026): «отправить дежурному» на уровне Службы некому — он и есть
+// дежурный. Кнопка отправки, поле причины и подсказка про адресата, заведённые
+// №992, сняты; состояния свода Службы — «не собран» / «собран vN».
+import { useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { OpsApiError } from "@/lib/ops-errors";
+import { Badge } from "@/components/ui/badge";
+import { opsApiClient } from "@/lib/ops-api";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   SUMMARY_ASSEMBLE_PERMISSION,
   useAssembleSummary,
-  useSendSummary,
 } from "@/hooks/use-daily-summary-write";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { useSetStatusHost } from "@/features/daily-expense/ui/SetStatusHost";
-import { useServiceTree } from "../model/use-service-tree";
-import { DivisionRow, LeafEmployees } from "./DivisionRow";
+import { SummaryVersions, assembleFailureText } from "@/features/daily-expense/ui/SummaryVersions";
+import { useServiceDay } from "../model/use-service-day";
+import { DivisionRow, LeafEmployees, FiguresCells, COLUMN_COUNT } from "./DivisionRow";
 import { ChevronRight } from "lucide-react";
 
-/** Право дежурного на статусы «Руководству Службы» (Plane №1223, `[РАСХ-РШ-07]`):
- * сервер принимает его как второе право записи и добавляет к области ровно
- * корень организации. */
+/** Право дежурного на статусы «Руководству Службы» (Plane №1223, `[РАСХ-РШ-07]`). */
 export const STATUS_MANAGE_ROOT_PERMISSION = "status.manage_root";
 
-/**
- * «Руководство Службы» — сотрудники, прикреплённые к корню организации
- * напрямую (Plane №1223). До этого в дереве их не было вовсе: срез рисовал
- * только детей корня. Строка стоит ПЕРВОЙ, как «Руководство департамента» у
- * ответственного, в знаменатель «сдали N из M» не входит.
- */
-function LeadershipRow({ rootId, businessDate, onPick }: { rootId: number; businessDate: string; onPick?: (person: { id: string; name: string }) => void }) {
-  const [open, setOpen] = useState(false);
+interface ReminderResult {
+  business_date: string;
+  laggard_division_ids: number[];
+  notified_recipient_count: number;
+  unresolved_division_ids: number[];
+}
+
+function Tile({ label, value }: { label: string; value: number | string }) {
   return (
-    <div role="group" aria-label="Руководство Службы" className="rounded-md border border-dashed">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex min-h-11 w-full items-center gap-2 px-2 py-1.5 text-left text-sm font-medium hover:bg-muted/50"
-      >
-        <ChevronRight aria-hidden size={16} className={open ? "rotate-90 transition-transform" : "transition-transform"} />
-        <span className="flex-1">Руководство Службы</span>
-        <span className="text-xs text-muted-foreground">в знаменатель не входит</span>
-      </button>
-      {open && <LeafEmployees divisionId={rootId} businessDate={businessDate} onPick={onPick} />}
+    <div className="rounded-lg border bg-card px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-xl font-bold tabular-nums leading-tight">{value}</div>
     </div>
   );
 }
 
+/**
+ * «Руководство Службы» — сотрудники, прикреплённые к корню организации
+ * напрямую (Plane №1223). Первой строкой таблицы, в знаменатель «сдали N из M»
+ * не входит; единственное место, где дежурный ставит статусы.
+ */
+function ServiceLeadershipRows({ rootId, businessDate, figures, onPick }: { rootId: number; businessDate: string; figures: ReturnType<ReturnType<typeof useServiceDay>["exactFigures"]>; onPick?: (person: { id: string; name: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <tr className="bg-muted/30" aria-level={1}>
+        <td className="px-2 py-1.5">
+          <span role="img" aria-label="Сдача не требуется" title="Сдача не требуется" className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-slate-400 align-middle" />
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={`${open ? "Свернуть" : "Раскрыть"}: Руководство Службы`}
+            onClick={() => setOpen((prev) => !prev)}
+            className="inline-flex min-h-9 items-center gap-1 text-left font-semibold hover:text-primary"
+          >
+            <ChevronRight aria-hidden size={14} className={`text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`} />
+            Руководство Службы
+          </button>
+          <span className="ml-2 rounded-full border px-2 text-[11px] text-muted-foreground">в знаменатель не входит</span>
+        </td>
+        <FiguresCells figures={figures} />
+        <td className="px-2 py-1.5 text-right">
+          <Badge variant="outline" className="border-transparent bg-primary/10 text-primary">{onPick ? "статусы правит дежурный" : "только просмотр"}</Badge>
+        </td>
+      </tr>
+      {open && (
+        <tr className="bg-muted/30">
+          <td colSpan={COLUMN_COUNT} className="px-2 pb-2">
+            <LeafEmployees divisionId={rootId} businessDate={businessDate} onPick={onPick} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 export function DaySummarySection({ businessDate }: { businessDate: string }) {
-  const tree = useServiceTree(businessDate);
+  const day = useServiceDay(businessDate);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const canAssemble = hasPermission(SUMMARY_ASSEMBLE_PERMISSION);
-  const assemble = useAssembleSummary();
-  const send = useSendSummary();
-  const [reason, setReason] = useState("");
   const canManageRoot = hasPermission(STATUS_MANAGE_ROOT_PERMISSION);
+  const assemble = useAssembleSummary();
   const statusHost = useSetStatusHost(businessDate);
+  const remind = useMutation({
+    mutationFn: () =>
+      opsApiClient.post<ReminderResult>("/api/operations/daily-summaries/remind/", {
+        division_id: day.rootId,
+        business_date: businessDate,
+      }),
+  });
 
-  const departments =
-    tree.rootId !== null ? tree.childrenOf.get(tree.rootId) ?? [] : [];
-  const rootSubmission =
-    tree.rootId !== null
-      ? tree.submissionByDivision.get(String(tree.rootId))
-      : undefined;
-  const assembled = rootSubmission !== undefined;
-  const alreadySent = rootSubmission?.sent_at != null;
-
-  const submittedDepartments = departments.filter((department) =>
-    tree.submissionByDivision.has(String(department.division_id))
-  );
-  const laggardDepartments = departments.filter(
-    (department) => !tree.submissionByDivision.has(String(department.division_id))
+  const assembled = day.rootSubmission !== undefined;
+  const rootStale = day.rootId !== null && day.isStale(day.rootId);
+  const nameOf = useMemo(
+    () => (id: number) => day.nodeById.get(id)?.name ?? `Подразделение №${id}`,
+    [day.nodeById]
   );
 
-  const sendNeedsReason =
-    send.error !== null &&
-    send.error instanceof OpsApiError &&
-    Array.isArray(send.error.details.laggards);
+  const chip = !day.isPending && day.rootId !== null
+    ? assembled
+      ? rootStale
+        ? { tone: "warn", text: `Свод Службы устарел · v${day.rootSubmission!.version} — департамент пересдал` }
+        : { tone: "ok", text: `Свод Службы собран · v${day.rootSubmission!.version} · ${formatIsoDateTime(day.rootSubmission!.submitted_at)}` }
+      : { tone: "off", text: "Свод Службы не собран" }
+    : { tone: "off", text: "Свод Службы: проверяем…" };
+  const chipClass = {
+    off: "bg-muted text-muted-foreground",
+    warn: "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    ok: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  }[chip.tone as "off" | "warn" | "ok"];
 
   return (
     <section
       role="region"
       aria-label={`Свод по Службе на ${formatIsoDate(businessDate)}`}
-      className="space-y-3 rounded-lg border bg-card p-4"
+      className="space-y-4"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{formatIsoDate(businessDate)}</h2>
-        {tree.rootId !== null && !permissionsLoading && canAssemble && !assembled && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={assemble.isPending}
-            onClick={() => {
-              assemble.reset();
-              assemble.mutate({
-                division_id: tree.rootId as number,
-                business_date: businessDate,
-              });
-            }}
-          >
-            {assemble.isPending ? "Собираем…" : "Собрать свод Службы"}
-          </Button>
-        )}
-        {tree.rootId !== null && !permissionsLoading && canAssemble && assembled && !alreadySent && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={send.isPending || (sendNeedsReason && reason.trim() === "")}
-            onClick={() => {
-              send.mutate({
-                division_id: tree.rootId as number,
-                business_date: businessDate,
-                reason,
-              });
-            }}
-          >
-            {send.isPending ? "Отправляем…" : "Отправить дежурному"}
-          </Button>
-        )}
-      </div>
-
-      {tree.isPending && (
-        <p className="text-sm text-muted-foreground">Загрузка структуры и сдач…</p>
-      )}
-      {!tree.isPending && tree.isError && (
-        <p role="alert" className="text-sm text-muted-foreground">
-          Не удалось прочитать структуру подразделений
-        </p>
+      {day.isPending && <p className="text-sm text-muted-foreground">Загрузка структуры и сдач…</p>}
+      {!day.isPending && day.isError && (
+        <p role="alert" className="text-sm text-muted-foreground">Не удалось прочитать структуру подразделений</p>
       )}
 
-      {!tree.isPending && !tree.isError && tree.rootId !== null && (
+      {!day.isPending && !day.isError && day.rootId !== null && (
         <>
-          <p className="text-sm">
-            Сдали {submittedDepartments.length} из {departments.length} департаментов
-            {alreadySent && rootSubmission !== undefined && (
-              <>
-                {" "}
-                — свод отправлен {formatIsoDateTime(rootSubmission.sent_at as string)} ·{" "}
-                {rootSubmission.sent_by}
-                {rootSubmission.incomplete_reason !== "" && (
-                  <> (неполный: «{rootSubmission.incomplete_reason}»)</>
+          <div className="grid gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4 md:grid-cols-[minmax(0,1fr)_minmax(280px,36%)]">
+            <div>
+              <h2 className="text-lg font-semibold tabular-nums">
+                {formatIsoDate(businessDate)} · Сдали {day.submittedDepartments.length} из {day.departments.length} департаментов
+              </h2>
+              <progress
+                className="mt-2 block h-2 w-full accent-primary"
+                max={Math.max(day.departments.length, 1)}
+                value={day.submittedDepartments.length}
+                aria-label="Сдача обязательных департаментов"
+              />
+              <p className="mt-2 text-sm text-muted-foreground">
+                {day.laggardDepartments.length > 0 ? (
+                  <>Не сдали: <span className="font-semibold text-red-700 dark:text-red-300">{day.laggardDepartments.map((node) => node.name).join(", ")}</span>.</>
+                ) : (
+                  <>Все департаменты сдали.</>
                 )}
-              </>
-            )}
-          </p>
-          {laggardDepartments.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Не сдали: {laggardDepartments.map((department) => department.name).join(", ")}
-            </p>
-          )}
-          {send.isError && (
-            <p role="alert" className="text-sm text-muted-foreground">
-              {sendNeedsReason
-                ? "Свод неполный — укажите причину и подтвердите отправку"
-                : "Отправка не удалась"}
-            </p>
-          )}
-          {sendNeedsReason && !send.isSuccess && (
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="text"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="Причина неполной отправки — обязательна"
-                className="min-w-64 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={send.isPending || reason.trim() === ""}
-                onClick={() => {
-                  send.mutate({
-                    division_id: tree.rootId as number,
-                    business_date: businessDate,
-                    reason,
-                  });
-                }}
-              >
-                Подтвердить отправку
-              </Button>
+                {day.staleDepartments.length > 0 && <> Пересдано после отправки: {day.staleDepartments.map((node) => node.name).join(", ")}.</>}
+              </p>
+              <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Tile label="По списку" value={day.reportError ? "—" : day.totals?.listTotal ?? "…"} />
+                <Tile label="В строю" value={day.reportError ? "—" : day.totals?.inService ?? "…"} />
+                <Tile label="Отклонения" value={day.reportError ? "—" : day.totals?.deviations ?? "…"} />
+                <Tile label="Неполных сводов" value={day.incompleteDepartments.length} />
+              </dl>
+              {day.reportError && <p role="alert" className="mt-2 text-xs text-muted-foreground">Расход на дату не прочитался — числа недоступны, дерево сдач показано без них.</p>}
             </div>
-          )}
-          {send.isSuccess && (
-            <p role="status" className="text-sm text-muted-foreground">
-              Свод отправлен дежурному
-            </p>
-          )}
-
-          {tree.rootId !== null && (
-            <LeadershipRow rootId={tree.rootId} businessDate={businessDate} onPick={canManageRoot ? statusHost.pick : undefined} />
-          )}
-          <div role="list" aria-label="Департаменты" className="space-y-0.5">
-            {departments.map((department) => (
-              <DivisionRow
-                key={department.division_id}
-                node={department}
-                depth={0}
-                childrenOf={tree.childrenOf}
-                submissionByDivision={tree.submissionByDivision}
-                businessDate={businessDate}
-              />
-            ))}
-            {departments.length === 0 && (
-              <p className="text-sm text-muted-foreground">Департаментов не найдено</p>
-            )}
+            <div role="region" aria-label="Свод Службы" className="grid content-start gap-2 rounded-lg border bg-card p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span role="status" aria-atomic="true" className={`inline-flex min-h-8 items-center rounded-full px-3 text-xs font-semibold ${chipClass}`}>{chip.text}</span>
+                {!permissionsLoading && canAssemble && !assembled && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={assemble.isPending}
+                    onClick={() => {
+                      assemble.reset();
+                      assemble.mutate({ division_id: day.rootId as number, business_date: businessDate });
+                    }}
+                  >
+                    {assemble.isPending ? "Собираем…" : "Собрать свод Службы"}
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {assembled
+                  ? "Свод Службы собран для контроля: дальше он никому не отправляется. Пересдача департамента делает его устаревшим — тогда версии ниже покажут расхождение."
+                  : "Свод Службы собирается из действующих сводов департаментов; недостающие остаются видны как «не сдали». Никому не отправляется — дежурный собирает его для себя."}
+              </p>
+              {assemble.isError && <p role="alert" className="text-sm text-muted-foreground">{assembleFailureText(assemble.error)}</p>}
+              {assemble.isSuccess && <p role="status" className="text-sm text-muted-foreground">Свод Службы собран — версия в списке ниже</p>}
+              <div className="flex flex-wrap gap-2">
+                {!permissionsLoading && canAssemble && (
+                  <Button type="button" size="sm" variant="outline" disabled={remind.isPending || day.laggardDepartments.length === 0} onClick={() => remind.mutate()}>
+                    {remind.isPending ? "Отправка напоминаний…" : "Напомнить несдавшим"}
+                  </Button>
+                )}
+              </div>
+              {remind.isSuccess && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Получателей уведомлено: {remind.data.notified_recipient_count}.
+                  {remind.data.unresolved_division_ids.length > 0 && <> Без получателя: {remind.data.unresolved_division_ids.map(nameOf).join(", ")}.</>}
+                </p>
+              )}
+              {remind.isError && <p role="alert" className="text-xs text-muted-foreground">Напоминания не отправлены. Повторите попытку.</p>}
+            </div>
           </div>
+
+          <div className="rounded-xl border bg-card">
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b px-3 py-2.5">
+              <div>
+                <h3 className="text-sm font-semibold">Служба по департаментам</h3>
+                <p className="text-xs text-muted-foreground">Департаменты раскрываются до управлений, отделов и людей. Статусы внутри департаментов — только просмотр.</p>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground" aria-label="Обозначения">
+                <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-600" />отправлено · сдано</span>
+                <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-600" />собран, не отправлен · пересдано</span>
+                <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />не сдано</span>
+                <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-400" />сдача не требуется</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm" aria-label="Служба по департаментам">
+                <thead>
+                  <tr className="border-b text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th scope="col" className="px-2 py-2 text-left font-medium">Подразделение</th>
+                    <th scope="col" className="w-16 px-2 py-2 text-right font-medium">Список</th>
+                    <th scope="col" className="w-16 px-2 py-2 text-right font-medium">В строю</th>
+                    <th scope="col" className="w-16 px-2 py-2 text-right font-medium">Откл.</th>
+                    <th scope="col" className="w-64 px-2 py-2 text-right font-medium">Состояние на {formatIsoDate(businessDate)}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  <ServiceLeadershipRows rootId={day.rootId} businessDate={businessDate} figures={day.exactFigures(day.rootId)} onPick={canManageRoot ? statusHost.pick : undefined} />
+                  {day.departments.map((department) => (
+                    <DivisionRow key={department.division_id} node={department} depth={0} day={day} businessDate={businessDate} />
+                  ))}
+                  {day.departments.length === 0 && (
+                    <tr><td colSpan={COLUMN_COUNT} className="px-2 py-3 text-sm text-muted-foreground">Департаментов не найдено</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <section role="region" aria-label="Версии свода Службы">
+            <SummaryVersions
+              variant="history"
+              businessDate={businessDate}
+              boardDivisionIds={day.departments.map((node) => node.division_id)}
+              labelOfDivision={nameOf}
+              scopeDivisionId={day.rootId}
+            />
+          </section>
           {statusHost.dialog}
         </>
-      )}
-      {!tree.isPending && !tree.isError && tree.rootId === null && (
-        <p className="text-sm text-muted-foreground">
-          Корень организации не определён по структуре подразделений
-        </p>
-      )}
-      {!permissionsLoading && !canAssemble && (
-        <p className="text-xs text-muted-foreground">
-          Сборка и отправка свода Службы закрыты правом «Суточный отчёт: генерация».
-        </p>
       )}
     </section>
   );
