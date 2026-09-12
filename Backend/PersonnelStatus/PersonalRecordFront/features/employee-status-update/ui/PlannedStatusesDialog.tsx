@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
-import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
+import { EVENT_PARTICIPATION_STATUS_CODES, addDaysIso } from "@/entities/daily-grid";
 import { employeeIdOfKey } from "../model/row-key";
 import {
   Dialog,
@@ -1042,7 +1042,11 @@ export function PlannedStatusesDialog({
                         </div>
                         <div>
                           <div className="font-medium">Дата окончания</div>
-                          <div>{formatDate(status.date_end)}</div>
+                          {/* Раздел хранит [start, end) — на экране день
+                              окончания включительно, как у кадровых карточек
+                              выше (`[ОМ-РШ-17]`, проходка №1142: участие на ОМ
+                              05–06.10 печаталось «по 07.10»). */}
+                          <div>{formatDate(addDaysIso(status.date_end, -1))}</div>
                         </div>
                       </div>
                       {status.comment && (

@@ -124,6 +124,13 @@ const shiftedIso = (days: number): string => {
   return localIsoDate(date)
 }
 
+/** День окончания включительно для полуинтервала раздела `[start, end)`. */
+function inclusiveEndOf(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
+
 const displayIsoDate = (value: string): string => value.split('-').reverse().join('.')
 
 async function permissionsFor(token: string): Promise<string[]> {
@@ -443,9 +450,16 @@ test.describe('расход: постановка статуса с меропр
         nearCard,
         'OM-строка с одной отличающейся датой не должна считаться дублем',
       ).toHaveCount(1)
+      // Пин поправлен осознанно (`[ОМ-РШ-17]`, проходка №1142): раздел хранит
+      // `[start, end)`, а окно печатает день окончания ВКЛЮЧИТЕЛЬНО — как у
+      // кадровых карточек рядом. Участие на ОМ 05–06.10 печаталось «по 07.10».
+      await expect(
+        nearCard.getByText(displayIsoDate(inclusiveEndOf(seeded.nearEndDate)), { exact: true }),
+      ).toBeVisible()
       await expect(
         nearCard.getByText(displayIsoDate(seeded.nearEndDate), { exact: true }),
-      ).toBeVisible()
+        'сырой полуинтервальный конец на экране показываться не должен',
+      ).toHaveCount(0)
       await expect(
         nearCard.getByText(displayIsoDate(seeded.startDate), { exact: true }),
       ).toBeVisible()
