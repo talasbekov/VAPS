@@ -60,6 +60,12 @@ test.describe('ежедневный расход ответственного', 
     await expect(screen.getByRole('button', { name: 'Скрытый отдел', exact: true })).toBeVisible()
     await expect(screen.getByText('Сотрудник из отдела')).toHaveCount(0)
     await screen.getByRole('button', { name: 'Скрытый отдел', exact: true }).click()
+    // Пин поправлен ОСОЗНАННО (Plane №1234, `[РАСХ-РШ-12]`): по умолчанию список
+    // отдела показывает только людей со статусом не «в строю»; сотрудник в строю
+    // виден после «Показать всех».
+    await expect(screen.getByText('Все в строю — отклонений нет')).toBeVisible()
+    await expect(screen.getByText('Сотрудник из отдела')).toHaveCount(0)
+    await screen.getByRole('button', { name: /^Показать всех/ }).click()
     await expect(screen.getByText('Сотрудник из отдела')).toBeVisible()
     await expect(screen.getByText('Без отдельной отметки: в строю')).toBeVisible()
     await page.screenshot({ path: path.join('/tmp', '1090-task2-responsible-daily.png'), fullPage: true })

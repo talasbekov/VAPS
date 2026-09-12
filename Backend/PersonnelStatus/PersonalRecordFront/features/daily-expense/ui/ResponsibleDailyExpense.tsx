@@ -105,8 +105,13 @@ interface Employee { id: string; full_name: string; rank_code: string }
 // `[РАСХ-РШ-06]`): у ответственного право `status.manage` в области своего
 // департамента, поэтому кнопка есть у КАЖДОГО человека департамента, а не
 // только у «Руководства»; область стережёт сервер.
-function People({ ids, divisionId, date, labelOf, onPick }: { ids: string[]; divisionId: string; date: string; labelOf: (code: string) => string; onPick?: (person: StatusPerson) => void }) {
+// `everyone` — показывать и тех, кто в строю (только «Руководство департамента»:
+// там ответственный ставит статусы). Списки управлений и отделов по умолчанию
+// показывают ТОЛЬКО людей со статусом не «в строю» (Plane №1234, `[РАСХ-РШ-12]`),
+// остальных раскрывает «Показать всех».
+function People({ ids, divisionId, date, labelOf, onPick, everyone = false }: { ids: string[]; divisionId: string; date: string; labelOf: (code: string) => string; onPick?: (person: StatusPerson) => void; everyone?: boolean }) {
   const catalog = useOpsStatusTypes()
+  const [showAll, setShowAll] = useState(false)
   const employees = useQuery({ queryKey: ['daily-expense-board', 'responsible-people', date, ids], queryFn: async () => {
     const result: Employee[] = []
     // Daily adapter accepts at most 200 exact division IDs, not a subtree root.
@@ -137,8 +142,14 @@ function People({ ids, divisionId, date, labelOf, onPick }: { ids: string[]; div
     const start = formatIsoDate(status.date_start), end = formatIsoDate(status.date_end)
     return start === end ? start : `${start} – ${end}`
   }
+  const isDeviation = ({ status }: (typeof lines)[number]) => status === undefined || (status !== null && status.status_type_code !== 'IN_SERVICE')
+  const inServiceCount = lines.length - lines.filter(isDeviation).length
+  const shown = everyone || showAll ? lines : lines.filter(isDeviation)
+  const showAllLink = !everyone && inServiceCount > 0 && <button type="button" className={styles.showAll} onClick={() => setShowAll(!showAll)}>{showAll ? 'Скрыть тех, кто в строю' : `Показать всех · ${inServiceCount} в строю`}</button>
+  if (shown.length === 0) return <div className={styles.hint}>Все в строю — отклонений нет{showAllLink && <> · {showAllLink}</>}</div>
   return <div className={styles.people}>
-    {lines.map(({ person, status }) => <div key={person.id} className={styles.person} data-slot="person">
+    {showAllLink && <div className={styles.showAllRow}>{showAllLink}</div>}
+    {shown.map(({ person, status }) => <div key={person.id} className={styles.person} data-slot="person">
       {status === undefined ? <span className={styles.bad}>Статус не найден в справочнике</span>
         : <span className={status ? styles.statusLabel : styles.neutral}>{status ? labelOf(status.status_type_code) : 'Без отдельной отметки: в строю'}</span>}
       <span>{person.rank_code || '—'}</span>
@@ -171,7 +182,7 @@ function LeadRow({ row, date, columns, inServiceColumn, labelOf, colSpan, onPick
       <td className={styles.name}><span role="img" aria-label="Сдача не требуется" className={`${styles.dot} ${styles.dotOff}`} /><button type="button" className={`${styles.rowbtn} ${styles.leadName}`} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronRight aria-hidden size={14} className={open ? styles.chevronOpen : ''} />Руководство департамента</button><span className={styles.tag}>в знаменатель не входит</span></td>
       <NumberCells row={row} columns={columns} inServiceColumn={inServiceColumn} />
     </tr>
-    {open && <tr className={styles.peopleRow}><td colSpan={colSpan} data-slot="lead-people"><People ids={row.ids} divisionId={row.division.id} date={date} labelOf={labelOf} onPick={onPick} /></td></tr>}
+    {open && <tr className={styles.peopleRow}><td colSpan={colSpan} data-slot="lead-people"><People ids={row.ids} divisionId={row.division.id} date={date} labelOf={labelOf} onPick={onPick} everyone /></td></tr>}
   </>
 }
 

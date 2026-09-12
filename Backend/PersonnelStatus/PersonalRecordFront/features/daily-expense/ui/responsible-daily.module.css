@@ -118,3 +118,7 @@ td.name { display:flex; align-items:center; gap:10px; min-height:44px; }
 
 /* «Проставить» у человека (Plane №1223): вторичная кнопка справа, не ломает сетку строки. */
 .pick { margin-left:auto; justify-self:end; }
+
+/* «Показать всех · N в строю» (Plane №1234): ссылка-кнопка над списком людей. */
+.showAll { border:0; background:transparent; color:var(--rd-primary); font:inherit; font-size:13px; cursor:pointer; padding:0; min-height:36px; text-decoration:underline; text-underline-offset:3px; }
+.showAllRow { padding:2px 0; }

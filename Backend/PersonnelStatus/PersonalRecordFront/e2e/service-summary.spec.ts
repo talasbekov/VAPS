@@ -133,6 +133,12 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
       if ((await next.count()) === 0) break
       await next.click()
       await expect(table.getByText('Загрузка личного состава…')).toHaveCount(0, { timeout: 10_000 })
+      // №1234: лист без отклонений печатает «Все в строю — отклонений нет» —
+      // это тоже раскрытый лист, а не «не лист».
+      if ((await table.getByText('Все в строю — отклонений нет').count()) > 0) {
+        foundEmployees = true
+        break
+      }
       const peopleList = table.locator('ul[role="list"]')
       if ((await peopleList.count()) > 0) {
         await expect(peopleList.first().getByRole('listitem').first()).toBeVisible({ timeout: 10_000 })

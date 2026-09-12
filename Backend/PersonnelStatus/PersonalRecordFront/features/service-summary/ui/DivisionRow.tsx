@@ -7,8 +7,9 @@
 // статусом на дату. Департаменты и всё под ними — READ-ONLY (§20.4 п.10);
 // исключение — «Руководство Службы» (№1223, `[РАСХ-РШ-07]`): `LeafEmployees`
 // рисует «Проставить» ТОЛЬКО когда вызывающий передал `onPick`.
-// «Руководство департамента» (№1232, `[РАСХ-РШ-10]`) — сотрудники, прикреплённые
-// к департаменту напрямую, показываются ТОЛЬКО со статусом не «в строю».
+// «Руководство департамента» (№1232, `[РАСХ-РШ-10]`) и листы управлений/отделов
+// (№1234, `[РАСХ-РШ-12]`) показывают ТОЛЬКО людей со статусом не «в строю»;
+// остальных раскрывает «Показать всех». «Руководство Службы» — всех.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
@@ -82,6 +83,9 @@ export function LeafEmployees({
   onlyDeviations?: boolean;
 }) {
   const catalog = useOpsStatusTypes();
+  // «Показать всех» (Plane №1234): по умолчанию список — только люди со
+  // статусом не «в строю», остальные раскрываются ссылкой с их числом.
+  const [showAll, setShowAll] = useState(false);
   const employeesQuery = useQuery({
     queryKey: ["service-summary", "employees", divisionId],
     queryFn: () =>
@@ -114,17 +118,29 @@ export function LeafEmployees({
     }
     return { person, status };
   });
-  const shown = onlyDeviations
-    ? lines.filter(({ status }) => status === undefined || (status !== null && status.status_type_code !== "IN_SERVICE"))
-    : lines;
+  const isDeviation = ({ status }: (typeof lines)[number]) =>
+    status === undefined || (status !== null && status.status_type_code !== "IN_SERVICE");
+  const hideInService = onlyDeviations && !showAll;
+  const shown = hideInService ? lines.filter(isDeviation) : lines;
+  const inServiceCount = lines.length - lines.filter(isDeviation).length;
   if (lines.length === 0) {
     return <p className="py-2 pl-8 text-sm text-muted-foreground">В подразделении никого нет</p>;
   }
+  const showAllLink = onlyDeviations && inServiceCount > 0 && (
+    <button type="button" className="min-h-9 text-xs text-primary underline-offset-2 hover:underline" onClick={() => setShowAll((prev) => !prev)}>
+      {showAll ? "Скрыть тех, кто в строю" : `Показать всех · ${inServiceCount} в строю`}
+    </button>
+  );
   if (shown.length === 0) {
-    return <p className="py-2 pl-8 text-sm text-muted-foreground">Все в строю — отклонений нет</p>;
+    return (
+      <div className="py-2 pl-8 text-sm text-muted-foreground">
+        Все в строю — отклонений нет{showAllLink && <> · {showAllLink}</>}
+      </div>
+    );
   }
   return (
     <ul role="list" className="space-y-1 py-1 pl-8">
+      {showAllLink && <li className="list-none">{showAllLink}</li>}
       {shown.map(({ person, status }) => (
         <li key={person.id} className="flex flex-wrap items-center gap-2 text-sm">
           <span className="min-w-0 flex-1 font-medium">{person.full_name}</span>
@@ -254,7 +270,7 @@ export function DivisionRow({ node, depth, day, businessDate }: DivisionRowProps
       {open && isLeaf && (
         <tr className="bg-muted/20">
           <td colSpan={COLUMN_COUNT} className="px-2 pb-2" style={{ paddingLeft: depth * 22 + 8 }}>
-            <LeafEmployees divisionId={node.division_id} businessDate={businessDate} />
+            <LeafEmployees divisionId={node.division_id} businessDate={businessDate} onlyDeviations />
           </td>
         </tr>
       )}
