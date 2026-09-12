@@ -7,13 +7,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
   Building2,
-  CalendarDays,
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
   Pencil,
   Plus,
-  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -1078,14 +1076,7 @@ function VisitObjectList({
           </button>
         )}
       </div>
-      {/* ШИРИНА КАРТОЧКИ ОГРАНИЧЕНА (Plane №1262, снимок заказчика 12.09.2026):
-          врезка живёт в ячейке на все девять колонок реестра, и на широком
-          экране карточка растягивалась на полтора метра — содержимое
-          занимало левую треть, а статус с крестиком уезжали к дальнему
-          правому краю. `max-w-4xl` держит всё в одном поле зрения; правее
-          остаётся полотно врезки, и это читается как «карточка», а не
-          как «строка таблицы, у которой не хватило колонок». */}
-      <ul className="max-w-4xl space-y-2">
+      <ul className="space-y-2">
         {visits.map((visit) => {
           const known = visit.placementNeed !== null;
           const need = visit.placementNeed ?? 0;
@@ -1112,7 +1103,7 @@ function VisitObjectList({
             // «наведи красоту в реестре ОМ»).
             <li
               key={visit.id}
-              className="flex gap-3.5 rounded-lg border border-border/70 bg-background p-3.5 text-xs shadow-sm"
+              className="flex gap-3 rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
             >
               {/* СНИМОК ОБЪЕКТА (Plane SJ-1049, «в стиле Модуля ОЛ»): та же
                   плашка-плейсхолдер, что карточка охраняемого лица
@@ -1120,7 +1111,7 @@ function VisitObjectList({
                   с иконкой, пока снимка нет. Свойство КАТАЛОГА объекта, не
                   визита. Сервер включает его в event-контракт, чтобы право
                   `event.view` не требовало дополнительного `object.view`. */}
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
                 {visit.photoUrl !== null ? (
                   // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
                   <img
@@ -1133,126 +1124,88 @@ function VisitObjectList({
                 )}
               </div>
               <div className="min-w-0 flex-1">
-              {/* ШАПКА КАРТОЧКИ (Plane №1262): имя объекта и его СОСТОЯНИЕ —
-                  чип статуса и бейджи возврата — в одной строке, вплотную к
-                  имени: статус описывает объект и читается вместе с ним,
-                  а не ищется у противоположного края. Единственное, что
-                  прижато вправо, — «снять объект»: разрушающее действие
-                  стоит отдельно от того, что оно уничтожит. Под именем
-                  второй строкой — служебные ссылки (карточка объекта,
-                  паспорт), кеглем меньше: это адреса, а не свойства. */}
-              <div className="flex items-start justify-between gap-x-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    {/* Клик по объекту открывает ЭТАПЫ мероприятия по этому
-                        объекту, а не карточку объекта реестра: заказчик
-                        просил «клик по объекту открывает этапы». Ссылка на
-                        сам объект осталась рядом подписью — это другой адрес
-                        (паспорт против этапов), и подменять один другим
-                        нельзя. */}
+              {/* ШАПКА КАРТОЧКИ: имя объекта и его непосредственные действия
+                  (статус, снять объект) — в одной строке, статус и «снять»
+                  прижаты вправо ЗДЕСЬ, у заголовка, а не в хвосте длинного
+                  flex-ряда (`ml-auto` раньше означал «в конце всего, что
+                  влезло», и между последним полем и крестиком набегал
+                  случайный зазор шире экрана). */}
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                {/* Клик по объекту открывает ЭТАПЫ мероприятия по этому
+                    объекту, а не карточку объекта реестра: заказчик просил
+                    «клик по объекту открывает этапы». Ссылка на сам объект
+                    осталась рядом подписью — это другой адрес (паспорт против
+                    этапов), и подменять один другим нельзя. */}
+                <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <Link
+                    href={`/security-ops/events/${event.id}${
+                      backSuffix === ""
+                        ? `?visit=${visit.id}`
+                        : `${backSuffix}&visit=${visit.id}`
+                    }`}
+                    className="font-medium hover:underline"
+                  >
+                    {visit.objectName}
+                  </Link>
+                  {visit.objectId !== null && (
                     <Link
-                      href={`/security-ops/events/${event.id}${
-                        backSuffix === ""
-                          ? `?visit=${visit.id}`
-                          : `${backSuffix}&visit=${visit.id}`
-                      }`}
-                      className="text-[13px] font-semibold leading-5 text-foreground hover:underline"
+                      href={`/security-ops/objects/${visit.objectId}`}
+                      // Имя ссылки называет ОБЪЕКТ: в раскрытой строке таких
+                      // ссылок столько же, сколько объектов, и список ссылок
+                      // скринридера был бы рядом одинаковых строк.
+                      aria-label={`Карточка объекта ${visit.objectName}`}
+                      className="text-[11px] font-normal text-primary-ink hover:underline"
                     >
-                      {visit.objectName}
+                      карточка объекта →
                     </Link>
-                    {/* Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane
-                        №423): нейтральный чип ПЕРЕД тревожными бейджами —
-                        это состояние, а не предупреждение, и цветом с
-                        «Возвращено»/«Срочно» оно не спорит. Подпись даёт
-                        сервер. */}
-                    <span
-                      className="inline-flex h-5 items-center whitespace-nowrap rounded-full border border-border bg-muted px-2 text-[10.5px] font-medium text-foreground/80"
-                      data-slot="visit-status-chip"
-                    >
-                      {visit.statusLabel}
-                    </span>
-                    {/* Бейджи возврата (`[РЕЕ-08]`/`[ВОЗ-03]`, Plane №400):
-                        объект вернули с согласования — реестр говорит это
-                        словами, не заставляя открывать карточку. Считаются
-                        замечания БЕЗ ОТВЕТА: именно их старшему чинить;
-                        «Срочно» — если хоть одно из них срочное. Ширина
-                        ограничена nowrap: бейдж не переносится. */}
-                    {visit.approvalStatus === "RETURNED" && (
-                      <span
-                        className="inline-flex h-5 items-center whitespace-nowrap rounded-full bg-amber-100 px-2 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
-                        data-slot="visit-returned-badge"
-                      >
-                        Возвращено · {remarksLabel(
-                          visit.approvalRemarks.filter(remarkIsOpen).length
-                        )}
-                      </span>
-                    )}
-                    {visit.approvalRemarks.some((r) => remarkIsOpen(r) && r.urgent) && (
-                      <span
-                        className="inline-flex h-5 items-center whitespace-nowrap rounded-full bg-red-100 px-2 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
-                        data-slot="visit-urgent-badge"
-                      >
-                        Срочно
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
-                    {visit.objectId !== null && (
-                      <>
-                        <Link
-                          href={`/security-ops/objects/${visit.objectId}`}
-                          // Имя ссылки называет ОБЪЕКТ: в раскрытой строке
-                          // таких ссылок столько же, сколько объектов, и
-                          // список ссылок скринридера был бы рядом
-                          // одинаковых строк.
-                          aria-label={`Карточка объекта ${visit.objectName}`}
-                          className="font-medium text-primary-ink hover:underline"
-                        >
-                          карточка объекта →
-                        </Link>
-                        <span aria-hidden="true">·</span>
-                      </>
-                    )}
-                    <span>
-                      {visit.passportBinding === null
-                        ? "паспорт не привязан"
-                        : `паспорт вер. ${visit.passportBinding.versionNumber}`}
-                    </span>
-                  </div>
+                  )}
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    {visit.passportBinding === null
+                      ? "паспорт не привязан"
+                      : `паспорт вер. ${visit.passportBinding.versionNumber}`}
+                  </span>
                 </div>
 
-                {canEditVisit && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      removal.mutate({
-                        eventId: event.id,
-                        visitObjectId: visit.id,
-                      })
-                    }
-                    disabled={removal.isPending}
-                    aria-label={`Снять объект ${visit.objectName} с мероприятия`}
-                    title="Снять объект с мероприятия"
-                    className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {/* Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane
+                      №423): нейтральный чип ПЕРЕД тревожными бейджами — это
+                      состояние, а не предупреждение, и цветом с
+                      «Возвращено»/«Срочно» оно не спорит. Подпись даёт
+                      сервер. */}
+                  <span
+                    className="inline-flex whitespace-nowrap rounded-full border border-border bg-muted px-2 py-0.5 text-[10.5px] font-medium text-foreground/80"
+                    data-slot="visit-status-chip"
                   >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                )}
+                    {visit.statusLabel}
+                  </span>
+                  {canEditVisit && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removal.mutate({
+                          eventId: event.id,
+                          visitObjectId: visit.id,
+                        })
+                      }
+                      disabled={removal.isPending}
+                      aria-label={`Снять объект ${visit.objectName} с мероприятия`}
+                      title="Снять объект с мероприятия"
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* ОПИСАНИЕ ВИЗИТА (Plane SJ-1049) — цель посещения на ЭТОМ
                   ОМ («Основная площадка мероприятия.»), не `note`. Пусто —
                   строка не рисуется вовсе: обещание описания без текста
                   хуже отсутствия строки. Правится в окне «Объекты
-                  посещения» сводки ГВО (`GvoVisitsDialog`).
-                  Кнопка — в рост строки (h-7), а не 44 px (Plane №1262):
-                  прежний `min-h-11` ради пальца на телефоне раздвигал
-                  карточку пустотой, хотя реестр — настольная таблица на
-                  девять колонок, и соседние контролы карточки (крестик,
-                  снятие чипа) те же 24-28 px. */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  посещения» сводки ГВО (`GvoVisitsDialog`). */}
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 {visit.description !== "" && (
-                  <p className="text-xs leading-5 text-foreground/80">
+                  <p className="text-xs text-muted-foreground">
                     {visit.description}
                   </p>
                 )}
@@ -1265,22 +1218,19 @@ function VisitObjectList({
                     aria-label={`${
                       visit.description === "" ? "Добавить" : "Редактировать"
                     } описание объекта ${visit.objectName}`}
-                    className="-ml-2 h-7 px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    className="min-h-11 px-2 text-xs"
                   >
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                     {visit.description === "" ? "Добавить описание" : "Редактировать описание"}
                   </Button>
                 )}
               </div>
 
-              {/* СТРОКА ФАКТОВ (Plane №1262): дата, охраняемое лицо и
-                  готовность расстановки — на подложке, каждый факт со своей
-                  иконкой и разделителем. Подписи НЕ переписаны: «в дату
-                  мероприятия …», «Посещение: …», «охраняемое лицо не
-                  назначено», «потребность N, назначено M» пинятся пробами
-                  (`e2e/events-registry.spec.ts`) и читаются заказчиком как
-                  канон; иконки лишь дают глазу зацепку, где какой факт. */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md bg-muted/50 px-3 py-1.5 text-[11px] leading-5 text-muted-foreground">
+              {/* СВОДКА ОБЪЕКТА: дата, охраняемое лицо, готовность
+                  расстановки и бейджи возврата — сгруппированы отдельной
+                  строкой под заголовком, а не перемешаны с ним в одном
+                  потоке. */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                 {/* ДАТА ПОСЕЩЕНИЯ — заказчик просил у объекта те же данные,
                     что у строки бюллетеня (Plane №194). Своя дата есть не у
                     всякого объекта: у однодневного ОМ она названа в
@@ -1289,48 +1239,42 @@ function VisitObjectList({
                     первым. Поэтому здесь ЛИБО собственный день объекта,
                     ЛИБО прямая отсылка к дате мероприятия — но не пусто:
                     пустая ячейка читается как «неизвестно», а известно. */}
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                  <CalendarDays className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
+                <span className="whitespace-nowrap">
                   {visit.visitDay === null ? (
-                    <span>в дату мероприятия{" "}
-                      <span className="font-medium text-foreground">
+                    <>в дату мероприятия{" "}
+                      <span className="text-foreground">
                         {formatIsoDate(event.businessDate)}
                       </span>
-                    </span>
+                    </>
                   ) : (
-                    <span>Посещение:{" "}
-                      <span className="font-medium text-foreground">
+                    <>Посещение:{" "}
+                      <span className="text-foreground">
                         {formatIsoDate(visit.visitDay)}
                       </span>
-                    </span>
+                    </>
                   )}
                 </span>
 
-                <span className="hidden h-3.5 w-px bg-border sm:block" aria-hidden="true" />
-
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
+                <span>
                   {visit.protectedPersonName === "" ? (
-                    <span>охраняемое лицо не назначено</span>
+                    "охраняемое лицо не назначено"
                   ) : (
-                    <span className="truncate">
+                    <>
                       Охраняемое лицо:{" "}
-                      <span className="font-medium text-foreground">
+                      <span className="text-foreground">
                         {visit.protectedPersonName}
                       </span>
-                    </span>
+                    </>
                   )}
                 </span>
-
-                <span className="hidden h-3.5 w-px bg-border sm:block" aria-hidden="true" />
 
                 {/* Полоса рисуется только когда есть что мерить: шкала с
                     нулём при нерассчитанных постах читается как
                     «расстановка пуста», хотя постов ещё нет вовсе. */}
                 {known && need > 0 && (
-                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                  <span className="flex items-center gap-2">
                     <span
-                      className="h-1.5 w-20 overflow-hidden rounded-full bg-border/80"
+                      className="h-[5px] w-24 overflow-hidden rounded-full bg-muted"
                       role="progressbar"
                       aria-valuenow={percent}
                       aria-valuemin={0}
@@ -1338,7 +1282,7 @@ function VisitObjectList({
                       aria-label={`Готовность расстановки: ${visit.objectName}`}
                     >
                       <span
-                        className="block h-full rounded-full bg-primary"
+                        className="block h-full bg-primary"
                         style={{ width: `${percent}%` }}
                       />
                     </span>
@@ -1348,10 +1292,7 @@ function VisitObjectList({
                         без подписи читается как что угодно — от постов до
                         людей. */}
                     <span className="tabular-nums">
-                      потребность{" "}
-                      <span className="font-medium text-foreground">{need}</span>,
-                      назначено{" "}
-                      <span className="font-medium text-foreground">{assigned}</span>
+                      потребность {need}, назначено {assigned}
                     </span>
                   </span>
                 )}
@@ -1361,16 +1302,41 @@ function VisitObjectList({
                     расчёт постов не размечен по объектам
                   </span>
                 )}
+
+                {/* Бейджи возврата (`[РЕЕ-08]`/`[ВОЗ-03]`, Plane №400): объект
+                    вернули с согласования — реестр говорит это словами, не
+                    заставляя открывать карточку. Считаются замечания БЕЗ
+                    ОТВЕТА: именно их старшему чинить; «Срочно» — если хоть
+                    одно из них срочное. Ширина ограничена nowrap: бейдж не
+                    переносится. */}
+                {visit.approvalStatus === "RETURNED" && (
+                  <span
+                    className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                    data-slot="visit-returned-badge"
+                  >
+                    Возвращено · {remarksLabel(
+                      visit.approvalRemarks.filter(remarkIsOpen).length
+                    )}
+                  </span>
+                )}
+                {visit.approvalRemarks.some((r) => remarkIsOpen(r) && r.urgent) && (
+                  <span
+                    className="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+                    data-slot="visit-urgent-badge"
+                  >
+                    Срочно
+                  </span>
+                )}
               </div>
 
               {/* ДЕТАЛИ ОБЪЕКТА: старший и замещающие — отдельным блоком под
-                  строкой фактов, подписи в общей колонке (одна ширина у
-                  обеих строк), чтобы чипы имён стояли друг под другом.
-                  Порядок внутри блока не меняется: старший ПЕРВОЙ строкой,
-                  до замещающих — замещающий определяется относительно него
-                  («вместо старшего»), и читать список замещающих раньше,
-                  чем имя того, кого замещают, нельзя. */}
-              <div className="mt-2.5 space-y-1.5">
+                  тонкой чертой, визуально подчинённым карточке объекта, а не
+                  наравне со сводкой выше. Порядок внутри блока не меняется:
+                  старший ПЕРВОЙ строкой, до замещающих — замещающий
+                  определяется относительно него («вместо старшего»), и
+                  читать список замещающих раньше, чем имя того, кого
+                  замещают, нельзя. */}
+              <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5">
                 <ChiefLine event={event} visit={visit} canEdit={canEditVisit} />
                 <DeputyLine
                   event={event}
@@ -1386,21 +1352,6 @@ function VisitObjectList({
     </div>
   );
 }
-
-/**
- * Общие классы строк ролей карточки объекта (Plane №1262): подпись-колонка
- * одной ширины у «Старший объекта:» и «Замещающие:», чип имени в рост строки
- * (24 px) и такого же роста кнопка действия. Вынесены, чтобы две строки не
- * разъехались при правке одной из них.
- */
-const ROLE_LABEL_CLASS =
-  "w-[7.5rem] shrink-0 pt-[5px] text-[10px] font-semibold uppercase leading-4 tracking-wider text-muted-foreground/80";
-const ROLE_CHIP_CLASS =
-  "inline-flex h-6 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted/40 pl-2.5 pr-1.5";
-const ROLE_CHIP_REMOVE_CLASS =
-  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
-const ROLE_ACTION_CLASS =
-  "h-6 rounded-md px-1.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Старший ОБЪЕКТА посещения (Plane «Реестр ОМ-35.2»).
@@ -1452,19 +1403,15 @@ function ChiefLine({
     <span
       role="group"
       aria-label={`Старший объекта ${visit.objectName}`}
-      className="flex items-start gap-x-2 text-[11px] text-muted-foreground"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
     >
-      {/* Подпись — колонкой ОДНОЙ ширины с «Замещающие:» (`ROLE_LABEL_CLASS`,
-          Plane №1262): чипы имён обеих строк начинаются с одной вертикали,
-          и глаз читает роли таблицей, а не двумя абзацами разной длины. */}
-      <span className={ROLE_LABEL_CLASS}>
+      <span className="font-semibold uppercase tracking-wide">
         Старший объекта:
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       {visit.chiefEmployeeId === null ? (
-        <span className="leading-6">не назначен</span>
+        <span>не назначен</span>
       ) : (
-        <span className={ROLE_CHIP_CLASS}>
+        <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5">
           <span className="font-medium text-foreground">{visit.chiefName}</span>
           {canEdit && (
             <button
@@ -1481,7 +1428,7 @@ function ChiefLine({
               // одинаковых «снять старшего».
               aria-label={`Снять старшего ${visit.chiefName} с объекта ${visit.objectName}`}
               title="Снять старшего с объекта"
-              className={ROLE_CHIP_REMOVE_CLASS}
+              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <X className="h-3 w-3" aria-hidden="true" />
             </button>
@@ -1499,12 +1446,11 @@ function ChiefLine({
               ? `Назначить старшего объекта ${visit.objectName}`
               : `Заменить старшего объекта ${visit.objectName}`
           }
-          className={ROLE_ACTION_CLASS}
+          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {visit.chiefEmployeeId === null ? "+ Старший" : "Заменить"}
         </button>
       )}
-      </span>
       {assignOpen && (
         <AssignChiefDialog
           event={event}
@@ -1557,18 +1503,18 @@ function DeputyLine({
   const deputies = visit.deputies ?? [];
 
   return (
-    <span className="flex items-start gap-x-2 text-[11px] text-muted-foreground">
-      <span className={ROLE_LABEL_CLASS}>Замещающие:</span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-      {deputies.length === 0 && <span className="leading-6">не назначены</span>}
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      <span className="font-semibold uppercase tracking-wide">Замещающие:</span>
+      {deputies.length === 0 && <span>не назначены</span>}
       {deputies.map((deputy) => (
-        <span key={deputy.id} className={ROLE_CHIP_CLASS}>
+        <span
+          key={deputy.id}
+          className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5"
+        >
           <span className="font-medium text-foreground">
             {deputy.employeeName}
           </span>
-          {/* Право — ЧЕРЕЗ ТОНКУЮ ЧЕРТУ, а не пробелом: «Абаев А. правит
-              расстановку» читалось одной фразой, будто это часть имени. */}
-          <span className="border-l border-border/80 pl-1.5">
+          <span>
             {deputy.canEditPlacement ? "правит расстановку" : "только просмотр"}
           </span>
           {canEdit && (
@@ -1584,7 +1530,7 @@ function DeputyLine({
               disabled={removal.isPending}
               aria-label={`Снять замещающего ${deputy.employeeName} с объекта ${visit.objectName}`}
               title="Снять замещающего"
-              className={ROLE_CHIP_REMOVE_CLASS}
+              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <X className="h-3 w-3" aria-hidden="true" />
             </button>
@@ -1598,12 +1544,11 @@ function DeputyLine({
           // Имя называет ОБЪЕКТ: таких кнопок в раскрытой строке столько же,
           // сколько объектов, и список скринридера был бы рядом одинаковых.
           aria-label={`Добавить замещающего на объект ${visit.objectName}`}
-          className={ROLE_ACTION_CLASS}
+          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           + Замещающий
         </button>
       )}
-      </span>
       {addOpen && (
         <AddDeputyDialog
           event={event}
