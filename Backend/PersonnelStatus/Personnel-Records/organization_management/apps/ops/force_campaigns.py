@@ -37,20 +37,26 @@ def _event_row(event):
 
 
 def _pool(campaign):
-    persisted = list(
-        campaign.pool_members.filter(removed_at__isnull=True).order_by("created_at", "pk")
-    )
-    if persisted:
-        return [
-            {
-                "employeeId": row.employee_key,
-                "employeeName": row.employee_name,
-                "kindCode": row.kind_code,
-                "sourceEventIds": row.source_event_ids,
-            }
-            for row in persisted
-        ]
+    """Общий пул = сохранённые резервисты ∪ составы ОМ кампании (живьём).
+
+    🔴 Раньше при ЛЮБОМ сохранённом резервисте пул читался только из
+    таблицы, а составы ОМ игнорировались (Plane №1250, проходка №1142):
+    кампанию Штаб заводит ДО того, как департамент присылает список, и
+    участник специальной группы — он попадает не в резерв, а в состав ОМ
+    через «Отправить список в штаб» — в пул не входил вовсе: Штаб не мог
+    выбрать ему объект и строку потребности (`[ОМ-РШ-10]`), а пост группы
+    оставался «недобор 1» навсегда. Дубли сводятся по сотруднику, сохранённая
+    строка первее; вид и специальность приходят из состава.
+    """
     rows = {}
+    for row in campaign.pool_members.filter(removed_at__isnull=True).order_by("created_at", "pk"):
+        rows[row.employee_key] = {
+            "employeeId": row.employee_key,
+            "employeeName": row.employee_name,
+            "kindCode": row.kind_code,
+            "roleCode": "",
+            "sourceEventIds": list(row.source_event_ids or []),
+        }
     for link in campaign.campaign_events.select_related("event").order_by(
         "event__business_date", "event__code"
     ):
@@ -66,10 +72,12 @@ def _pool(campaign):
                         member.get("employeeName") or member.get("name") or ""
                     ),
                     "kindCode": str(member.get("kindCode") or "PHYSICAL_SQUAD"),
+                    "roleCode": str(member.get("roleCode") or ""),
                     "sourceEventIds": [],
                 },
             )
-            row["sourceEventIds"].append(str(link.event_id))
+            if str(link.event_id) not in row["sourceEventIds"]:
+                row["sourceEventIds"].append(str(link.event_id))
     return list(rows.values())
 
 
@@ -275,6 +283,7 @@ def hand_over(campaign_id, *, comment, actor):
                     "рекогносцировки всех объектов."
                 ),
             )
+        pool_rows = {row["employeeId"]: row for row in _pool(campaign)}
         event.force_roster = [
             {
                 "employeeId": row.employee_key,
@@ -282,6 +291,10 @@ def hand_over(campaign_id, *, comment, actor):
                 "visitObjectId": str(row.visit_object_id),
                 "demandRowId": row.demand_row_id,
                 "campaignAssignmentId": str(row.pk),
+                # Вид и специальность едут в состав: расстановка объекта
+                # должна отличать группу от физнаряда (Plane №1250).
+                "kindCode": row.kind_code or "PHYSICAL_SQUAD",
+                "roleCode": str(pool_rows.get(row.employee_key, {}).get("roleCode") or ""),
             }
             for row in rows
         ]
@@ -487,6 +500,21 @@ def assign_employee(
         raise _validation({"demandRowId": ["Строка не принадлежит мероприятию."]})
     if str(demand.get("visitObjectId") or "") != visit_key:
         raise _validation({"demandRowId": ["Строка относится к другому объекту."]})
+    # Вид участия человека и вид строки должны совпадать (`[ОМ-РШ-08]`,
+    # `[ОМ-РШ-10]`): физнаряд не закрывает пост группы, группа не закрывает
+    # квоту физнаряда. Иначе Штаб «укомплектовал» бы КПП охранником.
+    member_kind = str(pool[employee_key].get("kindCode") or "PHYSICAL_SQUAD")
+    demand_kind = str(demand.get("kindCode") or "PHYSICAL_SQUAD")
+    if member_kind != demand_kind:
+        raise DomainError(
+            "FORCE_CAMPAIGN_KIND_MISMATCH",
+            422,
+            detail={"employeeKind": member_kind, "demandKind": demand_kind},
+            message=(
+                "Вид участия сотрудника не совпадает со строкой потребности: "
+                f"«{member_kind}» нельзя назначить на строку «{demand_kind}»."
+            ),
+        )
     target_start = link.event.business_date
     target_end = link.event.business_date_end or target_start
     conflicts = []

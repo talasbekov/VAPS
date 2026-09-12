@@ -239,6 +239,10 @@ def _merge_into_roster(event, target, now):
             "departmentId": target.get("departmentId"),
             "departmentName": target.get("departmentName", ""),
             "acceptedAt": now,
+            # Вид участия и специальность (`[ОМ-РШ-10]`, Plane №1250): без
+            # них участник группы в пуле Штаба выглядел физнарядом.
+            "kindCode": str(member.get("kindCode") or "PHYSICAL_SQUAD"),
+            "roleCode": str(member.get("roleCode") or ""),
         }
         for member in target.get("members", [])
         if str(member.get("employeeId")) not in known

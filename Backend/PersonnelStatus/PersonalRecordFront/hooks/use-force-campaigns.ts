@@ -60,6 +60,8 @@ export interface ForceCampaign {
     employeeId: string;
     employeeName: string;
     kindCode: string;
+    /** Специальность внутри группы (Plane №1250); у физнаряда пусто. */
+    roleCode?: string;
     sourceEventIds: string[];
   }[];
   assignments: {

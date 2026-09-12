@@ -146,6 +146,8 @@ CODES = {
     "FORCE_OBJECTS_NOT_READY": frozenset({422}),
     "FORCE_VISIT_UNSTAFFED": frozenset({422}),
     "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
+    # Вид участия сотрудника не совпадает со строкой потребности (Plane №1250).
+    "FORCE_CAMPAIGN_KIND_MISMATCH": frozenset({422}),
     "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),

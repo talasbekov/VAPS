@@ -369,6 +369,10 @@ def test_handover_projects_assignments_to_event_rosters_and_locks_campaign(manag
             "visitObjectId": str(visit.pk),
             "demandRowId": "demand-handover",
             "campaignAssignmentId": assignment["id"],
+            # Пин поправлен осознанно (Plane №1250): состав несёт вид участия и
+            # специальность, чтобы расстановка отличала группу от физнаряда.
+            "kindCode": "PHYSICAL_SQUAD",
+            "roleCode": "",
         }
     ]
     assert target.force_handover["campaignId"] == campaign["id"]

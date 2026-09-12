@@ -18,6 +18,7 @@ import {
 } from "@/hooks/use-force-campaigns";
 import { formatIsoDate } from "@/shared/lib/date";
 import { useForceCollection } from "@/hooks/use-force-collections";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 
 export function HqStages({ current }: { current: number }) {
   return <ol aria-label="Этапы работы Штаба" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -163,10 +164,39 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
   const [comment, setComment] = useState("");
   const event = campaign.events.find((row) => row.eventId === eventId);
   const objects = event?.visitObjects ?? [];
+  // Вид участия и специальность — словами из справочника (Plane №1250):
+  // участник группы в пуле раньше подписывался кодом «SCREENING_GROUP».
+  const catalog = useParticipationCatalog();
+  const kindLabelOf = (code: string) =>
+    code === "PHYSICAL_SQUAD"
+      ? "Физнаряд"
+      : (catalog.data ?? []).find((kind) => kind.code === code)?.label ?? code;
+  const roleLabelOf = (kindCode: string, roleCode?: string) =>
+    roleCode
+      ? (catalog.data ?? []).find((kind) => kind.code === kindCode)?.roles.find((role) => role.code === roleCode)?.label ?? roleCode
+      : "";
+  const personKindOf = (person: { kindCode: string; roleCode?: string }) =>
+    person.kindCode === "PHYSICAL_SQUAD"
+      ? "Физнаряд · резерв"
+      : [kindLabelOf(person.kindCode), roleLabelOf(person.kindCode, person.roleCode)].filter(Boolean).join(" · ");
+  const selectedPerson = campaign.pool.find((row) => row.employeeId === employeeId);
+  const selectedKind = selectedPerson?.kindCode ?? "";
+  // Строки потребности — только того же вида, что выбранный сотрудник
+  // (`[ОМ-РШ-08]`/`[ОМ-РШ-10]`): физнаряд не закрывает пост группы, группа —
+  // квоту физнаряда; сервер тот же выбор отбивает FORCE_CAMPAIGN_KIND_MISMATCH.
   const demands = useMemo(
-    () => (event?.demandRows ?? []).filter((row) => !visitObjectId || row.visitObjectId === visitObjectId),
-    [event, visitObjectId]
+    () =>
+      (event?.demandRows ?? []).filter(
+        (row) =>
+          (!visitObjectId || row.visitObjectId === visitObjectId) &&
+          (!selectedKind || (row.kindCode ?? "PHYSICAL_SQUAD") === selectedKind)
+      ),
+    [event, visitObjectId, selectedKind]
   );
+  const demandsHiddenByKind =
+    Boolean(selectedKind) &&
+    (event?.demandRows ?? []).some((row) => !visitObjectId || row.visitObjectId === visitObjectId) &&
+    demands.length === 0;
   const locked = campaign.status === "HANDED_OVER" || campaign.status === "CLOSED";
   const selectedAssignments = campaign.assignments.filter((row) => row.employeeId === employeeId);
   const hasVisibleConflict = Boolean(event && selectedAssignments.some((row) => {
@@ -211,8 +241,8 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
               <input type="radio" name="campaign-employee" value={person.employeeId} checked={employeeId === person.employeeId} onChange={() => { setEmployeeId(person.employeeId); resetConflict(); }} disabled={locked || busy} />
               <span className="flex-1">
                 {person.employeeName || `Сотрудник №${person.employeeId}`}
-                <span className="text-muted-foreground block text-xs">
-                  {person.kindCode === "PHYSICAL_SQUAD" ? "Физнаряд · резерв" : person.kindCode}
+                <span className="text-muted-foreground block text-xs" data-slot="pool-kind">
+                  {personKindOf(person)}
                 </span>
               </span>
               <Badge variant="outline">{campaign.assignments.filter((row) => row.employeeId === person.employeeId).length || "Не распределён"}</Badge>
@@ -229,10 +259,10 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
           <h3 className="font-semibold">Назначения</h3>
           {!locked && (
             <form className="grid gap-3 md:grid-cols-2" onSubmit={(formEvent) => { formEvent.preventDefault(); if (!canAssign) return; assign.mutate({ employeeId, eventId, visitObjectId, demandRowId, ...(conflictRequired && confirmConflict ? { overrideConflict: true, overrideReason: overrideReason.trim() } : {}) }, { onSuccess: resetConflict }); }}>
-              <label className="space-y-1 text-sm"><span className="font-medium">Сотрудник</span><select aria-label="Сотрудник" value={employeeId} onChange={(e) => { setEmployeeId(e.target.value); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{campaign.pool.map((row) => <option key={row.employeeId} value={row.employeeId}>{row.employeeName}</option>)}</select></label>
+              <label className="space-y-1 text-sm"><span className="font-medium">Сотрудник</span><select aria-label="Сотрудник" value={employeeId} onChange={(e) => { setEmployeeId(e.target.value); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{campaign.pool.map((row) => <option key={row.employeeId} value={row.employeeId}>{row.employeeName}{row.kindCode === "PHYSICAL_SQUAD" ? "" : ` · ${kindLabelOf(row.kindCode)}`}</option>)}</select></label>
               <label className="space-y-1 text-sm"><span className="font-medium">Мероприятие</span><select aria-label="Мероприятие" value={eventId} onChange={(e) => { setEventId(e.target.value); setVisitObjectId(""); setDemandRowId(""); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{campaign.events.map((row) => <option key={row.eventId} value={row.eventId}>{row.code} · {row.title}</option>)}</select></label>
               <label className="space-y-1 text-sm"><span className="font-medium">Объект</span><select aria-label="Объект" value={visitObjectId} onChange={(e) => { setVisitObjectId(e.target.value); setDemandRowId(""); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{objects.map((row) => <option key={row.visitObjectId} value={row.visitObjectId}>{row.objectName}</option>)}</select></label>
-              <label className="space-y-1 text-sm"><span className="font-medium">Строка потребности</span><select aria-label="Строка потребности" value={demandRowId} onChange={(e) => { setDemandRowId(e.target.value); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{demands.map((row) => <option key={row.id} value={row.id}>{row.place || row.specification || row.id}</option>)}</select></label>
+              <label className="space-y-1 text-sm"><span className="font-medium">Строка потребности</span><select aria-label="Строка потребности" value={demandRowId} onChange={(e) => { setDemandRowId(e.target.value); resetConflict(); }} disabled={busy} className="h-11 w-full rounded-md border bg-background px-3"><option value="">Выберите</option>{demands.map((row) => <option key={row.id} value={row.id}>{row.place || row.specification || row.id}</option>)}</select>{demandsHiddenByKind && <span className="text-muted-foreground block text-xs" data-slot="demand-kind-hint">У объекта нет строки потребности вида «{kindLabelOf(selectedKind)}» — сотрудника этого вида сюда не назначить.</span>}</label>
               {(hasVisibleConflict || conflictRejected) && <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 md:col-span-2"><p className="text-sm font-medium text-destructive-ink">Период пересекается с существующим назначением сотрудника.</p><label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={confirmConflict} onChange={(e) => setConfirmConflict(e.target.checked)} /> Подтвердить назначение с конфликтом</label><Textarea aria-label="Причина конфликта" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Причина решения Штаба" /></div>}
               {assign.isError && <p role="alert" className="text-destructive-ink text-sm md:col-span-2">{assign.error.message}</p>}
               <Button type="submit" disabled={!canAssign}>Назначить</Button>
