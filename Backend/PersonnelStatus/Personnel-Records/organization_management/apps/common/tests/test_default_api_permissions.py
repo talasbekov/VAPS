@@ -28,3 +28,21 @@ def test_the_api_schema_remains_public():
     response = APIClient().get("/api/schema/?format=json")
 
     assert response.status_code == 200, response.content
+
+
+def test_drf_sensitive_api_endpoints_are_not_public():
+    """Список ключевых защищённых ручек остаётся под fail-closed по умолчанию."""
+    protected_paths = (
+        "/api/operations/status-types/",
+        "/api/core/divisions/",
+        "/api/core/service-employees/",
+        "/api/ops/strength-report/",
+        "/api/reports/reports/",
+        "/api/audit/logs/",
+        "/api/statuses/",
+        "/api/statuses/types/",
+    )
+
+    for path in protected_paths:
+        response = APIClient().get(path)
+        assert response.status_code == 401, (path, response.status_code, response.content)
