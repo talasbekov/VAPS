@@ -171,6 +171,20 @@ export const protectedPersonsHandlers = [
     return HttpResponse.json(person, { status: 201 });
   }),
 
+  http.patch(`*${PROTECTED_PERSONS_PATH}:id/`, async ({ params, request }) => {
+    const person = PROTECTED_PERSONS_CATALOG.find((row) => row.id === params.id);
+    if (!person) return new HttpResponse(null, { status: 404 });
+    const body = await request.json() as Partial<CreateProtectedPersonRequest>;
+    const allowed = new Set(["name", "category", "callsign", "bio", "country", "position", "facts"]);
+    const details: Record<string, string[]> = {};
+    for (const key of Object.keys(body)) if (!allowed.has(key)) details[key] = ["Поле недоступно для редактирования."];
+    if (body.name !== undefined && !body.name.trim()) details.name = ["Обязательное поле."];
+    if (body.category !== undefined && !["OURS", "FOREIGN"].includes(body.category)) details.category = ["Недопустимая категория."];
+    if (Object.keys(details).length) return HttpResponse.json({ error_code: "VALIDATION_ERROR", message: "Проверьте поля лица.", details }, { status: 400 });
+    Object.assign(person, body);
+    return HttpResponse.json(person);
+  }),
+
   // Снимок лица (Plane №951): мок не хранит байты — кладёт data-URL, чтобы
   // карточка на мок-стенде показала снимок, а не заглушку.
   http.post(`*${PROTECTED_PERSONS_PATH}:id/photo/`, async ({ params, request }) => {

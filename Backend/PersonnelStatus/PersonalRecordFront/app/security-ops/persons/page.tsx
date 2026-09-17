@@ -8,6 +8,8 @@
 // собирают ответ из сводок ГВО (по совпадению ФИО — оно покрывает и новые ОМ:
 // лицо бюллетеня попадает в сводку) и честно говорят, когда совпадений нет. В
 // прототипе на их месте стоял тост-заглушка «Показаны мероприятия…».
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { CreatePerson } from "@/features/gvo-section-edit/ui/ProtectedPersonPickDialog";
 import { useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -25,6 +27,7 @@ import {
 } from "@/hooks/use-protected-persons";
 import { EventHistoryDialog } from "@/features/event-history";
 import {
+  matchesProtectedPerson,
   PROTECTED_PERSON_CATEGORIES,
   PROTECTED_PERSON_CATEGORY_LABEL,
 } from "@/entities/protected-person";
@@ -57,6 +60,8 @@ type Disclosure = { personId: string; kind: "events" | "objects" } | null;
 
 export default function ProtectedPersonsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const [editor, setEditor] = useState<ProtectedPerson | "new" | null>(null);
+  const canManage = hasPermission("dictionary.manage");
   const [category, setCategory] = useState<ProtectedPersonCategory>("OURS");
   // История открывается по кнопке и грузится только тогда: список закрытых ОМ
   // нужен по запросу, а не всем строкам каталога сразу.
@@ -91,13 +96,12 @@ export default function ProtectedPersonsPage() {
 
   /** Мероприятия, в сводке ГВО которых названо это лицо. */
   function eventsOf(person: ProtectedPerson): SecurityEvent[] {
-    const needle = person.name.trim().toLowerCase();
     return events.filter((event) => {
       // Сводки нет — мероприятие в подборку НЕ попадает. Домысливать состав
       // нечем: «лицо здесь названо» это факт из сводки, а не догадка.
       const summary = summaries[event.code]?.summary;
       return (summary?.persons ?? []).some(
-        (item) => item.name.trim().toLowerCase() === needle
+        (item) => matchesProtectedPerson(person, item)
       );
     });
   }
@@ -111,6 +115,7 @@ export default function ProtectedPersonsPage() {
           description="Профили лиц, в отношении которых организуются охранные мероприятия"
         />
 
+        {canManage && <Button onClick={() => setEditor("new")}>Добавить охраняемое лицо</Button>}
         <div className="flex gap-2">
           {PROTECTED_PERSON_CATEGORIES.map((value) => (
             <Button
@@ -149,8 +154,9 @@ export default function ProtectedPersonsPage() {
         ) : (
           <div className="flex flex-col gap-3">
             {persons.map((person) => (
+              <div key={person.id} className="space-y-2">
+              {canManage && <Button variant="outline" onClick={() => setEditor(person)}>Редактировать {person.name}</Button>}
               <PersonCard
-                key={person.id}
                 person={person}
                 events={eventsOf(person)}
                 isLoadingLinks={eventsQuery.isLoading || summariesQuery.isLoading}
@@ -167,11 +173,17 @@ export default function ProtectedPersonsPage() {
                 }
                 onHistory={setHistoryFor}
               />
+              </div>
             ))}
           </div>
         )}
       </div>
 
+      <Dialog open={editor !== null} onOpenChange={(open) => { if (!open) setEditor(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          {editor !== null && <CreatePerson catalog person={editor === "new" ? undefined : editor} onBack={() => setEditor(null)} onCreated={(person) => { setCategory(person.category); setEditor(null); }} />}
+        </DialogContent>
+      </Dialog>
       <EventHistoryDialog
         open={historyFor !== null}
         onClose={() => setHistoryFor(null)}

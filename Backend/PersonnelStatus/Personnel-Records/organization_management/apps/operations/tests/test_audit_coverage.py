@@ -1377,6 +1377,8 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     person = gvo_service.create_person(
         name="Лицо покрытия журнала", category="FOREIGN", actor=ACTOR
     )
+    # #1278: the catalog editor emits its own event without replacing the identity.
+    gvo_service.update_person(person["id"], {"name": "Лицо покрытия изменено"}, actor=ACTOR)
     png = _io.BytesIO()
     Image.new("RGB", (2, 2), (1, 2, 3)).save(png, format="PNG")
     with override_settings(MEDIA_ROOT=str(tmp_path / "media")):

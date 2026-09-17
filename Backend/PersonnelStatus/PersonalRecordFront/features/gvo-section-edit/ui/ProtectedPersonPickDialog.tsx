@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useCreateProtectedPerson,
+  useUpdateProtectedPerson,
   useProtectedPersons,
   useUploadProtectedPersonPhoto,
 } from "@/hooks/use-protected-persons";
@@ -34,7 +35,11 @@ import {
   PROTECTED_PERSON_FACT_KEYS,
 } from "@/entities/protected-person";
 import type { ProtectedPerson, ProtectedPersonCategory } from "@/entities/protected-person";
+import { useToast } from "@/shared/hooks/use-toast";
+import { OpsApiError } from "@/lib/ops-errors";
 import { ProtectedPhoto } from "@/shared/ui/protected-photo";
+
+const PERSON_FIELD_LABELS: Record<string, string> = { name: "ФИО", category: "Категория", callsign: "Позывной", bio: "Биография", country: "Страна", position: "Должность", facts: "Сведения" };
 
 const LABEL_CLASS = "block text-[11.5px] font-bold text-muted-foreground";
 const SELECT_CLASS =
@@ -202,30 +207,36 @@ function PickFromCatalog({
   );
 }
 
-function CreatePerson({
+export function CreatePerson({
   onCreated,
   onBack,
+  person: initialPerson,
+  catalog = false,
 }: {
   onCreated: (person: ProtectedPerson) => void;
   onBack: () => void;
+  person?: ProtectedPerson;
+  catalog?: boolean;
 }) {
   const ids = useId();
   const create = useCreateProtectedPerson();
+  const update = useUpdateProtectedPerson();
+  const { toast } = useToast();
   const upload = useUploadProtectedPersonPhoto();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<ProtectedPersonCategory>("FOREIGN");
-  const [callsign, setCallsign] = useState("");
-  const [bio, setBio] = useState("");
+  const [name, setName] = useState(initialPerson?.name ?? "");
+  const [category, setCategory] = useState<ProtectedPersonCategory>(initialPerson?.category ?? "FOREIGN");
+  const [callsign, setCallsign] = useState(initialPerson?.callsign ?? "");
+  const [bio, setBio] = useState(initialPerson?.bio ?? "");
   // Данные образца (Plane №952): страна, должность и параметры «ключ =
   // значение» — по одному полю на параметр образца, пустые не уезжают.
-  const [country, setCountry] = useState("");
-  const [position, setPosition] = useState("");
-  const [facts, setFacts] = useState<Record<string, string>>({});
+  const [country, setCountry] = useState(initialPerson?.country ?? "");
+  const [position, setPosition] = useState(initialPerson?.position ?? "");
+  const [facts, setFacts] = useState<Record<string, string>>(Object.fromEntries((initialPerson?.facts ?? []).map((fact) => [fact.key, fact.value])));
   const [file, setFile] = useState<File | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
-  const busy = create.isPending || upload.isPending;
+  const busy = create.isPending || update.isPending || upload.isPending;
 
   async function submit() {
     if (name.trim() === "") {
@@ -234,18 +245,21 @@ function CreatePerson({
     }
     setFailure(null);
     try {
-      let person = await create.mutateAsync({
+      const values = {
         name: name.trim(),
         category,
         callsign: callsign.trim(),
         bio: bio.trim(),
         country: country.trim(),
         position: position.trim(),
-        facts: PROTECTED_PERSON_FACT_KEYS.map((key) => ({
+        facts: Array.from(new Set([...PROTECTED_PERSON_FACT_KEYS, ...Object.keys(facts)])).map((key) => ({
           key,
           value: (facts[key] ?? "").trim(),
         })).filter((fact) => fact.value !== ""),
-      });
+      };
+      let person = initialPerson
+        ? await update.mutateAsync({ id: initialPerson.id, values })
+        : await create.mutateAsync(values);
       if (file !== null) {
         // Лицо уже заведено — отказ снимка не должен читаться как «лицо не
         // заведено»: об этом говорится отдельной строкой, а лицо ставится в
@@ -253,7 +267,7 @@ function CreatePerson({
         try {
           person = await upload.mutateAsync({ id: person.id, file });
         } catch {
-          setFailure("Лицо заведено, но снимок не загрузился — добавьте его позже.");
+          toast({ variant: "destructive", description: "Запись сохранена, но снимок не загрузился. Откройте редактирование и повторите загрузку фото." });
           onCreated(person);
           return;
         }
@@ -264,7 +278,9 @@ function CreatePerson({
         typeof error === "object" && error !== null && "message" in error
           ? String((error as { message: unknown }).message)
           : "";
-      setFailure(message === "" ? "Не удалось завести лицо. Попробуйте ещё раз." : message);
+      const details = error instanceof OpsApiError
+        ? Object.entries(error.details).map(([field, errors]) => `${PERSON_FIELD_LABELS[field] ?? field}: ${Array.isArray(errors) ? errors.join(" ") : String(errors)}`).join("; ") : "";
+      setFailure(details || message || "Не удалось сохранить лицо. Попробуйте ещё раз.");
     }
   }
 
@@ -278,9 +294,9 @@ function CreatePerson({
       }}
     >
       <DialogHeader>
-        <DialogTitle>Новое охраняемое лицо</DialogTitle>
+        <DialogTitle>{initialPerson ? "Редактировать охраняемое лицо" : "Новое охраняемое лицо"}</DialogTitle>
         <DialogDescription>
-          Запись попадёт в справочник «Охраняемые лица» и сразу встанет в сводку.
+          {catalog ? "Запись сохраняется в справочнике и доступна для выбора в связанных формах." : "Запись попадёт в справочник «Охраняемые лица» и сразу встанет в сводку."}
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-1">
@@ -401,7 +417,7 @@ function CreatePerson({
           Назад к списку
         </Button>
         <Button type="submit" disabled={busy}>
-          {busy ? "Сохранение…" : "Завести и поставить в сводку"}
+          {busy ? "Сохранение…" : initialPerson ? "Сохранить изменения" : catalog ? "Добавить в справочник" : "Завести и поставить в сводку"}
         </Button>
       </DialogFooter>
     </form>

@@ -77,7 +77,7 @@ MODEL_CATEGORY: dict[str, str] = {
         "OpsCombatRoute", "OpsServiceReportType",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle",
-        "OpsCountry", "OpsCity", "OpsRatingGroup",
+        "OpsCountry", "OpsCity", "OpsRatingGroup", "OpsProtectedPerson",
     ),
     # Настройки и политики: меняются редко, действуют на весь раздел.
     **_spread(
@@ -116,7 +116,7 @@ MODEL_CATEGORY: dict[str, str] = {
     ),
     **_spread(
         "Сотрудники и статусы", "operations",
-        "OpsEmployeeStatus", "Secondment", "StatusOverride", "OpsProtectedPerson",
+        "OpsEmployeeStatus", "Secondment", "StatusOverride",
     ),
 }
 

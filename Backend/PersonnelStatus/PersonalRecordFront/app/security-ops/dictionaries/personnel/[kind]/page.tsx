@@ -12,6 +12,8 @@
  * Экран ОДИН на оба справочника: поля у них одинаковы (название, код,
  * уровень), и две копии разошлись бы на первой же правке.
  */
+import { OpsApiError } from "@/lib/ops-errors";
+import { LoadFailure } from "@/components/load-failure";
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -52,6 +54,7 @@ export default function StaffDictionaryPage() {
 
   const canManage = hasPermission("dictionary.manage");
   const failure = create.error ?? update.error ?? remove.error;
+  const createErrors = fieldErrors(create.error);
 
   if (!permissionsLoading && !hasPermission("dictionary.view")) {
     return <OpsAccessDenied what="справочников" />;
@@ -95,6 +98,7 @@ export default function StaffDictionaryPage() {
           </Card>
         )}
 
+        {query.isError && <LoadFailure what="справочник" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />}
         {query.data !== undefined && (
           <div className="flex flex-col gap-3">
             {query.data.length === 0 && (
@@ -111,11 +115,14 @@ export default function StaffDictionaryPage() {
                 canManage={canManage}
                 isEditing={editing === row.id}
                 isSaving={update.isPending}
-                onEdit={() => setEditing(row.id)}
+                errors={fieldErrors(update.error)}
+                onEdit={() => { update.reset(); setEditing(row.id); }}
                 onCancel={() => setEditing(null)}
                 onSave={async (values) => {
-                  await update.mutateAsync({ ...values, id: row.id });
-                  setEditing(null);
+                  try {
+                    await update.mutateAsync({ ...values, id: row.id });
+                    setEditing(null);
+                  } catch { /* Errors remain beside the fields. */ }
                 }}
                 onDelete={() => remove.mutate({ id: row.id })}
               />
@@ -143,26 +150,35 @@ export default function StaffDictionaryPage() {
                   <Label htmlFor="new-name">Название</Label>
                   <Input
                     id="new-name"
+                    aria-invalid={Boolean(createErrors.name)}
+                    aria-describedby={createErrors.name ? "new-name-error" : undefined}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
+                  {createErrors.name && <p id="new-name-error" role="alert" className="text-sm text-destructive-ink">{createErrors.name}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="new-code">Код</Label>
                   <Input
                     id="new-code"
+                    aria-invalid={Boolean(createErrors.code)}
+                    aria-describedby={createErrors.code ? "new-code-error" : undefined}
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                   />
+                  {createErrors.code && <p id="new-code-error" role="alert" className="text-sm text-destructive-ink">{createErrors.code}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="new-level">Уровень</Label>
                   <Input
                     id="new-level"
+                    aria-invalid={Boolean(createErrors.level)}
+                    aria-describedby={createErrors.level ? "new-level-error" : undefined}
                     inputMode="numeric"
                     value={level}
                     onChange={(e) => setLevel(e.target.value)}
                   />
+                  {createErrors.level && <p id="new-level-error" role="alert" className="text-sm text-destructive-ink">{createErrors.level}</p>}
                   <p className="text-xs text-muted-foreground">
                     Чем меньше число, тем выше должность или звание.
                   </p>
@@ -173,14 +189,16 @@ export default function StaffDictionaryPage() {
                   type="button"
                   disabled={create.isPending}
                   onClick={async () => {
+                    try {
                     await create.mutateAsync({
                       name,
                       code,
-                      level: Number(level) || 0,
+                      level: level.trim() === "" ? 0 : Number(level),
                     });
                     setName("");
                     setCode("");
                     setLevel("");
+                    } catch { /* Preserve input and show server validation. */ }
                   }}
                 >
                   {create.isPending ? "Добавление…" : "Добавить"}
@@ -203,8 +221,10 @@ function RowCard({
   onCancel,
   onSave,
   onDelete,
+  errors,
 }: {
   row: StaffDictionaryRow;
+  errors: Record<string, string>;
   canManage: boolean;
   isEditing: boolean;
   isSaving: boolean;
@@ -235,18 +255,24 @@ function RowCard({
               <Label htmlFor={`name-${row.id}`}>Название</Label>
               <Input
                 id={`name-${row.id}`}
+                aria-invalid={Boolean(errors.name)}
+                aria-describedby={errors.name ? `name-${row.id}-error` : undefined}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
+              {errors.name && <p id={`name-${row.id}-error`} role="alert" className="text-sm text-destructive-ink">{errors.name}</p>}
             </div>
             <div className="space-y-1">
               <Label htmlFor={`level-${row.id}`}>Уровень</Label>
               <Input
                 id={`level-${row.id}`}
+                aria-invalid={Boolean(errors.level)}
+                aria-describedby={errors.level ? `level-${row.id}-error` : undefined}
                 inputMode="numeric"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
               />
+              {errors.level && <p id={`level-${row.id}-error`} role="alert" className="text-sm text-destructive-ink">{errors.level}</p>}
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -271,7 +297,7 @@ function RowCard({
                 void onSave({
                   name,
                   code: row.code,
-                  level: Number(level) || row.level,
+                  level: level.trim() === "" ? 0 : Number(level),
                 })
               }
             >
@@ -304,4 +330,10 @@ function RowCard({
       </CardContent>
     </Card>
   );
+}
+
+function fieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof OpsApiError)) return {};
+  return Object.fromEntries(Object.entries(error.details).map(([key, value]) =>
+    [key, Array.isArray(value) ? value.join(" ") : String(value)]));
 }

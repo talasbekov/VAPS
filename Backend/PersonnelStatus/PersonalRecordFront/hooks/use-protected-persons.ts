@@ -72,3 +72,16 @@ export function usePersonEventHistory(id: string | null) {
     enabled: id !== null,
   });
 }
+
+/** Catalog edits also refresh every summary that reads profile values. */
+export function useUpdateProtectedPerson() {
+  const client = useQueryClient();
+  return useMutation<ProtectedPerson, OpsApiFailure, { id: string; values: CreateProtectedPersonRequest }>({
+    mutationFn: ({ id, values }) => opsApiClient.patch<ProtectedPerson>(`${PROTECTED_PERSONS_PATH}${encodeURIComponent(id)}/`, values),
+    onSuccess: () => {
+      for (const key of ["ops-protected-persons", "ops-gvo-summary", "ops-gvo-summaries"]) {
+        void client.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+}

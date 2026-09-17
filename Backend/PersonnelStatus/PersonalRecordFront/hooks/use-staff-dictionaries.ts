@@ -37,6 +37,7 @@ function useInvalidate(kind: string) {
   const client = useQueryClient();
   return () => {
     void client.invalidateQueries({ queryKey: ["staff-dictionary", kind] });
+    void client.invalidateQueries({ queryKey: [kind] });
   };
 }
 

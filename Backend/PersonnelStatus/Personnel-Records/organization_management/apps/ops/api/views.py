@@ -5569,7 +5569,7 @@ class OpsFeedbackRequestsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/protected-persons/ — справочник охраняемых лиц.
 
-    Только чтение с фронта; правка — Django Admin (Admin = справочники).
+    Чтение каталога и ведение справочника уполномоченным пользователем.
 
     ПРАВО — `catalog.view`, а НЕ `event.view` (решение заказчика 28.08.2026,
     Plane №267): рядовой сотрудник видит охраняемых лиц и нормативную базу, но
@@ -5585,8 +5585,9 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # заполняет сводку или заводит бюллетень, — им лицо и нужно; своё
         # право под справочник заводить не стали: одну кнопку одного экрана
         # защищали бы иначе, чем всё вокруг неё.
-        "create": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
-        "photo": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "create": ("dictionary.manage", "gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "partial_update": "dictionary.manage",
+        "photo": ("dictionary.manage", "gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
     }
 
     def permission_override(self, request):
@@ -5626,6 +5627,15 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Проверьте поля лица.",
             )
         return Response(row, status=201)
+
+    def partial_update(self, request, pk=None):
+        try:
+            row = gvo_service.update_person(pk, request.data, actor=resolve_actor_id(request) or request.user)
+        except ValidationError as exc:
+            raise DomainError("VALIDATION_ERROR", 400, detail=exc.message_dict, message="Проверьте поля лица.")
+        if row is None:
+            raise NotFound("Охраняемое лицо не найдено.")
+        return Response(row)
 
     @action(detail=True, methods=["get", "post"], url_path="photo")
     def photo(self, request, pk=None):

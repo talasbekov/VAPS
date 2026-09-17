@@ -127,3 +127,13 @@ export interface ListPersonHistoryResponse {
 export interface ListObjectHistoryResponse {
   results: ObjectHistoryRow[];
 }
+
+/** Legacy summaries carry only a name; current summaries carry stable identity. */
+export function matchesProtectedPerson(
+  person: Pick<ProtectedPerson, 'id' | 'name'>,
+  entry: { personId?: string | null; name: string },
+): boolean {
+  return entry.personId != null
+    ? entry.personId === person.id
+    : entry.name.trim().toLowerCase() === person.name.trim().toLowerCase();
+}

@@ -37,6 +37,9 @@ export default function DictionariesPage() {
           description="Значения, которые читают формы раздела ОМ"
         />
 
+        {hasPermission("catalog.view") && (
+          <Link href="/security-ops/persons" className="block font-semibold text-primary-ink">Охраняемые лица →</Link>
+        )}
         {query.isLoading && (
           <Card>
             <CardContent className="p-9 text-center text-sm text-muted-foreground">

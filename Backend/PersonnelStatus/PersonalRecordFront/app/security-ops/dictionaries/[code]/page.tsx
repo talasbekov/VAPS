@@ -67,6 +67,7 @@ export default function DictionaryDetailPage() {
   const mutationError =
     create.error ?? setActive.error ?? remove.error ?? update.error;
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const canManage = hasPermission("dictionary.manage");
   const divisionsQuery = useQuery<CoreDivision[]>({
     queryKey: ["core-divisions"],
     queryFn: () => apiClient.getCoreDivisions(),
@@ -121,6 +122,7 @@ export default function DictionaryDetailPage() {
               <EntryCard
                 key={entry.id}
                 entry={entry}
+                canManage={canManage}
                 isEditing={editing === entry.id}
                 isSaving={update.isPending}
                 onEdit={() => {
@@ -147,7 +149,7 @@ export default function DictionaryDetailPage() {
             </p>
           )}
 
-          <Card>
+          {canManage && <Card>
             <CardHeader>
               <CardTitle>Добавить значение</CardTitle>
             </CardHeader>
@@ -233,7 +235,7 @@ export default function DictionaryDetailPage() {
                 </ul>
               )}
             </CardContent>
-          </Card>
+          </Card>}
         </div>
       )}
     </DashboardLayout>
@@ -242,6 +244,7 @@ export default function DictionaryDetailPage() {
 
 function EntryCard({
   entry,
+  canManage,
   isEditing,
   isSaving,
   onEdit,
@@ -252,6 +255,7 @@ function EntryCard({
   divisions,
 }: {
   entry: DictionaryEntryView;
+  canManage: boolean;
   isEditing: boolean;
   isSaving: boolean;
   onEdit: () => void;
@@ -273,7 +277,7 @@ function EntryCard({
   const [groupCode, setGroupCode] = useState(entry.groupCode ?? "");
   const [ownerDivisionId, setOwnerDivisionId] = useState(entry.ownerDivisionId ?? "");
 
-  if (isEditing) {
+  if (isEditing && canManage) {
     return (
       <Card>
         <CardContent className="flex flex-col gap-3 p-4">
@@ -397,7 +401,7 @@ function EntryCard({
           >
             {entry.isActive ? "Активна" : "Неактивна"}
           </Badge>
-          <div className="ml-auto flex gap-2">
+          {canManage && <div className="ml-auto flex gap-2">
             <Button
               type="button"
               variant="outline"
@@ -412,7 +416,7 @@ function EntryCard({
             <Button type="button" variant="outline" size="sm" onClick={onDelete}>
               Удалить
             </Button>
-          </div>
+          </div>}
         </div>
         <UsageLine entry={entry} />
       </CardContent>
