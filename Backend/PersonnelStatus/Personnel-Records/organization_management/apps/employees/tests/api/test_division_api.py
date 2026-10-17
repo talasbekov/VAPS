@@ -29,6 +29,10 @@ class TestDivisionViewSetAPI:
         Division.objects.create(name="Test Division", division_type='OFFICE')
         user = User.objects.create_user(username='testuser', password='password')
         client = APIClient()
+        from organization_management.apps.operations.tests.test_bulk_status_api import seed_role
+        from organization_management.apps.operations.services import RoleAdminService
+        seed_role("DIVISION_READER", ("orgstructure.view",))
+        RoleAdminService.assign_role(str(user.pk), "DIVISION_READER", actor="test")
         client.force_authenticate(user=user)
 
         response = client.get(reverse('division-list'))

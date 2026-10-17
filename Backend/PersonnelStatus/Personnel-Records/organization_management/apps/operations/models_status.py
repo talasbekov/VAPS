@@ -89,6 +89,13 @@ class OpsEmployeeStatus(TimeStampedModel):
         USER = "USER"  # создан оператором
         KU_SYNC = "KU_SYNC"  # синк из КУ (заглушка, КУ отложен)
         OM_AUTO = "OM_AUTO"  # принадлежит проекции дежурств/мероприятий
+        # Проекция КАДРОВОГО статуса (`apps.statuses.EmployeeStatus`) —
+        # Plane №1209: то, что начальник управления ставит в «Статусах
+        # сотрудников», обязано попадать в расход и снимок сдачи. Пишет её
+        # только `personnel_mirror` (source_ref = `personnel:<pk>`); правится
+        # кадровая строка, проекция идёт следом — гард `assert_user_editable`
+        # это уже обеспечивает.
+        PERSONNEL = "PERSONNEL"
 
     # Плоская ссылка на сотрудника старой структуры, без FK.
     employee_id = models.IntegerField()

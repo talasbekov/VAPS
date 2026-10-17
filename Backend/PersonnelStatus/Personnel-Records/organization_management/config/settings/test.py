@@ -1,5 +1,7 @@
 import hashlib
 import os
+import tempfile
+from pathlib import Path
 
 from .base import *
 
@@ -85,8 +87,19 @@ PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.MD5PasswordHasher',
 ]
 
+# Tests never write uploads or private documents into the checkout or real data.
+# Each pytest worker owns a temporary directory, cleaned up when it exits.
+_TEST_STORAGE = tempfile.TemporaryDirectory(prefix='smart-josparlau-tests-')
+MEDIA_ROOT = str(Path(_TEST_STORAGE.name) / 'media')
+OPS_PRIVATE_STORAGE_ROOT = str(Path(_TEST_STORAGE.name) / 'private')
+
 # Миграции в тестах ВКЛЮЧЕНЫ (раньше отключались DisableMigrations):
 # таблицы, собранные напрямую из моделей, не несут операций миграций —
 # в частности BtreeGistExtension, без которого ExclusionConstraint статусов
 # не создаётся. Цена — секунды на прогон, выигрыш — тесты видят ту же схему,
 # что и прод.
+
+# A Unicode-aware template can be supplied on hosts whose template1 uses C.
+# PostgreSQL C ctype does not fold Cyrillic case in icontains searches.
+if os.environ.get("PR_TEST_DB_TEMPLATE"):
+    DATABASES['default']['TEST']['TEMPLATE'] = os.environ['PR_TEST_DB_TEMPLATE']

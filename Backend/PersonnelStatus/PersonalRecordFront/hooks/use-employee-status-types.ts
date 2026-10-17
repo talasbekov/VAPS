@@ -20,6 +20,8 @@ export interface EmployeeStatusTypeItem {
   label: string;
   /** Цвет из справочника; пусто — клиент берёт свой по коду. */
   color: string;
+  /** Категория расхода: ON_DUTY включает и пользовательские виды дежурств. */
+  report_column_code?: string;
 }
 
 /**
@@ -39,5 +41,7 @@ export function useEmployeeStatusTypes(selectableOnly = true) {
     types: query.data ?? [],
     isLoading: query.isLoading,
     error: query.error,
+    isFetching: query.isFetching,
+    retry: query.refetch,
   };
 }

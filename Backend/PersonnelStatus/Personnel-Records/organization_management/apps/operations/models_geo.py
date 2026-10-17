@@ -20,6 +20,10 @@ class OpsCountry(TimeStampedModel):
     code = models.CharField(max_length=2, unique=True)
     name = models.CharField(max_length=120, unique=True)
     is_active = models.BooleanField(default=True)
+    name_kk = models.CharField(max_length=255, blank=True, default="")
+    inactive_since = models.DateField(null=True, blank=True)
+    supersedes = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name="superseded_by")
 
     class Meta:
         ordering = ["name", "id"]
@@ -44,6 +48,10 @@ class OpsCity(TimeStampedModel):
     )
     name = models.CharField(max_length=120)
     is_active = models.BooleanField(default=True)
+    name_kk = models.CharField(max_length=255, blank=True, default="")
+    inactive_since = models.DateField(null=True, blank=True)
+    supersedes = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name="superseded_by")
 
     class Meta:
         ordering = ["country__name", "name", "id"]

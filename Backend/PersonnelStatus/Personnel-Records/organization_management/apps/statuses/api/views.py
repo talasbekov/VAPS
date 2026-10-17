@@ -2,6 +2,7 @@
 API Views для управления статусами сотрудников
 """
 from datetime import date
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
@@ -40,10 +41,12 @@ from organization_management.apps.statuses import catalog
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
     resolve_actor_id,
+    require_permission,
 )
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.selectors import StaffUnitSelector
 from organization_management.apps.operations.services import PermissionService
+from organization_management.apps.statuses.duty_assignments import DUTY_CODES, identifier
 
 _READ_STATUS_PERMISSION = "status.view"
 _WRITE_STATUS_PERMISSION = "status.manage"
@@ -96,7 +99,7 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     )
     READ_ACTIONS = frozenset(
         {
-            "list", "retrieve", "history", "planned",
+            "list", "retrieve", "history", "planned", "duty_assignments",
             "division_headcount", "absence_statistics",
         }
     )
@@ -269,7 +272,8 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
                 comment=serializer.validated_data.get('comment', ''),
                 location=serializer.validated_data.get('location', ''),
                 related_division_id=serializer.validated_data.get('related_division').id if serializer.validated_data.get('related_division') else None,
-                user=request.user
+                user=request.user,
+                duty_assignment=serializer.validated_data.get('duty_assignment'),
             )
             output_serializer = EmployeeStatusSerializer(status_obj, context={'request': request})
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
@@ -285,6 +289,74 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
                 {'error': ' '.join(messages), 'errors': messages},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    @action(detail=False, methods=["get"], url_path="duty-assignments")
+    def duty_assignments(self, request):
+        """Scoped status placements on a date, including plans and history."""
+        raw_date = request.query_params.get("date", "")
+        try:
+            on_date = date.fromisoformat(raw_date)
+            if on_date.isoformat() != raw_date:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise APIValidationError({"date": ["Укажите дату в формате ГГГГ-ММ-ДД."]})
+        filters = {}
+        for key in ("object_id", "employee_id"):
+            if key in request.query_params:
+                value = identifier(request.query_params[key])
+                if value is None:
+                    raise APIValidationError({key: ["Укажите корректный идентификатор."]})
+                filters[key] = value
+        if not filters:
+            raise APIValidationError({"object_id": ["Укажите объект или сотрудника."]})
+        # Personnel readers may inspect their own employee's saved placements
+        # without access to the object registry or its full roster. Both legacy
+        # and dispatch selectors retain the status.view employee scope.
+        if "employee_id" not in filters:
+            require_permission(request, "object.view")
+        rows = self.get_queryset().filter(
+            duty_assignment__isnull=False, status_type__in=DUTY_CODES,
+            start_date__lte=on_date, employee__isnull=False,
+            state__in=(EmployeeStatus.StatusState.ACTIVE, EmployeeStatus.StatusState.PLANNED, EmployeeStatus.StatusState.COMPLETED),
+        ).filter(
+            Q(actual_end_date__gte=on_date)
+            | Q(actual_end_date__isnull=True, end_date__gte=on_date)
+        ).select_related("employee__rank", "employee__staff_unit__position", "employee__staff_unit__division")
+        if "object_id" in filters:
+            rows = rows.filter(duty_assignment__object_id=filters["object_id"])
+        if "employee_id" in filters:
+            rows = rows.filter(employee_id=int(filters["employee_id"]))
+        departments = {}
+        results = []
+        for row in rows:
+            employee = row.employee
+            unit = getattr(employee, "staff_unit", None)
+            division = unit.division if unit else None
+            if division and division.pk not in departments:
+                department = next((ancestor for ancestor in division.get_ancestors(include_self=True)
+                    if ancestor.division_type == "department"), None)
+                departments[division.pk] = department.name if department else division.name
+            results.append({
+                "status_id": row.pk, "employee_id": employee.pk,
+                "employee_name": " ".join(part for part in (employee.last_name, employee.first_name, employee.middle_name) if part),
+                "rank_name": employee.rank.name if employee.rank else "",
+                "position_name": unit.position.name if unit and unit.position else "",
+                "department_name": departments.get(division.pk, "") if division else "",
+                "placement": row.duty_assignment,
+                "start_date": row.start_date.isoformat(),
+                "end_date": (row.actual_end_date or row.end_date).isoformat(),
+                "assigned_at": row.created_at.isoformat(),
+            })
+        if "employee_id" in filters:
+            from organization_management.apps.ops.duty_dispatch import employee_roster
+            results.extend(employee_roster(
+                filters["employee_id"], on_date, actor=resolve_actor_id(request),
+                object_id=filters.get("object_id"),
+            ))
+        elif "object_id" in filters:
+            from organization_management.apps.ops.duty_dispatch import object_roster
+            results.extend(object_roster(filters["object_id"], on_date, actor=resolve_actor_id(request)))
+        return Response({"results": results})
 
     def update(self, request, *args, **kwargs):
         """
@@ -731,68 +803,15 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def absence_statistics(self, request):
-        """
-        Получение статистики по типам отсутствий на сегодняшний день
-
-        Автоматически определяет подразделение пользователя через:
-        User → Employee → StaffUnit → Division
-
-        Query params: нет (используется текущая дата и подразделение пользователя)
-        """
-        user = request.user
-
-        # Определяем подразделение пользователя через Employee → StaffUnit → Division
-        division_id = None
-
-        try:
-            # User → Employee
-            if hasattr(user, 'employee'):
-                employee = user.employee
-
-                # Employee → StaffUnit → Division
-                if hasattr(employee, 'staff_unit') and employee.staff_unit:
-                    staff_unit = employee.staff_unit
-
-                    if staff_unit.division:
-                        division_id = staff_unit.division.id
-                    else:
-                        return Response(
-                            {'error': 'У штатной единицы сотрудника не указано подразделение'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                else:
-                    return Response(
-                        {'error': 'Сотрудник не привязан к штатной единице'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            else:
-                return Response(
-                    {'error': 'Пользователь не привязан к сотруднику'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except Exception as e:
-            return Response(
-                {'error': f'Ошибка при определении подразделения: {str(e)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ВНЕ широкого legacy try/except: доменный 403 области не должен
-        # маскироваться ответом 400 «ошибка определения подразделения».
-        self._assert_division_in_scope(division_id, self.READ_PERMISSION)
-
-        # Сегодня — по ЗОНЕ СИСТЕМЫ (Plane №374). `date.today()` берёт дату
-        # у часов процесса: в контейнере они стоят по UTC, и сводка отсутствий
-        # каждую ночь до пяти утра собиралась бы за вчера.
+        """Сводка по объединению областей status.view, независимо от кадровой связи."""
+        allowed = PermissionService.visible_division_ids(resolve_actor_id(request), self.READ_PERMISSION)
         today = timezone.localdate()
-
         statistics_data = self.service.get_absence_statistics(
-            division_id=division_id,
-            start_date=today,
-            end_date=today
+            division_ids=allowed, start_date=today, end_date=today,
         )
-
         serializer = AbsenceStatisticsSerializer(statistics_data)
         return Response(serializer.data)
+
 
 
 class StatusDocumentViewSet(viewsets.ReadOnlyModelViewSet):

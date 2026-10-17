@@ -16,90 +16,132 @@
  *    учёткой отправляли выпрашивать право, которое у него уже есть.
  *    Мутация: вернуть один текст на обе ветки — проба краснеет.
  */
+import { randomBytes } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
-const ROLE_PASSWORD = process.env.ROLE_ACCOUNTS_PASSWORD ?? ''
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
 /**
- * Учётка, которой ручка `directorate` отказывает.
- *
- * 🔴 УЧЁТКА СМЕНЕНА ОСОЗНАННО (Plane №325). Здесь стоял `role_viewer`: до
- * №325 отказ получала ЛЮБАЯ учётка без кадровой роли ROLE_3/6/7, и годился
- * кто угодно. Теперь ручку открывает и право раздела `status.view`, а у
- * `role_viewer` оно есть — он законно проходит, и проба на нём проверяла бы
- * не отказ, а собственную устарелость. `role_ops_reader` несёт `object.view`
- * и `duty.view`, но не `status.view`.
- *
- * Предпосылка сверяется С СЕРВЕРОМ перед проверкой: раздача прав меняется, и
- * молча ослабнуть эта проба не должна.
+ * Реальная seed-роль без status.view. Учётка и её единственное назначение
+ * принадлежат пробе; общие ролевые учётки и их пароли ей не нужны.
+ * Права сверяются с сервером: изменение роли должно уронить предпосылку,
+ * а не превратить проверку отказа в skip.
  */
-const ROLE_ACCOUNT = 'role_ops_reader'
+const DENIED_ROLE = 'OBJECT_KEEPER'
 
 const DICTIONARY_PATHS = /\/api\/dictionaries\/(positions|ranks)\//
 
 async function signIn(page: Page, username: string, password: string): Promise<void> {
   const api = page.context().request
-  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const csrfResponse = await api.get(`${APP}/api/auth/csrf/`)
+  expect(csrfResponse.status()).toBe(200)
+  const csrf = (await csrfResponse.json()) as { csrfToken: string }
+  expect(csrf.csrfToken).toEqual(expect.any(String))
+  expect(csrf.csrfToken).not.toBe('')
+  const login = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
+  expect(login.status(), `вход ${username} не завершился успешно`).toBe(200)
+  const { url } = (await login.json()) as { url: string }
+  expect(url).toEqual(expect.any(String))
+  expect(url).not.toContain('error=')
 }
 
 test.describe(LIVE ? 'отказ экранов расхода' : 'отказ экранов расхода (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стенд: SMOKE_LIVE=1')
 
-  test('403: назван отказ по праву, справочники не запрошены', async ({ page }) => {
-    test.skip(ROLE_PASSWORD === '', 'нужен ROLE_ACCOUNTS_PASSWORD')
-
+  test('403: назван отказ по праву, справочники не запрошены', async ({ page, request }) => {
     const dictionaryCalls: string[] = []
     page.on('request', (req) => {
       if (DICTIONARY_PATHS.test(req.url())) dictionaryCalls.push(req.url())
     })
 
-    const tokenRes = await fetch(`${API}/api/token/`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: ROLE_ACCOUNT, password: ROLE_PASSWORD }),
+    const adminAuth = await request.post(`${API}/api/token/`, {
+      data: { username: STAND_USERNAME, password: STAND_PASSWORD },
     })
-    expect(tokenRes.status, `учётка ${ROLE_ACCOUNT} не получила токен`).toBe(200)
-    const { access } = (await tokenRes.json()) as { access: string }
-    const permsRes = await fetch(`${API}/api/operations/my-permissions/`, {
-      headers: { Authorization: `Bearer ${access}` },
+    expect(adminAuth.status(), 'администратор не получил токен для собственной fixture').toBe(200)
+    const headers = { Authorization: `Bearer ${(await adminAuth.json()).access}` }
+    const username = `e2e_directorate_denied_${Date.now()}_${randomBytes(4).toString('hex')}`
+    const password = randomBytes(24).toString('base64url')
+    const account = await request.post(`${API}/api/operations/accounts/`, {
+      headers,
+      data: { username, password },
     })
-    expect(permsRes.status).toBe(200)
-    const { permissions = [] } = (await permsRes.json()) as { permissions?: string[] }
-    test.skip(
-      permissions.includes('status.view') || permissions.includes('*'),
-      `у ${ROLE_ACCOUNT} появилось status.view — отказ проверять больше нечем`,
-    )
+    expect(account.status(), 'не удалось создать собственную учётку отказа').toBe(201)
+    const accountId = (await account.json()).id as number
+    const grantIds: number[] = []
+    try {
+      const grant = await request.post(`${API}/api/operations/user-roles/`, {
+        headers,
+        data: { user_id: String(accountId), role_code: DENIED_ROLE, scope_division_id: null },
+      })
+      expect(grant.status(), `роль ${DENIED_ROLE} должна существовать на стенде`).toBe(201)
+      grantIds.push((await grant.json()).id)
+      const tokenRes = await request.post(`${API}/api/token/`, { data: { username, password } })
+      expect(tokenRes.status(), `учётка ${username} не получила токен`).toBe(200)
+      const { access } = (await tokenRes.json()) as { access: string }
+      const deniedHeaders = { Authorization: `Bearer ${access}` }
+      const permsRes = await request.get(`${API}/api/operations/my-permissions/`, {
+        headers: deniedHeaders,
+      })
+      expect(permsRes.status()).toBe(200)
+      const { permissions } = (await permsRes.json()) as { permissions: string[] }
+      expect(permissions, 'назначение роли должно давать её реальное право чтения').toContain('object.view')
+      expect(permissions, 'учётке отказа нельзя выдавать чтение статусов').not.toContain('status.view')
+      expect(permissions, 'учётке отказа нельзя выдавать все права').not.toContain('*')
+      const directorate = await request.get(`${API}/api/staff_unit/staff-units/directorate/`, {
+        headers: deniedHeaders,
+      })
+      expect(directorate.status(), 'аутентифицированной учётке directorate должен отказать по праву').toBe(403)
 
-    await signIn(page, ROLE_ACCOUNT, ROLE_PASSWORD)
-    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+      await signIn(page, username, password)
+      const permissionsAnswered = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith('/my-permissions/'),
+      )
+      await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+      const browserPermissions = await permissionsAnswered
+      expect(browserPermissions.status()).toBe(200)
+      const browserBody = (await browserPermissions.json()) as { permissions: string[] }
+      expect(browserBody.permissions).toContain('object.view')
+      expect(browserBody.permissions).not.toContain('status.view')
+      expect(browserBody.permissions).not.toContain('*')
 
-    // Ждём САМ отказ, а не каркас: гвард появляется после ответа ручки, и
-    // чтение сразу после `domcontentloaded` врёт (класс Plane №293).
-    //
-    // 🔴 ТЕКСТ ОТКАЗА СМЕНИЛСЯ НЕ ПО ПРИХОТИ (Plane №352, Ш-1 → правлено в
-    // Ш-3, №360). Раньше здесь стоял текст `directorate-access-notice`
-    // («этого раздела») — отказ, который экран печатал, ПОЛУЧИВ 403 от ручки.
-    // После Ш-1 модуль «Статусы» закрыт гейтом страницы на том же праве
-    // `status.view`, и до ручки дело больше не доходит: человек видит отказ
-    // модуля (`OpsAccessDenied`). Предмет пробы от этого не изменился —
-    // закрытая учётка видит НАЗВАННЫЙ отказ, а не пустой каркас, и справочники
-    // при этом не запрашиваются, — изменилось только, чей это отказ.
-    await expect(
-      page.getByText('Недостаточно прав для просмотра статусов сотрудников.'),
-    ).toBeVisible({ timeout: 25_000 })
-    await expect(page.getByText('Учётная запись не привязана к подразделению.')).toBeHidden()
+      // После ответа my-permissions страницу закрывает OpsAccessDenied на
+      // status.view, поэтому браузер может не обращаться к directorate.
+      // Проверяем названный отказ и отсутствие запросов справочников.
+      await expect(
+        page.getByText('Недостаточно прав для просмотра статусов сотрудников.'),
+      ).toBeVisible({ timeout: 25_000 })
+      await expect(page.getByText('Учётная запись не привязана к подразделению.')).toBeHidden()
 
-    expect(
-      dictionaryCalls,
-      'закрытый экран запрашивает справочники, которые ему не отдадут',
-    ).toEqual([])
+      expect(
+        dictionaryCalls,
+        'закрытый экран запрашивает справочники, которые ему не отдадут',
+      ).toEqual([])
+    } finally {
+      const failures: unknown[] = []
+      for (const id of grantIds) {
+        try {
+          const removed = await request.delete(`${API}/api/operations/user-roles/${id}/`, { headers })
+          expect(removed.status()).toBe(204)
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      try {
+        const blocked = await request.patch(`${API}/api/operations/accounts/${accountId}/`, {
+          headers,
+          data: { is_active: false },
+        })
+        expect(blocked.status()).toBe(200)
+      } catch (error) {
+        failures.push(error)
+      }
+      if (failures.length > 0) throw new AggregateError(failures, 'failed to clean up the owned denial account')
+    }
   })
 
   test('400: назван отказ по привязке учётки, а не по праву', async ({ page }) => {

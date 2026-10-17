@@ -2,7 +2,7 @@
 
 // Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
 // (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
-import { Suspense, useId, useState } from "react";
+import { Suspense, useEffect, useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
@@ -80,6 +80,7 @@ import type {
   VisitObject,
 } from "@/entities/security-event";
 import { mayManageVisitObjects } from "@/entities/security-event/model/capabilities";
+import { eventWorkspaceHref } from "@/entities/security-event/model/navigation";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
@@ -142,7 +143,8 @@ function SecurityEventsScreen() {
     return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
   })();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
+  const canReadEvents = !permissionsLoading && !permissionsError && hasPermission(MODULE_PERMISSION["/security-ops/events"]);
 
   const stageParam = searchParams.get("stage");
   const params: ListSecurityEventsParams = {
@@ -170,7 +172,8 @@ function SecurityEventsScreen() {
   // НЕЛЬЗЯ: из него берётся список ответственных для фильтра, и он же держит
   // счётчик страниц при возврате на список.
   const query = useSecurityEvents(
-    view === "calendar" ? { ...params, pageSize: 200 } : params
+    view === "calendar" ? { ...params, pageSize: 200 } : params,
+    { enabled: canReadEvents },
   );
 
   // Поиск фиксируется с задержкой: в URL и в запрос уезжает набранное слово, а
@@ -189,7 +192,10 @@ function SecurityEventsScreen() {
     router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
   }
 
-  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/events"])) {
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status" className="text-sm text-muted-foreground">Проверяем доступ к реестру ОМ…</p></DashboardLayout>;
+  }
+  if (!canReadEvents) {
     return (
       <OpsAccessDenied what="реестра ОМ" />
     );
@@ -415,9 +421,20 @@ function ResultsTable({
   }
   return (
     <>
-      <Card>
-        <Table>
-          <TableHeader>
+      <Card className="gap-0 overflow-hidden py-0">
+        <Table className="block w-full xl:table xl:table-fixed">
+          <colgroup className="hidden xl:table-column-group">
+            <col style={{ width: 56 }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "8%" }} />
+            <col />
+            <col style={{ width: 56 }} />
+          </colgroup>
+          <TableHeader className="hidden xl:table-header-group">
             <TableRow>
               <Th>
                 <span className="sr-only">Объекты посещения</span>
@@ -433,7 +450,7 @@ function ResultsTable({
               <Th>Мероприятие</Th>
               <Th>Дата и время</Th>
               <Th>Охраняемое лицо</Th>
-              <Th>Локация</Th>
+              <Th>Локация и объекты ОМ</Th>
               <Th>Этап и готовность</Th>
               <Th>Потребность</Th>
               <Th>Старший</Th>
@@ -442,7 +459,7 @@ function ResultsTable({
               </Th>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="block xl:table-row-group">
             {events.map((event) => (
               <EventRow key={event.id} event={event} backSuffix={backSuffix} />
             ))}
@@ -463,33 +480,9 @@ function ResultsTable({
   );
 }
 
-/**
- * Строка реестра = БЮЛЛЕТЕНЬ. Раскрытие показывает объекты посещения этого
- * мероприятия: куда едет охраняемое лицо и насколько закрыта расстановка.
- *
- * КЛИК ПО СТРОКЕ РАСКРЫВАЕТ СПИСОК, А НЕ УВОДИТ В ЭТАПЫ — решение заказчика
- * 27.08.2026 (Plane №191), дословно: «При нажатии на бюллетень только список
- * должен раскрываться». Прежде строка вела в карточку, и раскрыватель был
- * единственным способом посмотреть объекты — то есть частое действие стоило
- * прицеливания в кнопку 24×24, а редкое случалось от любого промаха.
- *
- * САМ БЮЛЛЕТЕНЬ ТОЖЕ РАСКРЫВАЕТ (Plane №256, 28.08.2026). №191 снял переход с
- * фона строки, но код с названием остался ссылкой в этапы — а «нажать на
- * бюллетень» значит нажать именно туда, и заказчик поставил задачу второй раз
- * со словами «ты его не выполнил». Теперь раскрывают оба места: фон строки и
- * сам бюллетень.
- *
- * В карточку из строки ведёт ОДНА ссылка — стрелка «›» в конце, с внятным
- * именем «Открыть этапы мероприятия». Её нельзя убрать вслед за остальными:
- * этапы есть и у мероприятия без объектов, и без этой ссылки они стали бы
- * недостижимы. Второй путь — по объекту в раскрытии, как просил заказчик:
- * этапы открываются по конкретному объекту.
- *
- * Обработчик строки пропускает клики из ссылок и кнопок: иначе переход в
- * карточку заодно раскрывал бы список, а удаление — сворачивал.
- *
- * Детали живут ВТОРОЙ строкой таблицы, а не Accordion: внутрь `<tbody>` можно
- * положить только `<tr>`, и обёртка Radix ломала бы разметку таблицы.
+/** Название и фон строки открывают рабочую карточку ОМ.
+ * Список подробностей раскрывается отдельной кнопкой; ссылки площадок
+ * выбирают объект внутри ОМ, сохраняя фильтры для возврата в реестр.
  */
 function EventRow({
   event,
@@ -506,6 +499,9 @@ function EventRow({
   const [visitsOpen, setVisitsOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
+  const router = useRouter();
+  const backQuery = new URLSearchParams(backSuffix).get("back") ?? undefined;
+  const eventHref = eventWorkspaceHref(event.id, { backQuery });
   const { hasPermission } = useOpsPermissions();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -515,6 +511,7 @@ function EventRow({
     event,
     hasPermission("event.manage"),
   );
+  useEffect(() => { if (!canManageVisitObjects) setAddOpen(false); }, [canManageVisitObjects]);
   // Сведения бюллетеня правит и СОЗДАТЕЛЬ ОМ (Plane №951) — по слову сервера
   // (`canEditBulletin`, то же правило, что гейт `details`): создателя клиент
   // сам посчитать не может. Старый сервер поля не несёт — тогда по праву.
@@ -552,18 +549,19 @@ function EventRow({
   return (
     <>
       <TableRow
-        className="cursor-pointer"
+        className="relative grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-3 xl:table-row xl:p-0"
         onClick={(clickEvent) => {
           const target = clickEvent.target as HTMLElement;
-          if (target.closest("a") !== null) return;
-          if (target.closest("button") !== null) return;
-          setExpanded((value) => !value);
+          if (target.closest('a,button,input,select,textarea,[role="menuitem"],[role="button"]') !== null) return;
+          if (clickEvent.button !== 0 || clickEvent.metaKey || clickEvent.ctrlKey || clickEvent.altKey || clickEvent.shiftKey) return;
+          if (window.getSelection()?.toString()) return;
+          router.push(eventHref);
         }}
       >
         {/* Раскрыватель и «добавить объекты» — рядом со строкой бюллетеня, как
             просил заказчик. Обе — кнопки: строка ведёт в карточку, и клик по
             ней не должен значить ни то, ни другое. */}
-        <TableCell className="w-16 align-top">
+        <TableCell className="absolute left-3 top-3 block w-11 p-0 align-top xl:static xl:table-cell xl:w-14 xl:p-1.5">
           <span className="flex items-center gap-0.5">
             <button
               type="button"
@@ -571,7 +569,7 @@ function EventRow({
               aria-expanded={expanded}
               aria-controls={detailsId}
               aria-label={`${expanded ? "Свернуть" : "Развернуть"} объекты посещения ${event.code}`}
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {expanded ? (
                 <ChevronDown className="h-4 w-4" aria-hidden="true" />
@@ -584,35 +582,13 @@ function EventRow({
                 пунктов — прежний (Plane №192): объект, бюллетень, удалить. */}
           </span>
         </TableCell>
-        {/* Ширина названия ОГРАНИЧЕНА, и это не украшение. Колонок с №189
-            девять, и длинное название в одну строку растягивало таблицу за
-            край экрана — «Старший», крайняя правая колонка, уезжала в
-            горизонтальную прокрутку.
-
-            Потолок стоит на ВНУТРЕННЕМ блоке, а не на самой ячейке: в
-            табличной раскладке `max-width` у `<td>` браузером не соблюдается
-            — колонка остаётся широкой, а текст просто вылезает поверх соседней.
-            Замерено на стенде: название наезжало на «Дата и время». */}
-        <TableCell>
-                  {/* САМ БЮЛЛЕТЕНЬ РАСКРЫВАЕТ СПИСОК, А НЕ ВЕДЁТ В ЭТАПЫ
-                      (Plane №256, требование заказчика вторым разом).
-                      Здесь была ссылка в карточку — и это и есть то, на что
-                      он жаловался: код с названием — самое крупное и
-                      очевидное место строки, «нажать на бюллетень» значит
-                      нажать именно сюда. Правка №191 сняла переход с ФОНА
-                      строки, но оставила его на самом бюллетене, и снаружи
-                      выглядело, будто не изменилось ничего.
-
-                      Кнопка, а не ссылка: раскрытие — не адрес, и `<a>` без
-                      href обманывал бы и скринридер, и среднюю кнопку мыши.
-                      Состояние объявлено (`aria-expanded`/`aria-controls`) —
-                      иначе список раскрывается молча. */}
-                  <button
-                    type="button"
-                    onClick={() => setExpanded((value) => !value)}
-                    aria-expanded={expanded}
-                    aria-controls={detailsId}
-                    className="block w-full rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* На desktop название получает долю фиксированной таблицы; на
+            телефоне занимает верх карточки между двумя контролами. */}
+        <TableCell className="col-span-2 row-start-1 block min-w-0 p-0 pl-[52px] pr-[52px] whitespace-normal xl:table-cell xl:px-2.5 xl:py-[11px]">
+                  <Link
+                    href={eventHref}
+                    aria-label={`Открыть мероприятие ${event.code}: ${event.title}`}
+                    className="block min-h-11 w-full rounded text-left hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
                       {event.code}
@@ -621,10 +597,10 @@ function EventRow({
                         примитива — `whitespace-nowrap`, и один только
                         `max-w` название не переносит, а роняет его поверх
                         соседней колонки. */}
-                    <span className="mt-1 block max-w-[300px] font-semibold whitespace-normal">
+                    <span className="mt-1 block font-semibold whitespace-normal break-words">
                       {event.title}
                     </span>
-                  </button>
+                  </Link>
                 </TableCell>
 
                 {/* Даты: начало крупно, продолжительность подписью — в
@@ -636,7 +612,7 @@ function EventRow({
                     время, уехавшее туда же, читалось бы как время окончания.
                     Часа может не быть — тогда его нет и в ячейке: «—» здесь
                     означал бы «назначено на никогда». */}
-                <TableCell className="whitespace-nowrap text-muted-foreground">
+                <TableCell className="col-start-1 row-start-2 block min-w-0 p-0 whitespace-normal text-muted-foreground xl:table-cell xl:px-2.5 xl:py-[11px]">
                   {formatIsoDate(event.businessDate)}
                   {event.eventTime !== null && (
                     <span className="ml-1.5 text-foreground">
@@ -656,11 +632,12 @@ function EventRow({
                     («кто едет»), и спрятанное в подпись оно перестаёт быть
                     находимым глазами. Пусто — ОТВЕТ: бюллетень заводят и без
                     лица, когда визит ещё не подтверждён. */}
-                <TableCell className="text-muted-foreground">
+                <TableCell className={`${event.protectedPersonName === "" ? "hidden" : "block"} col-span-2 min-w-0 p-0 whitespace-normal break-words text-muted-foreground xl:table-cell xl:px-2.5 xl:py-[11px]`}>
                   {/* Пусто — пусто (`[РЕЕ-10]`, Plane №440): серых подсказок в
                       ячейках нет. */}
                   {event.protectedPersonName === "" ? null : (
                     <>
+                      <span className="text-[11px] xl:hidden">Охраняемое лицо: </span>
                       <span className="text-foreground">
                         {event.protectedPersonName}
                       </span>
@@ -679,48 +656,19 @@ function EventRow({
                   )}
                 </TableCell>
 
-                {/* ЛОКАЦИЯ — это поле `location` бюллетеня, а не имя объекта.
-                    Разошлось это молча: колонка называлась «Локация» и
-                    показывала объект ещё до №189, а бланк бюллетеня под этим
-                    словом понимает МЕСТО проведения («г. Астана»). Поймано
-                    живой пробой правки бюллетеня (Plane №192): проба меняла
-                    локацию через окно и не находила её в строке — потому что
-                    строка показывала совсем другое поле.
-
-                    Объект не выброшен, он ушёл подписью: у мероприятия он
-                    один и он же ведёт паспорт, а объекты посещения со своими
-                    паспортами живут в раскрытии строки.
-
-                    Потолок ширины — на блоке, а не на ячейке: см. колонку
-                    мероприятия выше. */}
-                <TableCell className="text-muted-foreground">
-                  <span className="block max-w-[210px] whitespace-normal">
+                {/* Маршрут виден в раскрытии; число площадок сохраняет строку компактной. */}
+                <TableCell className="col-start-2 row-start-2 block min-w-0 p-0 whitespace-normal break-words text-muted-foreground xl:table-cell xl:px-2.5 xl:py-[11px]">
+                  <span className="block whitespace-normal">
                     {event.location === "" ? null : event.location}
                   </span>
-                  <span className="mt-[3px] block max-w-[210px] whitespace-normal text-[11px] text-muted-foreground/80">
-                    {/* Пустое имя — ПУСТАЯ ЯЧЕЙКА (Plane №715). Здесь стояло
-                        обещание подписи «объект не выбран» и кнопки «+» в
-                        первой колонке — ни того, ни другого в коде нет: строка
-                        ниже рисует `null`, а добавление объектов переехало в
-                        меню «⋯» (Plane №440). Подпись «объект не выбран» жива
-                        в списке дня ниже, где строка одна и место есть; в
-                        таблице на девять колонок она была бы шумом в каждой
-                        строке нового ОМ. */}
-                    {event.objectName === ""
-                      ? null
-                      : `${event.objectName} · ${
-                          event.passportBinding === null
-                            ? "паспорт не привязан"
-                            : `паспорт вер. ${event.passportBinding.versionNumber}`
-                        }`}
-                  </span>
+                  <span className="mt-1 block text-[11px]">Объекты ОМ: {visits.length}</span>
                 </TableCell>
 
                 {/* Этап и готовность — одна колонка, как в эталоне: это один
                     ответ на вопрос «где мероприятие сейчас». Конфликты
                     показываются ТОЛЬКО когда они есть: колонка нулей была
                     шумом на всю таблицу, а сигнал в ней терялся. */}
-                <TableCell className="min-w-[150px]">
+                <TableCell className="col-start-1 block min-w-0 p-0 whitespace-normal xl:table-cell xl:px-2.5 xl:py-[11px]">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <StageBadge stage={event.stage} />
                     {event.conflictsCount > 0 && (
@@ -731,7 +679,7 @@ function EventRow({
                   </span>
                   <span className="mt-[7px] flex items-center gap-2">
                     <span
-                      className="h-[5px] w-24 overflow-hidden rounded-full bg-muted"
+                      className="h-[5px] min-w-0 max-w-24 flex-1 overflow-hidden rounded-full bg-muted"
                       role="progressbar"
                       aria-valuenow={event.readinessPercent}
                       aria-valuemin={0}
@@ -749,7 +697,10 @@ function EventRow({
                   </span>
                 </TableCell>
 
-                <TableCell className="tabular-nums">{event.forceNeed}</TableCell>
+                <TableCell className="col-start-2 block min-w-0 p-0 whitespace-normal tabular-nums xl:table-cell xl:px-2.5 xl:py-[11px]">
+                  <span className="mb-1 block text-[11px] text-muted-foreground xl:hidden">Потребность</span>
+                  {event.forceNeed}
+                </TableCell>
 
                 {/* СТАРШИЙ, а не ведущий: колонка бланка называется
                     «Старший», и это разные люди — старший отвечает за наряд
@@ -758,12 +709,13 @@ function EventRow({
                     этих двух на стенде скрывало подмену. Ведущий не выброшен
                     — он ушёл подписью: реестр остаётся местом, где видно, с
                     кого спрашивать за карточку. */}
-                <TableCell>
+                <TableCell className="col-span-2 block min-w-0 p-0 whitespace-normal break-words xl:table-cell xl:px-2.5 xl:py-[11px]">
                   {/* Ячейка по `[РЕЕ-03]` (Plane №440): «не назначен» + «+ Назначить»
                       либо «Фамилия» + ✎; подпись под значением — роль по типу
                       ОМ. Позывной не печатается: у сотрудника его в модели нет
                       (Decisions). «ведёт: …» снято (`[РЕЕ-10]`) — ведущий
                       виден в карточке. */}
+                  <span className="text-[11px] text-muted-foreground xl:hidden">Старший: </span>
                   {event.chiefName === "" ? (
                     <span className="text-[11px] text-muted-foreground">не назначен</span>
                   ) : (
@@ -785,7 +737,7 @@ function EventRow({
                           ? `Назначить старшего наряда ${event.code}`
                           : `Заменить старшего наряда ${event.code}`
                       }
-                      className="ml-1 rounded px-1 py-0.5 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded px-1 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title={event.chiefName === "" ? undefined : "Изменить"}
                     >
                       {event.chiefName === "" ? (
@@ -795,30 +747,26 @@ function EventRow({
                       )}
                     </button>
                   )}
-                  <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
+                  <span className="mt-[3px] hidden text-[11px] text-muted-foreground/80 xl:block">
                     {event.kind === "FOREIGN" ? "ГВО" : "Старший наряда"}
                   </span>
                 </TableCell>
-        {/* Стрелка — ЕДИНСТВЕННЫЙ явный вход в карточку ОМ из строки, и
-            поэтому она остаётся ссылкой: этапы бюллетеня, согласования и
-            закрытия живут и у мероприятия БЕЗ объектов, и лишить их входа
-            значило бы сделать половину цикла недостижимой. «›» скринридеру
-            ничего не говорит — имя называет и действие, и адресата. */}
-        <TableCell className="text-center text-muted-foreground">
-          {(canManageVisitObjects || canDeleteEvent) && (
+        {/* Меню доступно и читателю: нативная ссылка открывает этапы ОМ. */}
+        <TableCell className="absolute right-3 top-3 block w-11 p-0 text-center text-muted-foreground xl:static xl:table-cell xl:w-14 xl:p-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   aria-label={`Действия ${event.code}`}
                   title="Действия"
-                  className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
+                className="[&_[role=menuitem]]:min-h-11"
                 // 🔴 ВСПЛЫТИЕ ГАСИТСЯ ЗДЕСЬ, А НЕ У КАЖДОГО ПУНКТА (Plane №712).
                 // Содержимое меню рисуется ЧЕРЕЗ ПОРТАЛ, но синтетические
                 // события React всплывают по дереву REACT, а не DOM: клик по
@@ -834,6 +782,11 @@ function EventRow({
                 // четырёх воспроизвёл бы дефект в трудноуловимом виде.
                 onClick={(clickEvent) => clickEvent.stopPropagation()}
               >
+                <DropdownMenuItem asChild>
+                  <Link href={eventHref} aria-label={`Открыть этапы мероприятия ${event.code}`}>
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" /> Открыть ОМ
+                  </Link>
+                </DropdownMenuItem>
                 {canManageVisitObjects && (
                   <DropdownMenuItem
                     onSelect={() => {
@@ -864,21 +817,12 @@ function EventRow({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          <Link
-            href={`/security-ops/events/${event.id}${backSuffix}`}
-            aria-label={`Открыть этапы мероприятия ${event.code}`}
-            title="Открыть этапы мероприятия"
-            className="rounded px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            ›
-          </Link>
         </TableCell>
       </TableRow>
 
       {expanded && (
-        <TableRow id={detailsId} className="bg-muted/40 hover:bg-muted/40">
-          <TableCell colSpan={9} className="p-0">
+        <TableRow id={detailsId} className="block bg-muted/40 hover:bg-muted/40 xl:table-row">
+          <TableCell colSpan={9} className="block min-w-0 p-0 whitespace-normal xl:table-cell">
             <VisitObjectList
               event={event}
               visits={visits}
@@ -908,7 +852,7 @@ function EventRow({
         />
       )}
 
-      {addOpen && (
+      {addOpen && canManageVisitObjects && (
         <AddVisitObjectsDialog
           event={event}
           open={addOpen}
@@ -1026,6 +970,7 @@ function VisitObjectList({
           <Button
             size="sm"
             variant="outline"
+            className="min-h-11 min-w-11"
             onClick={onAdd}
             // Имя называет МЕРОПРИЯТИЕ — по той же причине, что у кнопки в
             // шапке заполненного списка: раскрытых строк на экране много.
@@ -1040,7 +985,7 @@ function VisitObjectList({
             строки (Plane №256). */}
         <Link
           href={`/security-ops/events/${event.id}${backSuffix}`}
-          className="font-medium text-primary-ink hover:underline"
+          className="inline-flex min-h-11 min-w-11 items-center rounded font-medium text-primary-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Открыть этапы мероприятия →
         </Link>
@@ -1048,17 +993,7 @@ function VisitObjectList({
     );
   }
   return (
-    // Врезка, а не «ещё одна таблица»: колонки раскрытия не совпадают с
-    // колонками реестра, и попытка выровнять их друг под друга читалась бы
-    // как сбитая вёрстка. Левая граница и отступ говорят «это внутри строки».
-    <div className="ml-9 border-l-2 border-primary/30 py-2 pl-4 pr-4">
-      {/* ЗАГОЛОВОК СО СВОИМ ДЕЙСТВИЕМ (`[РЕЕ-04]`, Plane №387): «+ Добавить
-          объект» стоит там, где человек читает «объектов N», а не только
-          иконкой «+» в колонке действий строки бюллетеня. Иконка остаётся —
-          она короче для того, кто её уже нашёл, — но искать её глазами в
-          ряду из четырёх одинаковых квадратов, чтобы дописать второй объект,
-          человек не обязан. Лимита нет: объектов у бюллетеня столько,
-          сколько мест посещает охраняемое лицо. */}
+    <div className="mx-3 min-w-0 border-l-2 border-primary/30 py-2 pl-3 xl:ml-9 xl:pl-4">
       <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
           Объекты посещения · {visits.length}
@@ -1067,289 +1002,187 @@ function VisitObjectList({
           <button
             type="button"
             onClick={onAdd}
-            // Имя называет МЕРОПРИЯТИЕ: таких кнопок на экране столько же,
-            // сколько раскрытых строк, и на слух они были бы неразличимы.
             aria-label={`Добавить объект посещения в мероприятие ${event.code}`}
-            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-h-11 min-w-11 items-center rounded px-2 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             + Добавить объект
           </button>
         )}
       </div>
-      <ul className="space-y-2">
-        {visits.map((visit) => {
-          const known = visit.placementNeed !== null;
-          const need = visit.placementNeed ?? 0;
-          const assigned = visit.placementAssigned ?? 0;
-          const percent = need === 0 ? 0 : Math.round((assigned / need) * 100);
-          // ЗАКРЫТЫЙ ОБЪЕКТ ПРАВИТСЯ НЕ БОЛЬШЕ, ЧЕМ ЗАКРЫТОЕ ОМ (Plane №607).
-          // `canEdit` считается один раз на МЕРОПРИЯТИЕ, а этап мероприятия —
-          // наименьший среди объектов: пока жив хоть один незакрытый, ОМ стоит
-          // на «Проведении», и у ЗАКРЫТОГО объекта все кнопки оставались
-          // включёнными. Сервер их теперь отбивает
-          // (`VISIT_OBJECT_ALREADY_CLOSED`), и довод здесь тот же, которым
-          // выше объяснён `canEdit` для закрытого ОМ: кнопка, которая
-          // гарантированно получит отказ, — обещание, а не действие.
-          const canEditVisit =
-            canManageObjects && visit.stage !== "CLOSED";
-          const canEditDeputies =
-            canManageDeputies && visit.stage !== "CLOSED";
-          return (
-            // Своя карточка на объект, а не строка сплошного текста: три
-            // объекта раскрытия читались одной нерасчленимой лентой, и
-            // граница между «где кончается первый объект и начинается
-            // второй» держалась только переносом строк. Рамка и фон дают
-            // эту границу глазами, без чтения текста подряд (SJ-1048,
-            // «наведи красоту в реестре ОМ»).
-            <li
-              key={visit.id}
-              className="flex gap-3 rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
-            >
-              {/* СНИМОК ОБЪЕКТА (Plane SJ-1049, «в стиле Модуля ОЛ»): та же
-                  плашка-плейсхолдер, что карточка охраняемого лица
-                  (`app/security-ops/persons/page.tsx`) — квадрат `bg-muted`
-                  с иконкой, пока снимка нет. Свойство КАТАЛОГА объекта, не
-                  визита. Сервер включает его в event-контракт, чтобы право
-                  `event.view` не требовало дополнительного `object.view`. */}
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
-                {visit.photoUrl !== null ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
-                  <img
-                    src={visit.photoUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <Building2 className="h-6 w-6" aria-hidden="true" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-              {/* ШАПКА КАРТОЧКИ: имя объекта и его непосредственные действия
-                  (статус, снять объект) — в одной строке, статус и «снять»
-                  прижаты вправо ЗДЕСЬ, у заголовка, а не в хвосте длинного
-                  flex-ряда (`ml-auto` раньше означал «в конце всего, что
-                  влезло», и между последним полем и крестиком набегал
-                  случайный зазор шире экрана). */}
-              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                {/* Клик по объекту открывает ЭТАПЫ мероприятия по этому
-                    объекту, а не карточку объекта реестра: заказчик просил
-                    «клик по объекту открывает этапы». Ссылка на сам объект
-                    осталась рядом подписью — это другой адрес (паспорт против
-                    этапов), и подменять один другим нельзя. */}
-                <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <Link
-                    href={`/security-ops/events/${event.id}${
-                      backSuffix === ""
-                        ? `?visit=${visit.id}`
-                        : `${backSuffix}&visit=${visit.id}`
-                    }`}
-                    className="font-medium hover:underline"
-                  >
-                    {visit.objectName}
-                  </Link>
-                  {visit.objectId !== null && (
-                    <Link
-                      href={`/security-ops/objects/${visit.objectId}`}
-                      // Имя ссылки называет ОБЪЕКТ: в раскрытой строке таких
-                      // ссылок столько же, сколько объектов, и список ссылок
-                      // скринридера был бы рядом одинаковых строк.
-                      aria-label={`Карточка объекта ${visit.objectName}`}
-                      className="text-[11px] font-normal text-primary-ink hover:underline"
-                    >
-                      карточка объекта →
-                    </Link>
-                  )}
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    {visit.passportBinding === null
-                      ? "паспорт не привязан"
-                      : `паспорт вер. ${visit.passportBinding.versionNumber}`}
-                  </span>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {/* Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane
-                      №423): нейтральный чип ПЕРЕД тревожными бейджами — это
-                      состояние, а не предупреждение, и цветом с
-                      «Возвращено»/«Срочно» оно не спорит. Подпись даёт
-                      сервер. */}
-                  <span
-                    className="inline-flex whitespace-nowrap rounded-full border border-border bg-muted px-2 py-0.5 text-[10.5px] font-medium text-foreground/80"
-                    data-slot="visit-status-chip"
-                  >
-                    {visit.statusLabel}
-                  </span>
-                  {canEditVisit && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        removal.mutate({
-                          eventId: event.id,
-                          visitObjectId: visit.id,
-                        })
-                      }
-                      disabled={removal.isPending}
-                      aria-label={`Снять объект ${visit.objectName} с мероприятия`}
-                      title="Снять объект с мероприятия"
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                    >
-                      <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* ОПИСАНИЕ ВИЗИТА (Plane SJ-1049) — цель посещения на ЭТОМ
-                  ОМ («Основная площадка мероприятия.»), не `note`. Пусто —
-                  строка не рисуется вовсе: обещание описания без текста
-                  хуже отсутствия строки. Правится в окне «Объекты
-                  посещения» сводки ГВО (`GvoVisitsDialog`). */}
-              <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                {visit.description !== "" && (
-                  <p className="text-xs text-muted-foreground">
-                    {visit.description}
-                  </p>
-                )}
-                {canEditVisit && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={onEdit}
-                    aria-label={`${
-                      visit.description === "" ? "Добавить" : "Редактировать"
-                    } описание объекта ${visit.objectName}`}
-                    className="min-h-11 px-2 text-xs"
-                  >
-                    <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                    {visit.description === "" ? "Добавить описание" : "Редактировать описание"}
-                  </Button>
-                )}
-              </div>
-
-              {/* СВОДКА ОБЪЕКТА: дата, охраняемое лицо, готовность
-                  расстановки и бейджи возврата — сгруппированы отдельной
-                  строкой под заголовком, а не перемешаны с ним в одном
-                  потоке. */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                {/* ДАТА ПОСЕЩЕНИЯ — заказчик просил у объекта те же данные,
-                    что у строки бюллетеня (Plane №194). Своя дата есть не у
-                    всякого объекта: у однодневного ОМ она названа в
-                    бюллетене, и дублировать её в каждой строке значило бы
-                    завести второй ответ, который однажды разойдётся с
-                    первым. Поэтому здесь ЛИБО собственный день объекта,
-                    ЛИБО прямая отсылка к дате мероприятия — но не пусто:
-                    пустая ячейка читается как «неизвестно», а известно. */}
-                <span className="whitespace-nowrap">
-                  {visit.visitDay === null ? (
-                    <>в дату мероприятия{" "}
-                      <span className="text-foreground">
-                        {formatIsoDate(event.businessDate)}
-                      </span>
-                    </>
-                  ) : (
-                    <>Посещение:{" "}
-                      <span className="text-foreground">
-                        {formatIsoDate(visit.visitDay)}
-                      </span>
-                    </>
-                  )}
-                </span>
-
-                <span>
-                  {visit.protectedPersonName === "" ? (
-                    "охраняемое лицо не назначено"
-                  ) : (
-                    <>
-                      Охраняемое лицо:{" "}
-                      <span className="text-foreground">
-                        {visit.protectedPersonName}
-                      </span>
-                    </>
-                  )}
-                </span>
-
-                {/* Полоса рисуется только когда есть что мерить: шкала с
-                    нулём при нерассчитанных постах читается как
-                    «расстановка пуста», хотя постов ещё нет вовсе. */}
-                {known && need > 0 && (
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="h-[5px] w-24 overflow-hidden rounded-full bg-muted"
-                      role="progressbar"
-                      aria-valuenow={percent}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={`Готовность расстановки: ${visit.objectName}`}
-                    >
-                      <span
-                        className="block h-full bg-primary"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </span>
-                    {/* ПОТРЕБНОСТЬ названа словом, а не только долей: в
-                        строке бюллетеня у неё своя колонка, и заказчик
-                        просил ту же сводку у объекта (Plane №194). «3 из 3»
-                        без подписи читается как что угодно — от постов до
-                        людей. */}
-                    <span className="tabular-nums">
-                      потребность {need}, назначено {assigned}
-                    </span>
-                  </span>
-                )}
-                {known && need === 0 && <span>посты не рассчитаны</span>}
-                {!known && (
-                  <span className="whitespace-nowrap">
-                    расчёт постов не размечен по объектам
-                  </span>
-                )}
-
-                {/* Бейджи возврата (`[РЕЕ-08]`/`[ВОЗ-03]`, Plane №400): объект
-                    вернули с согласования — реестр говорит это словами, не
-                    заставляя открывать карточку. Считаются замечания БЕЗ
-                    ОТВЕТА: именно их старшему чинить; «Срочно» — если хоть
-                    одно из них срочное. Ширина ограничена nowrap: бейдж не
-                    переносится. */}
-                {visit.approvalStatus === "RETURNED" && (
-                  <span
-                    className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
-                    data-slot="visit-returned-badge"
-                  >
-                    Возвращено · {remarksLabel(
-                      visit.approvalRemarks.filter(remarkIsOpen).length
-                    )}
-                  </span>
-                )}
-                {visit.approvalRemarks.some((r) => remarkIsOpen(r) && r.urgent) && (
-                  <span
-                    className="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
-                    data-slot="visit-urgent-badge"
-                  >
-                    Срочно
-                  </span>
-                )}
-              </div>
-
-              {/* ДЕТАЛИ ОБЪЕКТА: старший и замещающие — отдельным блоком под
-                  тонкой чертой, визуально подчинённым карточке объекта, а не
-                  наравне со сводкой выше. Порядок внутри блока не меняется:
-                  старший ПЕРВОЙ строкой, до замещающих — замещающий
-                  определяется относительно него («вместо старшего»), и
-                  читать список замещающих раньше, чем имя того, кого
-                  замещают, нельзя. */}
-              <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5">
-                <ChiefLine event={event} visit={visit} canEdit={canEditVisit} />
-                <DeputyLine
-                  event={event}
-                  visit={visit}
-                  canEdit={canEditDeputies}
-                />
-              </div>
-              </div>
-            </li>
-          );
-        })}
+      <ul className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70 bg-background">
+        {visits.map((visit) => (
+          <VisitObjectRow
+            key={visit.id}
+            event={event}
+            visit={visit}
+            canEdit={canManageObjects && visit.stage !== "CLOSED"}
+            canEditDeputies={canManageDeputies && visit.stage !== "CLOSED"}
+            backSuffix={backSuffix}
+            onEdit={onEdit}
+            onRemove={() => removal.mutate({ eventId: event.id, visitObjectId: visit.id })}
+            removalPending={removal.isPending}
+          />
+        ))}
       </ul>
     </div>
+  );
+}
+
+/** Одна площадка — краткая сводка; формы и редкие сведения открываются по запросу. */
+function VisitObjectRow({
+  event,
+  visit,
+  canEdit,
+  canEditDeputies,
+  backSuffix,
+  onEdit,
+  onRemove,
+  removalPending,
+}: {
+  event: SecurityEvent;
+  visit: VisitObject;
+  canEdit: boolean;
+  canEditDeputies: boolean;
+  backSuffix: string;
+  onEdit: () => void;
+  onRemove: () => void;
+  removalPending: boolean;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
+  const need = visit.placementNeed;
+  const assigned = visit.placementAssigned;
+  const percent = need !== null && need > 0 && assigned !== null
+    ? Math.round((assigned / need) * 100)
+    : null;
+  const backQuery = new URLSearchParams(backSuffix).get("back") ?? undefined;
+
+  return (
+    <li className="whitespace-normal text-xs">
+      <div className="flex min-h-[76px] items-center gap-2 px-3 py-2" data-slot="visit-object-summary">
+        <div className="grid min-w-0 flex-1 grid-cols-2 items-center gap-x-3 gap-y-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,.75fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+          <Link
+            href={eventWorkspaceHref(event.id, { visitId: visit.id, backQuery })}
+            className="order-1 col-span-2 flex min-h-11 min-w-11 items-center rounded font-semibold break-words text-primary-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:col-span-1"
+          >
+            {visit.objectName}
+          </Link>
+          <div className="order-2 flex min-w-0 flex-wrap items-center gap-1">
+            <span
+              className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[10.5px] font-medium text-foreground/80"
+              data-slot="visit-status-chip"
+            >
+              {visit.statusLabel}
+            </span>
+            {visit.approvalStatus === "RETURNED" && (
+              <span
+                className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                data-slot="visit-returned-badge"
+              >
+                Возвращено · {remarksLabel(visit.approvalRemarks.filter(remarkIsOpen).length)}
+              </span>
+            )}
+            {visit.approvalRemarks.some((remark) => remarkIsOpen(remark) && remark.urgent) && (
+              <span
+                className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+                data-slot="visit-urgent-badge"
+              >
+                Срочно
+              </span>
+            )}
+          </div>
+          <div className="order-4 col-span-2 min-w-0 break-words text-[11px] text-muted-foreground xl:order-3 xl:col-span-1">
+            <span className="block tabular-nums">
+              потребность {need === null ? "неизвестна" : need}, назначено {assigned === null ? "неизвестно" : assigned}
+            </span>
+            {need === 0 && <span className="block text-[10.5px]">посты не рассчитаны</span>}
+            {need === null && <span className="block text-[10.5px]">расчёт постов не размечен по объектам</span>}
+          </div>
+          <div className="order-3 min-w-0 break-words text-[11px] xl:order-4">
+            <span className="text-muted-foreground">Старший: </span>
+            {visit.chiefEmployeeId === null ? <span className="text-muted-foreground">не назначен</span> : visit.chiefName}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label={`Подробности объекта ${visit.objectName}`}
+          aria-expanded={detailsOpen}
+          aria-controls={detailsId}
+          onClick={() => setDetailsOpen((value) => !value)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:self-center"
+        >
+          {detailsOpen ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
+        </button>
+      </div>
+      {detailsOpen && (
+        <div id={detailsId} className="space-y-3 border-t border-border/70 bg-muted/20 p-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+              {visit.photoUrl !== null ? (
+                // eslint-disable-next-line @next/next/no-img-element -- URL снимка приходит из медиа-хранилища.
+                <img src={visit.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : <Building2 className="h-6 w-6" aria-hidden="true" />}
+            </div>
+            <div className="min-w-0 space-y-1 break-words text-[11px] text-muted-foreground">
+              <p>{visit.passportBinding === null ? "паспорт не привязан" : `паспорт вер. ${visit.passportBinding.versionNumber}`}</p>
+              <p>
+                {visit.visitDay === null ? <>в дату мероприятия {formatIsoDate(event.businessDate)}</> : <>Посещение: {formatIsoDate(visit.visitDay)}</>}
+              </p>
+              <p>
+                {visit.protectedPersonName === "" ? "охраняемое лицо не назначено" : `Охраняемое лицо: ${visit.protectedPersonName}`}
+              </p>
+              {visit.note !== "" && <p>Примечание: {visit.note}</p>}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {visit.description !== "" && <p className="min-w-0 break-words text-muted-foreground">{visit.description}</p>}
+            {canEdit && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={onEdit}
+                aria-label={`${visit.description === "" ? "Добавить" : "Редактировать"} описание объекта ${visit.objectName}`}
+                className="min-h-11 min-w-11 whitespace-normal px-2 text-xs"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                {visit.description === "" ? "Добавить описание" : "Редактировать описание"}
+              </Button>
+            )}
+          </div>
+          {percent !== null && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span
+                className="h-[5px] w-24 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuenow={percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Готовность расстановки: ${visit.objectName}`}
+              >
+                <span className="block h-full bg-primary" style={{ width: `${percent}%` }} />
+              </span>
+              <span>{percent}%</span>
+            </div>
+          )}
+          <div className="space-y-2 border-t border-border/60 pt-2">
+            <ChiefLine event={event} visit={visit} canEdit={canEdit} />
+            <DeputyLine event={event} visit={visit} canEdit={canEditDeputies} />
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={removalPending}
+              aria-label={`Снять объект ${visit.objectName} с мероприятия`}
+              className="inline-flex min-h-11 min-w-11 items-center gap-2 rounded px-2 text-[11px] text-destructive-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Снять с мероприятия
+            </button>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -1360,9 +1193,7 @@ function VisitObjectList({
  * несколько, и «на этом объекте старшего нет» такой же факт маршрута, как имя.
  * Пустое место вместо этой строки читалось бы как «данные не пришли».
  *
- * Кнопки назначения здесь пока нет — она приходит вместе с выпадающим списком
- * сотрудников с постраничкой и поиском (Plane «Реестр ОМ-35.3» и «ОМ-35.7»);
- * снятие уже здесь: ему список не нужен.
+ * В подробностях доступны назначение, замена и снятие старшего.
  */
 function ChiefLine({
   event,
@@ -1411,8 +1242,8 @@ function ChiefLine({
       {visit.chiefEmployeeId === null ? (
         <span>не назначен</span>
       ) : (
-        <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5">
-          <span className="font-medium text-foreground">{visit.chiefName}</span>
+        <span className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl border bg-background px-2 py-0.5">
+          <span className="min-w-0 max-w-full break-words font-medium text-foreground">{visit.chiefName}</span>
           {canEdit && (
             <button
               type="button"
@@ -1428,7 +1259,7 @@ function ChiefLine({
               // одинаковых «снять старшего».
               aria-label={`Снять старшего ${visit.chiefName} с объекта ${visit.objectName}`}
               title="Снять старшего с объекта"
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <X className="h-3 w-3" aria-hidden="true" />
             </button>
@@ -1446,7 +1277,7 @@ function ChiefLine({
               ? `Назначить старшего объекта ${visit.objectName}`
               : `Заменить старшего объекта ${visit.objectName}`
           }
-          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {visit.chiefEmployeeId === null ? "+ Старший" : "Заменить"}
         </button>
@@ -1509,9 +1340,9 @@ function DeputyLine({
       {deputies.map((deputy) => (
         <span
           key={deputy.id}
-          className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5"
+          className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl border bg-background px-2 py-0.5"
         >
-          <span className="font-medium text-foreground">
+          <span className="min-w-0 max-w-full break-words font-medium text-foreground">
             {deputy.employeeName}
           </span>
           <span>
@@ -1530,7 +1361,7 @@ function DeputyLine({
               disabled={removal.isPending}
               aria-label={`Снять замещающего ${deputy.employeeName} с объекта ${visit.objectName}`}
               title="Снять замещающего"
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <X className="h-3 w-3" aria-hidden="true" />
             </button>
@@ -1544,7 +1375,7 @@ function DeputyLine({
           // Имя называет ОБЪЕКТ: таких кнопок в раскрытой строке столько же,
           // сколько объектов, и список скринридера был бы рядом одинаковых.
           aria-label={`Добавить замещающего на объект ${visit.objectName}`}
-          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           + Замещающий
         </button>
@@ -1847,5 +1678,5 @@ function EventsCalendar({
 }
 
 function Th({ children }: { children?: ReactNode }) {
-  return <TableHead>{children}</TableHead>;
+  return <TableHead className="px-2 whitespace-normal break-words">{children}</TableHead>;
 }

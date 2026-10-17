@@ -46,16 +46,15 @@
   }
 }
 
-/* Пульс индикатора связи из прототипа. Под prefers-reduced-motion гаснет:
-   мигающая точка — самый заметный движущийся элемент интерфейса, и человеку,
-   выключившему анимации, она бьёт по глазам сильнее любого выезда меню. */
+/* Короткий сигнал при появлении/восстановлении связи. Постоянная пульсация
+   заставляет браузер рисовать кадры даже на неподвижной рабочей странице. */
 @keyframes sidebarPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
 
 .sidebar-pulse {
-  animation: sidebarPulse 2.5s ease-in-out infinite;
+  animation: sidebarPulse 2.5s ease-in-out 2;
 }
 
 @media (prefers-reduced-motion: reduce) {

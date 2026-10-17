@@ -17,12 +17,14 @@ import { AlertTriangle } from "lucide-react";
 
 export function LoadFailure({
   what,
+  description,
   onRetry,
   isRetrying = false,
   className,
 }: {
   /** Что не загрузилось, в винительном падеже: «список сотрудников». */
   what: string;
+  description?: string;
   onRetry?: () => void;
   isRetrying?: boolean;
   className?: string;
@@ -39,6 +41,9 @@ export function LoadFailure({
         />
         <span>Не удалось загрузить {what}.</span>
       </p>
+      {description !== undefined && (
+        <p className="text-sm text-foreground">{description}</p>
+      )}
       {onRetry !== undefined && (
         <button
           type="button"

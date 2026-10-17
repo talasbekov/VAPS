@@ -5,6 +5,7 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { OpsProtectedPortalContext } from "@/lib/ops-permission-suspension"
 
 function Select({
   ...props
@@ -56,8 +57,9 @@ function SelectContent({
   position = "popper",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const protectedContainer = React.useContext(OpsProtectedPortalContext)
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={protectedContainer}>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

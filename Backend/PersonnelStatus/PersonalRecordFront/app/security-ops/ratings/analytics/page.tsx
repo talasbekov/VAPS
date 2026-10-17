@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Отчёт аналитики рейтинга (§22.16-22.17). Экран не считает ничего — включая
 // «стандартную» восьмёрку: полосы распределения, средние по группам, покрытие
 // и количество исправленных приходят готовыми; подавленная группа приходит БЕЗ
@@ -183,21 +185,7 @@ export default function RatingAnalyticsPage() {
               </Table>
             </section>
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">
-                Что в отчёт не входит
-              </h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Как читать аналитику" items={data.unavailableViews} />
           </>
         )}
       </div>

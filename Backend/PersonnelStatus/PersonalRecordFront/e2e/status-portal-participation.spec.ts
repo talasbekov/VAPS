@@ -33,11 +33,15 @@
  * 🔴 ПРОБА ОСТАВЛЯЕТ СТАТУС РАСХОДА И НЕ УБИРАЕТ ЕГО — как и соседняя
  * `status-set-dialog.spec.ts`, и по той же причине: статус расхода в этой
  * модели ФАКТ, а не черновик, ручки удаления у него нет вовсе. Ограничение
- * накопления то же — берётся сотрудник, у которого на выбранные даты статуса
- * нет, и даты берутся в СЛЕДУЮЩЕМ месяце.
+ * накопления ограничено зарезервированным уникальным полуинтервалом в один
+ * день, выбранным через настоящий календарь. Перед записью проверяются
+ * действующие сдачи на этот день; причины поправки тест не подставляет.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { uniqueBusinessDate } from './business-date'
+import { prepareDemandEvent, standCall } from './prepare-events'
+import { clickRowMenuItem, staffedRow } from './row-menu'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -52,7 +56,7 @@ const SQUAD_KIND = 'PHYSICAL_SQUAD'
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: {
       csrfToken: csrf.csrfToken,
       username: STAND_USERNAME,
@@ -60,6 +64,7 @@ async function signIn(page: Page): Promise<void> {
       json: 'true',
     },
   })
+  expect(response.status(), 'вход для живого портального окна').toBe(200)
 }
 
 async function tokenFor(): Promise<string> {
@@ -68,6 +73,7 @@ async function tokenFor(): Promise<string> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
+  expect(res.status, 'API вход для живого портального окна').toBe(200)
   return ((await res.json()) as { access: string }).access
 }
 
@@ -88,16 +94,42 @@ async function labelOfStatus(code: string): Promise<string> {
   return row!.label
 }
 
-/** Число в календаре СЛЕДУЮЩЕГО месяца: прошлые дни бывают заблокированы. */
-async function pickNextMonthDay(page: Page, day: string): Promise<void> {
-  // `.last()`: прежний календарь остаётся в разметке закрытым, и на втором
-  // поле в дереве оказываются ДВА поппера — строгий режим Playwright справедливо
-  // отказывается выбирать за нас.
+/** Actual calendar navigation: react-day-picker supports a year per
+ * Shift+PageDown/PageUp and a month per PageDown/PageUp. No clock/DOM/state
+ * injection is used. ISO data-day belongs to the actual calendar gridcell. */
+async function pickOwnedDate(page: Page, isoDate: string): Promise<void> {
+  expect(isoDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   const popover = page.locator('[data-radix-popper-content-wrapper]').last()
   await expect(popover).toBeVisible()
-  // nth(1) — «вперёд» (nth(0) — «назад»); тот же приём, что в пробе №255.
-  await popover.locator('button').nth(1).click()
-  await popover.getByText(day, { exact: true }).first().click()
+  const calendar = popover.locator('[data-slot="calendar"]')
+  const dayButtons = calendar.locator('[role="gridcell"]:not([data-outside="true"]) button:not([disabled])')
+  await expect(dayButtons.first()).toBeVisible()
+  await dayButtons.first().focus()
+  const focused = calendar.locator('[role="gridcell"][data-focused="true"]')
+  await expect(focused).toHaveCount(1)
+  const initial = await focused.getAttribute('data-day')
+  expect(initial).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  let [year, month] = initial!.split('-').map(Number)
+  const [targetYear, targetMonth] = isoDate.split('-').map(Number)
+  for (const direction of [1, -1] as const) {
+    while ((targetYear - year) * direction > 0) {
+      year += direction
+      await page.keyboard.press(direction === 1 ? 'Shift+PageDown' : 'Shift+PageUp')
+      await expect(focused).toHaveAttribute('data-day', new RegExp(`^${year}-${String(month).padStart(2, '0')}-`))
+    }
+  }
+  while (month !== targetMonth) {
+    const direction = targetMonth > month ? 1 : -1
+    month += direction
+    await page.keyboard.press(direction === 1 ? 'PageDown' : 'PageUp')
+    await expect(focused).toHaveAttribute('data-day', new RegExp(`^${year}-${String(month).padStart(2, '0')}-`))
+  }
+  const target = calendar.locator(`[role="gridcell"][data-day="${isoDate}"]:not([data-outside="true"])`).getByRole('button')
+  await expect(target).toHaveCount(1)
+  await target.click()
+  // Selection updates the field; this Popover closes through its real Escape handler.
+  await page.keyboard.press('Escape')
+  await expect(popover).toBeHidden()
 }
 
 test.describe('статусы: привлечение на ОМ из портального окна', () => {
@@ -108,6 +140,25 @@ test.describe('статусы: привлечение на ОМ из порта�
   }) => {
     const label = await labelOfStatus(IN_EVENT_STATUS_CODE)
     const token = await tokenFor()
+    // Заявка принадлежит этой пробе, а не предыдущему сидеру или соседнему
+    // сценарию. Сохранённая квота управления обязательна до оповещения.
+    const dateStart = uniqueBusinessDate()
+    const dateEnd = uniqueBusinessDate()
+    expect(Date.parse(`${dateEnd}T00:00:00Z`) - Date.parse(`${dateStart}T00:00:00Z`)).toBe(86_400_000)
+    const ownEvent = await prepareDemandEvent(token, dateStart)
+    const call = standCall(token)
+    const divisions = await call('GET', '/api/core/divisions/?page_size=200')
+    const directorate = divisions.results.find((row: { type_code: string }) => row.type_code === 'directorate')
+    expect(directorate, 'в стенде есть управление для собственной заявки').toBeTruthy()
+    const base = `/api/ops/security-events/${ownEvent.id}/forces/allocation`
+    const allocated = await call('POST', `${base}/`, {
+      rows: [{ departmentId: String(directorate.parent), need: ownEvent.total }],
+    })
+    const allocationId = allocated.forceAllocation[0].id
+    await call('POST', `${base}/${allocationId}/split/`, {
+      rows: [{ divisionId: String(directorate.id), need: ownEvent.total }],
+    })
+    await call('POST', `${base}/${allocationId}/notify/`)
     // Список, который окно ОБЯЗАНО показать. Пусто — фикстуры стенда нет, и
     // проба говорит об этом прямо, а не молча зеленеет на пустом выборе.
     const requests = (await (
@@ -120,14 +171,22 @@ test.describe('статусы: привлечение на ОМ из порта�
       'на стенде нет ни одного разосланного запроса сил — привлекать не на что: ' +
         'manage.py seed_smoke_fixtures',
     ).toBeGreaterThan(0)
+    expect(requests.results.map((row) => row.eventId), 'собственная оповещённая заявка видна серверу').toContain(ownEvent.id)
     const expectedCodes = [...new Set(requests.results.map((row) => row.code))]
 
     await signIn(page)
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
-    const actions = page.getByRole('button', { name: /^Действия: / })
-    await actions.last().click()
-    await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
+    const row = staffedRow(page)
+    const employeeId = Number(await row.getAttribute('data-employee-id'))
+    expect(Number.isSafeInteger(employeeId) && employeeId > 0).toBe(true)
+    // This checked real list sees all current submissions under the actor’s
+    // actual rights. No covered day is erased or amended to prepare the test.
+    const submissions = await call('GET', `/api/operations/daily-submissions/?business_date=${dateStart}&limit=1`)
+    expect(submissions.count, 'reserved own status day must have no current submitted report').toBe(0)
+    // This fixture owns a future period, so enter the scheduling action.
+    await clickRowMenuItem(page, row, 'Запланированные статусы')
+    await page.getByRole('dialog').getByRole('button', { name: /^Запланировать статус/ }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
 
@@ -181,11 +240,13 @@ test.describe('статусы: привлечение на ОМ из порта�
     ).toHaveCount(0)
 
     // Период: у привлечения есть начало и конец, бессрочным оно не бывает.
-    // Даты — в СЛЕДУЮЩЕМ месяце: у взятого человека там статуса нет.
+    // Exactly one reserved day, selected with real keyboard/calendar actions.
     await dialog.locator('#startDate').click()
-    await pickNextMonthDay(page, '10')
+    await pickOwnedDate(page, dateStart)
     await dialog.locator('#endDate').click()
-    await pickNextMonthDay(page, '20')
+    // The picker shows the last included day; one-day participation uses
+    // the same day in both controls and the next day in the operations API.
+    await pickOwnedDate(page, dateStart)
 
     // 🔴 АДРЕС РУЧКИ — ГЛАВНЫЙ АССЕРТ ПРОБЫ (см. шапку файла). Попади запись
     // в кадровую ручку — ответ пришёл бы с другого адреса и ожидание истекло.
@@ -198,10 +259,16 @@ test.describe('статусы: привлечение на ОМ из порта�
       dialog.getByRole('button', { name: 'Сохранить' }).click(),
     ])
     expect(response.status(), await response.text()).toBe(201)
+    const sent = response.request().postDataJSON() as { employee_id: number; date_start: string; date_end: string }
+    expect(sent).toMatchObject({ employee_id: employeeId, date_start: dateStart, date_end: dateEnd })
     const saved = (await response.json()) as {
+      employee_id: number
+      date_start: string
+      date_end: string
       status_type_code: string
       participations: { event_id: number; kind_code: string }[]
     }
+    expect(saved).toMatchObject({ employee_id: employeeId, date_start: dateStart, date_end: dateEnd })
     expect(saved.status_type_code).toBe(IN_EVENT_STATUS_CODE)
     expect(saved.participations, 'строка физнаря доехала до сервера').toHaveLength(1)
     expect(saved.participations[0]!.event_id).toBe(0)
@@ -210,6 +277,8 @@ test.describe('статусы: привлечение на ОМ из порта�
 
   test('сервер держит правило сам: без вида, физнарь без ОМ и чужое ОМ', async () => {
     const token = await tokenFor()
+    const businessDate = uniqueBusinessDate()
+    const dateAt = (days: number) => new Date(Date.parse(`${businessDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
     const employees = (await (
       await fetch(`${API}/api/core/employees/?page_size=1`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -224,8 +293,8 @@ test.describe('статусы: привлечение на ОМ из порта�
       body: JSON.stringify({
         employee_id: employeeId,
         status_type_code: IN_EVENT_STATUS_CODE,
-        date_start: '2030-01-10',
-        date_end: '2030-01-11',
+        date_start: dateAt(0),
+        date_end: dateAt(1),
       }),
     })
     expect(bare.status).toBe(422)
@@ -239,8 +308,8 @@ test.describe('статусы: привлечение на ОМ из порта�
       body: JSON.stringify({
         employee_id: employeeId,
         status_type_code: IN_EVENT_STATUS_CODE,
-        date_start: '2030-01-11',
-        date_end: '2030-01-12',
+        date_start: dateAt(1),
+        date_end: dateAt(2),
         participations: [{ kind_code: SQUAD_KIND }],
       }),
     })
@@ -259,8 +328,8 @@ test.describe('статусы: привлечение на ОМ из порта�
       body: JSON.stringify({
         employee_id: employeeId,
         status_type_code: IN_EVENT_STATUS_CODE,
-        date_start: '2030-01-12',
-        date_end: '2030-01-13',
+        date_start: dateAt(2),
+        date_end: dateAt(3),
         participations: [{ event_id: 999999999, kind_code: SQUAD_KIND }],
       }),
     })

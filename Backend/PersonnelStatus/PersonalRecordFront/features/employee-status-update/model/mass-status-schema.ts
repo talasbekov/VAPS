@@ -6,7 +6,6 @@
 // «Укажите дату начала.»). Порядок полей для фокуса лежал третьим списком
 // (`FIELD_ORDER`) — теперь фокус идёт по разметке, и списка нет вовсе.
 import { z } from "zod";
-import { EMPLOYEE_STATUS_LABELS } from "@/lib/status";
 
 /** Поля перечислены в порядке появления на экране — так схему проще читать. */
 export const massStatusSchema = z
@@ -15,8 +14,6 @@ export const massStatusSchema = z
     startDate: z.date().optional(),
     endDate: z.date().optional(),
     comment: z.string(),
-    notifyManagers: z.boolean(),
-    scheduleUpdate: z.boolean(),
   })
   .superRefine((values, ctx) => {
     // Правило то же, что в одиночной модалке: «В строю» бессрочен и дат не
@@ -26,7 +23,7 @@ export const massStatusSchema = z
     // невозможен, и обновление отклонялось уже на сервере.
     const needsPeriod =
       values.status !== "" &&
-      values.status !== EMPLOYEE_STATUS_LABELS.in_service;
+      values.status !== "in_service";
 
     if (needsPeriod) {
       if (values.startDate === undefined) {
@@ -48,6 +45,7 @@ export const massStatusSchema = z
     // Перевёрнутый период ловим у ВТОРОЙ даты: чинить надо ту, которую человек
     // только что поставил, к ней и ведём фокус.
     if (
+      needsPeriod &&
       values.startDate !== undefined &&
       values.endDate !== undefined &&
       values.startDate > values.endDate
@@ -67,6 +65,4 @@ export const EMPTY_MASS_STATUS_FORM: MassStatusFormValues = {
   startDate: undefined,
   endDate: undefined,
   comment: "",
-  notifyManagers: true,
-  scheduleUpdate: false,
 };

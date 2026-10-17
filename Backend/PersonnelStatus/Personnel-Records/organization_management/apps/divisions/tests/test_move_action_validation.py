@@ -10,6 +10,7 @@
 фикс так, что он попутно ломает рабочий сценарий).
 """
 import pytest
+from organization_management.apps.operations.tests.support import client_for
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
@@ -22,8 +23,7 @@ DivisionType = Division.DivisionType
 
 @pytest.fixture
 def api():
-    client = APIClient()
-    client.force_authenticate(get_user_model().objects.create_user("division-move-reader"))
+    client, _ = client_for("division-validator", "DIVISION_VALIDATOR", ["orgstructure.manage"])
     return client
 
 

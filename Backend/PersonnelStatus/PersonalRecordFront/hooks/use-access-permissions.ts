@@ -6,7 +6,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
-import type { OpsApiFailure } from "@/lib/ops-errors";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { OpsNetworkError, type OpsApiFailure } from "@/lib/ops-errors";
+import { loadUserRoleAssignments } from "@/entities/access/user-role-pages";
 import {
   ACCESS_CATALOG_PATH,
   ACCESS_PERMISSIONS_PATH,
@@ -39,6 +42,14 @@ import type {
   SaveAccessRoleRequest,
 } from "@/entities/access";
 
+type AccessReadOptions = { enabled?: boolean };
+
+function useAccessReadEnabled(options?: AccessReadOptions): boolean {
+  const { hasGlobalPermission, isLoading } = useOpsPermissions();
+  return !isLoading && hasGlobalPermission(MODULE_PERMISSION["/settings/users"]) &&
+    options?.enabled !== false;
+}
+
 function withSearch(path: string, search: string): string {
   const trimmed = search.trim();
   return trimmed === ""
@@ -46,24 +57,28 @@ function withSearch(path: string, search: string): string {
     : `${path}?search=${encodeURIComponent(trimmed)}`;
 }
 
-export function useAccessPermissions(search: string) {
+export function useAccessPermissions(search: string, options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
   return useQuery<ListAccessPermissionsResponse, OpsApiFailure>({
     queryKey: ["ops-access-permissions", search.trim()],
     queryFn: () =>
       opsApiClient.get<ListAccessPermissionsResponse>(
         withSearch(ACCESS_PERMISSIONS_PATH, search)
       ),
+    enabled,
   });
 }
 
 /** Каталог применения запрашивается ЦЕЛИКОМ и один раз на экран: он
  * собирается из карт гейтов, за поиском по правам не следует и на строку
  * права отвечает мгновенно из кэша. */
-export function useAccessCatalog() {
+export function useAccessCatalog(options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
   return useQuery<AccessCatalogResponse, OpsApiFailure>({
     queryKey: ["ops-access-catalog"],
     queryFn: () =>
       opsApiClient.get<AccessCatalogResponse>(ACCESS_CATALOG_PATH),
+    enabled,
   });
 }
 
@@ -107,13 +122,57 @@ export function useSetAccessPermissionActive() {
 
 // ── Роли (Plane №36, шаг «П-7») ────────────────────────────────────────────
 
-export function useAccessRoles(search: string) {
+export function useAccessRoles(search: string, options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
   return useQuery<ListAccessRolesResponse, OpsApiFailure>({
     queryKey: ["ops-access-roles", search.trim()],
     queryFn: () =>
       opsApiClient.get<ListAccessRolesResponse>(
         withSearch(ACCESS_ROLES_PATH, search)
       ),
+    enabled,
+  });
+}
+
+/** Dropdown options need the whole catalog; the registry keeps server search. */
+export function useAccessRoleOptions(options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
+  return useQuery<ListAccessRolesResponse, OpsApiFailure>({
+    queryKey: ["ops-access-roles", "options", "all"],
+    queryFn: async () => {
+      const results: AccessRole[] = [];
+      const visited = new Set<string>();
+      let next: string | null = ACCESS_ROLES_PATH;
+      while (next !== null) {
+        let url: URL;
+        try {
+          url = new URL(next, "https://ops-api.invalid");
+        } catch (cause) {
+          throw new OpsNetworkError("Неверный адрес страницы справочника ролей.", { cause });
+        }
+        if (url.pathname !== ACCESS_ROLES_PATH ||
+          (url.protocol !== "http:" && url.protocol !== "https:") || url.hash !== "") {
+          throw new OpsNetworkError("Неверный адрес страницы справочника ролей.");
+        }
+        // Backend next may use another host/port behind the proxy. Only the
+        // validated local endpoint goes to opsApiClient, never that origin.
+        const endpoint = `${url.pathname}${url.search}`;
+        if (visited.has(endpoint)) {
+          throw new OpsNetworkError("Справочник ролей повторяет страницу.");
+        }
+        visited.add(endpoint);
+        const body = await opsApiClient.get<ListAccessRolesResponse>(endpoint);
+        if (!Array.isArray(body.results) ||
+          (body.next !== null && typeof body.next !== "string") ||
+          (body.results.length === 0 && body.next !== null)) {
+          throw new OpsNetworkError("Некорректный ответ справочника ролей.");
+        }
+        results.push(...body.results);
+        next = body.next;
+      }
+      return { count: results.length, next: null, previous: null, results };
+    },
+    enabled,
   });
 }
 
@@ -159,26 +218,37 @@ export function useChangeRolePermissions(code: string) {
 
 // ── Учётные записи и назначения ролей (Plane №36, шаг «П-8») ───────────────
 
-export function useAccessAccounts(search: string) {
+export function useAccessAccount(userId: number | null, options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
+  return useQuery<AccessAccount, OpsApiFailure>({
+    queryKey: ["ops-access-accounts", "detail", userId],
+    queryFn: () => opsApiClient.get<AccessAccount>(accessAccountPath(userId!)),
+    enabled: enabled && userId !== null,
+  });
+}
+
+export function useAccessAccounts(search: string, options?: AccessReadOptions & { offset?: number }) {
+  const enabled = useAccessReadEnabled(options);
+  const offset = options?.offset ?? 0;
   return useQuery<ListAccessAccountsResponse, OpsApiFailure>({
-    queryKey: ["ops-access-accounts", search.trim()],
+    queryKey: ["ops-access-accounts", "list", search.trim(), offset],
     queryFn: () =>
       opsApiClient.get<ListAccessAccountsResponse>(
-        withSearch(ACCESS_ACCOUNTS_PATH, search)
+        `${withSearch(ACCESS_ACCOUNTS_PATH, search)}${search.trim() ? "&" : "?"}limit=50&offset=${offset}`
       ),
+    enabled,
   });
 }
 
 /** Назначения ОДНОГО человека: список раздела длинный, и тянуть его целиком
  * ради карточки незачем — фильтр по `user_id` есть на сервере. */
-export function useAccessUserRoles(userId: number | null) {
+export function useAccessUserRoles(userId: number | null, options?: AccessReadOptions) {
+  const enabled = useAccessReadEnabled(options);
   return useQuery<ListAccessUserRolesResponse, OpsApiFailure>({
     queryKey: ["ops-access-user-roles", userId],
     queryFn: () =>
-      opsApiClient.get<ListAccessUserRolesResponse>(
-        `${ACCESS_USER_ROLES_PATH}?user_id=${encodeURIComponent(String(userId))}`
-      ),
-    enabled: userId !== null,
+      loadUserRoleAssignments(userId!, endpoint => opsApiClient.get<ListAccessUserRolesResponse>(endpoint)),
+    enabled: enabled && userId !== null,
   });
 }
 

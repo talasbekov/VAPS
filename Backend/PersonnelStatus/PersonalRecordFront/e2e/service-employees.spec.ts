@@ -31,6 +31,12 @@ test.describe('№1043 сотрудники Службы', () => {
     const first = await response.json() as ServiceEmployeePage;
     expect(first.count).toBeGreaterThan(1);
     const employee = first.results[0];
+    const secondResponse = await page.request.get(`${API}/api/core/service-employees/?page_size=1&page=2`, { headers });
+    expect(secondResponse.status()).toBe(200);
+    const secondPage = await secondResponse.json() as ServiceEmployeePage;
+    expect(secondPage.results).toHaveLength(1);
+    const secondEmployee = secondPage.results[0];
+    expect(secondEmployee.id).not.toBe(employee.id);
     expect(Object.keys(employee)).not.toEqual(expect.arrayContaining(['iin']));
     const foreignId = first.results[0].id;
     const personalPassword = process.env.ACCESS_MATRIX_PASSWORD;
@@ -45,13 +51,15 @@ test.describe('№1043 сотрудники Службы', () => {
       expect((await page.request.get(`${API}/api/core/service-employees/${otherId}/`, { headers: ownHeaders })).status()).toBe(404);
     }
     await page.goto(`${APP}/service-employees?page_size=1`);
-    await expect(page.getByRole('heading', { name: 'Сотрудники Службы', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Сотрудники подразделения', exact: true })).toBeVisible();
     await expect(page.getByTestId('service-employee-row')).toHaveCount(1);
     await expect(page.getByRole('link', { name: employee.full_name, exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Далее', exact: true }).click();
     await expect(page).toHaveURL(/page=2/);
     await expect(page.getByTestId('service-employee-row')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: employee.full_name, exact: true })).toHaveCount(0);
+    const secondLink = page.getByRole('link', { name: secondEmployee.full_name, exact: true });
+    await expect(secondLink).toHaveAttribute('href', new RegExp(`^/security-ops/profile/${secondEmployee.id}/\\?directory=1(?:&|$)`));
+    await expect(page.locator(`a[href^="/security-ops/profile/${employee.id}/?"]`)).toHaveCount(0);
     await page.getByLabel('Поиск по ФИО, табельному номеру или позывному').fill(employee.personnel_number);
     await page.getByRole('button', { name: 'Применить фильтры' }).click();
     await expect(page).not.toHaveURL(/page=2/);
@@ -71,11 +79,11 @@ test.describe('№1043 сотрудники Службы', () => {
     await expect(page.getByText('ИИН', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Личный телефон', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Ознакомлен, заступлю', exact: true })).toHaveCount(0);
-    const output = path.resolve('smoke-results');
+    const output = testInfo.outputPath('live-shots');
     fs.mkdirSync(output, { recursive: true });
     await page.screenshot({ path: path.join(output, '1043-card.png'), fullPage: true });
     await testInfo.attach('Карточка сотрудника', { path: path.join(output, '1043-card.png'), contentType: 'image/png' });
-    await page.getByRole('link', { name: '← Сотрудники Службы' }).click();
+    await page.getByRole('link', { name: '← Сотрудники подразделения' }).click();
     await expect(page).toHaveURL(filtersUrl);
     await expect(page.getByLabel('Поиск по ФИО, табельному номеру или позывному')).toHaveValue(employee.personnel_number);
     await page.getByLabel('Поиск по ФИО, табельному номеру или позывному').fill('nonexistent-s1043');
@@ -115,7 +123,7 @@ test.describe('№1043 сотрудники Службы', () => {
     expect(href).toMatch(/^\/service-employees\/?\?division_id=\d+$/);
     await link.click();
     await expect(page).toHaveURL(new RegExp(`division_id=${new URL(href!, APP).searchParams.get('division_id')}`));
-    await expect(page.getByRole('heading', { name: 'Сотрудники Службы', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Сотрудники подразделения', exact: true })).toBeVisible();
     await expect(page.getByLabel('Подразделение и подчинённые')).toHaveValue(new URL(href!, APP).searchParams.get('division_id')!);
   });
 });
@@ -124,7 +132,7 @@ test.describe('№1043 контракт отображения карточки'
   test.use({ serviceWorkers: 'block' });
   test.skip(!LIVE, 'Нужен живой вход; подменяется только проекция карточки, БД не меняется');
 
-  test('последний день статуса, таблица истории и раскрытие оценки своего поста', async ({ page }) => {
+  test('последний день статуса, таблица истории и раскрытие оценки своего поста', async ({ page }, testInfo) => {
     const headers = await login(page, STAND_USERNAME, STAND_PASSWORD);
     const first = await (await page.request.get(`${API}/api/core/service-employees/?page_size=1`, { headers })).json() as ServiceEmployeePage;
     const employee = first.results[0];
@@ -157,9 +165,9 @@ test.describe('№1043 контракт отображения карточки'
     await expect(rated.getByText('Пост выполнен', { exact: true })).toBeVisible();
     await expect(rated.getByText('Автор проверки · 02.09.2026', { exact: true })).toBeVisible();
     await expect(history.getByRole('row').filter({ has: page.getByRole('cell', { name: 'Пост 2', exact: true }) }).getByRole('cell').last()).toHaveText('—');
-    await page.screenshot({ path: 'smoke-results/1043-contract-history.png', fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath('1043-contract-history.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
-    await page.screenshot({ path: 'smoke-results/1043-contract-mobile.png' });
+    await page.screenshot({ path: testInfo.outputPath('1043-contract-mobile.png') });
   });
 });

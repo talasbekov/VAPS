@@ -35,6 +35,26 @@ export type EvaluationWorkItemStatus = "PENDING" | "SUBMITTED";
  * определяет список target и не создаёт задание после refresh. Оценщик лежит в
  * задании и наружу не отдаётся — по нему отбирается очередь.
  */
+export interface GroupRatingMember {
+  participantCode: string;
+  assignmentId: string;
+  safeLabel: string;
+  unitSafeLabel: string;
+}
+
+export interface GroupRatingSnapshot {
+  groupId: string;
+  groupLabel: string;
+  eventId: string;
+  postId: string;
+  postLabel: string;
+  objectId: string | null;
+  objectLabel: string;
+  kindCode: string;
+  plannedMembers: GroupRatingMember[];
+  actualMembers: GroupRatingMember[];
+}
+
 export interface EvaluationWorkItem {
   id: string;
   securityEventId: string;
@@ -44,6 +64,10 @@ export interface EvaluationWorkItem {
   evaluatorUserId: string;
   targetEmployeeId: string | null;
   targetGroupId: string | null;
+  groupSnapshot?: GroupRatingSnapshot | null;
+  groupRosterToken?: string;
+  canSubmit?: boolean;
+  submissionUnavailableReason?: string | null;
   targetSafeLabel: string;
   targetSafeUnitLabel: string;
   postLabel: string;
@@ -325,6 +349,8 @@ export type EvaluationWorkItemView = Omit<EvaluationWorkItem, "evaluatorUserId">
 export interface SubmittedEvaluationView {
   workItemId: string;
   evaluationId: string;
+  targetGroupId?: string;
+  groupSnapshot?: GroupRatingSnapshot | null;
   targetSafeLabel: string;
   postLabel: string;
   evaluationDirection: EvaluationDirection;
@@ -384,6 +410,7 @@ export interface SubmittedEvaluationDetailResponse {
   bases: EvaluationBasis[];
   /** Решает СЕРВЕР: кнопка, выключенная только на клиенте, — не ограничение. */
   canCorrect: boolean;
+  correctionUnavailableReason?: string | null;
   loadedAt: string;
 }
 
@@ -395,6 +422,8 @@ export interface SubmitEvaluationRequest {
   revision: number;
   /** §19.26: повтор с тем же ключом не создаёт вторую оценку. Ключ случайный. */
   idempotencyKey: string;
+  /** Required for collective submission; comes from the visible actual roster. */
+  groupRosterToken?: string;
 }
 
 export interface SubmitEvaluationResponse {
@@ -835,7 +864,8 @@ export const CLOSED_DETAILS_LABEL = "Детали оценки закрыты";
 export interface EvaluationRegistryRow {
   rowId: string;
   /** КОД УЧАСТНИКА рейтинга (`employee-<id>`), а не кадровый id. */
-  employeeId: string;
+  employeeId: string | null;
+  groupId?: string | null;
   /** Кадровый id того же человека (Plane №655); `null` — участник не связан
    *  с кадрами. Отдан рядом, чтобы читателю с кадровым id на руках (профиль
    *  сотрудника, расстановка) не пришлось знать форму кода участника. */

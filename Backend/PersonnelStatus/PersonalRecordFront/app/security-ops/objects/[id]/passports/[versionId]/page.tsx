@@ -5,50 +5,64 @@
 // старой версии не переключает на действующую редакцию: страница показывает
 // СНИМОК и явно говорит, что это не черновик.
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityObject } from "@/hooks/use-security-objects";
+import { PassportVersionSnapshot } from "@/features/object-passport";
 import { formatIsoDateTime, formatIsoDate } from "@/shared/lib/date";
 
 const VERSION_NOT_FOUND_TEXT =
   "Версия паспорта не найдена — возможно, ссылка ведёт на другой объект.";
 
-const READ_ONLY_HINT =
-  "Опубликованная версия неизменяема: это снимок паспорта на момент публикации, а не действующая редакция.";
-
 export default function PassportVersionPage() {
+  return <Suspense fallback={<div className="min-h-screen bg-background" />}><PassportVersionScreen /></Suspense>;
+}
+
+function PassportVersionScreen() {
   const params = useParams<{ id: string; versionId: string }>();
   const id = params?.id ?? "";
   const versionId = params?.versionId ?? "";
-  const query = useSecurityObject(id);
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const access = useOpsPermissions();
+  const canView = !access.isLoading && access.permissions !== undefined && access.hasPermission("object.view");
+  const query = useSecurityObject(id, { enabled: canView });
+  const searchParams = useSearchParams();
+  const back = searchParams.get("back") ?? "";
+  const historyParams = new URLSearchParams({ tab: "history" });
+  if (back !== "") historyParams.set("back", back);
+  const backLink = <Link href={`/security-ops/objects/${encodeURIComponent(id)}?${historyParams.toString()}`}
+    className="mb-3 inline-block text-xs font-semibold text-primary-ink">← Назад к истории паспорта</Link>;
+  const accessReadFailed = query.readAccessBlocked;
+  const mismatched = query.data !== undefined && query.data.id !== id;
 
   // Deep link на версию паспорта минует реестр объектов с его гвардом.
-  if (!permissionsLoading && !hasPermission("object.view")) {
+  if (access.isLoading) {
+    return <DashboardLayout><p className="text-sm text-muted-foreground">Проверка доступа к версии паспорта…</p></DashboardLayout>;
+  }
+  if (!canView) {
     return <OpsAccessDenied what="версии паспорта объекта" />;
   }
 
   if (query.isLoading) {
     return (
       <DashboardLayout>
+        {backLink}
         <p className="text-sm text-muted-foreground">Загрузка версии паспорта…</p>
       </DashboardLayout>
     );
   }
-  if (query.isError || query.data === undefined) {
+  if (query.data === undefined || accessReadFailed || mismatched) {
     return (
       <DashboardLayout>
-        <p className="text-sm text-destructive-ink">Объект не найден или недоступен.</p>
-        <Link
-          href="/security-ops/objects"
-          className="mt-2 inline-block text-sm font-semibold text-primary-ink"
-        >
-          ← Назад к реестру
-        </Link>
+        {backLink}
+        <LoadFailure what="опубликованную версию паспорта"
+          description={accessReadFailed ? "Объект не найден или недоступен для просмотра." : mismatched ? "Ответ не соответствует выбранному объекту. Повторите загрузку." : undefined}
+          onRetry={() => { void query.refetch(); }} isRetrying={query.isFetching} />
       </DashboardLayout>
     );
   }
@@ -58,20 +72,18 @@ export default function PassportVersionPage() {
 
   return (
     <DashboardLayout>
-      <Link
-        href={`/security-ops/objects/${object.id}`}
-        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
-      >
-        ← Назад к паспорту объекта
-      </Link>
+      {backLink}
+      {query.isError && <LoadFailure what="опубликованную версию паспорта"
+        description={version === undefined ? "В последних загруженных данных этой версии нет. Повторите загрузку для проверки." : "Показан последний загруженный снимок. Повторите загрузку для проверки доступа и актуальности."}
+        onRetry={() => { void query.refetch(); }} isRetrying={query.isFetching} />}
 
-      {version === undefined ? (
+      {version === undefined ? (!query.isError && (
         <Card>
           <CardContent className="p-9 text-center">
             <p className="text-sm text-destructive-ink">{VERSION_NOT_FOUND_TEXT}</p>
           </CardContent>
         </Card>
-      ) : (
+      )) : (
         <>
           <PageHeader
             className="mb-4"
@@ -80,54 +92,12 @@ export default function PassportVersionPage() {
             description={`Действует с ${formatIsoDate(version.effectiveFrom)} · опубликовано ${formatIsoDateTime(version.publishedAt)} · ${version.publishedBy}`}
             actions={
               <span className="inline-flex rounded-full bg-muted px-3 py-1 text-[11.5px] font-semibold text-muted-foreground">
-                read-only
+                Только просмотр
               </span>
             }
           />
 
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-            {READ_ONLY_HINT}
-          </p>
-
-          {version.note !== "" && (
-            <Card className="mb-4">
-              <CardContent className="p-4">
-                <h2 className="mb-1 text-sm font-semibold">
-                  Примечание к публикации
-                </h2>
-                <p className="text-sm text-muted-foreground">{version.note}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="flex flex-col gap-4">
-            {version.sectors.map((sector) => (
-              <Card key={sector.id}>
-                <CardContent className="p-4">
-                  <h2 className="mb-2 text-sm font-semibold">{sector.name}</h2>
-                  {sector.posts.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Постов в секторе нет.
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col gap-1.5">
-                      {sector.posts.map((post) => (
-                        <li key={post.id} className="rounded-md border p-2.5 text-xs">
-                          <span className="font-semibold">{post.name}</span>{" "}
-                          <span className="text-muted-foreground">
-                            {post.task}
-                            {post.requirements !== ""
-                              ? ` · ${post.requirements}`
-                              : ""}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <PassportVersionSnapshot version={version} />
         </>
       )}
     </DashboardLayout>

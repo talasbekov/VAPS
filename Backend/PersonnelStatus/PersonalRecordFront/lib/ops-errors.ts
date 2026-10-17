@@ -173,6 +173,12 @@ async function readEnvelope(response: Response): Promise<OpsErrorEnvelope | null
         timestamp: "",
       };
     }
+    // DRF serializers return field -> messages, without an OPS envelope.
+    if (response.status === 400 && Object.keys(data).length > 0 &&
+        Object.values(data).every((value) => Array.isArray(value) && value.every((item) => typeof item === "string"))) {
+      return { error_code: "VALIDATION_ERROR", message: "Проверьте поля формы.",
+        details: data, request_id: null, timestamp: "" };
+    }
     return null; // чужой JSON без причины
   }
   return {

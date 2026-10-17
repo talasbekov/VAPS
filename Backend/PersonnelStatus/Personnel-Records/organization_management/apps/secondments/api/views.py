@@ -9,6 +9,7 @@ from organization_management.apps.secondments.models import SecondmentRequest
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from organization_management.apps.statuses.models import EmployeeStatus
 from organization_management.apps.statuses.application.services import (
@@ -122,13 +123,13 @@ class SecondmentRequestViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         «откомандирован», и в «прикомандирован» своего же подразделения.
         """
         instance = self.get_object()
+        instance = get_object_or_404(self.get_queryset().select_for_update(), pk=instance.pk)
         forbidden = self._receiving_side_forbidden(request, instance)
         if forbidden is not None:
             return forbidden
-        if instance.status == SecondmentRequest.ApprovalStatus.APPROVED:
-            # Повторное одобрение завело бы второй статус на тот же период.
+        if instance.status != SecondmentRequest.ApprovalStatus.PENDING:
             return Response(
-                {'detail': 'Запрос уже одобрен.'},
+                {'detail': 'Решение по запросу уже принято. Обновите список.'},
                 status=status_codes.HTTP_409_CONFLICT,
             )
         if instance.employee_id is None or instance.to_division_id is None:
@@ -170,14 +171,21 @@ class SecondmentRequestViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(instance).data)
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def reject(self, request, pk=None):
         """
         Отклонение запроса на прикомандирование.
         """
         instance = self.get_object()
+        instance = get_object_or_404(self.get_queryset().select_for_update(), pk=instance.pk)
         forbidden = self._receiving_side_forbidden(request, instance)
         if forbidden is not None:
             return forbidden
+        if instance.status != SecondmentRequest.ApprovalStatus.PENDING:
+            return Response(
+                {'detail': 'Решение по запросу уже принято. Обновите список.'},
+                status=status_codes.HTTP_409_CONFLICT,
+            )
         instance.status = SecondmentRequest.ApprovalStatus.REJECTED
         instance.rejection_reason = request.data.get('reason', '')
         instance.save()
@@ -200,19 +208,27 @@ class SecondmentRequestViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         появиться в строю, а не остаться без статуса.
         """
         instance = self.get_object()
+        instance = get_object_or_404(self.get_queryset().select_for_update(), pk=instance.pk)
         forbidden = self._receiving_side_forbidden(request, instance)
         if forbidden is not None:
             return forbidden
+        if instance.status != SecondmentRequest.ApprovalStatus.APPROVED:
+            return Response(
+                {'detail': 'Вернуть сотрудника можно только по одобренному запросу.'},
+                status=status_codes.HTTP_409_CONFLICT,
+            )
 
         today = timezone.localdate()
-        open_status = EmployeeStatus.objects.filter(
+        open_status = EmployeeStatus.objects.select_for_update().filter(
             employee_id=instance.employee_id,
+            related_division_id=instance.to_division_id,
+            start_date=instance.start_date,
             status_type=EmployeeStatus.StatusType.SECONDED_TO,
             state=EmployeeStatus.StatusState.ACTIVE,
         ).order_by('-start_date').first()
         if open_status is None:
             return Response(
-                {'detail': 'Действующего откомандирования у сотрудника нет.'},
+                {'detail': 'Действующего откомандирования по этому запросу нет.'},
                 status=status_codes.HTTP_409_CONFLICT,
             )
 

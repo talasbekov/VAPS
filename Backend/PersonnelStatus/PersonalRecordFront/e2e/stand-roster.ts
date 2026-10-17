@@ -79,6 +79,7 @@ export async function acceptRosterFor(
   const event = await call('GET', `/api/ops/security-events/${eventId}/`)
   const need = Math.max(
     1,
+    options.count ?? event.forceDemandTotal ??
     (event.forceRequests as { requestedCount: number }[] | undefined)?.reduce(
       (sum, row) => sum + row.requestedCount,
       0,
@@ -87,24 +88,33 @@ export async function acceptRosterFor(
   const count = options.count ?? need
 
   const divisions = (await call('GET', '/api/core/divisions/?page_size=200')) as {
-    results: { id: number; name: string }[]
+    results: { id: number; name: string; parent: number | null; type_code: string }[]
   }
   const department = divisions.results.find(
     (d) => d.name === (options.department ?? 'Первый департамент'),
   )
   if (department === undefined) throw new Error('на стенде нет департамента для раскладки')
+  const directorate = divisions.results.find(
+    (d) => d.parent === department.id && d.type_code === 'directorate',
+  )
+  if (directorate === undefined) throw new Error('у департамента нет управления для заявки')
 
   const split = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/`, {
     rows: [{ departmentId: String(department.id), need }],
   })
   const allocationId = (split.forceAllocation?.[0]?.id ?? '') as string
   if (allocationId === '') throw new Error(`раскладка не создана: ${JSON.stringify(split).slice(0, 200)}`)
-  await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/notify/`)
+  const allocated = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/split/`, {
+    rows: [{ divisionId: String(directorate.id), need }],
+  })
+  if (allocated.error_code !== undefined) throw new Error(`раскладка управления не прошла: ${allocated.error_code}`)
+  const notified = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/notify/`)
+  if (notified.error_code !== undefined) throw new Error(`оповещение управления не прошло: ${notified.error_code}`)
 
   // Людей берётся с запасом: у части на дату ОМ уже стоит статус (отпуск,
   // другое мероприятие), и сервер отвечает STATUS_OVERLAP_WARNING — такой
   // человек пропускается, а не роняет фикстуру.
-  const people = (await call('GET', `/api/ops/personnel/?page_size=${Math.max(count * 8, 40)}`)) as {
+  const people = (await call('GET', `/api/ops/personnel/?division_id=${directorate.id}&page_size=${Math.max(count * 8, 40)}`)) as {
     results: { id: string }[]
   }
   const employeeIds: string[] = []
@@ -119,7 +129,7 @@ export async function acceptRosterFor(
     if (added.error_code !== undefined) throw new Error(`выделение не прошло: ${added.error_code}`)
     employeeIds.push(String(person.id))
   }
-  if (employeeIds.length === 0) throw new Error('не нашлось ни одного свободного на дату ОМ')
+  if (employeeIds.length !== count) throw new Error(`на дату ОМ выделено ${employeeIds.length} из ${count} сотрудников`)
   // Отправка проверяется, а не выполняется «на удачу» (Plane №653): её
   // результат здесь не читался вовсе, и провалившаяся отправка выглядела как
   // успешная подготовка.

@@ -5,6 +5,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { OpsProtectedPortalContext } from "@/lib/ops-permission-suspension"
 
 function DropdownMenu({
   ...props
@@ -13,10 +14,12 @@ function DropdownMenu({
 }
 
 function DropdownMenuPortal({
+  container,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>) {
+  const protectedContainer = React.useContext(OpsProtectedPortalContext)
   return (
-    <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
+    <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" container={container ?? protectedContainer} {...props} />
   )
 }
 
@@ -37,7 +40,7 @@ function DropdownMenuContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPortal>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
@@ -47,7 +50,7 @@ function DropdownMenuContent({
         )}
         {...props}
       />
-    </DropdownMenuPrimitive.Portal>
+    </DropdownMenuPortal>
   )
 }
 

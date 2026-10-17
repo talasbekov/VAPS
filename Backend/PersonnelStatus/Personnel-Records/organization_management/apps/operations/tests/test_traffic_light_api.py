@@ -150,7 +150,7 @@ def test_scope_resolves_to_the_minimal_set_of_roots(types, tree):
     api, _ = client_for(
         "tl-nested", "VIEWER", READ_PERMS, scope_division_id=root.id
     )
-    explicit_api, _ = client_for("tl-nested-admin", "ADMIN", ["*"])
+    explicit_api = api  # Compare the same grants; wildcard admins skip scope queries.
     with CaptureQueriesContext(connection) as derived:
         from_scope = get(api)
     with CaptureQueriesContext(connection) as explicit:

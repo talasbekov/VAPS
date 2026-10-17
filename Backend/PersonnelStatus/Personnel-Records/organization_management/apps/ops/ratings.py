@@ -12,11 +12,14 @@
 транзакцией — внутри отклонённой она откатилась бы вместе с ней.
 """
 import datetime as dt
+import hashlib
+import json
 import math
 import uuid
 
 from django.db import transaction
 
+from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
@@ -99,9 +102,9 @@ UNAVAILABLE_RATING_FACTORS = [
         "code": "GROUP_EVALUATION",
         "label": "Распределение групповой оценки",
         "reason": (
-            "Групповое оценивание (§19.13) не реализовано — распределять "
-            "нечего. Показать долю групповой оценки значило бы объявить "
-            "существующим механизм, которого нет."
+            "Коллективная оценка хранится отдельно с составом группы. "
+            "Методика её распределения по индивидуальным рейтингам не "
+            "определена; оценка не копируется участникам."
         ),
     },
     {
@@ -209,17 +212,6 @@ UNAVAILABLE_WORKSPACE_VIEWS = [
             "мероприятий нет — демонстрировать исключение не на ком. Правило "
             "действует косвенно: задание без подтверждённого участия оценку "
             "не принимает (PARTICIPATION_NOT_CONFIRMED)."
-        ),
-    },
-    {
-        "code": "GROUP_EVALUATION",
-        "label": "Групповая оценка",
-        "reason": (
-            "§19.13 требует показать состав группы на момент мероприятия и "
-            "фактический состав. Таких снимков нигде не записано, а без них "
-            "групповая оценка была бы оценкой неизвестно кого. Копировать её "
-            "каждому участнику прямо запрещено, поэтому направление "
-            "объявлено, но заданий этого вида нет."
         ),
     },
     {
@@ -967,9 +959,135 @@ def _basis_label(code):
     return code
 
 
+def _group_employee_map(event, *, extra_ids=()):
+    """Resolve roster units and chief accounts in one batch, without private data."""
+    employee_ids = {
+        int(row["employeeId"]) for row in event.placement_assignments or []
+        if str(row.get("employeeId") or "").isdigit()
+    }
+    employee_ids.update(int(value) for value in extra_ids if value is not None)
+    return {
+        str(employee.pk): employee
+        for employee in Employee.objects.filter(pk__in=employee_ids).select_related(
+            "staff_unit__division",
+        )
+    }
+
+
+def _group_members(event, post_id, *, actual, employees=None):
+    """Only assignments to this explicit post; no unit/status inference."""
+    if employees is None:
+        employees = _group_employee_map(event)
+    members = {}
+    for row in event.placement_assignments or []:
+        employee_id = str(row.get("employeeId") or "")
+        if str(row.get("postId") or "") != post_id or not employee_id.isdigit():
+            continue
+        if actual and row.get("declinedAt"):
+            continue
+        employee = employees.get(employee_id)
+        staff_unit = getattr(employee, "staff_unit", None)
+        division = staff_unit.division if staff_unit is not None else None
+        unit_label = division.name if division is not None else row.get("divisionName") or ""
+        code = _participant_code_for(int(employee_id))
+        members[code] = {
+            "participantCode": code,
+            "assignmentId": str(row.get("id") or ""),
+            "safeLabel": str(row.get("employeeName") or code),
+            "unitSafeLabel": str(unit_label),
+        }
+    return sorted(members.values(), key=lambda row: row["participantCode"])
+
+
+def _group_source_id(item):
+    return OpsEvaluationEvent.objects.filter(event_code=item.event_code).values_list(
+        "security_event_id", flat=True,
+    ).first()
+
+
+def _group_source_event(item):
+    """Read projection lookup; GET callers never acquire a row lock."""
+    source_id = _group_source_id(item)
+    return OpsSecurityEvent.objects.filter(pk=source_id).first() if source_id is not None else None
+
+
+def _lock_group_source(work_item_code, actor):
+    # Stage mutations lock event before work items. Use the same order, so
+    # submitting cannot race closure or snapshot half of a replacement.
+    candidate = OpsEvaluationWorkItem.objects.filter(
+        work_item_code=work_item_code, evaluator_user_id=actor,
+        target_group_code__isnull=False,
+    ).first()
+    source_id = _group_source_id(candidate) if candidate else None
+    if source_id is None:
+        return None
+    # The submit/correct caller owns the enclosing transaction. This lock
+    # must survive until its evaluation, revision and side effects commit.
+    return OpsSecurityEvent.objects.select_for_update().filter(pk=source_id).first()
+
+
+def _group_snapshot(item, source=None):
+    if item.target_group_code is None:
+        return None
+    if item.status == "SUBMITTED" and item.submitted_evaluation_code:
+        saved = OpsEventEvaluation.objects.filter(
+            evaluation_code=item.submitted_evaluation_code,
+        ).first()
+        if saved is not None:
+            return saved.group_snapshot
+    planned = item.group_planned_snapshot
+    if not planned:
+        return None
+    source = source or _group_source_event(item)
+    return {
+        **planned,
+        "actualMembers": _group_members(source, planned["postId"], actual=True) if source else [],
+    }
+
+
+def _group_roster_token(snapshot):
+    encoded = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _assert_group_open(item, source=None):
+    planned = item.group_planned_snapshot or {}
+    source = source or _group_source_event(item)
+    if source is None or not planned.get("plannedMembers"):
+        raise DomainError(
+            "GROUP_EVALUATION_UNSUPPORTED", 422,
+            message="Состав и объект группового задания не зафиксированы: оценка не принимается.",
+        )
+    post = next((row for row in source.recon_sector_posts or []
+                 if str(row.get("id") or "") == planned.get("postId")), None)
+    if (
+        post is None
+        or str(post.get("demandKindCode") or "") != planned.get("kindCode")
+        or str(post.get("visitObjectId") or "") != str(planned.get("objectId") or "")
+    ):
+        raise DomainError(
+            "GROUP_ROSTER_UNRECORDED", 422,
+            message="Пост или объект группового задания изменён: исходное задание не переадресуется.",
+        )
+    visit = source.visit_objects.filter(pk=planned["objectId"]).first() if planned.get("objectId") else None
+    if source.closed_at is not None or source.stage == "CLOSED" or (visit and visit.stage == "CLOSED"):
+        raise DomainError(
+            "EVALUATION_ARCHIVE_LOCKED", 422,
+            message="Объект или мероприятие закрыто: групповая оценка заблокирована.",
+        )
+    if (planned.get("objectId") and visit is None) or (
+        (visit.stage if visit else source.stage) != "CONDUCT"
+    ):
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION", 422,
+            message="Группу можно оценивать только на этапе проведения её объекта.",
+        )
+    return source
+
+
 def _work_item_view(item):
     """Проекция задания наружу — ПОЛЕМ ЗА ПОЛЕМ, без оценщика (§19.7)."""
-    return {
+    result = {
         "id": item.work_item_code,
         "securityEventId": item.event_code,
         "eventRunId": item.event_run_code,
@@ -989,6 +1107,21 @@ def _work_item_view(item):
         "submittedEvaluationId": item.submitted_evaluation_code,
         "submittedAt": _iso(item.submitted_at),
     }
+    if item.target_group_code is not None:
+        snapshot = _group_snapshot(item)
+        result["groupSnapshot"] = snapshot
+        result["groupRosterToken"] = _group_roster_token(snapshot)
+        result["participated"] = bool(snapshot and snapshot.get("actualMembers"))
+        result["canSubmit"] = item.status == "PENDING" and result["participated"]
+        result["submissionUnavailableReason"] = None
+        try:
+            _assert_group_open(item)
+        except DomainError as error:
+            result["canSubmit"] = False
+            result["submissionUnavailableReason"] = error.message
+        if not result["participated"] and result["submissionUnavailableReason"] is None:
+            result["submissionUnavailableReason"] = "Фактический состав группы пуст: участие не подтверждено."
+    return result
 
 
 def _submitted_view(item, evaluations_by_code, actor):
@@ -999,7 +1132,7 @@ def _submitted_view(item, evaluations_by_code, actor):
     evaluation = evaluations_by_code.get(item.submitted_evaluation_code)
     if evaluation is None or evaluation.evaluator_user_id != actor:
         return None
-    return {
+    result = {
         "workItemId": item.work_item_code,
         "evaluationId": evaluation.evaluation_code,
         "targetSafeLabel": item.target_safe_label,
@@ -1013,6 +1146,10 @@ def _submitted_view(item, evaluations_by_code, actor):
         "submittedAt": item.submitted_at.isoformat(),
         "revision": item.revision,
     }
+    if evaluation.target_group_code is not None:
+        result["targetGroupId"] = evaluation.target_group_code
+        result["groupSnapshot"] = evaluation.group_snapshot
+    return result
 
 
 def _summarize_queue(items):
@@ -1404,6 +1541,7 @@ def submit_evaluation(actor, perms, work_item_code, body):
                             _my_queue(actor, repeated.event_code)
                         ),
                     }
+            group_source = _lock_group_source(work_item_code, actor)
             item = (
                 OpsEvaluationWorkItem.objects.select_for_update()
                 .filter(work_item_code=work_item_code)
@@ -1441,12 +1579,8 @@ def submit_evaluation(actor, perms, work_item_code, body):
                     "PARTICIPATION_NOT_CONFIRMED", 422,
                     message="Фактическое участие сотрудника не подтверждено.",
                 )
-            if item.target_participant_code is None:
-                raise DomainError(
-                    "GROUP_EVALUATION_UNSUPPORTED", 422,
-                    message="Групповая оценка не поддерживается: состав "
-                            "группы на момент мероприятия не записан.",
-                )
+            if item.target_group_code is not None:
+                group_source = _assert_group_open(item, group_source)
             # Редакция задания: человек отправляет ту версию, которую видел.
             if item.revision != body.get("revision"):
                 raise DomainError(
@@ -1455,6 +1589,20 @@ def submit_evaluation(actor, perms, work_item_code, body):
                     message="Задание изменилось: сравните значения и решите, "
                             "что отправлять.",
                 )
+            group_snapshot = None
+            if item.target_group_code is not None:
+                group_snapshot = _group_snapshot(item, group_source)
+                if not group_snapshot or not group_snapshot["actualMembers"]:
+                    raise DomainError(
+                        "PARTICIPATION_NOT_CONFIRMED", 422,
+                        message="Фактический состав группы пуст: участие не подтверждено.",
+                    )
+                if body.get("groupRosterToken") != _group_roster_token(group_snapshot):
+                    raise DomainError(
+                        "GROUP_ROSTER_CHANGED", 409,
+                        detail={"reloadRequired": True},
+                        message="Состав группы изменился. Обновите состав и проверьте его перед отправкой.",
+                    )
             _validate_submission(
                 body.get("score"), body.get("basisCode"),
                 body.get("basisNote"), body.get("comment"),
@@ -1465,6 +1613,8 @@ def submit_evaluation(actor, perms, work_item_code, body):
                 evaluation_code=_tmp_code(),
                 event_code=item.event_code,
                 participant_code=item.target_participant_code,
+                target_group_code=item.target_group_code,
+                group_snapshot=group_snapshot,
                 evaluator_user_id=actor,
                 score=body.get("score"),
                 comment=_blank_to_none(body.get("comment")),
@@ -1662,6 +1812,14 @@ def submitted_evaluation_detail(actor, perms, work_item_code):
     if submitted is None:
         raise _not_found(work_item_code)
     corrections = list(OpsEvaluationCorrection.objects.all())
+    group_open = True
+    correction_unavailable_reason = None
+    if item.target_group_code is not None:
+        try:
+            _assert_group_open(item)
+        except DomainError as error:
+            group_open = False
+            correction_unavailable_reason = error.message
     return {
         "workItem": _work_item_view(item),
         "submitted": submitted,
@@ -1678,7 +1836,9 @@ def submitted_evaluation_detail(actor, perms, work_item_code):
         "canCorrect": (
             has_perm(perms, CORRECT_PERMISSION)
             and flags.operational_ratings
+            and group_open
         ),
+        "correctionUnavailableReason": correction_unavailable_reason,
         "loadedAt": Clock.now().isoformat(),
     }
 
@@ -1727,6 +1887,7 @@ def correct_evaluation(actor, perms, work_item_code, body):
                             else None
                         ),
                     }
+            group_source = _lock_group_source(work_item_code, actor)
             item = (
                 OpsEvaluationWorkItem.objects.select_for_update()
                 .filter(work_item_code=work_item_code)
@@ -1743,6 +1904,8 @@ def correct_evaluation(actor, perms, work_item_code, body):
                     message="Оперативный рейтинг выключен: исправления не "
                             "принимаются.",
                 )
+            if item.target_group_code is not None:
+                _assert_group_open(item, group_source)
             original_code = item.submitted_evaluation_code
             if item.status != "SUBMITTED" or original_code is None:
                 raise DomainError(
@@ -1788,6 +1951,8 @@ def correct_evaluation(actor, perms, work_item_code, body):
                 evaluation_code=_tmp_code(),
                 event_code=original.event_code,
                 participant_code=original.participant_code,
+                target_group_code=original.target_group_code,
+                group_snapshot=original.group_snapshot,
                 evaluator_user_id=original.evaluator_user_id,
                 score=body.get("score"),
                 comment=_blank_to_none(body.get("comment")),
@@ -1915,6 +2080,7 @@ def evaluation_registry(filters):
     rows = []
     if flags.operational_ratings:
         for evaluation in evaluations:
+            collective = evaluation.group_snapshot if evaluation.target_group_code is not None else None
             participant = participants.get(evaluation.participant_code)
             group = (
                 groups.get(participant.group_code)
@@ -1931,6 +2097,7 @@ def evaluation_registry(filters):
                 # закрытой записи её можно было бы спрашивать поимённо.
                 "rowId": f"row-{evaluation.evaluation_code}",
                 "employeeId": evaluation.participant_code,
+                "groupId": evaluation.target_group_code,
                 # 🔴 КАДРОВАЯ ССЫЛКА ДОБАВЛЕНА РЯДОМ (Plane №655) — тем же
                 # приёмом и по тому же доводу, что и в сводке участника
                 # (`build_summary`, Plane №96): `employeeId` здесь это КОД
@@ -1950,22 +2117,28 @@ def evaluation_registry(filters):
                     else None
                 ),
                 "employeeSafeLabel": (
+                    collective["groupLabel"] if collective else
                     participant.safe_label if participant is not None else "—"
                 ),
                 "unitSafeLabel": (
+                    ", ".join(sorted({row["unitSafeLabel"] for row in collective["plannedMembers"]
+                                      if row["unitSafeLabel"]})) if collective else
                     group.safe_label if group is not None else "—"
                 ),
                 "eventNumber": event.number if event is not None else "—",
                 "eventTitle": event.title if event is not None else "—",
                 "objectLabel": (
+                    collective["objectLabel"] if collective else
                     event.object_label if event is not None else "—"
                 ),
                 "postLabel": (
+                    collective["postLabel"] if collective else
                     work_item.post_label if work_item is not None else None
                 ),
                 # `null`, а не `false`: отсутствие сведений об участии и
                 # зафиксированное неучастие — разные утверждения.
                 "participated": (
+                    bool(collective["actualMembers"]) if collective else
                     work_item.participated if work_item is not None else None
                 ),
                 "evaluationDirection": evaluation.evaluation_direction,
@@ -1981,6 +2154,7 @@ def evaluation_registry(filters):
                     if summary is not None else None
                 ),
                 "aggregateState": (
+                    "POLICY_UNDEFINED" if collective else
                     summary["dataState"]
                     if summary is not None else "INSUFFICIENT_DATA"
                 ),
@@ -2387,6 +2561,90 @@ def _participant_code_for(employee_id):
     return f"employee-{employee_id}"
 
 
+def _open_group_work_items(event, evaluation_event, *, actor):
+    """A special-group post names a collective target and its event roster.
+
+    The planned roster is written once. Later submissions capture the actual
+    roster; corrections inherit that evidence instead of consulting today.
+    """
+    visits = {str(row.pk): row for row in event.visit_objects.all()}
+    employees = _group_employee_map(event, extra_ids=[
+        event.chief_employee_id, *(visit.chief_employee_id for visit in visits.values()),
+    ])
+    from organization_management.apps.operations.services import PermissionService
+
+    actor_id = str(actor or "")
+    event_chief = employees.get(str(event.chief_employee_id))
+    is_event_chief = bool(event_chief and event_chief.user_id is not None
+                          and str(event_chief.user_id) == actor_id)
+    unscoped_permissions = PermissionService.unscoped_permissions(actor_id) if actor_id else set()
+    fallback_actor = actor_id if is_event_chief or {"*", "event.manage"} & unscoped_permissions else ""
+    for post in event.recon_sector_posts or []:
+        post_id = str(post.get("id") or "")
+        kind = str(post.get("demandKindCode") or "")
+        if not post_id or not kind or kind == "PHYSICAL_SQUAD":
+            continue
+        object_id = str(post.get("visitObjectId") or "")
+        visit = visits.get(object_id)
+        # Ambiguous object ownership is not guessed for multi-object events.
+        if visits and visit is None:
+            continue
+        if (visit.stage if visit else event.stage) not in ("CONDUCT", "CLOSED"):
+            continue
+        planned = _group_members(event, post_id, actual=False, employees=employees)
+        if not planned:
+            continue
+        # The stage actor may manage only one visit. Never use that actor as
+        # the owner of a neighbouring visit whose chief has a linked account.
+        chief_id = visit.chief_employee_id if visit else event.chief_employee_id
+        chief = employees.get(str(chief_id))
+        chief_actor = str(chief.user_id) if chief is not None and chief.user_id is not None else ""
+        evaluator_actor = chief_actor or fallback_actor
+        group_code = f"{evaluation_event.event_code}-group-{hashlib.sha256(post_id.encode()).hexdigest()[:16]}"
+        label = str(post.get("post") or post.get("task") or f"Группа {post_id}")
+        units = sorted({row["unitSafeLabel"] for row in planned if row["unitSafeLabel"]})
+        snapshot = {
+            "groupId": group_code,
+            "groupLabel": label,
+            "eventId": str(event.pk),
+            "postId": post_id,
+            "postLabel": label,
+            "objectId": object_id or None,
+            "objectLabel": visit.object_name if visit else event.object_name or "",
+            "kindCode": kind,
+            "plannedMembers": planned,
+        }
+        item, created = OpsEvaluationWorkItem.objects.get_or_create(
+            work_item_code=group_code,
+            defaults={
+                "event_code": evaluation_event.event_code,
+                "event_run_code": evaluation_event.event_run_code,
+                "assignment_code": post_id,
+                "evaluator_user_id": evaluator_actor,
+                "target_participant_code": None,
+                "target_group_code": group_code,
+                "group_planned_snapshot": snapshot,
+                "target_safe_label": label,
+                "target_safe_unit_label": ", ".join(units),
+                "post_label": label,
+                "actual_starts_at": evaluation_event.actual_starts_at,
+                "actual_ends_at": evaluation_event.actual_ends_at,
+                "participated": True,
+                "evaluation_direction": "SENIOR_TO_GROUP",
+                "initial_score": RATING_DEFAULT_SCORE,
+                "status": "PENDING", "revision": 1,
+                "submitted_evaluation_code": None, "submitted_at": None,
+            },
+        )
+        # A mapped chief can change while pending. A legacy/admin fallback
+        # only fills an unowned task; later stage actions cannot steal it.
+        if (not created and evaluator_actor and item.status != "SUBMITTED"
+                and (chief_actor or not item.evaluator_user_id)
+                and item.evaluator_user_id != evaluator_actor):
+            item.evaluator_user_id = evaluator_actor
+            item.save(update_fields=["evaluator_user_id", "updated_at"])
+
+
 @transaction.atomic
 def open_evaluation_for_event(event, *, actor):
     """Завести мероприятие оценивания по закрытому ОМ и задания по составу.
@@ -2526,4 +2784,5 @@ def open_evaluation_for_event(event, *, actor):
         ):
             work_item.evaluator_user_id = actor_id
             work_item.save(update_fields=["evaluator_user_id", "updated_at"])
+    _open_group_work_items(event, evaluation_event, actor=actor)
     return evaluation_event

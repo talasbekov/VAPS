@@ -35,7 +35,7 @@
  * подставить первый значило бы отправить людей не на то мероприятие. Когда
  * запрос ровно один, выбирать нечего, и он подставляется сам.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Megaphone } from "lucide-react";
@@ -51,6 +51,7 @@ import {
 import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   ParticipationKindPicker,
   type ParticipationBranch,
@@ -68,7 +69,10 @@ const ADDRESSEE_LABEL = {
 export function ForcesRequestBanner({
   selectedEmployees = [],
   onSelected,
+  compact = false,
 }: {
+  /** Keep the outstanding request visible while leaving the roster in focus. */
+  compact?: boolean;
   /** Кого начальник отметил чекбоксами в таблице ниже (Plane №395,
    *  `[СБС-31]`): выделение идёт ИЗ ЗАПРОСА — мероприятие и даты он не
    *  выбирает, статус ставит сервер. */
@@ -77,6 +81,7 @@ export function ForcesRequestBanner({
   onSelected?: () => void;
 }) {
   const searchParams = useSearchParams();
+  const access = useOpsPermissions();
   const linkedId = searchParams.get("forcesRequest");
   // Список нужен, только когда человек пришёл БЕЗ ссылки: по ссылке предмет
   // разговора уже назван, и лишний запрос за соседними заявками ничего к
@@ -150,9 +155,8 @@ export function ForcesRequestBanner({
   // ВЫБРАННЫЕ СТРОКИ («Выбрано: 10»), а выделить можно только сотрудников —
   // вакансия это пустая штатная единица, выделять по ней некого. Числа
   // расходились молча: «Выбрано: 10» и «Выделить на ОМ-…: 7», и разницу
-  // человеку не объяснял никто. Прятать её, убрав вакансии из выбора, —
-  // не наш выбор: строку выделяют галочкой в общей таблице, и запрещать
-  // галочку ради одной кнопки значило бы чинить не там.
+  // человеку не объяснял никто. Таблица теперь выбирает только доступных
+  // сотрудников; пояснение сохранено для прежнего или внешнего набора ключей.
   const vacantSelected = selectedEmployees.length - employeeIds.length;
   // Кого можно взять повторно, с обоснованием (Plane №545). Считается по
   // признаку отказа, а не по его коду: список кодов на клиенте разошёлся бы
@@ -168,6 +172,33 @@ export function ForcesRequestBanner({
     (kindCode === "" ||
       ((selectedKind?.roles.length ?? 0) > 0 && roleCode === ""));
 
+  // A disabled query remains pending. A reader following a request link
+  // needs a reason, rather than a skeleton for a query that will never run.
+  // Keep this guard after every hook to preserve hook order as rights load.
+  if (access.isLoading) return null;
+  if (access.error) {
+    return linkedId === null ? null : (
+      <p role="alert" className="rounded-lg border px-4 py-3 text-sm">
+        Не удалось проверить доступ к запросу на сбор сил. Обновите страницу.
+      </p>
+    );
+  }
+  if (!access.hasPermission("status.manage")) {
+    return linkedId === null ? null : (
+      <section
+        role="region"
+        aria-label="Запрос на сбор сил недоступен"
+        className="space-y-1 rounded-lg border px-4 py-3 text-sm"
+      >
+        <p>У вашей роли нет права выделять сотрудников по этому запросу.</p>
+        <p className="text-muted-foreground">
+          Статусы доступны для просмотра. По запросу обратитесь к начальнику
+          управления или ответственному за статусы.
+        </p>
+      </section>
+    );
+  }
+
   // Пока список едет — НЕ рисуем скелет: на «Статусах сотрудников» запроса
   // чаще всего нет вовсе, и полоса-заглушка обещала бы содержимое, которого
   // не будет. По ссылке скелет ниже уместен: там содержимое обещано адресом.
@@ -177,7 +208,24 @@ export function ForcesRequestBanner({
   // БОЛЬШЕ ОДНОГО: у одного выбирать нечего. Активный виден, а не угадывается
   // (правило «Active State»), и до выбора кнопки выделения нет вовсе.
   const chooser =
-    linkedId === null && rows.length > 1 ? (
+    linkedId === null && rows.length > 1 ? compact ? (
+      <label className="grid max-w-xl gap-1 text-xs text-muted-foreground">
+        <span>Запрос для подбора сотрудников · {rows.length}</span>
+        <select
+          aria-label="Запрос для подбора сотрудников"
+          className="h-11 min-w-0 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+          value={allocationId ?? ""}
+          onChange={(event) => setPicked(event.target.value || null)}
+        >
+          <option value="">Выберите запрос</option>
+          {rows.map((row) => (
+            <option key={row.allocationId} value={row.allocationId}>
+              {row.code} · {formatIsoDate(row.businessDate)} · {row.directorates.reduce((sum, item) => sum + item.assigned, 0)} из {row.directorates.reduce((sum, item) => sum + item.need, 0)}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground text-xs">
           Запрос, по которому отмечаете людей:
@@ -311,6 +359,11 @@ export function ForcesRequestBanner({
         </span>
       </div>
       {chooser}
+      <RequestDetails
+        compact={compact}
+        linked={linkedId ?? pickedAlive}
+        summary={`Выделено ${data.directorates.reduce((sum, row) => sum + row.assigned, 0)} из ${data.directorates.reduce((sum, row) => sum + row.need, 0)}`}
+      >
       <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {data.directorates.map((row) => {
           const done = row.need > 0 && row.assigned >= row.need;
@@ -502,6 +555,25 @@ export function ForcesRequestBanner({
           {select.error?.message ?? "Выделить не удалось"}
         </p>
       )}
+      </RequestDetails>
     </section>
+  );
+}
+
+function RequestDetails({ compact, linked, summary, children }: {
+  compact: boolean;
+  linked: string | null;
+  summary: string;
+  children: ReactNode;
+}) {
+  if (!compact) return <>{children}</>;
+  return (
+    <details key={linked ?? "menu"} open={linked !== null}>
+      <summary className="min-h-11 cursor-pointer rounded-md py-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="font-medium tabular-nums">{summary}</span>
+        <span className="ml-3 text-primary-ink">Подбор сотрудников</span>
+      </summary>
+      <div className="space-y-3 pt-2">{children}</div>
+    </details>
   );
 }

@@ -32,6 +32,7 @@ import { CalendarIcon, AlertTriangle, Save, X, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { getAccessToken } from "@/lib/api";
+import { captureOpsWriteAuthority } from "@/lib/ops-write-authority";
 import { BACKEND_URL } from "@/shared/config/env";
 import { useDivisionsTree } from "@/hooks/use-divisions-tree";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -189,7 +190,7 @@ export function SecondEmployeeDialog({
       // Отправляем запрос на откомандирование
       const endpoint = `/api/secondments/secondment-requests/`;
       const url = `${BACKEND_URL}${endpoint}`;
-
+      const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
       const token = await getAccessToken();
 
       const headers: HeadersInit = {
@@ -201,6 +202,7 @@ export function SecondEmployeeDialog({
         headers["Authorization"] = `Bearer ${token}`;
       }
 
+      checkAuthority();
       const response = await fetch(url, {
         method: "POST",
         headers,

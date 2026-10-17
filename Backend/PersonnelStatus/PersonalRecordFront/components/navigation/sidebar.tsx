@@ -14,6 +14,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { resolveWorkspaceRole, resolveWorkspaceView, workspaceHref, type WorkspaceView } from "@/features/forces-workspace/model/workspace";
 import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { accessScopeLabel } from "@/entities/access";
 import { moduleOpenFor } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
@@ -72,6 +73,12 @@ type NavItem = {
   name: string;
   href: string;
   icon: LucideIcon;
+  /** Пункт ВНУТРИ родительского (Plane №1199, решение заказчика 12.09.2026):
+   * «Ежедневный расход» и «Сбор сил на ОМ» открываются внутри «Рабочего
+   * стола» ответственного — в меню они стоят под ним с отступом, а экраны
+   * модулей несут кнопку «Назад» на рабочий стол. Ссылки остаются ссылками:
+   * прямые адреса `?view=daily` / `?view=forces` живут как прежде. */
+  nested?: boolean;
   // Право пункта здесь НЕ пишется: оно берётся по адресу из
   // `entities/portal-access` — того же источника, из которого его берёт гейт
   // самой страницы.
@@ -103,29 +110,17 @@ type NavItem = {
 // состояние группы больше не существует, значит и хранить его нечем.
 const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
   {
-    title: "Личный кабинет",
-    items: [
-      { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
-      { name: "Сотрудники Службы", href: "/service-employees", icon: Users },
-    ],
-  },
-  {
     title: "Ежедневный расход",
     items: [
-      { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
+      { name: "Оперативный контроль", href: "/security-ops/command-center", icon: LineChart },
       { name: "Обзор", href: "/dashboard", icon: BarChart3 },
       { name: "Статусы сотрудников", href: "/statuses", icon: Shield },
+      { name: "Журнал дежурств", href: "/security-ops/duty-register", icon: ClipboardList },
       { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
-      { name: "Ежедневный отчет", href: "/reports", icon: FileText },
-      // CSV «Расход личного состава» формирует маршрут service-reports, но
-      // относится к Службе, а не к конкретному охранному мероприятию. URL и
-      // его `report.generate` остаются прежними: меняется только понятный
-      // человеку вход, без второй копии экрана в меню (Plane №1071).
-      { name: "Отчёты по Службе", href: "/security-ops/service-reports", icon: ScrollText },
-      // Видимость считается тем же источником, что и на странице. Для «Свод
-      // по Службе» это роль FORCES_GATHERING_OFFICER, а не широкое право
-      // `status.view`.
+      { name: "Отчёты", href: "/reports", match: ["/reports", "/security-ops/service-reports"], icon: FileText },
+      // Workspace and status-read permissions are checked by the same gate
+      // as the page; role names do not authorize access.
       { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
     ],
   },
@@ -153,6 +148,13 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
       // попадали только по ссылкам с других экранов.
       { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
+    ],
+  },
+  {
+    title: "Личный кабинет",
+    items: [
+      { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
+      { name: "Сотрудники подразделения", href: "/service-employees", icon: Users },
     ],
   },
   {
@@ -196,14 +198,12 @@ function NavLink({
   icon: Icon,
   active,
   counter,
-  disabled = false,
 }: {
   href: string;
   name: string;
   icon: LucideIcon;
   active: boolean;
   counter?: { value: number; hint: string };
-  disabled?: boolean;
 }) {
   // Метка «В разработке» у пункта (Plane №450) — из того же реестра, что и у
   // шапки экрана. Внутри ссылки она СКРЫТА от скринридера, а список читается
@@ -212,22 +212,6 @@ function NavLink({
   // следом, а не вклинивается в имя.
   const note = inDevelopmentOfRoute(href);
   const noteId = useId();
-  if (disabled) {
-    return (
-      <span
-        role="link"
-        aria-disabled="true"
-        aria-describedby={noteId}
-        tabIndex={0}
-        title="Нет доступа. Обратитесь к администратору за назначением роли."
-        className={`${ITEM_CLASS} cursor-not-allowed text-sidebar-foreground/50`}
-      >
-        <Icon className="mr-3 h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="flex-1">{name}</span>
-        <span id={noteId} className="sr-only">Нет доступа. Обратитесь к администратору за назначением роли.</span>
-      </span>
-    );
-  }
   return (
     <>
     <Link
@@ -361,6 +345,7 @@ export function Sidebar() {
 }
 
 function SidebarContent() {
+  const queryClient = useQueryClient();
   // Из `useAuth` берётся только КТО вошёл: роль и права переехали в раздел
   // (Plane №352, Ш-4), и подпись человека внизу меню читает их оттуда же,
   // что и шапка.
@@ -369,34 +354,28 @@ function SidebarContent() {
   const searchParams = useSearchParams();
   const query = new URLSearchParams(searchParams);
 
-  // Подсвечивается ОДИН пункт — самый длинный подошедший адрес. Простое
-  // `startsWith` зажигало бы «Аналитику службы» (/security-ops/analytics)
-  // заодно с «Аналитикой ОМ» (/security-ops/analytics/operations): второй
-  // адрес вложен в первый.
-  const activeRouteHref = CATEGORIES.flatMap((category) =>
-    category.items.flatMap((item) =>
-      [item.href, ...(item.match ?? [])].map((prefix) => ({ href: item.href, prefix }))
-    )
-  )
-    .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-    .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.href;
-
-  // FIX: на /security-ops пользователь может быть не залогинен в хост
-  // (middleware эти пути не закрывает) — фильтр по правам оставлял меню
-  // пустым, и модули «исчезали». Без host-логина показываем навигацию целиком
-  // (страницы защищают себя сами); для залогиненных фильтр работает как раньше.
+  // 🔴 ПУНКТ БЕЗ ПРАВА НЕ ПОКАЗЫВАЕТСЯ (Plane №1203, решение заказчика
+  // 12.09.2026: «пусть каждой роли будут видны те модули, которые прописаны в
+  // документации»). Это закрывает вилку №350 и отменяет правило №1158 от
+  // 10.09.2026 (пункт виден, но погашен) и часть `[РЕЕ-09]` про «пункты меню
+  // видны всем». Заказчик проверял учётки руками и читал серые пункты как
+  // «модули, которые не должны быть доступны, видны».
   //
-  // ПРАВА РАЗДЕЛА ждут ответа сервера, и пока он не пришёл, пункты раздела
-  // показываются ВСЕ. Спрятать их на время загрузки значило бы устроить
-  // мигание меню на каждом открытии приложения — и, что хуже, показать
-  // человеку неполное меню как окончательное, если запрос прав не ответит
-  // вовсе. Отказ страницы остаётся вторым рубежом: он никуда не делся.
+  // Пока права раздела не пришли, скрытые правами пункты НЕ рисуются: до
+  // ответа сервера у меню есть только «Личный кабинет», и оно дорастает до
+  // полного, когда права известны. Показать всё, а потом убрать — мигание
+  // хуже, чем короткое меню, а показать серым — ровно то, от чего заказчик
+  // отказался. Отказ страницы остаётся вторым рубежом: прямой адрес без
+  // права по-прежнему отвечает «Доступ закрыт» (`e2e/menu-access.spec.ts`
+  // держит оба конца: спрятано ⇔ закрыто).
   const access = useOpsPermissions();
   const {
     hasPermission: hasOpsPermission,
+    hasGlobalPermission: hasGlobalOpsPermission,
     isLoading: opsPermissionsLoading,
     roles: sectionRoles,
   } = access;
+  const navigationReady = user != null && !opsPermissionsLoading && !access.error && access.permissions !== undefined;
   // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
   // не нужны, нужно число, и тащить ради бейджа страницу мероприятий было бы
   // расточительством на каждом экране приложения. Важно ждать уже загруженную
@@ -411,7 +390,7 @@ function SidebarContent() {
     to: "",
     owner: "",
     pageSize: 1,
-  }, { enabled: !opsPermissionsLoading && hasOpsPermission("event.view") });
+  }, { enabled: navigationReady && hasOpsPermission("event.view") });
   const counters: Record<NonNullable<NavItem["counter"]>, { value: number; hint: string } | null> = {
     events:
       eventsCount.data === undefined
@@ -421,31 +400,57 @@ function SidebarContent() {
   // Подпись внизу меню: первая роль раздела. Их может быть несколько — полный
   // состав виден в профиле, а строка в 256px не место для списка.
   const sidebarRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
+  const accessLabel = opsPermissionsLoading ? "Загрузка доступа…" : access.error ? "Доступ не проверен" : sidebarRole?.name ?? "Роль не назначена";
+  const assignmentsDescription = sectionRoles.length > 0
+    ? sectionRoles.map(role => `${role.name} · ${accessScopeLabel(role)}`).join("; ")
+    : accessLabel;
 
   const workspaceRole = resolveWorkspaceRole(access);
-  const workspace = workspaceRole === 'responsible' || workspaceRole === 'headquarters';
-  const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query) : null;
+  const workspace = workspaceRole === 'responsible' || workspaceRole === 'expense' || workspaceRole === 'headquarters';
+  const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query, hasOpsPermission('status.view')) : null;
   const workspaceItems: NavItem[] = workspaceRole === 'responsible' ? [
     { name: 'Рабочий стол', href: workspaceHref(query, 'desk'), icon: ClipboardList, workspaceView: 'desk' },
-    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const }] : []),
-    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
+    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const, nested: true }] : []),
+    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces', nested: true },
+  ] : workspaceRole === 'expense' ? [
+    ...(hasOpsPermission('status.view') ? [{ name: 'Расход департамента', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const }] : []),
+    ...(hasOpsPermission('forces.allocate') ? [{ name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' as const }] : []),
   ] : workspaceRole === 'headquarters' ? [
     { name: 'Распределения', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
   ] : [];
+  // Пункт остаётся в меню, только если модуль за ним открыт человеку (одна
+  // карта для меню и страницы — `entities/portal-access`). Категория без
+  // единого пункта не рисуется: заголовок над пустотой читался бы как
+  // «здесь что-то пропало».
+  const itemOpen = (item: NavItem) => navigationReady && moduleOpenFor(
+    item.href.split("?")[0],
+    (code) => code === "admin.roles" ? hasGlobalOpsPermission(code) : hasOpsPermission(code),
+    (code) => sectionRoles.some((role) => role.code === code),
+  );
+  // One entry opens the first permitted report source; each source retains
+  // its existing page guard and export APIs.
+  const reportHref = moduleOpenFor("/reports", hasOpsPermission)
+    ? "/reports" : "/security-ops/service-reports";
   const categories = CATEGORIES.map(category => ({ ...category,
-    items: category.items.flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item]),
-  }));
+    items: category.items
+      .flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item])
+      .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item)
+      .filter(itemOpen),
+  })).filter(category => category.items.length > 0);
+  // Match the final links, including the permission-dependent report target
+  // and its job/history aliases. The longest matching address stays active.
+  const activeRouteHref = categories.flatMap(category => category.items.flatMap(item =>
+    [item.href.split('?')[0], ...(item.match ?? [])].map(prefix => ({ href: item.href, prefix }))
+  ))
+    .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.href;
+  const menuLayoutKey = JSON.stringify(categories.map(category => [
+    category.title,
+    category.items.map(item => [item.href, item.name]),
+  ]));
   const activeHref = pathname === '/employees' && workspace
     ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
     : activeRouteHref;
-  // №1158: разделы остаются видимыми по правилу блока2 от 10.09.2026.
-  // Закрытый пункт не содержит href, не загружает страницу и не показывает счётчик.
-  const itemDisabled = (item: NavItem) => user === null || opsPermissionsLoading || !moduleOpenFor(
-    item.href.split("?")[0],
-    hasOpsPermission,
-    (code) => sectionRoles.some((role) => role.code === code),
-  );
-
   // Сквозной счётчик для stagger-анимации: задержка считается от начала
   // меню, а не от начала своей категории, иначе пункты разных категорий
   // выезжали бы одновременно.
@@ -535,7 +540,10 @@ function SidebarContent() {
     syncScrollHint();
     revealActive();
     return () => observer.disconnect();
-  }, [syncScrollHint, revealActive]);
+    // Ответ о правах меняет содержимое меню без изменения высоты nav.
+    // ResizeObserver тогда не срабатывает; пересчитываем подсказки и
+    // подводку после фактического изменения видимых пунктов.
+  }, [menuLayoutKey, syncScrollHint, revealActive]);
 
   // Смена адреса — новая цель подводки, и право на неё возвращается: человек
   // прокрутил список ради ПРОШЛОГО экрана, к новому это отношения не имеет.
@@ -580,6 +588,15 @@ function SidebarContent() {
           className="h-full overflow-y-auto px-4 py-3"
           aria-label="Основная навигация"
         >
+          {opsPermissionsLoading && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Загружаем разделы…</p>}
+          {access.error && (
+            <div role="alert" className="space-y-2 px-3 py-2 text-sm">
+              <p>Не удалось загрузить доступные разделы.</p>
+              <button type="button" className="min-h-9 text-primary underline underline-offset-4" onClick={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })}>
+                Повторить загрузку
+              </button>
+            </div>
+          )}
           {categories.map((category, categoryIndex) => {
             const headingId = `sidebar-category-${categoryIndex}`;
             return (
@@ -601,7 +618,8 @@ function SidebarContent() {
                     return (
                       <li
                         key={item.href}
-                        className="sidebar-nav-item"
+                        className={item.nested ? "sidebar-nav-item ml-4 border-l border-sidebar-border pl-2" : "sidebar-nav-item"}
+                        data-nested={item.nested ? "true" : undefined}
                         style={{
                           animationDelay: `${Math.min(itemIndex, MAX_STAGGER_STEPS) * 50}ms`,
                         }}
@@ -611,7 +629,6 @@ function SidebarContent() {
                           name={item.name}
                           icon={item.icon}
                           active={item.href === activeHref}
-                          disabled={itemDisabled(item)}
                           counter={
                             item.counter === undefined
                               ? undefined
@@ -662,17 +679,8 @@ function SidebarContent() {
           <Link
             href="/security-ops/profile"
             className="bg-sidebar-accent/60 hover:bg-sidebar-accent mt-2.5 flex w-full items-center gap-2.5 rounded-[9px] p-2.5 text-left transition-colors"
-            // Область роли и подразделение не помещаются в строку при 256px —
-            // уходят в title, а не пропадают совсем.
-            title={
-              sidebarRole
-                ? `${sidebarRole.name}${
-                    sidebarRole.scope_division_name
-                      ? ` · ${sidebarRole.scope_division_name}`
-                      : ""
-                  }. Подразделение: ${user.department}`
-                : `Роль раздела не назначена. Подразделение: ${user.department}`
-            }
+            title={`${assignmentsDescription}. Подразделение: ${user.department}`}
+            aria-label={`Профиль: ${user.name}. ${assignmentsDescription}. Подразделение: ${user.department}`}
           >
             <span className="bg-primary/10 text-primary-ink grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold">
               {initialsOf(user?.name)}
@@ -683,8 +691,9 @@ function SidebarContent() {
               <span className="text-sidebar-foreground block truncate text-sm font-semibold leading-5">
                 {user?.name ?? "—"}
               </span>
-              <span className="text-sidebar-foreground/60 block truncate text-xs leading-4">
-                {sidebarRole ? sidebarRole.name : "Роль не назначена"}
+              <span className="text-sidebar-foreground/60 flex items-center gap-1 text-xs leading-4">
+                <span className="truncate">{accessLabel}</span>
+                {sectionRoles.length > 1 && <span className="shrink-0" aria-hidden="true">+{sectionRoles.length - 1}</span>}
               </span>
             </span>
           </Link>

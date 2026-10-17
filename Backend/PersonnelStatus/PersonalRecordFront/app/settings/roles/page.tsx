@@ -65,13 +65,13 @@ function AccessRolesScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasGlobalPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   const search = searchParams.get("search") ?? "";
   const selectedCode = searchParams.get("code");
-  const canManage = hasPermission(ACCESS_ADMIN_PERMISSION);
+  const canManage = hasGlobalPermission(ACCESS_ADMIN_PERMISSION);
 
-  const rolesQuery = useAccessRoles(search);
+  const rolesQuery = useAccessRoles(search, { enabled: canManage });
   const [isCreating, setCreating] = useState(false);
 
   function updateParam(key: string, value: string): void {
@@ -88,7 +88,10 @@ function AccessRolesScreen() {
     updateParam("search", value)
   );
 
-  if (!permissionsLoading && !canManage) {
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Загрузка прав доступа…</p></DashboardLayout>;
+  }
+  if (!canManage) {
     return <OpsAccessDenied what="справочника ролей" />;
   }
 
@@ -101,7 +104,7 @@ function AccessRolesScreen() {
         <PageHeader
           eyebrow="Настройки"
           title="Роли"
-          description="Роль — это набор прав, который выдают человеку. Здесь видно, что открывает каждая роль, и собирается её состав."
+          description="Роль объединяет права в редактируемый набор. При назначении пользователю отдельно выбирают область действия: подразделение или всю службу."
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -121,8 +124,8 @@ function AccessRolesScreen() {
           </Button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Card>
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Card className="min-w-0">
             <CardHeader className="pb-2">
               <CardTitle className="text-[14px]">
                 Справочник ролей
@@ -183,7 +186,7 @@ function AccessRolesScreen() {
           </Card>
 
           {selected === null ? (
-            <Card>
+            <Card className="min-w-0">
               <CardContent className="p-9 text-center text-[13px] text-muted-foreground">
                 Выберите роль слева, чтобы увидеть и собрать её состав прав.
               </CardContent>
@@ -288,6 +291,8 @@ function StateBadge({ isActive }: { isActive: boolean }) {
 }
 
 function RoleDetails({ role }: { role: AccessRole }) {
+  const { hasGlobalPermission } = useOpsPermissions();
+  const canManage = hasGlobalPermission(ACCESS_ADMIN_PERMISSION);
   const setActive = useSetAccessRoleActive();
   const changeComposition = useChangeRolePermissions(role.code);
   const [permissionSearch, setPermissionSearch] = useState("");
@@ -300,7 +305,7 @@ function RoleDetails({ role }: { role: AccessRole }) {
   // Справочник прав нужен и для подписей выданных прав, и для выдачи новых.
   // Без поиска он приезжает страницей — этого хватает: подписи берутся из
   // него, а чего не хватило, видно по самому коду права.
-  const permissionsQuery = useAccessPermissions(permissionSearch);
+  const permissionsQuery = useAccessPermissions(permissionSearch, { enabled: canManage });
   const nameByCode = new Map(
     (permissionsQuery.data?.results ?? []).map((p) => [p.code, p.name])
   );
@@ -310,10 +315,10 @@ function RoleDetails({ role }: { role: AccessRole }) {
   );
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="pb-2">
         <CardTitle className="text-[14px]">{role.name}</CardTitle>
-        <p className="font-mono text-[12px] text-muted-foreground">
+        <p className="break-all font-mono text-[12px] text-muted-foreground">
           {role.code}
         </p>
       </CardHeader>
@@ -342,6 +347,7 @@ function RoleDetails({ role }: { role: AccessRole }) {
             {role.is_active ? "Отключить" : "Включить"}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">Отключение роли не снимает доступ. Для отзыва доступа снимите назначение роли у пользователя.</p>
         {setActive.error !== null && (
           <p className="text-[12px] text-destructive">
             Не удалось изменить состояние роли. Попробуйте ещё раз.
@@ -355,10 +361,13 @@ function RoleDetails({ role }: { role: AccessRole }) {
               {role.permissions.length}
             </span>
           </h3>
+          <p className="mb-3 text-[12.5px] leading-[1.55] text-muted-foreground">
+            Изменение состава прав действует для всех пользователей, которым назначена эта роль,
+            с учётом области назначения.
+          </p>
           {role.permissions.length === 0 ? (
             <p className="text-[12.5px] text-muted-foreground">
-              Роль пока не открывает ничего: прав в составе нет. Это допустимо —
-              заготовку заводят раньше, чем решают её состав.
+              У роли нет ни одного права — она не откроет пользователю модули системы.
             </p>
           ) : (
             // Список именован: он читается как «состав прав роли», а не как
@@ -573,6 +582,7 @@ function CreateRoleDialog({
         <DialogHeader>
           <DialogTitle>Новая роль</DialogTitle>
         </DialogHeader>
+        <p className="text-sm text-muted-foreground">Новая роль создаётся без прав. После сохранения добавьте права, прежде чем выдавать её пользователю.</p>
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="role-code">Код</Label>

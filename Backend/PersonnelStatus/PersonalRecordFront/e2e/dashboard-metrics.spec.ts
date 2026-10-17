@@ -47,7 +47,9 @@ test.describe(LIVE ? 'обзор: снятые блоки' : 'обзор (ски
       'экран «Обзор» не отрисовался — проверять отсутствие блоков не на чем',
     ).toBeVisible({ timeout: 25_000 })
     await expect(page.getByText('Всего сотрудников')).toBeVisible()
-    await expect(page.getByText('Структура организации').first()).toBeVisible()
+    await expect(page.getByRole('region', { name: '3D-структура организации', exact: true })
+      .getByText('Древо организации', { exact: true })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: 'Данные обзора загружены' })).toBeVisible()
 
     for (const gone of ['Последние действия', 'Показатели эффективности']) {
       await expect(

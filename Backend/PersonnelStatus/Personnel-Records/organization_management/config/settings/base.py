@@ -120,7 +120,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.0/topics/i18n/
-LANGUAGE_CODE = 'en-us'
+# Русский по умолчанию, казахский — второй язык значений справочников
+# (UC-REF-001). Выбор языка по заголовку не подключён: язык значения
+# выбирает клиент по полям `label`/`labelKk`, а не сервер.
+LANGUAGE_CODE = 'ru'
+LANGUAGES = [('ru', 'Русский'), ('kk', 'Қазақша')]
 TIME_ZONE = 'Asia/Almaty'
 USE_I18N = True
 USE_TZ = True
@@ -259,6 +263,11 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
+    'operations-remind-submissions': {
+        'task': 'operations.remind_daily_submissions',
+        # Read the configurable local deadline each tick, including changes.
+        'schedule': 60.0,
+    },
     'statuses-apply-planned-daily': {
         'task': 'statuses.apply_planned_statuses',
         'schedule': crontab(hour=0, minute=1),

@@ -21,12 +21,20 @@
 них, а `--orphans-only` вычищает накопленное за все прошлые прогоны — в том
 числе сирот от мероприятий, удалённых не этой командой (teardown смоука,
 кнопка в реестре).
+
+Запросы сил от проб также убираются: FORCES_REQUEST_SENT содержит рабочую
+ссылку на заявку внутри ОМ и после прогона ведёт в 404. Область — только
+мероприятия с выбранной меткой, которые команда действительно удалила.
+Обычное удаление ОМ и исторические/ежедневные виды уведомлений не меняются.
 """
 
 from django.core.management.base import BaseCommand
+from django.db import transaction
+from django.db.models import Q
 
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_notification import OpsNotification
 from organization_management.apps.ops import security_events as event_service
 from organization_management.apps.operations.status_cleanup import (
     find_orphan_participations,
@@ -106,6 +114,7 @@ class Command(BaseCommand):
             return
 
         deleted = 0
+        deleted_notifications = 0
         # Отказы НЕ прерывают чистку и называются поимённо: среди пробных
         # строк попадаются закрытые и проведённые, и падать на первой из них
         # значило бы оставить остальные двести.
@@ -113,15 +122,30 @@ class Command(BaseCommand):
         touched = []
         for event in rows:
             try:
-                event_service.delete_event(
-                    event.pk, actor=options["actor"], force=options["force"]
-                )
+                # Обе части уборки коммитятся вместе: сбой удаления ссылки
+                # оставляет ОМ и его аудит на прежнем месте, а не создаёт сироту.
+                with transaction.atomic():
+                    event_service.delete_event(
+                        event.pk, actor=options["actor"], force=options["force"]
+                    )
+                    event_ids = [event.pk, str(event.pk)]
+                    removed_notifications, _ = OpsNotification.objects.filter(
+                        Q(payload__eventId__in=event_ids)
+                        | Q(payload__event_id__in=event_ids),
+                        kind=OpsNotification.Kind.FORCES_REQUEST_SENT,
+                    ).delete()
             except DomainError as refusal:
                 kept.append((event.code, refusal.message))
                 continue
             deleted += 1
+            deleted_notifications += removed_notifications
             touched.append(event.pk)
         self.stdout.write(self.style.SUCCESS(f"Удалено: {deleted}"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Удалено уведомлений запросов сил: {deleted_notifications}"
+            )
+        )
         if kept:
             self.stdout.write(f"Оставлено (сервер отказал): {len(kept)}")
             for code, why in kept[:20]:

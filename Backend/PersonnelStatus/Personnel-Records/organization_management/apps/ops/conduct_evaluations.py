@@ -29,6 +29,12 @@ from organization_management.apps.ops import security_events as events
 # оценку ставит человек на этапе, это ручная оценка.
 STAGE_METHOD = "MANUAL"
 STAGE_BASIS = "EXECUTION_OF_DUTIES"
+# Оценка «по умолчанию» при закрытии объекта без ручной оценки — решение
+# заказчика 12.09.2026 по итогам проходки №1142 (`[ОМ-РШ-16]`): «можно
+# закрывать, но автоматом ставится всем средняя оценка — это семь». Метод
+# SYSTEM_DEFAULT отличает её от ручной в реестре, истории и аналитике.
+DEFAULT_CLOSE_SCORE = 7
+DEFAULT_METHOD = "SYSTEM_DEFAULT"
 
 
 def _event_code(event):
@@ -179,7 +185,7 @@ def _validate_score(score):
     return score
 
 
-def _write(event, assignment, *, score, comment, actor):
+def _write(event, assignment, *, score, comment, actor, method=STAGE_METHOD):
     """Одна оценка одному назначению: прежняя строка помечается
     `superseded_by_code`, чтобы средний балл считал только действующую.
     `score=None` — снять оценку (повторный клик по цифре)."""
@@ -227,7 +233,7 @@ def _write(event, assignment, *, score, comment, actor):
         score=score,
         comment=(comment or "").strip() or None,
         evaluation_direction="SENIOR_TO_EMPLOYEE",
-        method=STAGE_METHOD,
+        method=method,
         basis_code=STAGE_BASIS,
         basis_note=None,
         evaluated_at=Clock.today_local(),
@@ -303,6 +309,31 @@ def set_score(event_id, visit_object_id, *, assignment_id, score, comment, actor
     _open_evaluation_once(event, actor=actor)
     _write(event, assignment, score=_validate_score(score), comment=comment, actor=actor)
     return visit_evaluations(event, visit)
+
+
+def score_unscored_on_close(event, visit, *, actor):
+    """Закрытие объекта: всем неоценённым назначениям объекта — 7 методом
+    SYSTEM_DEFAULT (`[ОМ-РШ-16]`). Ручные оценки не перезаписываются,
+    заменённые (строки журнала без назначения) оценок не получают. Зовётся
+    из `security_events.close_visit_object` ДО перевода объекта в «Закрыто»,
+    пока `_require_open` ещё пропускает. Возвращает id назначений, которым
+    оценка поставлена автоматически, — для аудита закрытия."""
+    _require_open(event, visit)
+    summary = visit_evaluations(event, visit)
+    unscored = {r["assignmentId"] for r in summary["rows"] if not r["replaced"] and r["score"] is None}
+    if not unscored:
+        return []
+    _open_evaluation_once(event, actor=actor)
+    scored = []
+    for a in event.placement_assignments or []:
+        if a.get("id") in unscored:
+            _write(
+                event, a, score=DEFAULT_CLOSE_SCORE,
+                comment="Оценка по умолчанию: объект закрыт без ручной оценки",
+                actor=actor, method=DEFAULT_METHOD,
+            )
+            scored.append(str(a.get("id")))
+    return scored
 
 
 @transaction.atomic

@@ -1,15 +1,13 @@
-/** Безопасное разрешение Python для серверной уборки Playwright (Plane №1119). */
+/** Resolve a project venv without falling back to an unrelated system Python. */
 import { execFile } from 'node:child_process'
 import { accessSync, constants, existsSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { findBackendRoot } from './backend-layout'
 
 const execFileAsync = promisify(execFile)
-const REPOSITORY_ROOT = path.resolve(__dirname, '../../../..')
-const BACKEND_RELATIVE_PATH = 'Backend/PersonnelStatus/Personnel-Records'
-const LOCAL_BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
+const FRONTEND_ROOT = path.resolve(__dirname, '..')
 const PURGE_PYTHON_ENV = 'SMOKE_PURGE_PYTHON'
-
 export type PurgeTarget = Readonly<{ backendRoot: string; python: string }>
 
 function targetAt(backendRoot: string, python: string): PurgeTarget | null {
@@ -22,42 +20,34 @@ function targetAt(backendRoot: string, python: string): PurgeTarget | null {
   }
 }
 
-function configuredTarget(): PurgeTarget | null {
-  const python = process.env[PURGE_PYTHON_ENV]
-  if (!python) return null
-  const absolutePython = path.resolve(python)
-  // Контракт переменной именно venv `…/Personnel-Records/.venv/bin/python`.
-  // Так cwd остаётся у того же manage.py, а не у произвольного пути пользователя.
-  return targetAt(path.resolve(absolutePython, '../../..'), absolutePython)
+function venvAt(backendRoot: string | null): PurgeTarget | null {
+  if (!backendRoot) return null
+  for (const relative of ['.venv/bin/python', '.venv/Scripts/python.exe']) {
+    const target = targetAt(backendRoot, path.join(backendRoot, relative))
+    if (target) return target
+  }
+  return null
 }
 
-/** Главный checkout — первое поле `worktree` в porcelain-выводе Git. */
-async function primaryCheckoutTarget(): Promise<PurgeTarget | null> {
+export async function resolvePurgeTarget(frontendRoot = FRONTEND_ROOT): Promise<PurgeTarget | null> {
+  const configured = process.env[PURGE_PYTHON_ENV]
+  if (configured) {
+    const python = path.resolve(configured)
+    const venv = path.dirname(path.dirname(python))
+    const backendRoot = path.dirname(venv)
+    const target = path.basename(venv) === '.venv' ? targetAt(backendRoot, python) : null
+    if (!target) throw new Error('SMOKE_PURGE_PYTHON must point to an executable in the backend .venv')
+    return target
+  }
+  const local = venvAt(findBackendRoot(frontendRoot))
+  if (local) return local
   try {
     const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
-      cwd: REPOSITORY_ROOT,
-      timeout: 10_000,
+      cwd: frontendRoot, timeout: 10_000,
     })
     const primaryRoot = stdout.match(/^worktree (.+)$/m)?.[1]
-    if (!primaryRoot) return null
-    const backendRoot = path.join(primaryRoot, BACKEND_RELATIVE_PATH)
-    return targetAt(backendRoot, path.join(backendRoot, '.venv/bin/python'))
+    return primaryRoot ? venvAt(findBackendRoot(primaryRoot)) : null
   } catch {
     return null
   }
-}
-
-/**
- * Находит проверенный Python для серверной команды, не путая worktree с API.
- * Не использует системный Python: в нём Django может отсутствовать.
- */
-export async function resolvePurgeTarget(): Promise<PurgeTarget | null> {
-  const configured = configuredTarget()
-  if (configured) return configured
-
-  const local = targetAt(
-    LOCAL_BACKEND_ROOT,
-    path.join(LOCAL_BACKEND_ROOT, '.venv/bin/python'),
-  )
-  return local ?? primaryCheckoutTarget()
 }

@@ -32,13 +32,11 @@
  * Первая версия пробы била в первого попавшегося и на втором прогоне падала
  * 409 по собственному следу — падение было её, а не кода.
  */
-import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { localIsoDate } from './business-date'
-import { resolvePurgeTarget } from './purge-python'
+import { runBackendCommand } from './backend-command'
 import { clickRowMenuItem, staffedRow } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -46,7 +44,6 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
-const execFileAsync = promisify(execFile)
 const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
 const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
 
@@ -124,6 +121,13 @@ const shiftedIso = (days: number): string => {
   return localIsoDate(date)
 }
 
+/** День окончания включительно для полуинтервала раздела `[start, end)`. */
+function inclusiveEndOf(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
+
 const displayIsoDate = (value: string): string => value.split('-').reverse().join('.')
 
 async function permissionsFor(token: string): Promise<string[]> {
@@ -152,13 +156,9 @@ async function runStatusDialogProbe(args: string[]): Promise<string> {
     existsSync(path.join(BACKEND_ROOT, 'manage.py')),
     'manage.py должен принадлежать текущей worktree',
   ).toBe(true)
-  const target = await resolvePurgeTarget()
-  expect(target, 'не найден общий либо локальный Python backend venv').not.toBeNull()
-  const { stdout } = await execFileAsync(
-    target!.python,
-    ['manage.py', 'status_dialog_probe', ...args, `--settings=${DJANGO_SETTINGS}`],
-    // Python разрешено разделять между checkout, код команды — никогда.
-    { cwd: BACKEND_ROOT, timeout: 120_000 },
+  const stdout = await runBackendCommand(
+    ['status_dialog_probe', ...args, `--settings=${DJANGO_SETTINGS}`],
+    { timeout: 120_000 },
   )
   return stdout.trim()
 }
@@ -332,7 +332,7 @@ test.describe('расход: постановка статуса с меропр
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
 
     // Через помощника (Plane №820): строка доводится до окна ДО открытия меню.
-    await clickRowMenuItem(page, staffedRow(page), 'Запланировать статус')
+    await clickRowMenuItem(page, staffedRow(page), 'Изменить статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
@@ -443,9 +443,16 @@ test.describe('расход: постановка статуса с меропр
         nearCard,
         'OM-строка с одной отличающейся датой не должна считаться дублем',
       ).toHaveCount(1)
+      // Пин поправлен осознанно (`[ОМ-РШ-17]`, проходка №1142): раздел хранит
+      // `[start, end)`, а окно печатает день окончания ВКЛЮЧИТЕЛЬНО — как у
+      // кадровых карточек рядом. Участие на ОМ 05–06.10 печаталось «по 07.10».
+      await expect(
+        nearCard.getByText(displayIsoDate(inclusiveEndOf(seeded.nearEndDate)), { exact: true }),
+      ).toBeVisible()
       await expect(
         nearCard.getByText(displayIsoDate(seeded.nearEndDate), { exact: true }),
-      ).toBeVisible()
+        'сырой полуинтервальный конец на экране показываться не должен',
+      ).toHaveCount(0)
       await expect(
         nearCard.getByText(displayIsoDate(seeded.startDate), { exact: true }),
       ).toBeVisible()

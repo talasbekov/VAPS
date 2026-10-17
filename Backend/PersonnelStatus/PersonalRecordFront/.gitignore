@@ -54,8 +54,10 @@ next-env.d.ts
 # исходники — в историю ему не место.
 /smoke-results*/
 /test-results/
+/.next-build.lock
 /playwright-report/
 .shot-tmp/
+/.shot-tmp-*/
 
 # Снимки и файлы ручного тестирования (Plane №377): 9 МБ картинок и
 # документов на один заход. В репозиторий они не едут — отчёт живёт в vault и

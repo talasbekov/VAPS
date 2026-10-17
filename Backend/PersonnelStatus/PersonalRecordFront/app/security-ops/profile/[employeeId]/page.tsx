@@ -8,14 +8,13 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { opsApiClient } from "@/lib/ops-api";
-import { OpsApiError } from "@/lib/ops-errors";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { CoreEmployee } from "@/lib/api";
 import { useMyAssignments } from "@/hooks/use-my-assignments";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { ProfileBody } from "@/widgets/my-profile";
 
 export default function EmployeeProfilePage() {
@@ -47,17 +46,20 @@ function LegacyEmployeeProfileScreen() {
   // Право читать чужой профиль решает ручка назначений: отказ — закрытый
   // раздел, а не пустые вкладки.
   const access = useMyAssignments(id === "" ? undefined : id);
-  const permissions = useOpsPermissions();
-  const mayConfirmPersonally = permissions.roles.some((role) =>
-    ["DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"].includes(role.code)
-  );
-  const denied =
-    access.isError &&
-    access.error instanceof OpsApiError &&
-    (access.error.status === 403 || access.error.status === 401);
-
-  if (denied) {
-    return <OpsAccessDenied what="профиля сотрудника" />;
+  const mayConfirmPersonally = access.data?.results.some(
+    (assignment) => assignment.canConfirmWithoutAccount === true
+  ) ?? false;
+  if (access.readAccessBlocked) {
+    return <OpsAccessDenied what="профиля сотрудника" actions={
+      <Button variant="outline" disabled={access.isFetching} onClick={() => { void access.refetch(); }}>
+        {access.isFetching ? "Проверяем…" : "Повторить проверку профиля"}
+      </Button>
+    } />;
+  }
+  if (access.data === undefined) {
+    return <DashboardLayout>{access.isError ? (
+      <LoadFailure what="доступ к профилю сотрудника" onRetry={() => { void access.refetch(); }} isRetrying={access.isFetching} />
+    ) : <p className="text-sm text-muted-foreground">Проверяем доступ к профилю сотрудника…</p>}</DashboardLayout>;
   }
 
   return (
@@ -90,7 +92,7 @@ function LegacyEmployeeProfileScreen() {
             isRetrying={employee.isFetching}
           />
         )}
-        {employee.data !== undefined && <ProfileBody employee={employee.data} readOnly />}
+        {employee.isSuccess && <ProfileBody employee={employee.data} readOnly />}
         <Card>
           <CardContent className="p-4 text-xs text-muted-foreground">
             Свой профиль —{" "}

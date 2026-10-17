@@ -55,6 +55,8 @@ interface CachedToken {
 let cached: CachedToken | null = null;
 /** Запрос сессии в полёте. Общий промис — и есть дедупликация. */
 let inflight: Promise<string | null> | null = null;
+// A reset invalidates pending lookups as well as already cached tokens.
+let generation = 0;
 
 /**
  * Токен из сессии NextAuth. На сервере всегда `null` — сессия живёт в
@@ -68,10 +70,15 @@ export async function getAccessToken(): Promise<string | null> {
   if (cached !== null && now - cached.at < TTL_MS) return cached.token;
   if (inflight !== null) return inflight;
 
+  const requestGeneration = generation;
   inflight = (async () => {
     try {
       const { getSession } = await import("next-auth/react");
+      if (requestGeneration !== generation) return getAccessToken();
       const session = await getSession();
+      // A previous actor's lookup may complete after the new actor signed in.
+      // Its callers follow the current lookup; its result never enters cache.
+      if (requestGeneration !== generation) return getAccessToken();
       // Сессия, у которой не удалось продлить токен, токена не даёт вовсе
       // (Plane №383): подписать запрос мёртвым токеном значит получить 401 и
       // показать человеку «не удалось загрузить» вместо «войдите заново».
@@ -84,13 +91,14 @@ export async function getAccessToken(): Promise<string | null> {
       cached = { token, at: Date.now() };
       return token;
     } catch {
+      if (requestGeneration !== generation) return getAccessToken();
       // Отказ НЕ КЭШИРУЕТСЯ: запомнить «токена нет» на 15 секунд означало бы
       // превратить одну сетевую икоту в четверть минуты отказов на всех
       // экранах сразу.
       cached = null;
       return null;
     } finally {
-      inflight = null;
+      if (requestGeneration === generation) inflight = null;
     }
   })();
 
@@ -102,6 +110,7 @@ export async function getAccessToken(): Promise<string | null> {
  * записи — везде, где следующий запрос обязан спросить сессию заново.
  */
 export function resetAccessToken(): void {
+  generation++;
   cached = null;
   inflight = null;
 }

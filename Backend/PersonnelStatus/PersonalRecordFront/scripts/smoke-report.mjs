@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DIR = fileURLToPath(new URL('../smoke-results', import.meta.url))
+const DIR = process.env.SMOKE_RESULTS_DIR ?? fileURLToPath(new URL('../smoke-results', import.meta.url))
 
 if (!fs.existsSync(DIR)) {
   console.error('нет smoke-results — обход не запускался')
@@ -29,7 +29,7 @@ const personas = [...new Set(rows.map((r) => r.persona))]
 
 const out = []
 out.push('# Смоук-обход портала (старый стек) — связь фронт↔бэк', '')
-out.push('Стенд: Django `:8100` (Personnel-Records) + Next `:3106` (PersonalRecordFront).', '')
+out.push(`Стенд: Django \`${process.env.SMOKE_API ?? ':8100'}\` (Personnel-Records) + Next \`${process.env.SMOKE_APP ?? ':3106'}\` (PersonalRecordFront).`, '')
 out.push(`Персон: ${personas.length} (${personas.join(', ')}). Строк обхода: ${rows.length}.`, '')
 // Границы метода печатаются В ОТЧЁТЕ, а не живут в голове у того, кто его
 // запускал: без этого абзаца «⚪ без реакции» читается как список дефектов, а

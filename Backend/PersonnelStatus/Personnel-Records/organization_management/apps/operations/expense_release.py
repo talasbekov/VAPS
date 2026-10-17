@@ -18,6 +18,8 @@ document_release_service из Backend/VAPS).
 .pdf — то же, что .docx, но уже нередактируемое: его отправляют и подшивают.
 Данные у всех четырёх одни: разъехаться им негде, считает только билдер.
 """
+from dataclasses import replace
+
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.expense_csv import generate_expense_csv
 from organization_management.apps.operations.expense_docx import generate_expense_docx
@@ -25,6 +27,7 @@ from organization_management.apps.operations.expense_pdf import generate_expense
 from organization_management.apps.operations.expense_document import (
     build_expense_document,
     combine_documents,
+    ExpenseCell,
 )
 from organization_management.apps.operations.expense_xlsx import generate_expense_xlsx
 from organization_management.apps.operations.models_submission import (
@@ -85,12 +88,13 @@ def build_submitted_expense_document(division_id, business_date):
             message="День не сдан: выгружать нечего.",
         )
     catalog = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
-    report = StrengthReportService.compute(business_date, division_ids={division_id})
+    needs_live = any(key not in submission.snapshot for key in ("staff_total", "vacancies", "attached"))
+    report = StrengthReportService.compute(business_date, division_ids={division_id}) if needs_live else None
     # Строка СВОЕГО подразделения. Её может не быть вовсе — у подразделения
     # без единого штатного слота живому расходу нечего показывать; документ
     # при этом законен: сдача есть, просто знаменатель пуст.
     live = next(
-        (row for row in report.rows if row.division_id == division_id), None
+        (row for row in (report.rows if report else []) if row.division_id == division_id), None
     )
     names = DivisionTreeSelector.names_map([division_id])
     return build_expense_document(
@@ -161,46 +165,84 @@ def build_summary_expense_document(division_id, business_date):
             message="Этот день сдан обычной сдачей, а не сводкой.",
         )
 
-    pinned = {
-        row.pk: row
-        for row in OpsDailySubmission.objects.filter(
-            pk__in=[pin["submission_id"] for pin in pins]
-        )
-    }
+    # Load every pinned level in batches. A child summary freezes its OWN
+    # roster, so stopping at direct children silently drops grandchildren.
+    pinned = {summary.pk: summary}
+    frontier = [summary]
+    while frontier:
+        wanted = {pin["submission_id"] for row in frontier
+                  for pin in row.snapshot.get("sources", [])} - pinned.keys()
+        if not wanted:
+            break
+        frontier = list(OpsDailySubmission.objects.filter(pk__in=wanted))
+        missing = wanted - {row.pk for row in frontier}
+        if missing:
+            raise DomainError("SUMMARY_SOURCE_MISSING", 409,
+                              detail={"submission_ids": sorted(missing)},
+                              message="Закреплённая версия сдачи отсутствует: свод нельзя выгрузить полностью.")
+        pinned.update((row.pk, row) for row in frontier)
     catalog = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
-    division_ids = [division_id, *(pin["division_id"] for pin in pins)]
-    report = StrengthReportService.compute(
-        business_date, division_ids=set(division_ids)
-    )
-    live = {row.division_id: row for row in report.rows}
+    division_ids = {row.division_id for row in pinned.values()}
+    fallback_ids = {row.division_id for row in pinned.values()
+                    if any(key not in row.snapshot for key in ("staff_total", "vacancies", "attached"))}
+    report = StrengthReportService.compute(business_date, division_ids=fallback_ids) if fallback_ids else None
+    live = {row.division_id: row for row in report.rows} if report else {}
     names = DivisionTreeSelector.names_map(division_ids)
 
-    documents = []
-    for source_id, snapshot in [
-        (division_id, summary.snapshot),
-        *(
-            (pin["division_id"], pinned[pin["submission_id"]].snapshot)
-            for pin in pins
-            # Запиненной строки может не оказаться (чистка данных): её
-            # отсутствие — не повод печатать чужие числа под её именем.
-            if pin["submission_id"] in pinned
-        ),
-    ]:
-        row = live.get(source_id)
-        documents.append(
-            build_expense_document(
-                snapshot,
+    def own_document(submission):
+        row = live.get(submission.division_id)
+        return build_expense_document(
+                submission.snapshot,
                 business_date,
                 catalog=catalog,
                 # У КАЖДОГО ребёнка своё замороженное имя и свой знаменатель:
                 # сводка склеивает чужие дни. Разрешает их билдер; сюда едет
                 # живое как запасное.
-                division_title=names.get(source_id, ""),
+                division_title=names.get(submission.division_id, ""),
                 staff_total=row.staff_total if row else 0,
                 vacancies=row.vacancies if row else 0,
                 attached=row.attached if row else 0,
             )
-        )
+
+    def branch_documents(submission, seen):
+        if submission.pk in seen:
+            return []
+        seen.add(submission.pk)
+        documents = [own_document(submission)]
+        for pin in submission.snapshot.get("sources", []):
+            documents.extend(branch_documents(pinned[pin["submission_id"]], seen))
+        return documents
+
+    from organization_management.apps.divisions.models import Division
+    division_types = dict(Division.objects.filter(pk__in=division_ids).values_list("id", "division_type"))
+    for row in pinned.values():
+        if row.snapshot.get("division_type"):
+            division_types[row.division_id] = row.snapshot["division_type"]
+    service_summary = division_types.get(division_id) in {"organization", "service"}
+    if service_summary:
+        documents = []
+        own = own_document(summary)
+        own_rows = [replace(row, personnel=(), cells={code: ExpenseCell(cell.count) for code, cell in row.cells.items()}) for row in own.rows]
+        documents.append(replace(own, rows=own_rows))
+        seen = {summary.pk}
+        for pin in pins:
+            child = pinned[pin["submission_id"]]
+            branches = branch_documents(child, seen)
+            combined = combine_documents(branches, division_title=title_of(child.snapshot, names.get(child.division_id, "")),
+                                         business_date=business_date, columns=catalog_of(summary.snapshot, catalog).columns_in_order())
+            leaders = tuple(person for branch in branches for row in branch.rows for person in row.personnel
+                            if person.position_level in (1, 2)
+                            and (person.division_type == "department" or (
+                                not person.division_type and division_types.get(child.division_id) == "department"
+                                and branch is branches[0])))
+            totals = combined.totals
+            aggregate = replace(own.rows[0], name=combined.division_title, staff_total=totals.staff_total,
+                                list_total=totals.list_total, vacancies=totals.vacancies,
+                                cells={code: ExpenseCell(count) for code, count in totals.columns.items()},
+                                attached=ExpenseCell(totals.attached), event=totals.event, personnel=leaders)
+            documents.append(replace(combined, rows=[aggregate]))
+    else:
+        documents = branch_documents(summary, set())
     return combine_documents(
         documents,
         division_title=title_of(summary.snapshot, names.get(division_id, "")),

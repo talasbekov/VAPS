@@ -9,6 +9,7 @@ Plane №944 — задача заказчика «привести сбор с�
 отказывают; «В строю» по управлениям считается на деловую дату.
 """
 import pytest
+from .test_ops_forces_gathering import notify_after_split
 
 from organization_management.apps.operations.models_notification import OpsNotification
 from organization_management.apps.operations.tests.test_bulk_status_api import client_for
@@ -155,7 +156,7 @@ def _submit_one(manager, base, department, business_date="2027-03-01"):  # noqa:
     make_assignment_status_type()
     make_directorate(department, "Управление охраны")
     row = _split(manager, base, department, 2)
-    manager.post(f"{base}forces/allocation/{row['id']}/notify/")
+    notify_after_split(manager, base, row['id'])
     employee = make_employee()
     added = manager.post(
         f"{base}forces/allocation/{row['id']}/members/",
@@ -269,7 +270,7 @@ def test_in_service_is_counted_per_directorate_on_the_business_date(manager):  #
     assert detail["inServiceByDirectorate"] == {str(directorate.pk): 2}
 
     # `[СБС-23]`: выделенный человек из отдела приписан к своему управлению.
-    manager.post(f"{base}forces/allocation/{row['id']}/notify/")
+    notify_after_split(manager, base, row['id'])
     make_assignment_status_type()
     added = manager.post(
         f"{base}forces/allocation/{row['id']}/members/",

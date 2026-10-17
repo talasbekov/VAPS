@@ -1,12 +1,12 @@
 """Нормативная база ОМ — справочник законов/приказов/регламентов/инструкций.
 
-Читается реестром «Законы об ОМ» (/security-ops/laws). Файлы документов
-система НЕ хранит: file_url — отдельное честное поле (null = файла нет),
-а не догадка по коду. Правка — Django Admin (Admin = справочники).
+Читается реестром «Законы об ОМ» (/security-ops/laws). file_url сохраняет
+прежние внешние ссылки; загруженные версии хранятся отдельно и приватно.
 """
 from django.db import models
 
 from organization_management.apps.operations.models import TimeStampedModel
+from organization_management.apps.operations.legal_document_storage import LegalDocumentStorage
 
 
 class OpsLegalDocument(TimeStampedModel):
@@ -26,7 +26,8 @@ class OpsLegalDocument(TimeStampedModel):
     description = models.TextField(blank=True)
     revision = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices)
-    pages = models.PositiveIntegerField()
+    pages = models.PositiveIntegerField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
     file_url = models.CharField(max_length=500, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
@@ -49,3 +50,20 @@ class OpsLegalDocument(TimeStampedModel):
 
     def __str__(self):
         return f"{self.code} — {self.title}"
+
+
+class OpsLegalDocumentFile(TimeStampedModel):
+    document = models.ForeignKey(OpsLegalDocument, on_delete=models.PROTECT, related_name="files")
+    file = models.FileField(storage=LegalDocumentStorage(), max_length=250)
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveIntegerField()
+    sha256 = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Файл нормативного документа"
+        verbose_name_plural = "Файлы нормативных документов"
+
+    def __str__(self):
+        return self.original_name

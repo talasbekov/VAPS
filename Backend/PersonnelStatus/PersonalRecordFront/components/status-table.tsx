@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect} from "react";
+import { Fragment, useState, useMemo, useEffect, useRef} from "react";
 import Link from "next/link";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { formatIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
+import { canManageStatusInDivision } from "@/entities/status/access";
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
@@ -75,13 +76,18 @@ import {
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
 import { LoadFailure } from "@/components/load-failure";
+import { EmployeeDutyPlacementDialog } from "@/components/employee-duty-placement-dialog";
 import { saveFile } from "@/features/ops-reports/report-shared";
 
 interface Employee {
+  divisionId: number | null;
   id: string;
   number: number;
   name: string;
   department: string;
+  directorateId: number | null;
+  directorateName: string;
+  departmentName: string;
   position: string;
   status: string;
   /** Сырой код ТЕКУЩЕГО статуса — РОВНО `current_status.status_type`, а не
@@ -309,22 +315,28 @@ export function StatusTable({
   // ниже).
   // Право РАЗДЕЛА (Plane №352, Ш-1): портальный набор `statuses/update` снят
   // вместе со старой системой ролей.
-  const { hasPermission: hasOpsPermission } = useOpsPermissions();
+  const access = useOpsPermissions();
+  const { hasPermission: hasOpsPermission } = access;
   // Ссылка «→ Сбор сил» в колонке раздела — по ключу модуля, как пункт меню
   // (№939, ревью №825): персоне без прав сбора сил ссылка вела на «Доступ закрыт».
   const forcesOpen = moduleOpenFor("/employees", hasOpsPermission);
   const canEdit = hasOpsPermission("status.manage");
+  const canReadDuty = !access.isLoading && hasOpsPermission("status.view");
+  const [dutyEmployee, setDutyEmployee] = useState<{ id: number; name: string } | null>(null);
+  const pendingDutyEmployee = useRef<{ id: number; name: string } | null>(null);
+  const canEditEmployee = (employee: Employee) => !isVacancyRow(employee) && canManageStatusInDivision(access, employee.divisionId);
   const [searchQuery, setSearchQuery] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [directorateFilter, setDirectorateFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   // `statusCode` не сортируемое поле (нет управления, задающего его как
   // ключ сортировки, и код — не то же самое, что видимый текст статуса):
   // Сортировка отсюда УБРАНА (Plane №231): менять её было нечем — ни одна
   // кнопка не звала `setSortBy`, — а с постраничной загрузкой клиентская
   // сортировка переставляла бы только показанные пятьдесят строк, выдавая это
-  // за порядок всего подразделения. Порядок задаёт сервер (дерево, номер
-  // слота), таблица его сохраняет.
+  // за порядок всего подразделения. Порядок задаёт сервер (уровень должности,
+  // импортный порядок, номер слота), таблица его сохраняет внутри управления.
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [statusActionMode, setStatusActionMode] = useState<"change" | "schedule">("change");
   const [selectedEmployeeForEdit, setSelectedEmployeeForEdit] =
     useState<Employee | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -353,8 +365,8 @@ export function StatusTable({
   // Подписи статусов — из справочника (Plane №366): иначе тип, заведённый
   // заказчиком в админке, читается как «Не обновлено».
   const naming = useStatusNaming();
-  const departmentId =
-    departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
+  const directorateId =
+    directorateFilter === "all" ? undefined : Number(directorateFilter) || undefined;
 
   const {
     data,
@@ -367,7 +379,7 @@ export function StatusTable({
     page,
     pageSize: STATUS_PAGE_SIZE,
     search: searchQuery || undefined,
-    divisionId: departmentId,
+    directorateId,
     status: statusFilter === "all" ? undefined : statusFilter,
   });
 
@@ -375,7 +387,7 @@ export function StatusTable({
   // поиске значит показать пустоту там, где результаты есть.
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, departmentFilter, statusFilter]);
+  }, [searchQuery, directorateFilter, statusFilter]);
 
   const internalLoading = queryLoading || externalLoading;
 
@@ -417,8 +429,12 @@ export function StatusTable({
               ? `${unit.id}-${emp.id}`
               : `${unit.id}-vacant-${globalIndex}`,
             number: globalIndex++,
-            name: emp ? `${emp.last_name} ${emp.first_name}` : VACANCY_NAME,
+            name: emp ? [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(" ") : VACANCY_NAME,
             department: unit.division?.name || "Не указан",
+            divisionId: unit.division?.id ?? null,
+            directorateId: unit.directorate_id ?? null,
+            directorateName: unit.directorate_name || "Без управления",
+            departmentName: unit.department_name || "",
             position: empData.position?.name || "Должность не указана",
             status: statusText,
             statusCode,
@@ -447,8 +463,12 @@ export function StatusTable({
         result.push({
           id: `${unit.id}-${employee.id}`,
           number: globalIndex++,
-          name: `${employee.last_name} ${employee.first_name}`,
+          name: [employee.last_name, employee.first_name, employee.middle_name].filter(Boolean).join(" "),
           department: unit.division?.name || "Не указан",
+          divisionId: unit.division?.id ?? null,
+          directorateId: unit.directorate_id ?? null,
+          directorateName: unit.directorate_name || "Без управления",
+          departmentName: unit.department_name || "",
           position: (unit as any).position?.name || "Должность не указана",
           status: statusText,
           statusCode,
@@ -466,6 +486,10 @@ export function StatusTable({
           number: globalIndex++,
           name: VACANCY_NAME,
           department: unit.division?.name || "Не указан",
+          divisionId: unit.division?.id ?? null,
+          directorateId: unit.directorate_id ?? null,
+          directorateName: unit.directorate_name || "Без управления",
+          departmentName: unit.department_name || "",
           position: (unit as any).position?.name || "Должность не указана",
           status: "Не обновлено",
           statusCode: null,
@@ -481,24 +505,14 @@ export function StatusTable({
     return result;
   }, [data, naming]);
 
-  // Отделы для фильтра — из статистики подразделения, а не из показанной
-  // страницы: на странице пятьдесят строк, и список сузился бы до тех отделов,
-  // что в них попали. Значение — идентификатор: имена уникальны только внутри
-  // родителя, подпись несёт путь (тот же приём, что в реестре, Plane №231).
-  const departments = useMemo<{ id: number; label: string }[]>(() => {
+  // Управления — из статистики доступной области, включая тех, кого нет
+  // на текущей странице. Идентификатор различает одинаковые названия.
+  const directorates = useMemo<{ id: number; label: string }[]>(() => {
     const stats = statistics.data;
     if (!stats) return [];
-    const rows = [
-      ...stats.departments.map((row) => ({
-        id: row.department_id, name: row.department_name, ancestors: row.ancestors ?? [],
-      })),
-      ...stats.directorates.map((row) => ({
-        id: row.directorate_id, name: row.directorate_name, ancestors: row.ancestors ?? [],
-      })),
-      ...stats.divisions.map((row) => ({
-        id: row.division_id, name: row.division_name, ancestors: row.ancestors ?? [],
-      })),
-    ];
+    const rows = stats.directorates.map((row) => ({
+      id: row.directorate_id, name: row.directorate_name, ancestors: row.ancestors ?? [],
+    }));
     return rows.map((row) => ({
       id: row.id,
       label: row.ancestors.length > 0 ? `${row.ancestors.join(" › ")} › ${row.name}` : row.name,
@@ -551,23 +565,26 @@ export function StatusTable({
   };
 
   // Функция для открытия диалога редактирования
-  const handleEditStatus = (employee: Employee) => {
+  const handleEditStatus = (employee: Employee, mode: "change" | "schedule" = "change") => {
     // Вторая застава после меню (Plane №257): у вакансии сотрудника нет, и
     // форма заведения статуса ей не адресована — открывать окно, которое
     // заведомо упрётся в «Сотрудник не найден», хуже, чем не открыть.
-    if (isVacancyRow(employee)) return;
+    if (!canEditEmployee(employee)) return;
+    setStatusActionMode(mode);
     setSelectedEmployeeForEdit(employee);
     setEditDialogOpen(true);
   };
 
   // Функция для открытия диалога планирования
   const handleScheduleStatus = (employee: Employee) => {
+    if (!canEditEmployee(employee)) return;
     setSelectedEmployeeForSchedule(employee);
     setScheduleDialogOpen(true);
   };
 
   // Функция для открытия диалога откомандирования
   const handleSecondEmployee = (employee: Employee) => {
+    if (!canEditEmployee(employee)) return;
     setSelectedEmployeeForSecond(employee);
     setSecondDialogOpen(true);
   };
@@ -620,7 +637,7 @@ export function StatusTable({
       number: employee.number,
       position: employee.position,
       department: employee.department,
-      departmentId: staffUnit.division.id.toString(),
+      departmentId: staffUnit.division?.id.toString() ?? "",
     };
 
     setSelectedEmployeeForProfile(employeeProfile);
@@ -725,6 +742,25 @@ export function StatusTable({
     [employees]
   );
 
+  const directorateGroups = useMemo(() => {
+    const groups = new Map<number | null, { id: number | null; label: string; employees: Employee[] }>();
+    for (const employee of filteredEmployees) {
+      let group = groups.get(employee.directorateId);
+      if (!group) {
+        group = {
+          id: employee.directorateId,
+          label: employee.directorateId === null
+            ? "Без управления"
+            : [employee.departmentName, employee.directorateName].filter(Boolean).join(" › "),
+          employees: [],
+        };
+        groups.set(employee.directorateId, group);
+      }
+      group.employees.push(employee);
+    }
+    return [...groups.values()];
+  }, [filteredEmployees]);
+
   // Экспортирует ровно текущую серверную страницу, без обхода всего состава
   // и без объединения чужих/прежних фильтров из query cache (Plane №1157).
   const exportUnavailable =
@@ -754,17 +790,27 @@ export function StatusTable({
     );
   };
 
+  const selectableIds = filteredEmployees.filter(canEditEmployee).map(employee => employee.id);
+  const selectedIds = new Set(selectedEmployees);
+  const selectedOnPage = selectableIds.filter(id => selectedIds.has(id)).length;
+  const selectionUnavailable = loading || queryFetching || isPlaceholderData || queryFailed;
+  const hasFilters = Boolean(searchQuery || directorateFilter !== "all" || statusFilter !== "all");
+  const resetFilters = () => { setSearchQuery(""); setDirectorateFilter("all"); setStatusFilter("all"); };
+
   const handleSelectAll = (checked: boolean) => {
+    if (selectionUnavailable) return;
     if (checked) {
-      onSelectionChange(filteredEmployees.map((emp) => emp.id));
+      onSelectionChange([...new Set([...selectedEmployees, ...selectableIds])]);
     } else {
-      onSelectionChange([]);
+      const visibleIds = new Set(selectableIds);
+      onSelectionChange(selectedEmployees.filter(id => !visibleIds.has(id)));
     }
   };
 
   const handleSelectEmployee = (employeeId: string, checked: boolean) => {
+    if (selectionUnavailable || !selectableIds.includes(employeeId)) return;
     if (checked) {
-      onSelectionChange([...selectedEmployees, employeeId]);
+      onSelectionChange([...new Set([...selectedEmployees, employeeId])]);
     } else {
       onSelectionChange(selectedEmployees.filter((id) => id !== employeeId));
     }
@@ -783,24 +829,22 @@ export function StatusTable({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Сотрудники организации</CardTitle>
-          <div className="text-sm text-muted-foreground">
-            {/* «из» — по ОТБОРУ, а не по странице: выбор живёт поверх
-                страниц, и «из 50» на пяти тысячах сотрудников означало бы не
-                то, что человек видит (Plane №231).
-                Наблюдателю подпись не показывается вовсе: выбирать строки ему
-                нечем и незачем — счётчик выбора без выбора врёт. */}
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span role="status">
             {canEdit ? (
               <>
-                Выбрано: {selectedEmployees.length} из{" "}
-                {data?.matched_count ?? filteredEmployees.length}
+                Выбрано: {selectedEmployees.length} · найдено строк: {data?.matched_count ?? filteredEmployees.length}
               </>
             ) : (
-              <>Всего: {data?.matched_count ?? filteredEmployees.length}</>
+              <>Найдено строк: {data?.matched_count ?? filteredEmployees.length}</>
             )}
+            </span>
+            {canEdit && selectedEmployees.length > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => onSelectionChange([])}>Снять весь выбор</Button>}
           </div>
         </div>
+        {canEdit && <p className="text-xs text-muted-foreground">Флажок в заголовке выбирает доступных сотрудников этой страницы. Выбор сохраняется при поиске и переходе по страницам.</p>}
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportPage} disabled={exportUnavailable}>
             <Download className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -817,7 +861,8 @@ export function StatusTable({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Поиск по ФИО, отделу, должности..."
+              aria-label="Поиск сотрудников в таблице статусов"
+              placeholder="Поиск по ФИО, подразделению, должности..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -826,9 +871,11 @@ export function StatusTable({
 
           {/* Тот же выбор с поиском, что в реестре (Plane №232). */}
           <DivisionPicker
-            value={departmentFilter}
-            options={departments}
-            onChange={setDepartmentFilter}
+            value={directorateFilter}
+            options={directorates}
+            onChange={setDirectorateFilter}
+            allLabel="Все управления"
+            ariaLabel="Фильтр по управлению"
           />
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -844,6 +891,7 @@ export function StatusTable({
               ))}
             </SelectContent>
           </Select>
+          {hasFilters && <Button type="button" variant="outline" onClick={resetFilters}>Сбросить фильтры</Button>}
         </div>
 
         {/* Table */}
@@ -854,17 +902,19 @@ export function StatusTable({
                 {canEdit && (
                   <TableHead className="w-12">
                     <Checkbox
+                      aria-label="Выбрать сотрудников на этой странице"
+                      title="Выбрать доступных сотрудников этой страницы"
+                      disabled={selectionUnavailable || selectableIds.length === 0}
                       checked={
-                        selectedEmployees.length === filteredEmployees.length &&
-                        filteredEmployees.length > 0
+                        selectedOnPage === 0 ? false : selectedOnPage === selectableIds.length ? true : "indeterminate"
                       }
-                      onCheckedChange={handleSelectAll}
+                      onCheckedChange={checked => handleSelectAll(checked === true)}
                     />
                   </TableHead>
                 )}
                 <TableHead className="w-16">№</TableHead>
                 <TableHead>ФИО</TableHead>
-                <TableHead>Отдел</TableHead>
+                <TableHead>Управление</TableHead>
                 <TableHead>Должность</TableHead>
                 {/* ДВЕ КОЛОНКИ, А НЕ ОДНА (Plane №314, решение заказчика
                     30.08.2026). У экрана два источника: кадровая ручка
@@ -891,7 +941,14 @@ export function StatusTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEmployees.map((employee) => (
+              {directorateGroups.map((group) => (
+                <Fragment key={group.id ?? "without-directorate"}>
+                  <TableRow data-directorate-id={group.id ?? "none"} className="bg-muted/50">
+                    <TableCell colSpan={canEdit ? 10 : 9} className="font-semibold">
+                      {group.label}
+                    </TableCell>
+                  </TableRow>
+                  {group.employees.map((employee) => (
                 <TableRow
                   key={employee.id}
                   // Адрес строки для проб и для отладки: ФИО на стенде
@@ -908,6 +965,8 @@ export function StatusTable({
                   {canEdit && (
                     <TableCell>
                       <Checkbox
+                        aria-label={isVacancyRow(employee) ? "Выбор вакансии недоступен" : `Выбрать сотрудника: ${employee.name}`}
+                        disabled={selectionUnavailable || !canEditEmployee(employee)}
                         checked={selectedEmployees.includes(employee.id)}
                         onCheckedChange={(checked) =>
                           handleSelectEmployee(employee.id, checked as boolean)
@@ -933,9 +992,9 @@ export function StatusTable({
                   <TableCell className="text-sm">
                     <span
                       className="block max-w-[130px] truncate"
-                      title={employee.department}
+                      title={employee.directorateName}
                     >
-                      {employee.department}
+                      {employee.directorateName}
                     </span>
                   </TableCell>
                   <TableCell className="text-sm">
@@ -960,7 +1019,7 @@ export function StatusTable({
                       два-три слова короче своей ширины, и nowrap растянул бы
                       её в одну строку через всю таблицу вместо переноса. */}
                   <TableCell className="whitespace-normal">
-                    {isVacancyRow(employee) || !canEdit ? (
+                    {!canEditEmployee(employee) ? (
                       getStatusBadge(employee.status, employee.statusCode)
                     ) : (
                       <div className="flex flex-col items-start gap-1">
@@ -1032,8 +1091,24 @@ export function StatusTable({
                           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      {/* Loading the day panel can move the row below the
+                          viewport after this menu opens. A side placement
+                          lets Radix keep the menu vertically inside it. */}
+                      <DropdownMenuContent align="end" side="left" sticky="always" collisionPadding={8}
+                        onCloseAutoFocus={(event) => {
+                          if (!pendingDutyEmployee.current) return;
+                          // Let the menu release its modal pointer lock before mounting the dialog.
+                          event.preventDefault();
+                          setDutyEmployee(pendingDutyEmployee.current);
+                          pendingDutyEmployee.current = null;
+                        }}>
                         <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                        {canReadDuty && !isVacancyRow(employee) && employeeIdOf(employee) !== null && (
+                          <DropdownMenuItem onSelect={() => { pendingDutyEmployee.current = { id: employeeIdOf(employee)!, name: employee.name }; }}>
+                            <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Назначения в наряд
+                          </DropdownMenuItem>
+                        )}
                         {/* У ВАКАНСИИ действий нет НИ ОДНОГО: все четыре
                             адресованы человеку, которого на должности нет
                             (Plane №257). Раньше три пункта прятались, а
@@ -1049,7 +1124,7 @@ export function StatusTable({
                             нерабочая строка объясняет причину — то же
                             правило, что у пустого состояния списка: не белое
                             пятно, а фраза. */}
-                        {!canEdit ? (
+                        {!isVacancyRow(employee) && !canEditEmployee(employee) ? (
                           <DropdownMenuItem disabled>
                             <UserX className="mr-2 h-4 w-4" aria-hidden="true" />
                             Только просмотр — правка статусов закрыта
@@ -1065,7 +1140,7 @@ export function StatusTable({
                               onClick={() => handleEditStatus(employee)}
                             >
                               <Edit className="mr-2 h-4 w-4" />
-                              Запланировать статус
+                              Изменить статус
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleScheduleStatus(employee)}
@@ -1092,6 +1167,8 @@ export function StatusTable({
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
+                  ))}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -1133,8 +1210,18 @@ export function StatusTable({
       </CardContent>
 
       {/* Диалог редактирования статуса */}
+      {canReadDuty && dutyEmployee && (
+        <EmployeeDutyPlacementDialog
+          key={dutyEmployee.id}
+          employeeId={dutyEmployee.id}
+          employeeName={dutyEmployee.name}
+          onClose={() => setDutyEmployee(null)}
+        />
+      )}
+
       <EditStatusDialog
-        open={editDialogOpen}
+        mode={statusActionMode}
+        open={editDialogOpen && selectedEmployeeForEdit !== null && canEditEmployee(selectedEmployeeForEdit)}
         onOpenChange={setEditDialogOpen}
         employeeId={selectedEmployeeForEdit?.id || null}
         employeeName={selectedEmployeeForEdit?.name}
@@ -1146,7 +1233,7 @@ export function StatusTable({
 
       {/* Диалог просмотра запланированных статусов */}
       <PlannedStatusesDialog
-        open={scheduleDialogOpen}
+        open={scheduleDialogOpen && selectedEmployeeForSchedule !== null && canEditEmployee(selectedEmployeeForSchedule)}
         onOpenChange={setScheduleDialogOpen}
         employeeId={selectedEmployeeForSchedule?.id || null}
         employeeName={selectedEmployeeForSchedule?.name}
@@ -1157,13 +1244,13 @@ export function StatusTable({
           const employee = selectedEmployeeForSchedule;
           if (!employee) return;
           setScheduleDialogOpen(false);
-          handleEditStatus(employee);
+          handleEditStatus(employee, "schedule");
         }}
       />
 
       {/* Диалог откомандирования сотрудника */}
       <SecondEmployeeDialog
-        open={secondDialogOpen}
+        open={secondDialogOpen && selectedEmployeeForSecond !== null && canEditEmployee(selectedEmployeeForSecond)}
         onOpenChange={setSecondDialogOpen}
         employeeId={selectedEmployeeForSecond?.id || null}
         employeeName={selectedEmployeeForSecond?.name}

@@ -12,7 +12,7 @@
  *
  * Проба стережёт то, что даёт именно смена механизма:
  *
- * 1. ошибка находится на УХОДЕ ФОКУСА, а не после нажатия «Сохранить»;
+ * 1. наряд нельзя сохранить без актуального объекта и зависимого назначения;
  * 2. текст ошибки лежит ПОД полем (`#…-error`), а не сводкой в конце формы;
  * 3. неудачный сабмит переводит фокус на ВЕРХНЕЕ неверное поле, включая
  *    Radix-триггеры без ref (штатный `shouldFocusError` их не умеет).
@@ -64,7 +64,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
   // Проба «добавление сотрудника» снята вместе с окном заведения (Plane
   // №940, слово заказчика 07.09.2026): формы на экране больше нет.
 
-  test('статусы сотрудника: наряд проверяется по полям, «В строю» дат не требует', async ({
+  test('статусы сотрудника: наряд требует полного назначения, «В строю» дат не требует', async ({
     page,
   }) => {
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
@@ -73,37 +73,62 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
 
     // 🔴 Запись на стенд не уходит: модалка засеяна текущим статусом
     // сотрудника, и удачный сабмит создал бы ему настоящий статус. Проба
-    // проверяет отказ валидации — до сети дело дойти не должно, а перехват
+    // проверяет готовность формы без сабмита — до сети дело дойти не должно, а перехват
     // страхует от того, что дойдёт.
     let posted = 0
     await page.route(
       (url) => url.pathname.includes('/api/statuses/statuses'),
       (route) => {
+        // Fresh duty assignment reads are required before validation; guard only writes.
+        if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue()
         posted += 1
         return route.abort()
       },
     )
+    // Начальное назначение контролируется пробой: текущий реальный наряд
+    // сотрудника не должен заполнять поля, чью обязательность проверяем.
+    await page.route('**/api/statuses/statuses/duty-assignments/**', route => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { results: [] } })
+      return route.fallback()
+    })
 
     // Модалка открывается из меню действий строки. Через помощника: строка
     // доводится до окна ДО открытия меню, иначе в полном прогоне пункт
     // оказывается «вне области просмотра» (Plane №820).
-    await clickRowMenuItem(page, staffedRow(page), 'Запланировать статус')
+    await clickRowMenuItem(page, staffedRow(page), 'Изменить статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible()
 
-    // «На дежурстве» дописывает к статусу наряд — его поля пусты.
+    // Полнота назначения теперь проверяется до сабмита. Отсутствующее
+    // назначение блокирует Save, а свежий справочник остаётся настоящим.
     await dialog.locator('#status').click()
     await page.getByRole('option', { name: 'На дежурстве', exact: true }).click()
-    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    const save = dialog.getByRole('button', { name: 'Сохранить', exact: true })
+    await expect(dialog.locator('[id="duty.objectId"]')).toBeEnabled()
+    await expect(save).toBeDisabled()
+    await dialog.locator('[id="duty.dutyKind"]').click()
+    await page.getByRole('option', { name: 'Постовое', exact: true }).click()
+    await expect(dialog.locator('[id="duty.postId"]')).toBeDisabled()
+    await expect(save).toBeDisabled()
 
-    // Раньше ошибки наряда уезжали общей сводкой списком строк: «Выберите
-    // объект» не показывал, какое из четырёх полей блока пустое.
-    await expect(dialog.locator('[id="duty.dutyKind-error"]')).toHaveText(
-      'Выберите тип дежурства.',
-    )
-    await expect(dialog.locator('[id="duty.objectId-error"]')).toHaveText('Выберите объект.')
-    expect(await page.evaluate(() => document.activeElement?.id)).toBe('duty.dutyKind')
+    await dialog.locator('[id="duty.objectId"]').click()
+    await page.getByRole('option').first().click()
+    await expect(save).toBeDisabled() // Объект без поста ещё не назначение.
+
+    await dialog.locator('[id="duty.dutyKind"]').click()
+    await page.getByRole('option', { name: 'Групповое', exact: true }).click()
+    await expect(dialog.locator('[id="duty.postId"]')).toHaveCount(0)
+    await expect(dialog.locator('[id="duty.groupId"]')).toBeEnabled()
+    await expect(save).toBeDisabled()
+    await dialog.locator('[id="duty.groupId"]').click()
+    await page.getByRole('option', { name: 'Группа №1', exact: true }).click()
+    await expect(save).toBeEnabled()
+    // Смена вида очищает зависимое назначение, не переносит старую группу.
+    await dialog.locator('[id="duty.dutyKind"]').click()
+    await page.getByRole('option', { name: 'Постовое', exact: true }).click()
+    await expect(dialog.locator('[id="duty.groupId"]')).toHaveCount(0)
+    await expect(save).toBeDisabled()
     expect(posted, 'форма не должна была дойти до сети').toBe(0)
 
     // «В строю» бессрочен — дат у него нет вовсе.
@@ -151,8 +176,9 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     await hydrated(page)
 
     // Кнопка «Применить изменения» погашена, пока никто не отмечен, — сначала
-    // отмечаем строку в таблице, иначе форма недостижима.
-    await page.getByRole('row').nth(1).getByRole('checkbox').click()
+    // отмечаем сотрудника. После шапки таблицы идёт строка группы управления,
+    // у которой чекбокса нет; вакансии тоже не подходят для массовой правки.
+    await staffedRow(page).getByRole('checkbox').check()
     await page.getByRole('tab', { name: 'Массовое обновление' }).click()
 
     const form = page.locator('form').filter({ has: page.locator('#status') })
@@ -212,7 +238,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
-    await page.getByRole('row').nth(1).getByRole('checkbox').click()
+    await staffedRow(page).getByRole('checkbox').check()
     await page.getByRole('tab', { name: 'Массовое обновление' }).click()
 
     const form = page.locator('form').filter({ has: page.locator('#status') })

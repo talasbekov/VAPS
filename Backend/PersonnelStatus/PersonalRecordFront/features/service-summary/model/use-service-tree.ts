@@ -11,6 +11,8 @@
 // осиротевшего «Управление (стенд)», см. `resolveOrganizationRoot`), а не
 // зашитый уровень типа: тип узла в ответе дерева не приходит вовсе.
 import { useQuery } from "@tanstack/react-query";
+import { useContext } from "react";
+import { ServiceSummaryRootContext } from "./workspace-context";
 import { apiClient, type TrafficLightNode } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import {
@@ -76,6 +78,7 @@ export interface ServiceTree {
 }
 
 export function useServiceTree(businessDate: string | null): ServiceTree {
+  const canonicalRootId = useContext(ServiceSummaryRootContext);
   const dateValid = businessDate !== null;
 
   const treeQuery = useQuery({
@@ -97,12 +100,15 @@ export function useServiceTree(businessDate: string | null): ServiceTree {
   });
 
   const nodes = treeQuery.data?.nodes ?? [];
-  const { roots, childrenOf } = buildDivisionForest(nodes);
-  const root = resolveOrganizationRoot(roots, childrenOf);
+  const { childrenOf } = buildDivisionForest(nodes);
+  const root = nodes.find(node => node.division_id === canonicalRootId) ?? null;
   const nodeById = new Map(nodes.map((node) => [node.division_id, node]));
 
   const submissionByDivision = new Map<string, DaySubmission>();
   for (const submission of parseSubmissionList(submissionsQuery.data)) {
+    // The adapter includes historical versions; their order must not replace
+    // the current root/department submission used by the day view.
+    if (!submission.is_current || submission.business_date !== businessDate) continue;
     submissionByDivision.set(submission.division_id, submission);
   }
 

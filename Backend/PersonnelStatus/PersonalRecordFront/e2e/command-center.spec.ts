@@ -67,10 +67,17 @@ async function apiToken(): Promise<string> {
 }
 
 async function events(token: string): Promise<EventRow[]> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=100`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return ((await res.json()) as { results: EventRow[] }).results
+  const rows: EventRow[] = []
+  for (let page = 1; ; page++) {
+    const res = await fetch(`${API}/api/ops/security-events/?page=${page}&page_size=200`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.ok).toBeTruthy()
+    const data = await res.json() as { results: EventRow[]; next: string | null }
+    rows.push(...data.results)
+    if (!data.next) return rows
+    expect(data.results.length).toBeGreaterThan(0)
+  }
 }
 
 async function strengthReport(
@@ -375,15 +382,11 @@ test.describe(LIVE ? 'командный центр' : 'командный це�
       '/security-ops/analytics/',
     )
 
-    // Кнопка — заглушка бэк-этапа: disabled и пояснение рядом, не молча
-    const remindButton = card.getByRole('button', { name: 'Напомнить департаментам', exact: true })
-    await expect(remindButton).toBeVisible()
-    await expect(remindButton).toBeDisabled()
-    await expect(
-      card.getByText('Рассылка идёт автоматически к контрольному часу; ручная — бэк-этапом.', {
-        exact: true,
-      }),
-    ).toBeVisible()
+    // Напоминание выполняется в своде с проверенной областью, дата — та же.
+    await expect(card.getByRole('button', { name: 'Напомнить департаментам', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('link', { name: 'Открыть свод для напоминания', exact: true })).toHaveAttribute(
+      'href', `/security-ops/service-summary/?dateFrom=${tree.business_date}`,
+    )
   })
 
   test('«Расход дня» на синтетическом дереве: все статусы, late и UNKNOWN — наблюдаемый факт', async ({
@@ -503,9 +506,8 @@ test.describe(LIVE ? 'командный центр' : 'командный це�
     await expect(
       card.getByRole('link', { name: 'в аналитике', exact: true }),
     ).toHaveAttribute('href', '/security-ops/analytics/')
-    // Ссылка ровно одна на карточку — не расползлась на «в аналитике» +
-    // отдельную «Открыть светофор в аналитике»
-    await expect(card.getByRole('link')).toHaveCount(1)
+    // Ссылка на аналитику ровно одна; отдельный переход к своду допустим.
+    await expect(card.locator('a[href="/security-ops/analytics/"]')).toHaveCount(1)
     await expect(
       card.getByText('Открыть светофор в аналитике', { exact: true }),
     ).toHaveCount(0)

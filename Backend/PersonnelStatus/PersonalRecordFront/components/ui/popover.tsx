@@ -4,6 +4,7 @@ import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
+import { OpsProtectedPortalContext } from "@/lib/ops-permission-suspension"
 
 function Popover({
   ...props
@@ -23,8 +24,9 @@ function PopoverContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+  const protectedContainer = React.useContext(OpsProtectedPortalContext)
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={protectedContainer}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

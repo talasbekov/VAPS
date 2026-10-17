@@ -33,6 +33,16 @@ _READ_ORGSTRUCTURE_PERMISSION = "orgstructure.view"
 _READ_PERSONNEL_PERMISSION = "personnel.view"
 
 
+def _scope_orgstructure(queryset, request, division_field="division_id"):
+    """Scope both list and detail aliases by the grant that authorizes reading."""
+    visible = PermissionService.visible_division_ids(
+        resolve_actor_id(request), _READ_ORGSTRUCTURE_PERMISSION
+    )
+    if visible is not None:
+        queryset = queryset.filter(**{f"{division_field}__in": visible})
+    return queryset
+
+
 class DivisionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     """GET /api/core/divisions/ — список подразделений в донорском контракте.
 
@@ -52,6 +62,7 @@ class DivisionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
         # Порядок фиксируем явно: без него пагинация DRF предупреждает о
         # нестабильной выборке, а страницы могут повторять и терять строки.
         qs = Division.objects.all().order_by("tree_id", "lft", "id")
+        qs = _scope_orgstructure(qs, self.request, "pk")
         return self._filter_by_type(qs)
 
     def _filter_by_type(self, qs):
@@ -243,11 +254,12 @@ class StaffingSlotViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet)
         # select_related по должности: без него каждая строка добавляла бы
         # запрос за кодом должности (N+1). Порядок фиксируем явно — без него
         # пагинация DRF предупреждает о нестабильной выборке.
-        return (
+        queryset = (
             StaffUnit.objects.select_related("position")
             .all()
             .order_by("division_id", "index", "id")
         )
+        return _scope_orgstructure(queryset, self.request)
 
 
 class VacancyViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
@@ -288,8 +300,9 @@ class VacancyViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
             .filter(employee__isnull=True)
             .order_by("division_id", "index", "id")
         )
-        # Параметр донора. Без него выборка НЕ сужается: свободный слот
-        # чужого подразделения — тоже вакансия, и прятать его молча нельзя.
+        queryset = _scope_orgstructure(queryset, self.request)
+        # Параметр донора дополнительно сужает разрешённую область.
+        # Без него остаются вакансии всех подразделений гранта.
         division_id = self.request.query_params.get("division_id")
         if division_id:
             queryset = queryset.filter(division_id=division_id)

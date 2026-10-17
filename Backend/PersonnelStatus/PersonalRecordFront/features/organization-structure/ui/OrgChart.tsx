@@ -159,7 +159,7 @@ export default function OrgChart() {
       // Руководитель и личный состав ищутся по имени и должности: человека
       // в структуре ищут именно так, а не по названию отдела, в котором он
       // сидит.
-      const people = [unit.head, ...(unit.employees ?? [])].filter(Boolean);
+      const people = [unit.head, ...(unit.employees ?? [])].filter((person): person is Employee => person !== null);
       for (const person of people) {
         const haystack = `${person.name} ${person.position}`.toLowerCase();
         if (haystack.includes(needle)) {
@@ -341,8 +341,8 @@ export default function OrgChart() {
 
       {(!loading || error) && (
         <div className="bg-card p-8 rounded-2xl min-h-[800px] overflow-auto border border-border shadow-lg relative">
-          <div className="flex justify-center">
-            <div className="w-full max-w-6xl">
+          <div className="flex w-max min-w-full justify-center">
+            <div className="w-max min-w-full">
               {orgData ? (
                 renderOrgUnit(orgData)
               ) : (
@@ -583,7 +583,7 @@ export default function OrgChart() {
                                 </div>
                                 {child.head && (
                                   <div className="text-xs text-muted-foreground truncate mb-1">
-                                    {child.head.name}
+                                    {child.head?.name ?? ""}
                                   </div>
                                 )}
                                 <div className="text-[10px] text-muted-foreground">

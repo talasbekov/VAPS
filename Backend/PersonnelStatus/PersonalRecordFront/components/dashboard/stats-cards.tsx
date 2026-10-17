@@ -25,6 +25,7 @@ interface StatsCardsProps {
     };
   } | null;
   isLoading?: boolean;
+  compact?: boolean;
   /** Запрос статистики не удался — плитки не «нулевые», а неизвестные. */
   isError?: boolean;
   /** ПОЧЕМУ не удался (Plane №340). `unlinked` — учётка не привязана к
@@ -89,8 +90,10 @@ export function StatsCards({
   isError,
   failure = null,
   onRetry,
+  compact = false,
 }: StatsCardsProps) {
   if (isLoading) {
+    if (compact) return <div role="status" className="h-24 animate-pulse rounded-xl border bg-muted/40 p-4 text-sm text-muted-foreground">Загрузка сводки…</div>;
     return (
       <div className="space-y-3 mb-3">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -150,6 +153,35 @@ export function StatsCards({
   const absenceTypes = Object.entries(stats.by_type) as Array<
     [keyof typeof absenceTypeConfig, number]
   >;
+
+  if (compact) {
+    return (
+      <div className="rounded-xl border bg-card px-4 py-3">
+        <p className="mb-1 text-xs text-muted-foreground">Сводка подразделения на сегодняшний день</p>
+        <dl className="flex flex-wrap gap-x-10 gap-y-3">
+          <div className="flex items-baseline gap-3">
+            <dt className="text-sm text-muted-foreground">Всего сотрудников</dt>
+            <dd className="text-2xl font-semibold tabular-nums">{stats.staff_count}</dd>
+          </div>
+          <div className="flex items-baseline gap-3">
+            <dt className="text-sm text-muted-foreground">Всего отсутствий</dt>
+            <dd className="text-2xl font-semibold tabular-nums">{stats.total_absences}</dd>
+          </div>
+        </dl>
+        <details className="mt-2 text-sm">
+          <summary className="w-fit cursor-pointer rounded text-primary-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">Подробная сводка статусов</summary>
+          <dl className="mt-3 grid gap-x-8 gap-y-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-3">
+            {absenceTypes.map(([type, count]) => absenceTypeConfig[type] && (
+              <div key={type} className="flex items-baseline justify-between gap-3">
+                <dt className="text-muted-foreground">{absenceTypeConfig[type].label}</dt>
+                <dd className="font-semibold tabular-nums">{count}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 mb-3">

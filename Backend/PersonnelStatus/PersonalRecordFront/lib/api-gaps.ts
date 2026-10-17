@@ -176,6 +176,9 @@ export const SECURITY_OPS_RULED_PREFIXES: readonly string[] = [
   "/security-ops/audit",
   "/security-ops/feedback",
   "/security-ops/service-summary",
+  // Server-only duty pages; no mock handler or configuration mode.
+  "/security-ops/combat-duty",
+  "/security-ops/duty-dispatch",
   "/security-ops/changelog",
 ];
 

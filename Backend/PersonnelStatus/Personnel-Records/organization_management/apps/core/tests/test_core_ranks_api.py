@@ -159,17 +159,16 @@ def test_category_is_null_even_on_a_row_with_data(ranks):
     assert row["category"] is None
 
 
-def test_is_active_is_null_for_every_row(ranks):
-    """Признака действующего звания в старом справочнике нет вовсе.
-
-    Вернуть True «по умолчанию» нельзя: строка выглядела бы подтверждённо
-    действующей, хотя данных об этом нет.
-    """
+def test_is_active_matches_each_dictionary_value(ranks):
+    """The lifecycle flag comes from the real dictionary field."""
+    inactive = Rank.objects.order_by('pk').first()
+    inactive.is_active = False
+    inactive.save(update_fields=['is_active'])
     api, _ = reader()
     listed = rows(api.get(URL))
-
+    expected = dict(Rank.objects.values_list('code', 'is_active'))
     assert listed
-    assert all(row["is_active"] is None for row in listed)
+    assert all(row['is_active'] is expected[row['code']] for row in listed)
 
 
 def test_every_stored_rank_is_listed(ranks):

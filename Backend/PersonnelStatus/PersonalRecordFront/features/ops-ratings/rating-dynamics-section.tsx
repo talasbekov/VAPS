@@ -7,6 +7,7 @@
 // а tooltip обязателен как носитель версии методики.
 import { useState } from "react";
 import { useRatingDynamics } from "@/hooks/use-ops-ratings";
+import { LoadFailure } from "@/components/load-failure";
 import {
   Table,
   TableBody,
@@ -80,7 +81,7 @@ export function RatingDynamicsSection() {
           </p>
         </div>
         {data !== undefined && (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
             <label
               htmlFor="rating-dynamics-employee"
               className="text-xs font-semibold"
@@ -89,7 +90,7 @@ export function RatingDynamicsSection() {
             </label>
             <select
               id="rating-dynamics-employee"
-              className="rounded-lg border bg-background px-2 py-1 text-sm"
+              className="min-w-0 max-w-full flex-1 rounded-lg border bg-background px-2 py-1 text-sm sm:flex-none"
               value={data.employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
             >
@@ -107,7 +108,11 @@ export function RatingDynamicsSection() {
         <p className="text-sm text-muted-foreground">Загрузка динамики…</p>
       )}
       {query.error !== null && (
-        <p className="text-sm text-destructive-ink">{query.error.message}</p>
+        <LoadFailure
+          what="динамику рейтинга"
+          onRetry={() => void query.refetch()}
+          isRetrying={query.isFetching}
+        />
       )}
 
       {data !== undefined && !data.capabilities.operationalRatings && (

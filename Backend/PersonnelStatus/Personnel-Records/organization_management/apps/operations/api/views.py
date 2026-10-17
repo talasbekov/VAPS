@@ -29,7 +29,9 @@ from rest_framework.response import Response
 
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
+    effective_permissions,
     require_any_permission,
+    require_global_permission,
     require_permission,
     resolve_actor_id,
 )
@@ -190,6 +192,7 @@ from organization_management.apps.operations.traffic_light import (
 
 # Право на запись статусов; им же резолвится область видимости пачки.
 _BULK_STATUS_PERMISSION = "status.manage"
+_ROOT_STATUS_PERMISSION = "status.manage_root"
 # Право чтения журнала раздела — существующий код каталога (seed_operations),
 # нового не заводим: каталог прав закрытый мир.
 _AUDIT_PERMISSION = "audit.view"
@@ -468,15 +471,15 @@ class RoleViewSet(
         return queryset
 
     def list(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().retrieve(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         form = RoleSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         # Запись — через сервис: у правила «изменение доступа оставляет
@@ -491,7 +494,7 @@ class RoleViewSet(
         return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         current = self.get_object()
         form = RoleSerializer(
             current, data=request.data, partial=kwargs.get("partial", False)
@@ -518,7 +521,7 @@ class RoleViewSet(
         жестом на экране и спрашивается потом своим вопросом («когда роли
         добавили это право») — у него своё событие журнала.
         """
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         role = self.get_object()
         form = RolePermissionsRequestSerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -575,15 +578,15 @@ class PermissionViewSet(
         return queryset
 
     def list(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().retrieve(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         form = PermissionSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         # Запись — через сервис: у правила «изменение доступа оставляет след»
@@ -600,7 +603,7 @@ class PermissionViewSet(
         )
 
     def update(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         current = self.get_object()
         form = PermissionSerializer(
             current, data=request.data, partial=kwargs.get("partial", False)
@@ -660,7 +663,7 @@ class UserRoleViewSet(viewsets.ViewSet):
         responses=UserRoleSerializer(many=True),
     )
     def list(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         # id последним ключом — ОБЯЗАТЕЛЬНО, а не для красоты: у одного
         # человека ролей много, порядок при равном user_id база не обещает, и
         # страничная выдача теряла бы и дублировала строки между страницами.
@@ -703,7 +706,7 @@ class UserRoleViewSet(viewsets.ViewSet):
         request=AssignRoleRequestSerializer, responses=UserRoleSerializer
     )
     def create(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         payload = AssignRoleRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
@@ -722,7 +725,7 @@ class UserRoleViewSet(viewsets.ViewSet):
         )
 
     def destroy(self, request, pk=None, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         user_role = UserRole.objects.filter(id=pk).first()
         if user_role is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -776,7 +779,7 @@ class AccountViewSet(
     def get_queryset(self):
         from django.contrib.auth.models import User
 
-        queryset = User.objects.all().order_by("username")
+        queryset = User.objects.select_related("employee").order_by("username")
         search = (self.request.query_params.get("search") or "").strip()
         if search != "":
             queryset = queryset.filter(
@@ -788,15 +791,15 @@ class AccountViewSet(
         return queryset
 
     def list(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         return super().retrieve(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         form = AccountSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         data = form.validated_data
@@ -807,6 +810,7 @@ class AccountViewSet(
             last_name=data.get("last_name", ""),
             email=data.get("email", ""),
             is_active=data.get("is_active", True),
+            employee_id=data.get("employee_id"),
             actor=resolve_actor_id(request),
         )
         payload = AccountSerializer(user).data
@@ -817,7 +821,7 @@ class AccountViewSet(
         return Response(payload, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         user = self.get_object()
         form = AccountSerializer(
             user, data=request.data, partial=kwargs.get("partial", False)
@@ -836,9 +840,28 @@ class AccountViewSet(
             last_name=data.get("last_name"),
             email=data.get("email"),
             is_active=data.get("is_active"),
+            **({"employee_id": data["employee_id"]} if "employee_id" in data else {}),
             actor=resolve_actor_id(request),
         )
         return Response(AccountSerializer(user).data)
+
+    @action(detail=False, methods=["get"], url_path="employee-options")
+    def employee_options(self, request):
+        require_global_permission(request, "admin.roles")
+        from organization_management.apps.employees.models import Employee
+        rows = Employee.objects.order_by("last_name", "first_name", "pk")
+        search = (request.query_params.get("search") or "").strip()
+        if search:
+            for word in search.split():
+                rows = rows.filter(Q(last_name__icontains=word) | Q(first_name__icontains=word)
+                                   | Q(middle_name__icontains=word) | Q(personnel_number__icontains=word))
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(rows, request)
+        return paginator.get_paginated_response([
+            {"id": row.pk, "name": " ".join(filter(None, [row.last_name, row.first_name, row.middle_name])),
+             "personnel_number": row.personnel_number, "user_id": row.user_id}
+            for row in page
+        ])
 
     @extend_schema(
         request=None,
@@ -849,7 +872,7 @@ class AccountViewSet(
     )
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         user = self.get_object()
         temporary = AccountAdminService.reset_password(
             user, actor=resolve_actor_id(request)
@@ -862,7 +885,7 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
 
     @extend_schema(responses=TemporaryDutySerializer(many=True))
     def list(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         # Тот же разрыв ничьей: два наряда, начинающихся в один момент, —
         # обычное дело (их заводят пачкой одним приказом).
         qs = TemporaryDutyPermission.objects.all().order_by("-starts_at", "id")
@@ -879,7 +902,7 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
         responses=TemporaryDutySerializer,
     )
     def create(self, request, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         payload = GrantTemporaryDutyRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
@@ -910,7 +933,7 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
     )
     @action(detail=True, methods=["post"])
     def expire(self, request, pk=None, *args, **kwargs):
-        require_permission(request, "admin.roles")
+        require_global_permission(request, "admin.roles")
         # 404 на несуществующий грант: «истёк» в ответ на пустой UPDATE
         # сообщал бы об успехе там, где ничего не произошло (отличие от
         # источника, где ответ всегда {"expired": true}).
@@ -988,7 +1011,17 @@ class MyPermissionsViewSet(viewsets.ViewSet):
                     "permissions": serializers.ListField(
                         child=serializers.CharField()
                     ),
+                    "global_permissions": serializers.ListField(
+                        child=serializers.CharField()
+                    ),
+                    "status_manage_division_ids": serializers.ListField(
+                        child=serializers.IntegerField(), allow_null=True,
+                        help_text="Personnel status write scope: null is global; an empty list permits no divisions.",
+                    ),
                     "roles": serializers.ListField(child=serializers.DictField()),
+                    "duty_register_scope": serializers.DictField(
+                        help_text="Effective duty register scopes, including temporary grants; null is global.",
+                    ),
                 },
             )
         )
@@ -1001,6 +1034,11 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         perms = PermissionService.effective_permissions(
             actor_id, division_id=division_id
         )
+        # Reading and writing may come from different scoped grants. Publish
+        # the same write scope enforced by the personnel status API; aggregate
+        # permissions and role names cannot tell a row whether it is editable.
+        status_scope = PermissionService.visible_division_ids(actor_id, "status.manage")
+        from organization_management.apps.ops.duty_record_access import effective_register_scope
         # РОЛИ РАЗДЕЛА — РЯДОМ С ПРАВАМИ (Plane №325). Права отвечают на «что
         # мне можно», а человеку в шапке нужно «кто я здесь»: до №325 портал
         # печатал КАДРОВУЮ роль («Роль-1: Просмотр организации») учётке, чья
@@ -1010,7 +1048,16 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         return Response(
             {
                 "permissions": sorted(perms),
+                # Aggregate permissions also include scoped grants. Preserve
+                # their binding instead of inferring global access from '*'.
+                "global_permissions": sorted(
+                    PermissionService.unscoped_permissions(actor_id)
+                ),
+                "status_manage_division_ids": (
+                    None if status_scope is None else sorted(status_scope)
+                ),
                 "roles": _actor_section_roles(actor_id),
+                "duty_register_scope": effective_register_scope(actor_id, status_scope=status_scope),
             }
         )
 
@@ -1033,6 +1080,9 @@ class MyEmployeeViewSet(viewsets.ViewSet):
 
     Форма записи — общий сериализатор ядра: свой набор полей здесь разошёлся бы
     с кадровой карточкой, которую тот же человек видит в списке сотрудников.
+    Дополнительно эта САМОобслуживающая ручка раскрывает только три подписи
+    собственной записи. Рядовой сотрудник не получает права читать чужие
+    строки общих справочников ради расшифровки уже разрешённых ему кодов.
     """
 
     UNLINKED_REASON = (
@@ -1067,12 +1117,24 @@ class MyEmployeeViewSet(viewsets.ViewSet):
             return Response(
                 {"employee": None, "unlinked_reason": self.UNLINKED_REASON}
             )
-        return Response(
+        employee_data = CoreEmployeeSerializer(employee).data
+        staff_unit = getattr(employee, "staff_unit", None)
+        employee_data.update(
             {
-                "employee": CoreEmployeeSerializer(employee).data,
-                "unlinked_reason": None,
+                "rank_label": employee.rank.name if employee.rank_id else None,
+                "position_label": (
+                    staff_unit.position.name
+                    if staff_unit is not None and staff_unit.position_id
+                    else None
+                ),
+                "division_label": (
+                    staff_unit.division.name
+                    if staff_unit is not None and staff_unit.division_id
+                    else None
+                ),
             }
         )
+        return Response({"employee": employee_data, "unlinked_reason": None})
 
 
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -1105,22 +1167,28 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
     pagination_class = DefaultPagination
 
+    # Запись — ЛЮБОЕ из двух прав (Plane №1223): `status.manage` (область —
+    # поддерево гранта) либо `status.manage_root` (дежурный: ровно корень
+    # организации, «Руководство Службы»). Гейт пропускает по любому, а
+    # ОБЛАСТЬ считает `PermissionService.status_write_division_ids` — одно
+    # место на оба кода, иначе два правила разошлись бы.
+    _WRITE_STATUS_PERMISSIONS = (_BULK_STATUS_PERMISSION, _ROOT_STATUS_PERMISSION)
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
         "retrieve": _READ_STATUS_PERMISSION,
-        "bulk": _BULK_STATUS_PERMISSION,
-        "partial_update": _BULK_STATUS_PERMISSION,
-        "create": _BULK_STATUS_PERMISSION,
-        "cancel": _BULK_STATUS_PERMISSION,
+        "bulk": _WRITE_STATUS_PERMISSIONS,
+        "partial_update": _WRITE_STATUS_PERMISSIONS,
+        "create": _WRITE_STATUS_PERMISSIONS,
+        "cancel": _WRITE_STATUS_PERMISSIONS,
         # Досрочное завершение и продление — такие же операторские правки
         # чужой строки, что отмена и PATCH: своего права им не заводится,
         # иначе одно и то же полномочие раздавалось бы тремя разными кодами.
-        "complete": _BULK_STATUS_PERMISSION,
-        "extend": _BULK_STATUS_PERMISSION,
+        "complete": _WRITE_STATUS_PERMISSIONS,
+        "extend": _WRITE_STATUS_PERMISSIONS,
         # Разрешение заглушки — та же операторская запись, что и правка: оно
         # не переписывает чужой факт, а доводит до конца свою же неясность.
         # Своего кода права не заводим — каталог закрытый мир.
-        "resolve": _BULK_STATUS_PERMISSION,
+        "resolve": _WRITE_STATUS_PERMISSIONS,
     }
     # Поверхность: чтение, пачка, правка, отмена, разрешение заглушки. PUT
     # не открыт намеренно
@@ -1186,8 +1254,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         иначе два места, считающие область, разойдутся ровно тогда, когда
         правило поменяют в одном из них.
         """
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), permission_code
+        actor_id = resolve_actor_id(request)
+        allowed = (
+            PermissionService.status_write_division_ids(actor_id)
+            if permission_code == _BULK_STATUS_PERMISSION
+            else PermissionService.visible_division_ids(actor_id, permission_code)
         )
         if allowed is None:
             return
@@ -1611,9 +1682,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # может охватывать разные подразделения, сервис проверяет построчно).
         # None = безскоуповый/wildcard грант → все подразделения: сервис ждёт
         # множество, None уронил бы его TypeError'ом.
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), _BULK_STATUS_PERMISSION
-        )
+        allowed = PermissionService.status_write_division_ids(resolve_actor_id(request))
         if allowed is None:
             allowed = DivisionTreeSelector.all_ids()
         created = bulk_create_statuses(
@@ -3666,6 +3735,7 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 fields={
                     "division_id": serializers.IntegerField(),
                     "business_date": serializers.DateField(),
+                    "can_rebuild": serializers.BooleanField(),
                     "status": serializers.CharField(),
                     "superseded": serializers.ListField(child=serializers.DictField()),
                     "missing": serializers.ListField(child=serializers.DictField()),
@@ -3720,10 +3790,18 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 },
                 message="Сводки за этот день нет.",
             )
+        permissions = effective_permissions(request)
+        rebuild_scope = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _AMEND_DAY_PERMISSION
+        )
+        can_rebuild = ("*" in permissions or _AMEND_DAY_PERMISSION in permissions) and (
+            rebuild_scope is None or division_id in rebuild_scope
+        )
         return Response(
             {
                 "division_id": division_id,
                 "business_date": business_date,
+                "can_rebuild": can_rebuild,
                 "status": state.status,
                 "superseded": state.superseded,
                 "missing": state.missing,

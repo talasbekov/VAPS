@@ -1,9 +1,5 @@
-// Домен «Охраняемое лицо» — каталог профилей лиц, в отношении которых
-// организуются охранные мероприятия. Это справочник, а не участник процесса:
-// с 23.08.2026 ОМ хоста несёт ссылку на лицо (SecurityEvent.protectedPersonId,
-// выбирается в окне «Создать бюллетень»), но у ОМ, заведённых раньше, её нет —
-// связь с мероприятиями там по-прежнему восстанавливается по сводкам ГВО
-// (см. app/security-ops/persons/page.tsx).
+// Каталог охраняемых лиц. Связи с мероприятиями и визитами используют ID;
+// старые сводки без идентификатора сохраняют сопоставление по имени.
 
 /** «Наши» / «Иностранные» — единственное деление каталога в прототипе. */
 export const PROTECTED_PERSON_CATEGORIES = ["OURS", "FOREIGN"] as const;
@@ -126,4 +122,14 @@ export interface ListPersonHistoryResponse {
 
 export interface ListObjectHistoryResponse {
   results: ObjectHistoryRow[];
+}
+
+/** Legacy summaries carry only a name; current summaries carry stable identity. */
+export function matchesProtectedPerson(
+  person: Pick<ProtectedPerson, 'id' | 'name'>,
+  entry: { personId?: string | null; name: string },
+): boolean {
+  return entry.personId != null
+    ? entry.personId === person.id
+    : entry.name.trim().toLowerCase() === person.name.trim().toLowerCase();
 }

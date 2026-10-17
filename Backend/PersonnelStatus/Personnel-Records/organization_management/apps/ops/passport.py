@@ -10,7 +10,7 @@
 import datetime as dt
 import math
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
@@ -126,22 +126,101 @@ def _validate_sectors_payload(sectors):
     field_errors = {}
     if not isinstance(sectors, list):
         raise _validation({"sectors": ["Ожидается список секторов."]})
+    normalized = []
     for i, sector in enumerate(sectors):
-        name = str((sector or {}).get("name", ""))
-        if name.strip() == "":
-            field_errors[f"sectors.{i}.name"] = ["Укажите название сектора."]
-        posts = (sector or {}).get("posts", [])
+        if not isinstance(sector, dict):
+            field_errors[f"sectors.{i}"] = ["Ожидается объект сектора."]
+            continue
+        name = sector.get("name", "")
+        if not isinstance(name, str):
+            field_errors[f"sectors.{i}.name"] = ["Ожидается строка."]
+            name = ""
+        else:
+            name = name.strip()
+            if name == "":
+                field_errors[f"sectors.{i}.name"] = ["Укажите название сектора."]
+            elif len(name) > 255:
+                field_errors[f"sectors.{i}.name"] = ["Не длиннее 255 символов."]
+        posts = sector.get("posts", [])
         if not isinstance(posts, list):
             field_errors[f"sectors.{i}.posts"] = ["Ожидается список постов."]
             continue
+        normalized_posts = []
         for j, post in enumerate(posts):
-            post_name = str((post or {}).get("name", ""))
-            if post_name.strip() == "":
-                field_errors[f"sectors.{i}.posts.{j}.name"] = [
-                    "Укажите название поста."
-                ]
+            if not isinstance(post, dict):
+                field_errors[f"sectors.{i}.posts.{j}"] = ["Ожидается объект поста."]
+                continue
+            post_name = post.get("name", "")
+            if not isinstance(post_name, str):
+                field_errors[f"sectors.{i}.posts.{j}.name"] = ["Ожидается строка."]
+                post_name = ""
+            else:
+                post_name = post_name.strip()
+                if post_name == "":
+                    field_errors[f"sectors.{i}.posts.{j}.name"] = [
+                        "Укажите название поста."
+                    ]
+                elif len(post_name) > 255:
+                    field_errors[f"sectors.{i}.posts.{j}.name"] = ["Не длиннее 255 символов."]
+            task = post.get("task")
+            requirements = post.get("requirements")
+            task = "" if task is None else task
+            requirements = "" if requirements is None else requirements
+            for field, value in (("task", task), ("requirements", requirements)):
+                if not isinstance(value, str):
+                    field_errors[f"sectors.{i}.posts.{j}.{field}"] = ["Ожидается строка."]
+                elif len(value) > 1000:
+                    field_errors[f"sectors.{i}.posts.{j}.{field}"] = ["Не длиннее 1000 символов."]
+            normalized_posts.append({
+                "id": post.get("id"), "name": post_name,
+                "task": task, "requirements": requirements,
+            })
+        normalized.append({"id": sector.get("id"), "name": name, "posts": normalized_posts})
     if field_errors:
         raise _validation(field_errors)
+    return normalized
+
+
+def _passport_row_id(raw, *, path, owned, seen, errors):
+    """Positive keys identify existing rows; legacy/local labels identify new rows."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+        errors[path] = ["Укажите корректный идентификатор."]
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.isascii() and text.isdigit():
+        if len(text) > 19 or not 0 < int(text) <= 9223372036854775807:
+            errors[path] = ["Укажите корректный идентификатор."]
+            return None
+        key = int(text)
+        identity = ("existing", key)
+        if key not in owned:
+            errors[path] = ["Строка не принадлежит этому объекту или больше не существует."]
+    elif isinstance(raw, int) or text.lstrip("+-").isdigit():
+        errors[path] = ["Укажите корректный идентификатор."]
+        return None
+    else:
+        key = None
+        identity = ("temporary", text)
+    if identity in seen:
+        errors[path] = ["Идентификатор повторяется в паспорте."]
+    seen.add(identity)
+    return key
+
+
+def _validate_passport_ids(sectors, existing_sectors, existing_posts):
+    errors, sector_ids, post_ids = {}, set(), set()
+    for i, sector in enumerate(sectors):
+        sector["id"] = _passport_row_id(sector["id"], path=f"sectors.{i}.id",
+            owned=existing_sectors, seen=sector_ids, errors=errors)
+        for j, post in enumerate(sector["posts"]):
+            post["id"] = _passport_row_id(post["id"], path=f"sectors.{i}.posts.{j}.id",
+                owned=existing_posts, seen=post_ids, errors=errors)
+    if errors:
+        raise _validation(errors)
 
 
 @transaction.atomic
@@ -161,6 +240,10 @@ def create_object(*, name, object_type, region, address, ownership=None):
     секторы и посты заводит владелец объекта в своём разделе, и до публикации
     версии привязывать к мероприятию нечего.
     """
+    # A transaction lock also serializes the first creation in an empty catalog.
+    # Existing public codes and import identifiers are never renumbered.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ["ops_security_objects.code"])
     field_errors = {}
     name = str(name or "").strip()
     if name == "":
@@ -195,10 +278,19 @@ def create_object(*, name, object_type, region, address, ownership=None):
             message="Проверьте заполнение карточки объекта.",
         )
 
-    number = OpsSecurityObject.objects.count() + 1
+    codes = set(OpsSecurityObject.objects.values_list("code", flat=True))
+    number = max((int(code[4:]) for code in codes
+                  if code.startswith("OBJ-") and code[4:].isascii() and code[4:].isdigit()), default=0) + 1
+    code = f"OBJ-{number:03d}"
+    if len(code) > OpsSecurityObject._meta.get_field("code").max_length:
+        # A maximal imported numeric label must not make the catalog unwritable.
+        number = 1
+        while f"OBJ-{number:03d}" in codes:
+            number += 1
+        code = f"OBJ-{number:03d}"
     return OpsSecurityObject.objects.create(
         name=name,
-        code=f"OBJ-{number:03d}",
+        code=code,
         object_type=object_type,
         region=region,
         address=address,
@@ -297,26 +389,39 @@ def set_object_photo(object_id, upload, *, actor=None):
 def update_passport(security_object, sectors):
     """Заменить действующую редакцию (черновик) целиком.
 
-    Форма присылает паспорт целиком (как мок-контракт): построчного merge нет
-    намеренно — две правки подряд дают состояние последней, а не смесь.
-    Опубликованные версии не затрагиваются вовсе.
+    Форма присылает паспорт целиком: отсутствующие строки удаляются, а
+    оставшиеся сохраняют идентификаторы, на которые ссылаются наряды.
+    Опубликованные версии не затрагиваются.
     """
-    _validate_sectors_payload(sectors)
-    security_object.sectors.all().delete()
+    sectors = _validate_sectors_payload(sectors)
+    OpsSecurityObject.objects.select_for_update().get(pk=security_object.pk)
+    existing_sectors = {row.pk: row for row in OpsObjectSector.objects.filter(security_object=security_object)}
+    existing_posts = {row.pk: row for row in OpsSecurityPost.objects.filter(sector__security_object=security_object)}
+    _validate_passport_ids(sectors, existing_sectors, existing_posts)
+    kept_sectors, kept_posts = set(), set()
     for i, sector in enumerate(sectors, start=1):
-        row = OpsObjectSector.objects.create(
-            security_object=security_object,
-            name=str(sector.get("name", "")).strip(),
-            position=i,
-        )
-        for j, post in enumerate(sector.get("posts", []), start=1):
-            OpsSecurityPost.objects.create(
-                sector=row,
-                name=str(post.get("name", "")).strip(),
-                task=str(post.get("task", "") or ""),
-                requirements=str(post.get("requirements", "") or ""),
-                position=j,
-            )
+        row = existing_sectors.get(sector["id"])
+        if row is None:
+            row = OpsObjectSector.objects.create(security_object=security_object, name=sector["name"], position=i)
+        else:
+            row.name, row.position = sector["name"], i
+            row.save(update_fields=["name", "position", "updated_at"])
+        kept_sectors.add(row.pk)
+        for j, post in enumerate(sector["posts"], start=1):
+            saved = existing_posts.get(post["id"])
+            values = {"sector": row, "name": post["name"], "task": post["task"],
+                      "requirements": post["requirements"], "position": j}
+            if saved is None:
+                saved = OpsSecurityPost.objects.create(**values)
+            else:
+                for field, value in values.items():
+                    setattr(saved, field, value)
+                saved.save(update_fields=[*values, "updated_at"])
+            kept_posts.add(saved.pk)
+    OpsSecurityPost.objects.filter(sector__security_object=security_object).exclude(pk__in=kept_posts).delete()
+    OpsObjectSector.objects.filter(security_object=security_object).exclude(pk__in=kept_sectors).delete()
+    # Drop a caller's prefetched tree before deriving the passport state.
+    security_object.refresh_from_db()
     security_object.save(update_fields=["updated_at"])
     # Правка черновика меняет состояние: разошёлся с версией — «требует
     # доработки» (Plane №66).

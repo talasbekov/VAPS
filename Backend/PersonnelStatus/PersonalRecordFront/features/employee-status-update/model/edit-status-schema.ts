@@ -8,8 +8,13 @@ import { EMPLOYEE_STATUS_LABELS } from "@/lib/status";
 
 /** «В строю» — бессрочный статус по умолчанию, дат у него нет. */
 export const IN_SERVICE_LABEL = EMPLOYEE_STATUS_LABELS.in_service;
-/** «На дежурстве» — единственный статус, который дополняется нарядом. */
-export const ON_DUTY_LABEL = EMPLOYEE_STATUS_LABELS.on_duty;
+export function isInServiceStatus(code: string | undefined): boolean {
+  return code === "in_service";
+}
+/** Исходное дежурство сохраняет форму поста/группы при переименовании в каталоге. */
+export function usesDutyAssignment(code: string | undefined): boolean {
+  return code === "on_duty" || code === "DUTY";
+}
 
 /**
  * Черновик наряда: пустая строка — «не выбрано». Имена объекта, поста и
@@ -29,14 +34,16 @@ export const dutyDraftSchema = z.object({
 export const editStatusFormSchema = z
   .object({
     status: z.string().min(1, "Выберите статус."),
+    statusCode: z.string().default(""),
     duty: dutyDraftSchema,
     startDate: z.date().optional(),
     endDate: z.date().optional(),
+    location: z.string().default(""),
     comment: z.string(),
   })
   .superRefine((values, ctx) => {
-    const isInService = values.status === IN_SERVICE_LABEL;
-    const isOnDuty = values.status === ON_DUTY_LABEL;
+    const isInService = isInServiceStatus(values.statusCode);
+    const isOnDuty = usesDutyAssignment(values.statusCode);
 
     // Наряд — расшифровка статуса «На дежурстве»: без объекта и вида дежурства
     // он не говорит, где человек стоит.
@@ -95,6 +102,7 @@ export const editStatusFormSchema = z
     }
 
     if (
+      !isInService &&
       values.startDate !== undefined &&
       values.endDate !== undefined &&
       values.startDate > values.endDate
@@ -108,6 +116,7 @@ export const editStatusFormSchema = z
   });
 
 export type EditStatusFormValues = z.infer<typeof editStatusFormSchema>;
+export type EditStatusFormInput = z.input<typeof editStatusFormSchema>;
 export type DutyDraft = z.infer<typeof dutyDraftSchema>;
 
 export const EMPTY_DUTY_DRAFT: DutyDraft = {
@@ -122,8 +131,10 @@ export const EMPTY_DUTY_DRAFT: DutyDraft = {
 
 export const EMPTY_EDIT_STATUS_FORM: EditStatusFormValues = {
   status: "",
+  statusCode: "",
   duty: EMPTY_DUTY_DRAFT,
   startDate: undefined,
   endDate: undefined,
+  location: "",
   comment: "",
 };

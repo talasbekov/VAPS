@@ -1,55 +1,91 @@
 "use client";
 
-// Строка дерева «Свод по Службе» — РЕКУРСИВНАЯ (Plane №992): узел, у
-// которого есть потомки в лесу (`childrenOf`), раскрывается в свои дочерние
-// узлы; узел БЕЗ потомков — лист (управление/отдел без вложенных
-// подразделений) — раскрывается в поимённый список сотрудников со статусом
-// на дату. READ-ONLY по всей глубине: ни окна правки статуса, ни кнопки
-// сдачи здесь нет вовсе — рабочее место дежурного смотрит, а не правит
-// (§20.4 п.10, `[РАСХ-РШ-05]`).
+// В своде Службы начальники департаментов и заместители показаны автоматически.
+// Раскрытие дерева добавляет числовые итоги управлений и отделов.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { apiClient, type TrafficLightNode } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { DAILY_EMPLOYEES_PATH, type DaySubmission } from "@/entities/daily-grid";
 import { formatIsoDateTime } from "@/shared/lib/date";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { effectiveDailyStatus } from "@/features/daily-expense/model/directorate-summary";
+import { StatusDetails } from "@/features/daily-expense/ui/StatusDetails";
+import type { NodeFigures, ServiceDay } from "../model/use-service-day";
 
 interface DailyEmployeesResponse {
-  results: { id: string; full_name: string; rank_code: string }[];
+  results: { id: string; full_name: string; rank_code: string; position_level?: number | null; position_name?: string }[];
 }
 
-/**
- * Подпись зависит от того, ЛИСТ это или узел с потомками (Plane №992):
- * лист сдаёт СВОЙ день (`submit_day` — `sent_at` у него не бывает вовсе,
- * отправка есть только у свода), узел с потомками СОБИРАЕТ его из детей
- * (`assemble_summary`) и может ПОЙТИ ДАЛЬШЕ — быть отправлен дежурному.
- * Один и тот же undefined/defined читался бы по-разному на разных уровнях,
- * если бы подпись не знала, кто перед ней.
- */
-function submissionBadge(submission: DaySubmission | undefined, isLeaf: boolean) {
-  if (submission === undefined) {
-    return <Badge variant="outline">{isLeaf ? "Не сдано" : "Не собран"}</Badge>;
-  }
-  if (!isLeaf && submission.sent_at !== null) {
-    return <Badge variant="secondary">Отправлено дежурному</Badge>;
-  }
-  return <Badge>{isLeaf ? "Сдано" : "Собран"}</Badge>;
+export const COLUMN_COUNT = 5;
+
+function num(value: number | null, muted = false) {
+  return (
+    <td className={`px-2 py-2 text-right tabular-nums ${muted || value === 0 || value === null ? "text-muted-foreground" : ""}`}>
+      {value === null ? "—" : value}
+    </td>
+  );
 }
 
-function LeafEmployees({
+export function FiguresCells({ figures }: { figures: NodeFigures }) {
+  return (
+    <>
+      {num(figures.listTotal)}
+      {num(figures.inService)}
+      {num(figures.deviations)}
+    </>
+  );
+}
+
+/** Точка-индикатор сдачи слева от имени: тот же язык, что у ответственного. */
+function Dot({ tone, title }: { tone: "ok" | "warn" | "bad" | "off"; title: string }) {
+  const color = { ok: "bg-emerald-600", warn: "bg-amber-600", bad: "bg-red-600", off: "bg-slate-400" }[tone];
+  return <span role="img" aria-label={title} title={title} className={`mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle ${color}`} />;
+}
+
+function stateOf(submission: DaySubmission | undefined, isLeaf: boolean, stale: boolean): { tone: "ok" | "warn" | "bad"; label: string } {
+  if (submission === undefined) return { tone: "bad", label: isLeaf ? "Не сдано" : "Не собран" };
+  if (stale) return { tone: "warn", label: submission.sent_at !== null ? "Пересдано после отправки" : "Пересдано после сборки" };
+  if (!isLeaf && submission.sent_at !== null) return { tone: "ok", label: "Отправлено дежурному" };
+  if (isLeaf) return { tone: "ok", label: submission.late ? "Сдано · с опозданием" : "Сдано" };
+  return { tone: "warn", label: "Собран" };
+}
+
+function badgeClass(tone: "ok" | "warn" | "bad") {
+  return {
+    ok: "border-transparent bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    warn: "border-transparent bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    bad: "border-transparent bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  }[tone];
+}
+
+export function LeafEmployees({
   divisionId,
   businessDate,
+  onPick,
+  onlyDeviations = false,
+  leadershipOnly = false,
 }: {
   divisionId: number;
   businessDate: string;
+  /** Кому можно поставить статус отсюда — есть ТОЛЬКО у «Руководства Службы». */
+  onPick?: (person: { id: string; name: string }) => void;
+  /** «Руководство департамента»: показывать только людей со статусом не «в строю». */
+  onlyDeviations?: boolean;
+  leadershipOnly?: boolean;
 }) {
+  const catalog = useOpsStatusTypes();
+  // «Показать всех» (Plane №1234): по умолчанию список — только люди со
+  // статусом не «в строю», остальные раскрываются ссылкой с их числом.
+  const [showAll, setShowAll] = useState(false);
   const employeesQuery = useQuery({
-    queryKey: ["service-summary", "employees", divisionId],
+    queryKey: ["service-summary", "employees", divisionId, businessDate],
     queryFn: () =>
       opsApiClient.get<DailyEmployeesResponse>(
-        `${DAILY_EMPLOYEES_PATH}?division_id=${divisionId}`
+        `${DAILY_EMPLOYEES_PATH}?division_id=${divisionId}&business_date=${businessDate}`
       ),
   });
   const statusesQuery = useQuery({
@@ -57,93 +93,159 @@ function LeafEmployees({
     queryFn: () => apiClient.getOpsStatusesOn({ businessDate, divisionId }),
   });
 
-  if (employeesQuery.isPending || statusesQuery.isPending) {
+  if (employeesQuery.isPending || statusesQuery.isPending || catalog.isLoading) {
     return <p className="py-2 pl-8 text-sm text-muted-foreground">Загрузка личного состава…</p>;
   }
-  if (employeesQuery.isError || statusesQuery.isError) {
+  if (employeesQuery.isError || statusesQuery.isError || catalog.isError) {
     return (
       <p role="alert" className="py-2 pl-8 text-sm text-muted-foreground">
         Не удалось прочитать личный состав или статусы
       </p>
     );
   }
-  const people = employeesQuery.data?.results ?? [];
-  const statusByEmployee = new Map(
-    (statusesQuery.data ?? []).map((row) => [String(row.employee_id), row.status_type_code])
+  const statuses = statusesQuery.data ?? [];
+  const lines = (employeesQuery.data?.results ?? []).filter(person => !leadershipOnly || person.position_level === 1 || person.position_level === 2).map((person) => {
+    let status: ReturnType<typeof effectiveDailyStatus> | undefined;
+    try {
+      status = effectiveDailyStatus(statuses.filter((row) => String(row.employee_id) === person.id), businessDate, catalog.all);
+    } catch {
+      status = undefined;
+    }
+    return { person, status };
+  });
+  const isDeviation = ({ status }: (typeof lines)[number]) =>
+    status === undefined || (status !== null && status.status_type_code !== "IN_SERVICE");
+  const hideInService = onlyDeviations && !showAll;
+  const shown = hideInService ? lines.filter(isDeviation) : lines;
+  const inServiceCount = lines.length - lines.filter(isDeviation).length;
+  if (lines.length === 0) {
+    return <p className="py-2 pl-8 text-sm text-muted-foreground">{leadershipOnly ? 'Начальник и заместители не назначены' : 'В подразделении никого нет'}</p>;
+  }
+  const showAllLink = onlyDeviations && inServiceCount > 0 && (
+    <button type="button" className="min-h-9 text-xs text-primary underline-offset-2 hover:underline" onClick={() => setShowAll((prev) => !prev)}>
+      {showAll ? "Скрыть тех, кто в строю" : `Показать всех · ${inServiceCount} в строю`}
+    </button>
   );
-  if (people.length === 0) {
-    return <p className="py-2 pl-8 text-sm text-muted-foreground">В подразделении никого нет</p>;
+  if (shown.length === 0) {
+    return (
+      <div className="py-2 pl-8 text-sm text-muted-foreground">
+        Все в строю — отклонений нет{showAllLink && <> · {showAllLink}</>}
+      </div>
+    );
   }
   return (
     <ul role="list" className="space-y-1 py-1 pl-8">
-      {people.map((person) => (
-        <li key={person.id} className="flex items-center gap-2 text-sm">
-          <span className="flex-1">{person.full_name}</span>
-          <span className="text-muted-foreground">{person.rank_code}</span>
-          <Badge variant="outline">
-            {statusByEmployee.get(person.id) ?? "В строю"}
-          </Badge>
+      {showAllLink && <li className="list-none">{showAllLink}</li>}
+      {shown.map(({ person, status }) => (
+        <li key={person.id} className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="min-w-0 flex-1 font-medium">{person.full_name}</span>
+          <span className="text-muted-foreground">{person.rank_code || "—"}</span>
+          {person.position_name && <span className="text-xs text-muted-foreground">{person.position_name}</span>}
+          {status === undefined ? (
+            <Badge variant="outline" className="text-red-700">статус не найден в справочнике</Badge>
+          ) : status === null ? (
+            <Badge variant="outline" className="text-muted-foreground">В строю</Badge>
+          ) : (
+            <Badge variant="outline"><StatusDetails status={status} labelOf={catalog.labelOf} /></Badge>
+          )}
+          {onPick && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Проставить статус: ${person.full_name}`}
+              onClick={() => onPick({ id: person.id, name: person.full_name })}
+            >
+              Проставить
+            </Button>
+          )}
         </li>
       ))}
     </ul>
   );
 }
 
+/** Ячейка состояния сдачи: бейдж + версия · время · кто, «неполный» отдельно. */
+export function StateCell({ submission, isLeaf, stale, hint }: { submission: DaySubmission | undefined; isLeaf: boolean; stale: boolean; hint?: string }) {
+  const state = stateOf(submission, isLeaf, stale);
+  return (
+    <td className="px-2 py-2 text-right">
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <Badge variant="outline" className={badgeClass(state.tone)}>{state.label}</Badge>
+        {submission !== undefined && submission.incomplete_reason !== "" && (
+          <Badge variant="outline" className={badgeClass("warn")}>неполный: «{submission.incomplete_reason}»</Badge>
+        )}
+        {submission !== undefined && (
+          <span className="font-mono">
+            v{submission.version} · {formatIsoDateTime(submission.sent_at ?? submission.submitted_at)}
+          </span>
+        )}
+        {submission !== undefined && <span>{submission.sent_by || submission.submitted_by}</span>}
+        {hint !== undefined && <span>{hint}</span>}
+      </div>
+    </td>
+  );
+}
+
+function ToggleName({ name, open, onToggle, depth, bold }: { name: string; open: boolean; onToggle: () => void; depth: number; bold: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={`${open ? "Свернуть" : "Раскрыть"}: ${name}`}
+      onClick={onToggle}
+      className={`inline-flex min-h-9 items-center gap-1 text-left ${bold ? "font-semibold" : "font-medium"} hover:text-primary`}
+      style={{ paddingLeft: depth * 22 }}
+    >
+      <ChevronRight aria-hidden size={14} className={`text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`} />
+      {name}
+    </button>
+  );
+}
+
+/** «Руководство департамента» — прямые сотрудники департамента со статусом. */
+function DepartmentLeadershipRows({ node, businessDate, depth }: { node: TrafficLightNode; day: ServiceDay; businessDate: string; depth: number }) {
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={COLUMN_COUNT} className="px-2 py-2" style={{ paddingLeft: depth * 22 + 8 }}>
+        <p className="text-xs font-semibold text-muted-foreground">Руководство департамента · {node.name}</p>
+        <LeafEmployees divisionId={node.division_id} businessDate={businessDate} leadershipOnly />
+      </td>
+    </tr>
+  );
+}
+
 export interface DivisionRowProps {
   node: TrafficLightNode;
   depth: number;
-  childrenOf: Map<number, TrafficLightNode[]>;
-  submissionByDivision: Map<string, DaySubmission>;
+  day: ServiceDay;
   businessDate: string;
 }
 
-export function DivisionRow({
-  node,
-  depth,
-  childrenOf,
-  submissionByDivision,
-  businessDate,
-}: DivisionRowProps) {
+export function DivisionRow({ node, depth, day, businessDate }: DivisionRowProps) {
   const [open, setOpen] = useState(false);
-  const children = childrenOf.get(node.division_id) ?? [];
+  const children = day.childrenOf.get(node.division_id) ?? [];
   const isLeaf = children.length === 0;
-  const submission = submissionByDivision.get(String(node.division_id));
-
+  const submission = day.submissionByDivision.get(String(node.division_id));
+  const stale = day.isStale(node.division_id);
+  const figures = day.figures(node.division_id);
+  const tone = submission === undefined ? "bad" : stale ? "warn" : !isLeaf && submission.sent_at === null ? "warn" : "ok";
+  const submittedChildren = children.filter((child) => day.submissionByDivision.has(String(child.division_id))).length;
+  const hint = !isLeaf && submission === undefined ? `сдали ${submittedChildren} из ${children.length}` : undefined;
   return (
-    <div role="group" aria-label={node.name}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-        style={{ paddingLeft: `${8 + depth * 20}px` }}
-      >
-        <ChevronRight
-          className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <span className="flex-1">{node.name}</span>
-        {submissionBadge(submission, isLeaf)}
-        {!isLeaf && submission?.sent_at !== null && submission?.sent_at !== undefined && (
-          <span className="text-xs text-muted-foreground">
-            {formatIsoDateTime(submission.sent_at)} · {submission.sent_by}
-          </span>
-        )}
-      </button>
-      {open && isLeaf && (
-        <LeafEmployees divisionId={node.division_id} businessDate={businessDate} />
-      )}
-      {open &&
-        !isLeaf &&
-        children.map((child) => (
-          <DivisionRow
-            key={child.division_id}
-            node={child}
-            depth={depth + 1}
-            childrenOf={childrenOf}
-            submissionByDivision={submissionByDivision}
-            businessDate={businessDate}
-          />
-        ))}
-    </div>
+    <>
+      <tr aria-level={depth + 1} className={depth === 0 ? "" : "bg-muted/20"}>
+        <td className="px-2 py-1.5">
+          <Dot tone={tone} title={submission === undefined ? "Не сдано" : "Сдано"} />
+          <ToggleName name={node.name} open={open} onToggle={() => setOpen((prev) => !prev)} depth={depth} bold={depth === 0} />
+        </td>
+        <FiguresCells figures={figures} />
+        <StateCell submission={submission} isLeaf={isLeaf} stale={stale} hint={hint} />
+      </tr>
+      {depth === 0 && <DepartmentLeadershipRows node={node} day={day} businessDate={businessDate} depth={depth + 1} />}
+      {open && !isLeaf && children.map((child) => (
+        <DivisionRow key={child.division_id} node={child} depth={depth + 1} day={day} businessDate={businessDate} />
+      ))}
+    </>
   );
 }

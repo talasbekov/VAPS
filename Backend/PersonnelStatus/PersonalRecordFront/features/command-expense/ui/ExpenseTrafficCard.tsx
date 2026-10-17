@@ -26,11 +26,11 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useTrafficLightTree } from "@/hooks/use-strength-report";
 import { SUBMISSION_LABEL, countSubmissions } from "@/entities/daily-grid";
+import { moduleOpenFor } from "@/entities/portal-access";
 
 const CARD_LABEL = "Расход дня";
 
@@ -69,7 +69,7 @@ function GateCard({ children }: { children: React.ReactNode }) {
 }
 
 export function ExpenseTrafficCard() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, roles, isLoading: permissionsLoading } = useOpsPermissions();
   // Тот же код права, что у соседних показателей расхода на этом экране
   // (`canReadStrength`) и у светофора в аналитике — второго кода права для
   // той же ручки заводить нельзя.
@@ -219,15 +219,13 @@ export function ExpenseTrafficCard() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <Button variant="outline" disabled>
-            Напомнить департаментам
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Рассылка идёт автоматически к контрольному часу; ручная —
-            бэк-этапом.
-          </p>
-        </div>
+        {hasPermission("daily_report.generate") && moduleOpenFor("/security-ops/service-summary", hasPermission, code => roles.some(role => role.code === code)) && (
+          <div className="border-t pt-3">
+            <Link href={`/security-ops/service-summary?dateFrom=${encodeURIComponent(data.business_date)}`} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm hover:bg-muted">
+              Открыть свод для напоминания
+            </Link>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

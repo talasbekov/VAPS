@@ -25,6 +25,7 @@ import { ArrowLeft, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
+import { LoadFailure } from "@/components/load-failure";
 import {
   Dialog,
   DialogContent,
@@ -274,17 +275,25 @@ export function DepartmentRequestCard({
   const serverSplit = directorateRows
     .map((row) => `${row.divisionId}:${row.need ?? 0}`)
     .join("|");
+  // Группы меняются независимо от числовых квот. Их собственная подпись
+  // обновляет выбор с сервера, не стирая набранные квоты (и наоборот).
+  const serverGroupSplit = JSON.stringify(
+    directorateRows.map((row) => [row.divisionId, row.groupDemandIds ?? []])
+  );
   useEffect(() => {
     setDraft(
       Object.fromEntries(directorateRows.map((row) => [row.divisionId, String(row.need ?? 0)]))
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allocationId, serverSplit]);
+  useEffect(() => {
     setGroupDraft(
       Object.fromEntries(
         directorateRows.map((row) => [row.divisionId, row.groupDemandIds ?? []])
       )
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverSplit]);
+  }, [allocationId, serverGroupSplit]);
 
   if (request.isPending) {
     return (
@@ -302,9 +311,7 @@ export function DepartmentRequestCard({
           <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
           Назад к заявкам
         </Button>
-        <p role="alert" className="text-destructive-ink text-sm">
-          {request.error?.message ?? "Заявка не открылась"}
-        </p>
+        <LoadFailure what="заявку на силы" description={request.error?.message} onRetry={() => void request.refetch()} isRetrying={request.isFetching} />
       </div>
     );
   }
@@ -481,12 +488,9 @@ export function DepartmentRequestCard({
           <h3 id="answer-heading" className="font-semibold">
             1. Ответ департамента
           </h3>
-          <p className="text-muted-foreground text-sm">
-            Запрошено штабом: <b className="tabular-nums text-foreground">{quota}</b>
-          </p>
         </div>
         <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-          Можно выделить меньше, больше или 0. Специальные группы считаются отдельно и не уменьшают физический наряд.
+          Укажите физический наряд и специальные группы ниже, затем сохраните ответ. Можно выделить меньше, больше или 0; группы считаются отдельно.
         </p>
         {allocation.status === "DECLINED" && (
           <p role="status" className="text-destructive-ink text-sm">
@@ -497,7 +501,8 @@ export function DepartmentRequestCard({
         {(() => {
           const answerLocked =
             allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
-          const parsed = Number.parseInt(answer.allocating, 10);
+          const parsed = Number(answer.allocating);
+          const invalidCount = answer.allocating !== "" && (!Number.isSafeInteger(parsed) || parsed < 0);
           const short = Number.isFinite(parsed) && parsed > 0 && parsed < quota;
           const dirty =
             answer.allocating !==
@@ -515,6 +520,9 @@ export function DepartmentRequestCard({
                     id="answer-allocating"
                     type="number"
                     min={0}
+                    step={1}
+                    aria-invalid={invalidCount}
+                    aria-describedby={invalidCount ? "answer-allocating-error" : undefined}
                     inputMode="numeric"
                     className="tabular-nums"
                     disabled={answerLocked || respond.isPending}
@@ -523,6 +531,7 @@ export function DepartmentRequestCard({
                       setAnswer((prev) => ({ ...prev, allocating: event.target.value }))
                     }
                   />
+                  {invalidCount && <p id="answer-allocating-error" role="alert" className="text-sm text-destructive-ink">Укажите целое неотрицательное число сотрудников.</p>}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="answer-comment">Комментарий</Label>
@@ -541,14 +550,17 @@ export function DepartmentRequestCard({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={answerLocked || respond.isPending || answer.allocating === "" || !dirty}
-                  onClick={() =>
+                  variant={hasAnswer ? "outline" : "default"}
+                  aria-busy={respond.isPending}
+                  disabled={answerLocked || respond.isPending || answer.allocating === "" || invalidCount || !dirty}
+                  onClick={() => {
+                    if (answerLocked || respond.isPending || answer.allocating === "" || invalidCount || !dirty) return;
                     respond.mutate({
-                      allocating: Number.parseInt(answer.allocating, 10),
+                      allocating: parsed,
                       comment: answer.comment,
                       groupOffers,
-                    })
-                  }
+                    });
+                  }}
                 >
                   {respond.isPending ? "Сохраняю…" : "Сохранить ответ"}
                 </Button>
@@ -572,6 +584,11 @@ export function DepartmentRequestCard({
                   {respond.error?.message ?? "Ответ не сохранился"}
                 </p>
               )}
+              {respond.isSuccess && !dirty && !answerLocked && (
+                <p role="status" className="text-muted-foreground text-sm">
+                  Ответ сохранён. Проверьте распределение по управлениям ниже.
+                </p>
+              )}
             </>
           );
         })()}
@@ -586,7 +603,7 @@ export function DepartmentRequestCard({
           <div>
             <h3 className="font-semibold">Специальные группы</h3>
             <p className="text-muted-foreground text-sm">
-              Идут сверх физического наряда; недобор и перебор ответ не блокируют.
+              Сохраняются вместе с количеством и комментарием кнопкой «Сохранить ответ» выше.
             </p>
           </div>
           <Button
@@ -745,7 +762,7 @@ export function DepartmentRequestCard({
           {directorateRows.length > 0 && !locked && (
             <Button
               type="button"
-              variant="outline"
+              variant={hasAnswer ? "default" : "outline"}
               size="sm"
               disabled={notify.isPending || split.isPending}
               onClick={() => setNotifyOpen(true)}
@@ -935,7 +952,7 @@ export function DepartmentRequestCard({
             нечего — запрос ушёл бы пустым и ничего не менял. */}
         {!locked && editableRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => void save()} disabled={split.isPending}>
+            <Button variant="outline" onClick={() => void save().catch(() => { /* Ошибка отображается ниже через split.isError. */ })} disabled={split.isPending} aria-busy={split.isPending}>
               {split.isPending ? "Сохраняем…" : "Сохранить раскладку"}
             </Button>
             {/* Итог НАБРАННОГО, а не сохранённого: он про черновик, о котором
@@ -953,6 +970,11 @@ export function DepartmentRequestCard({
         {split.isError && (
           <p role="alert" className="text-destructive-ink text-sm">
             {split.error?.message ?? "Раскладка не сохранилась"}
+          </p>
+        )}
+        {split.isSuccess && !splitDirty && !locked && (
+          <p role="status" className="text-muted-foreground text-sm">
+            Раскладка сохранена. Отправьте её в управления, чтобы начать сбор людей.
           </p>
         )}
       </section>
@@ -1047,12 +1069,14 @@ export function DepartmentRequestCard({
           <div className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
-              disabled={submit.isPending}
+              disabled={submit.isPending || assigned === 0}
               onClick={() => setSubmitOpen(true)}
             >
               Отправить список в штаб
             </Button>
-            {assigned < ownFigure && (
+            {assigned === 0 ? (
+              <p className="text-muted-foreground text-sm">Сначала дождитесь хотя бы одного сотрудника от управлений. Пустой список отправить нельзя.</p>
+            ) : assigned < ownFigure && (
               <p className="text-muted-foreground text-sm">
                 Собрано {assigned} из {ownFigure} — список можно отправить и
                 так, штаб решит, довыделять или принять как есть.
@@ -1125,7 +1149,7 @@ export function DepartmentRequestCard({
                 ? ` Внимание: ${silentRows.length} из ${directorateRows.length} управлений стоят без цифры — им уведомление не уйдёт, и дописать их после отправки будет нельзя.`
                 : ""}
               {splitDirty
-                ? " Набранные, но не сохранённые цифры пропадут: кнопка ниже сохранит раскладку и только потом отправит."
+                ? " Кнопка ниже сначала сохранит набранную раскладку, затем отправит её в управления. При ошибке сохранения отправка не начнётся."
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -1230,7 +1254,7 @@ export function DepartmentRequestCard({
                   департамент обещал, столько и должен сдать (Plane №944).
                   Пока ответа нет — запрос штаба. */}
               {assigned === 0
-                ? "Никто ещё не выделен — штаб получит пустой список. Отправить всё равно?"
+                ? "Никто ещё не выделен. Дождитесь хотя бы одного сотрудника от управлений: пустой список отправить нельзя."
                 : assigned < ownFigure
                   ? `Отправить ${assigned} из ${ownFigure}? Обещано «Выделяем: ${ownFigure}», собрано меньше на ${ownFigure - assigned}.`
                   : `Выделено ${assigned} из ${ownFigure} — список полный, отправить штабу?`}
@@ -1249,8 +1273,9 @@ export function DepartmentRequestCard({
               Отмена
             </Button>
             <Button
-              disabled={submit.isPending}
+              disabled={submit.isPending || assigned === 0}
               onClick={() => {
+                if (submit.isPending || assigned === 0) return;
                 submit.mutate(
                   {},
                   { onSuccess: () => setSubmitOpen(false) }

@@ -2980,14 +2980,14 @@ export const securityEventsHandlers = [
           `${employee.name} не в составе мероприятия — на посты ставят тех, кого штаб принял в «Сборе сил».`
         );
       }
-      // hard-правило: сотрудник не может занимать два поста одного ОМ
-      const alreadyOnAnotherPost = event.placementAssignments.some(
-        (a) => a.employeeId === body.employeeId && a.postId !== body.postId
+      // Состав считает людей: повтор на том же посту тоже является дублем.
+      const alreadyAssigned = event.placementAssignments.some(
+        (a) => a.employeeId === body.employeeId
       );
-      if (alreadyOnAnotherPost) {
+      if (alreadyAssigned) {
         return businessRuleError(
           "DOUBLE_ASSIGNMENT",
-          `${employee.name} уже назначен(а) на другой пост этого мероприятия.`
+          `${employee.name} уже назначен(а) на пост этого мероприятия.`
         );
       }
       // мягкие предупреждения — ПОСЛЕ жёстких правил: обходить обоснованием
@@ -3044,6 +3044,7 @@ export const securityEventsHandlers = [
         postId: body.postId,
         employeeId: body.employeeId,
         employeeName: employee.name,
+        callsign: (employee.callsign ?? "").trim(),
         // Роль наряда (Plane №239): мок принимает её так же, как сервер, —
         // иначе экран в мок-режиме зеленел бы, а на живом стенде роль
         // терялась бы молча.
@@ -4444,14 +4445,13 @@ export const securityEventsHandlers = [
           404
         );
       }
-      const alreadyOnAnotherPost = event.placementAssignments.some(
-        (a) =>
-          a.employeeId === body.incomingEmployeeId && a.postId !== outgoing.postId
+      const alreadyAssigned = event.placementAssignments.some(
+        (a) => a.employeeId === body.incomingEmployeeId
       );
-      if (alreadyOnAnotherPost) {
+      if (alreadyAssigned) {
         return businessRuleError(
           "DOUBLE_ASSIGNMENT",
-          `${incoming.name} уже назначен(а) на другой пост этого мероприятия.`
+          `${incoming.name} уже назначен(а) на пост этого мероприятия. Выберите другого сотрудника.`
         );
       }
       const post = event.reconSectorPosts.find((p) => p.id === outgoing.postId);
@@ -4460,6 +4460,7 @@ export const securityEventsHandlers = [
         postId: outgoing.postId,
         employeeId: body.incomingEmployeeId,
         employeeName: incoming.name,
+        callsign: (incoming.callsign ?? "").trim(),
         // Замена на посту наследует роль наряда: место в бланке остаётся тем
         // же, меняется только человек (Plane №239).
         roleCode: outgoing.roleCode ?? null,

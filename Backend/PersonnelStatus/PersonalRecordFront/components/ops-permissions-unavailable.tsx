@@ -12,7 +12,7 @@
 // Разделение проходит по типу ошибки, а не по коду вручную: OpsServerError
 // (≥500) и OpsNetworkError (HTTP-ответа не было вовсе) — сбой; всё
 // остальное, включая 403, остаётся честным отказом и сюда не попадает.
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,8 +33,14 @@ export function OpsPermissionsUnavailable({
   onRetry: () => void;
   isRetrying: boolean;
 }): ReactElement {
+  const retry = useRef<HTMLButtonElement>(null);
+  useEffect(() => { retry.current?.focus(); }, []);
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4"
+      style={{ pointerEvents: "auto" }}
+      onPointerDownCapture={event => event.stopPropagation()}
+      onFocusCapture={event => event.stopPropagation()}
+      onKeyDownCapture={event => { if (event.key === "Escape") event.stopPropagation(); }}>
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 p-6 text-center">
           <AlertTriangle
@@ -48,7 +54,7 @@ export function OpsPermissionsUnavailable({
             Раздел не открыт не потому, что доступ закрыт, — сервер не ответил
             на запрос прав. Повторите попытку.
           </p>
-          <Button onClick={onRetry} disabled={isRetrying}>
+          <Button ref={retry} onClick={onRetry} disabled={isRetrying}>
             {isRetrying ? "Проверяем…" : "Повторить"}
           </Button>
         </CardContent>

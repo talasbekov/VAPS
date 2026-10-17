@@ -287,4 +287,3 @@ def test_two_grants_name_the_senior_level():
     RoleAdminService.assign_role(str(user.pk), "TWO_GRANTS_941", other.pk, actor="test")
 
     assert api.get(LIST_URL).json()["addressee"] == "department"
-

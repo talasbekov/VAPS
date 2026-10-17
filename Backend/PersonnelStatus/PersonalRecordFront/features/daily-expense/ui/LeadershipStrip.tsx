@@ -24,6 +24,8 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { effectiveDailyStatus } from "../model/directorate-summary";
+import { StatusDetails } from "./StatusDetails";
 
 /** Порог уровня должности: `level <= LEADERSHIP_MAX_LEVEL` — «руководство».
  * 0 не подошёл бы (уровней с 0 в каталоге нет — блок был бы пуст всегда),
@@ -31,7 +33,7 @@ import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
  * он был решением на случай отсутствия серверного признака, а признак
  * (`position.level`) нашёлся. Живой стенд: level=1 — «Начальник отдела»,
  * 2 — «Старший инспектор», 3 — «Инспектор», 4 — «Дежурный». */
-export const LEADERSHIP_MAX_LEVEL = 1;
+export const LEADERSHIP_MAX_LEVEL = 2;
 
 /** У рядовых строк расхода (`DivisionGroup`) отсутствие статуса — derived
  * «в строю»: там это инвариант раздела (нет активного статуса = в строю).
@@ -42,19 +44,11 @@ export const LEADERSHIP_MAX_LEVEL = 1;
  * Подпись кода берётся из СПРАВОЧНИКА раздела (`labelOf`, Plane №342), а не
  * из константы в коде: типы заводит администратор, и копия каталога не
  * узнала бы о новом типе никогда — на месте подписи стоял бы голый код. */
-function leadershipStatusLabel(
-  code: string | null,
-  labelOf: (code: string) => string
-): string {
-  if (code === null) return "статус не заведён";
-  return labelOf(code);
-}
-
 // Однострочная константа, а не многострочный JSX-текст: JSX схлопывает
 // переносы строк в пробелы по своим правилам, и полагаться на них там, где
 // текст обязан быть verbatim (проверяется e2e-пробой дословно), лишний риск.
 const HONESTY_LINE =
-  "Руководство собрано по уровню должности из штатного расписания (level ≤ 1); отдельного серверного признака „руководство\" нет — появится бэк-этапом.";
+  "Начальники департаментов и их заместители по штатному расписанию.";
 
 /** Форма ответа `staff-units/directorate/` на живом стенде — ПЛОСКАЯ: у
  * каждой штатной единицы одна `position` и один `employee | null`
@@ -64,12 +58,14 @@ const HONESTY_LINE =
  * приведением типа. Здесь описана только форма, которая реально приходит. */
 interface RawStaffUnit {
   id: number;
+  department_id?: number | null;
   division?: { id: number; name?: string } | null;
   position?: { id: number; name: string; level: number } | null;
   employee?: {
     id: number;
     first_name: string;
     last_name: string;
+    middle_name?: string | null;
   } | null;
 }
 
@@ -77,6 +73,7 @@ interface LeaderVM {
   employeeId: number;
   lastName: string;
   firstName: string;
+  middleName: string;
   positionName: string;
   positionLevel: number;
   divisionId: number;
@@ -127,6 +124,7 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
       // а строка «Инспектор» в блоке «Руководство департамента» — это ошибка,
       // которую увидит заказчик, а не мы.
       if (!position || position.level > LEADERSHIP_MAX_LEVEL) continue;
+      if (unit.department_id != null && divisionId !== unit.department_id) continue;
       // Вакантная должность руководителя — некого показать строкой: у
       // `DivisionGroup` та же логика (список людей, а не штатных единиц).
       if (!employee || divisionId === undefined) continue;
@@ -134,6 +132,7 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
         employeeId: employee.id,
         lastName: employee.last_name,
         firstName: employee.first_name,
+        middleName: employee.middle_name ?? "",
         positionName: position.name,
         positionLevel: position.level,
         divisionId,
@@ -164,16 +163,16 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
     })),
   });
 
-  const statusByEmployee = new Map<number, string>();
+  const statusRows: OpsEmployeeStatusRow[] = [];
   for (const query of statusQueries) {
     for (const row of (query.data as OpsEmployeeStatusRow[] | undefined) ?? []) {
-      statusByEmployee.set(row.employee_id, row.status_type_code);
+      statusRows.push(row);
     }
   }
 
   const isPending =
-    staffUnits.isPending || statusQueries.some((query) => query.isPending);
-  const isError = staffUnits.isError;
+    staffUnits.isPending || statusTypes.isLoading || statusQueries.some((query) => query.isPending);
+  const isError = staffUnits.isError || statusTypes.isError || statusQueries.some(query => query.isError);
 
   return (
     <section
@@ -199,14 +198,16 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
           )}
           {!isPending && !isError && leaders.length === 0 && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
-              начальников отделов в штатном расписании нет
+              Начальники департаментов и заместители не назначены
             </p>
           )}
           {!isPending &&
             !isError &&
             leaders.map((leader) => {
               const initials = `${leader.lastName.slice(0, 1)}${leader.firstName.slice(0, 1)}`;
-              const statusCode = statusByEmployee.get(leader.employeeId) ?? null;
+              let status: OpsEmployeeStatusRow | null | undefined;
+              try { status = effectiveDailyStatus(statusRows.filter(row => row.employee_id === leader.employeeId), businessDate, statusTypes.all); }
+              catch { status = undefined; }
               return (
                 <div
                   key={leader.employeeId}
@@ -218,12 +219,12 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
                   </span>
                   <div className="min-w-[12rem] flex-1">
                     <p className="text-sm font-semibold">
-                      {leader.lastName} {leader.firstName}
+                      {[leader.lastName, leader.firstName, leader.middleName].filter(Boolean).join(" ")}
                     </p>
                     <p className="text-xs text-muted-foreground">{leader.positionName}</p>
                   </div>
                   <Badge variant="secondary">
-                    {leadershipStatusLabel(statusCode, statusTypes.labelOf)}
+                    <StatusDetails status={status} labelOf={statusTypes.labelOf} />
                   </Badge>
                 </div>
               );

@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Журнал оценивания (§19.27): отвечает «что произошло», а не «какое значение
 // выставили» — old/new score, комментарии и оценщик доступны только отдельной
 // audit privacy permission, этих полей нет в ответе вовсе. Отказы видны
@@ -164,19 +166,7 @@ export default function RatingAuditPage() {
               </button>
             </div>
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не показывается</h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Состав журнала" items={data.unavailableViews} />
           </>
         )}
       </div>

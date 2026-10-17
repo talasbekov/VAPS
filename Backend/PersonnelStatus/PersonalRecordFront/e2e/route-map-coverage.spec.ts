@@ -43,3 +43,39 @@ test("стартовый маршрут следует grants forces, а не н
   const afterForcesRevoked = (code: string) => code === "object.view";
   expect(defaultPortalRoute(afterForcesRevoked)).toBe("/security-ops/objects");
 });
+
+const employeeReadPermissions = [
+  "catalog.view", "document.view", "feedback.create", "feedback.view",
+  "object.view", "status.view",
+];
+
+test("сотрудник с правами чтения начинает со своих назначений", () => {
+  expect(defaultPortalRoute(
+    code => employeeReadPermissions.includes(code),
+    code => code === "EMPLOYEE",
+    new Set(employeeReadPermissions),
+  )).toBe("/security-ops/profile");
+});
+
+test("личный старт не подменяет рабочий экран другой читающей роли", () => {
+  expect(defaultPortalRoute(
+    code => employeeReadPermissions.includes(code),
+    () => false,
+    employeeReadPermissions,
+  )).toBe("/statuses");
+});
+
+for (const [permission, route] of [
+  ["forces.allocate", "/employees"],
+  ["status.manage", "/statuses"],
+  ["event.view", "/statuses"],
+] as const) {
+  test(`дополнительное ${permission} сохраняет рабочий старт сотрудника`, () => {
+    const permissions = [...employeeReadPermissions, permission];
+    expect(defaultPortalRoute(
+      code => permissions.includes(code),
+      code => code === "EMPLOYEE",
+      permissions,
+    )).toBe(route);
+  });
+}

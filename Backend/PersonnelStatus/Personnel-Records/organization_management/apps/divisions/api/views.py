@@ -26,14 +26,26 @@ class DivisionTreeViewSet(viewsets.ViewSet):
 
     def list(self, request):
         """Возвращает корневое подразделение с детьми"""
-        # Получаем первое корневое подразделение (parent=None)
-        root = Division.objects.filter(parent__isnull=True).first()
+        # Only a global access administrator needs all scope choices. A scoped
+        # administrative grant must not expand an orgstructure.view grant.
+        perms = PermissionService.unscoped_permissions(resolve_actor_id(request))
+        if "admin.roles" in perms or "*" in perms:
+            allowed = None
+        else:
+            require_permission(request, "orgstructure.view")
+            allowed = PermissionService.visible_division_ids(resolve_actor_id(request), "orgstructure.view")
+        rows = Division.objects.all()
+        if allowed is not None:
+            rows = rows.filter(pk__in=allowed)
+        ids = set(rows.values_list("pk", flat=True))
+        roots = [row for row in rows if row.parent_id not in ids]
+        data = DivisionSerializer(roots, many=True, context={"visible_division_ids": allowed}).data
+        if len(data) == 1:
+            return Response(data[0])
+        return Response({"id": 0, "name": "Доступные подразделения", "code": "",
+                         "division_type": "organization", "parent": None, "is_active": True,
+                         "order": 0, "children": data})
 
-        if not root:
-            return Response({'detail': 'Корневое подразделение не найдено'}, status=404)
-
-        serializer = DivisionSerializer(root)
-        return Response(serializer.data)
 
 
 class DivisionViewSet(viewsets.ModelViewSet):
@@ -65,6 +77,8 @@ class DivisionViewSet(viewsets.ModelViewSet):
             require_permission(request, self.WRITE_PERMISSION)
         elif self.action == "employees":
             require_permission(request, self.EMPLOYEES_PERMISSION)
+        else:
+            require_permission(request, "orgstructure.view")
 
     def _scope_for(self, permission_code):
         return PermissionService.visible_division_ids(
@@ -77,7 +91,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Write-object и employees-source адресуются только в своём scope."""
         qs = super().get_queryset()
-        scope_permission = None
+        scope_permission = "orgstructure.view"
         if self.action in self.WRITE_ACTIONS:
             scope_permission = self.WRITE_PERMISSION
         elif self.action == "employees":
@@ -87,6 +101,13 @@ class DivisionViewSet(viewsets.ModelViewSet):
             if allowed is not None:
                 qs = qs.filter(pk__in=allowed)
         return qs
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        code = (self.WRITE_PERMISSION if self.action in self.WRITE_ACTIONS else
+                self.EMPLOYEES_PERMISSION if self.action == "employees" else "orgstructure.view")
+        context["visible_division_ids"] = self._scope_for(code)
+        return context
 
     def _assert_parent_in_write_scope(self, parent_id):
         """Новый parent тоже должен быть в области записи.

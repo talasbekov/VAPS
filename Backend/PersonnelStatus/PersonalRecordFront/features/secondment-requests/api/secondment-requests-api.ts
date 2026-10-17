@@ -1,5 +1,6 @@
 import { getAccessToken } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
+import { captureOpsWriteAuthority } from "@/lib/ops-write-authority";
 
 export interface SecondmentRequest {
   id: number;
@@ -12,21 +13,21 @@ export interface SecondmentRequest {
     full_name: string;
     rank: string | null;
     photo_url?: string;
-  };
+  } | null;
   from_division_detail: {
     id: number;
     name: string;
     division_type: string;
-  };
+  } | null;
   to_division_detail: {
     id: number;
     name: string;
     division_type: string;
-  };
+  } | null;
   start_date: string;
   end_date: string;
   reason: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "cancelled";
 }
 
 export async function fetchIncomingSecondmentRequests() {
@@ -47,6 +48,7 @@ export async function fetchIncomingSecondmentRequests() {
 async function postAction(id: number, action: "approve" | "reject") {
   const endpoint = `/api/secondments/secondment-requests/${id}/${action}/`;
   const url = `${BACKEND_URL}${endpoint}`;
+  const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
   const token = await getAccessToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -54,6 +56,7 @@ async function postAction(id: number, action: "approve" | "reject") {
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
+  checkAuthority();
   const res = await fetch(url, { method: "POST", headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.json();

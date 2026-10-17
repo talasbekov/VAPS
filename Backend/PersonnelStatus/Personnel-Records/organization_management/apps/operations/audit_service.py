@@ -157,6 +157,7 @@ SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
 # этапа админом: действие совершено в обход общего права, по роли в данных, и
 # его след обязан быть в журнале мутаций, а не только в самом агрегате.
 SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
+SECURITY_EVENT_MAP_LOCATION_UPDATED = "SECURITY_EVENT_MAP_LOCATION_UPDATED"
 # Согласование, ВЕДЁННОЕ СТАРШИМ ОБЪЕКТА (или его замещающим) — по роли в
 # данных, без кода права `event.manage` (`[СОГ-12]`, Plane №401, №576).
 #
@@ -268,6 +269,7 @@ ACCESS_ROLE_PERMISSIONS_CHANGED = "ACCESS_ROLE_PERMISSIONS_CHANGED"
 # значение стоит в записи рядом с новым. Сброс пароля — своё действие: его
 # спрашивают отдельно («кому и когда меняли пароль»), и сам пароль в записи
 # не появляется НИ В КАКОМ виде.
+ACCESS_ACCOUNT_EMPLOYEE_LINKED = "ACCESS_ACCOUNT_EMPLOYEE_LINKED"
 ACCESS_ACCOUNT_SAVED = "ACCESS_ACCOUNT_SAVED"
 ACCESS_ACCOUNT_PASSWORD_RESET = "ACCESS_ACCOUNT_PASSWORD_RESET"
 # Человек сменил СВОЙ пароль (Plane №180). Отдельное действие от сброса, а не
@@ -299,6 +301,9 @@ DICTIONARY_ENTRY_DELETED = "DICTIONARY_ENTRY_DELETED"
 # Правка значения справочника (Plane №274): заказчик просил у модуля все три
 # действия — «Добавлять, удалять, редактировать», — а правки не было вовсе.
 DICTIONARY_ENTRY_UPDATED = "DICTIONARY_ENTRY_UPDATED"
+# Замена значения преемником (UC-REF-001): прежняя запись закрыта, новая
+# ссылается на неё. Пишется на ПРЕЖНЮЮ запись; у преемника — CREATED.
+DICTIONARY_ENTRY_SUPERSEDED = "DICTIONARY_ENTRY_SUPERSEDED"
 # Сводка ГВО: ручная правка и сброс патча — решения с внешним следом
 # (сводные данные уходят в бумагу); сама база сводки следа не оставляет —
 # она производная бюллетеня мероприятия.
@@ -308,8 +313,15 @@ GVO_SUMMARY_RESET = "GVO_SUMMARY_RESET"
 # фотография — правки справочника, по которым спрашивают «кто завёл»; до этого
 # каталог правился только через Django Admin, и своего следа у него не было.
 PROTECTED_PERSON_CREATED = "PROTECTED_PERSON_CREATED"
+LEGAL_DOCUMENT_CREATED = "LEGAL_DOCUMENT_CREATED"
+LEGAL_DOCUMENT_UPDATED = "LEGAL_DOCUMENT_UPDATED"
+LEGAL_DOCUMENT_FILE_UPLOADED = "LEGAL_DOCUMENT_FILE_UPLOADED"
+PROTECTED_PERSON_UPDATED = "PROTECTED_PERSON_UPDATED"
 PROTECTED_PERSON_PHOTO_SET = "PROTECTED_PERSON_PHOTO_SET"
 PROTECTED_PERSON_PHOTO_VIEWED = "PROTECTED_PERSON_PHOTO_VIEWED"
+RECON_MATERIAL_UPLOADED = "RECON_MATERIAL_UPLOADED"
+RECON_MATERIAL_REMOVED = "RECON_MATERIAL_REMOVED"
+RECON_MATERIAL_DOWNLOADED = "RECON_MATERIAL_DOWNLOADED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -318,6 +330,17 @@ PROTECTED_PERSON_PHOTO_VIEWED = "PROTECTED_PERSON_PHOTO_VIEWED"
 # N строками STATUS_CREATED с ОДНИМ актором и ОДНИМ временем (record_many
 # ставит момент однажды), и это ровно то, что сводка и утверждала бы. Событие,
 # которого никто не пишет, — обещание фильтра, возвращающего пустоту.
+DUTY_DISPATCH_CREATED = "DUTY_DISPATCH_CREATED"
+DUTY_DISPATCH_CANCELLED = "DUTY_DISPATCH_CANCELLED"
+DUTY_DISPATCH_CONFIGURED = "DUTY_DISPATCH_CONFIGURED"
+DUTY_LOG_CREATED = "DUTY_LOG_CREATED"
+DUTY_LOG_UPDATED = "DUTY_LOG_UPDATED"
+DUTY_LOG_ACKNOWLEDGED = "DUTY_LOG_ACKNOWLEDGED"
+DUTY_LOG_STARTED = "DUTY_LOG_STARTED"
+DUTY_LOG_COMPLETED = "DUTY_LOG_COMPLETED"
+DUTY_LOG_CANCELLED = "DUTY_LOG_CANCELLED"
+DUTY_RECORD_CLASSIFIED = "DUTY_RECORD_CLASSIFIED"
+
 ACTIONS = frozenset(
     {
         STATUS_CREATED,
@@ -355,6 +378,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        SECURITY_EVENT_MAP_LOCATION_UPDATED,
         SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD,
         SECURITY_EVENT_APPROVAL_SIGNED,
         SECURITY_EVENT_PLACEMENT_RETURNED,
@@ -377,23 +401,42 @@ ACTIONS = frozenset(
         ACCESS_PERMISSION_SAVED,
         ACCESS_ROLE_SAVED,
         ACCESS_ROLE_PERMISSIONS_CHANGED,
+        ACCESS_ACCOUNT_EMPLOYEE_LINKED,
         ACCESS_ACCOUNT_SAVED,
         ACCESS_ACCOUNT_PASSWORD_RESET,
         ACCESS_ACCOUNT_PASSWORD_CHANGED,
         ACCESS_ROLE_GRANTED,
         ACCESS_ROLE_REVOKED,
         DUTY_SHIFT_CREATED,
+        DUTY_DISPATCH_CREATED,
+        DUTY_DISPATCH_CANCELLED,
+        DUTY_DISPATCH_CONFIGURED,
+        DUTY_LOG_CREATED,
+        DUTY_LOG_UPDATED,
+        DUTY_LOG_ACKNOWLEDGED,
+        DUTY_LOG_STARTED,
+        DUTY_LOG_COMPLETED,
+        DUTY_LOG_CANCELLED,
+        DUTY_RECORD_CLASSIFIED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
         DICTIONARY_ENTRY_CREATED,
         DICTIONARY_ENTRY_SET_ACTIVE,
         DICTIONARY_ENTRY_DELETED,
         DICTIONARY_ENTRY_UPDATED,
+        DICTIONARY_ENTRY_SUPERSEDED,
         GVO_SUMMARY_PATCHED,
         GVO_SUMMARY_RESET,
         PROTECTED_PERSON_CREATED,
+        LEGAL_DOCUMENT_CREATED,
+        LEGAL_DOCUMENT_UPDATED,
+        LEGAL_DOCUMENT_FILE_UPLOADED,
+        PROTECTED_PERSON_UPDATED,
         PROTECTED_PERSON_PHOTO_SET,
         PROTECTED_PERSON_PHOTO_VIEWED,
+        RECON_MATERIAL_UPLOADED,
+        RECON_MATERIAL_REMOVED,
+        RECON_MATERIAL_DOWNLOADED,
     }
 )
 
@@ -423,7 +466,14 @@ ENTITY_SECURITY_EVENT = "security_event"
 ENTITY_DUTY_SHIFT = "duty_shift"
 ENTITY_POLICY_SETTING = "policy_setting"
 ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
+# Кадровые справочники (UC-REF-001): у них свои таблицы и свои id, поэтому
+# свои сущности, а не dictionary_entry, иначе id столкнутся.
+ENTITY_COUNTRY = "country"
+ENTITY_CITY = "city"
+ENTITY_POSITION = "position"
+ENTITY_RANK = "rank"
 ENTITY_PROTECTED_PERSON = "protected_person"
+ENTITY_LEGAL_DOCUMENT = "legal_document"
 # Справочники доступа (Plane №36): право и роль. Правка доступа — именное
 # решение, по которому потом спрашивают «кто и когда открыл эту ручку».
 ENTITY_PERMISSION = "access_permission"
@@ -435,6 +485,10 @@ ENTITY_USER_ROLE = "access_user_role"
 
 ENTITY_TYPES = frozenset(
     {
+        "duty_dispatch",
+        "duty_dispatch_config",
+        "duty_log",
+        "duty_record_supplement",
         ENTITY_STATUS,
         ENTITY_SECONDMENT,
         ENTITY_EMPLOYEE,
@@ -447,7 +501,12 @@ ENTITY_TYPES = frozenset(
         ENTITY_DUTY_SHIFT,
         ENTITY_POLICY_SETTING,
         ENTITY_DICTIONARY_ENTRY,
+        ENTITY_COUNTRY,
+        ENTITY_CITY,
+        ENTITY_POSITION,
+        ENTITY_RANK,
         ENTITY_PROTECTED_PERSON,
+        ENTITY_LEGAL_DOCUMENT,
         ENTITY_PERMISSION,
         ENTITY_ROLE,
         ENTITY_ACCOUNT,

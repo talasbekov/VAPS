@@ -522,7 +522,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   }}
                   options={personsQuery.data?.results ?? []}
                   loading={personsQuery.isPending}
-                  failed={personsQuery.isError}
+                  failed={personsQuery.isError || personsQuery.readAccessBlocked}
                 />
                 {/* 🔴 ТЕКСТ ОБЕЩАЛ ТО, ЧЕГО БОЛЬШЕ НЕ БЫВАЕТ (Plane №632). Он
                     написан, когда лицо было НЕОБЯЗАТЕЛЬНЫМ. С `[БЛН-12]` (№439)
@@ -532,7 +532,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                     бюллетеня не будет вовсе. Успокоительная неправда хуже
                     отказа: человек ждёт, что всё получится, и не зовёт того,
                     кто чинит справочник. */}
-                {personsQuery.isError && (
+                {(personsQuery.isError || personsQuery.readAccessBlocked) && (
                   <p className="text-xs text-destructive-ink" role="alert">
                     Справочник охраняемых лиц недоступен, а без лица бюллетень не
                     завести.{" "}

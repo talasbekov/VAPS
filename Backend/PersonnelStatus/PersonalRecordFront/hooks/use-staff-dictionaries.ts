@@ -1,13 +1,16 @@
 "use client";
 
-// Кадровые справочники: чтение и правка под правом `dictionary.manage`.
+// Кадровые справочники: чтение по `dictionary.view`, правка под `dictionary_value.manage`.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import {
   staffDictionaryOf,
+  staffDictionaryRowActionPath,
   staffDictionaryRowPath,
+  type RemoveStaffDictionaryRowResult,
   type StaffDictionaryResponse,
   type StaffDictionaryRow,
+  type StaffDictionaryWrite,
 } from "@/entities/staff-dictionary";
 
 /** Ручка отвечает конвертом DRF либо голым списком — читаем оба. */
@@ -37,13 +40,16 @@ function useInvalidate(kind: string) {
   const client = useQueryClient();
   return () => {
     void client.invalidateQueries({ queryKey: ["staff-dictionary", kind] });
+    void client.invalidateQueries({ queryKey: [kind] });
+    void client.invalidateQueries({ queryKey: [`core-${kind}`] });
+    void client.invalidateQueries({ queryKey: ["ops-dictionaries"] });
   };
 }
 
 export function useCreateStaffDictionaryRow(kind: string) {
   const invalidate = useInvalidate(kind);
   const meta = staffDictionaryOf(kind);
-  return useMutation<StaffDictionaryRow, Error, Omit<StaffDictionaryRow, "id">>({
+  return useMutation<StaffDictionaryRow, Error, StaffDictionaryWrite>({
     mutationFn: (body) =>
       opsApiClient.post<StaffDictionaryRow>(meta!.path, body),
     onSuccess: invalidate,
@@ -52,7 +58,11 @@ export function useCreateStaffDictionaryRow(kind: string) {
 
 export function useUpdateStaffDictionaryRow(kind: string) {
   const invalidate = useInvalidate(kind);
-  return useMutation<StaffDictionaryRow, Error, StaffDictionaryRow>({
+  return useMutation<
+    StaffDictionaryRow,
+    Error,
+    Partial<StaffDictionaryWrite> & { id: number }
+  >({
     mutationFn: ({ id, ...body }) =>
       opsApiClient.patch<StaffDictionaryRow>(
         staffDictionaryRowPath(kind, id),
@@ -64,9 +74,42 @@ export function useUpdateStaffDictionaryRow(kind: string) {
 
 export function useDeleteStaffDictionaryRow(kind: string) {
   const invalidate = useInvalidate(kind);
-  return useMutation<void, Error, { id: number }>({
-    mutationFn: ({ id }) =>
-      opsApiClient.del<void>(staffDictionaryRowPath(kind, id)),
+  return useMutation<RemoveStaffDictionaryRowResult, Error, { id: number }>({
+    mutationFn: async ({ id }) => {
+      // 204 — удалено; 200 с телом — деактивировано по связям (UC-REF-001).
+      const body = await opsApiClient.del<
+        RemoveStaffDictionaryRowResult | undefined
+      >(staffDictionaryRowPath(kind, id));
+      return body ?? { result: "deleted" };
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetStaffDictionaryRowActive(kind: string) {
+  const invalidate = useInvalidate(kind);
+  return useMutation<StaffDictionaryRow, Error, { id: number; is_active: boolean }>({
+    mutationFn: ({ id, is_active }) =>
+      opsApiClient.post<StaffDictionaryRow>(
+        staffDictionaryRowActionPath(kind, id, "set-active"),
+        { is_active }
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSupersedeStaffDictionaryRow(kind: string) {
+  const invalidate = useInvalidate(kind);
+  return useMutation<
+    StaffDictionaryRow,
+    Error,
+    StaffDictionaryWrite & { id: number }
+  >({
+    mutationFn: ({ id, ...body }) =>
+      opsApiClient.post<StaffDictionaryRow>(
+        staffDictionaryRowActionPath(kind, id, "supersede"),
+        body
+      ),
     onSuccess: invalidate,
   });
 }

@@ -103,9 +103,15 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
       await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
 
       for (const item of GATED) {
-        const link = menu.getByRole('link', { name: item, exact: true })
+        // The headquarters workspace names the same forces module
+        // "Распределения" (sidebar.tsx); its access requirement is unchanged.
+        const name = username === 'acc_ops_staff' && item === 'Сбор сил на ОМ' ? 'Распределения' : item
+        const link = menu.getByRole('link', { name, exact: true })
         if (visible.includes(item)) {
           await expect(link, `${username}: «${item}» заказчик оставил открытым`).toBeVisible()
+          if (username === 'acc_ops_staff' && item === 'Сбор сил на ОМ') {
+            await expect(link).toHaveAttribute('href', /\/employees\/?\?view=forces(?:&|$)/)
+          }
         } else {
           await expect(link, `${username}: «${item}» заказчик назвал недоступным`).toHaveCount(0)
         }
@@ -164,6 +170,9 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
 
     await expect(page.getByRole('heading', { name: 'Управление статусами' })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Массовое обновление' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Импорт' })).toBeVisible()
+    // The inactive import button had no handler and was removed in 48aab6d9;
+    // docs/api-gaps.md records that the import UI has no backing endpoint.
+    // Verify a functioning control still reserved for an editable role.
+    await expect(page.getByRole('button', { name: 'Прикомандировать', exact: true })).toBeVisible()
   })
 })

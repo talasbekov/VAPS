@@ -8,6 +8,7 @@
 // `status.manage`.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
+import { isReadAccessBlocked, readWithAccessCheck } from "@/lib/query-read-access";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
@@ -44,6 +45,7 @@ export interface MyAssignmentRow {
   /** Есть ли у сотрудника своя учётка. Начальник управления может отметить
    * ознакомление лично только когда её нет (`[ОЗН-05]`). */
   employeeHasAccount: boolean;
+  canConfirmWithoutAccount?: boolean;
   acknowledgedAt: string | null;
   /** Способ отметки (`[ОЗН-05]`, Plane №722): `self` — человек подтвердил
    * сам, `personal` — старший отметил «лично» (довёл устно). Пусто у строк,
@@ -70,14 +72,17 @@ export interface MyAssignmentsResponse {
 export const MY_ASSIGNMENTS_QUERY_KEY = ["ops-my-assignments"] as const;
 
 export function useMyAssignments(employeeId?: string) {
+  const client = useQueryClient();
+  const key = [...MY_ASSIGNMENTS_QUERY_KEY, employeeId ?? "me"];
   const path =
     employeeId === undefined
       ? MY_ASSIGNMENTS_PATH
       : `${MY_ASSIGNMENTS_PATH}?employee=${encodeURIComponent(employeeId)}`;
-  return useQuery<MyAssignmentsResponse, OpsApiFailure>({
-    queryKey: [...MY_ASSIGNMENTS_QUERY_KEY, employeeId ?? "me"],
-    queryFn: () => opsApiClient.get<MyAssignmentsResponse>(path),
+  const query = useQuery<MyAssignmentsResponse, OpsApiFailure>({
+    queryKey: key,
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(client, queryKey, signal, () => opsApiClient.get<MyAssignmentsResponse>(path)),
   });
+  return { ...query, readAccessBlocked: isReadAccessBlocked(client, key) };
 }
 
 // ── Ответ на назначение (Plane №405, `[ПРФ-04]`) ─────────────────────────

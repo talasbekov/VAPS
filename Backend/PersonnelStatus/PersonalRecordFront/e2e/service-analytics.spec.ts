@@ -322,14 +322,14 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await page.goto(`${APP}${SCREEN}`)
     await expect(kpiTile(page, 'Списочная численность')).toBeVisible({ timeout: 20_000 })
 
-    await expect(kpiTile(page, 'Списочная численность')).toContainText(
-      String(totals.staff_total),
+    await expect(kpiTile(page, 'Списочная численность').locator('p.tabular-nums')).toHaveText(
+      new RegExp(`^${String(totals.staff_total).split('').join('\\s*')}$`),
     )
     await expect(kpiTile(page, 'Фактическая численность')).toContainText(
       `${share(totals.list_total, totals.staff_total)} от списочной`,
     )
-    await expect(kpiTile(page, 'В строю')).toContainText(String(inService))
-    await expect(kpiTile(page, 'Вакансии')).toContainText(String(totals.vacancies))
+    await expect(kpiTile(page, 'В строю').locator('p.tabular-nums')).toHaveText(new RegExp(`^${String(inService).split('').join('\\s*')}$`))
+    await expect(kpiTile(page, 'Вакансии').locator('p.tabular-nums')).toHaveText(new RegExp(`^${String(totals.vacancies).split('').join('\\s*')}$`))
 
     // Донат: в центре — сумма колонок расхода, а не число сотрудников из
     // какого-то другого ответа.

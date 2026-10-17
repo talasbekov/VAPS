@@ -122,6 +122,15 @@ export async function updateProfile(
   return await response.json();
 }
 
+export async function getProfile(signal?: AbortSignal): Promise<UpdateProfileResponse> {
+  const response = await fetch(`${BACKEND_URL}/api/user/profile/`, {
+    headers: await authorizedHeaders(),
+    signal,
+  });
+  if (!response.ok) throw await toApiError(response);
+  return await response.json();
+}
+
 /**
  * Изменяет пароль пользователя
  */

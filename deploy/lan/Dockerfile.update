@@ -1,0 +1,8 @@
+# Update an existing offline runtime without downloading dependencies.
+ARG BASE_IMAGE=smart-josparlau/lan-backend:slim
+FROM ${BASE_IMAGE}
+COPY backend/ /app/
+RUN rm -f /app/scripts/create_users.py
+COPY deploy/lan/settings.py /app/organization_management/config/settings/lan.py
+COPY deploy/lan/redoc.html /app/lan-templates/drf_spectacular/redoc.html
+ENV DJANGO_SETTINGS_MODULE=organization_management.config.settings.lan

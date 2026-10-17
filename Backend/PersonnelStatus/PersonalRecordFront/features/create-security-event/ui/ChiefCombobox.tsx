@@ -130,16 +130,19 @@ export function ChiefCombobox({
                 // исчезал под курсором между нажатием и отпусканием.
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  onChange({ id: person.id, name: person.name });
+                  // Чип старшего — полным именем, как строка в списке
+                  // (Plane №1247): иначе выбранного «Оралбаев А.» не
+                  // отличить от тринадцати других.
+                  onChange({ id: person.id, name: person.fullName || person.name });
                   setSearch("");
                   setOpen(false);
                 }}
                 className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <span className="min-w-0">
-                  <span className="block font-medium">{person.name}</span>
+                  <span className="block font-medium">{person.fullName || person.name}</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    {[person.rankLabel, person.unit].filter((p) => p !== "").join(" · ")}
+                    {[person.rankLabel, person.unitPath || person.unit].filter((p) => p !== "").join(" · ")}
                   </span>
                 </span>
               </button>

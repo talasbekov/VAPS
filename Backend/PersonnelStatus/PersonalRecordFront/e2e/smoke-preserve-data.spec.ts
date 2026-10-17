@@ -19,6 +19,7 @@ function teardownHarness(preserve: string | undefined, alive = true) {
     './probe-events': { dropProbeEvents: forbidden, probeToken: async () => { calls.token++; return null } },
     './probe-statuses': { dropOpsProbeStatuses: forbidden, dropProbeStatuses: forbidden },
     './global-setup': { PREFLIGHT_FAILED: 'STAND_PREFLIGHT_FAILED' },
+    './purge-python': { resolvePurgeTarget: forbidden },
     './stand-alive': { standVerdict: async () => { calls.postflight++; return { alive, url: 'isolated-test', why: 'probe' } } },
     './stand-credentials': { STAND_USERNAME: 'not-a-real-account', STAND_PASSWORD: 'not-a-real-secret' },
   }

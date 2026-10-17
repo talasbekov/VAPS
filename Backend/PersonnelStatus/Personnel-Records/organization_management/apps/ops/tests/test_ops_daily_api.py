@@ -109,6 +109,7 @@ def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, divisi
         "name": division.name,
         "ancestors": [],
         "can_submit": True,
+        "can_correct": True,
         "last_submitted_at": None,
         "parent_id": None,
         "without_status": 0,
@@ -229,6 +230,26 @@ def test_divisions_tell_apart_who_the_actor_submits_for(division):
     assert rows[other.name]["can_submit"] is False
 
 
+@pytest.mark.parametrize("grant", ["submit_only", "scoped_corrector", "wildcard"])
+def test_divisions_expose_correction_scope_independently_of_submission_scope(division, grant):
+    other = Division.objects.create(name="Чужое управление исправления")
+    if grant == "wildcard":
+        api, _ = client_for("daily-correct-wildcard", "DAILY_CORRECT_ADMIN", perms=("*",))
+    else:
+        api, user = client_for(f"daily-correct-{grant}", "DAILY_CORRECT_READ", perms=("status.view", "daily_report.mark_update"))
+        if grant == "scoped_corrector":
+            seed_role("DAILY_CORRECT_OWN", ("daily_report.correct",))
+            RoleAdminService.assign_role(str(user.pk), "DAILY_CORRECT_OWN", division.pk, actor="test")
+
+    response = api.get(DIVISIONS)
+    assert response.status_code == 200, response.data
+    rows = {row["id"]: row for row in response.json()["results"]}
+    assert rows[str(division.pk)]["can_submit"] is True
+    assert rows[str(other.pk)]["can_submit"] is True
+    assert rows[str(division.pk)]["can_correct"] is (grant != "submit_only")
+    assert rows[str(other.pk)]["can_correct"] is (grant == "wildcard")
+
+
 def test_divisions_carry_the_moment_of_the_last_submission(
     operator, division, in_service
 ):
@@ -340,11 +361,15 @@ def test_employees_of_division_contract_shape(operator, division):
     assert payload["results"] == [
         {
             "id": str(employee.pk),
-            "full_name": "Иванов И.",
+            "full_name": "Иванов Иван",
             "rank_code": "",
             # Подразделение строки (Plane №376): без него общий ответ по
             # нескольким подразделениям нельзя разложить обратно.
             "division_id": division.pk,
+            "division_type": division.division_type,
+            "position_level": None,
+            "position_name": "",
+            "position_code": "",
         }
     ]
     assert payload["count"] == 1

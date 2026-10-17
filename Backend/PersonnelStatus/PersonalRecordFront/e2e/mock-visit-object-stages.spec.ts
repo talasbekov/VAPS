@@ -22,7 +22,7 @@
  *   • вернуть зеркалу переписывание `visit.stage` стадией мероприятия;
  *   • считать стадию ОМ не наименьшей, а стадией первого объекта.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from './mock-fixture'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const MOCK_APP = process.env.SMOKE_MOCK_APP ?? ''

@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import F, OuterRef, Q, Subquery
 from django.db.models.query import Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -9,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.decorators import action
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from organization_management.apps.staff_unit.models import Vacancy, StaffUnit
 from organization_management.apps.staff_unit.serializers import (
@@ -17,6 +17,7 @@ from organization_management.apps.staff_unit.serializers import (
     StaffUnitSerializer,
     StaffUnitBulkUpdateSerializer,
     StaffUnitDetailedSerializer,
+    _lock_bulk_references,
 )
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.dictionaries.api.serializers import PositionSerializer
@@ -91,6 +92,33 @@ def _as_date(value):
     if isinstance(value, date):
         return value
     return parse_date(str(value))
+
+
+def _staff_division_ancestors(staff_units):
+    """Resolve department/directorate labels in one query, including scope ancestors."""
+    tree_ids = {unit.division.tree_id for unit in staff_units if unit.division_id}
+    divisions = {
+        row['id']: row for row in Division.objects.filter(tree_id__in=tree_ids).values(
+            'id', 'parent_id', 'division_type', 'name',
+        )
+    }
+    result = {}
+    for unit in staff_units:
+        if unit.division_id in result:
+            continue
+        metadata = {
+            'department_id': None, 'department_name': '',
+            'directorate_id': None, 'directorate_name': '',
+        }
+        current = divisions.get(unit.division_id)
+        while current:
+            for kind in ('department', 'directorate'):
+                if current['division_type'] == kind and metadata[f'{kind}_id'] is None:
+                    metadata[f'{kind}_id'] = current['id']
+                    metadata[f'{kind}_name'] = current['name']
+            current = divisions.get(current['parent_id'])
+        result[unit.division_id] = metadata
+    return result
 
 
 class PositionViewSet(viewsets.ModelViewSet):
@@ -238,10 +266,18 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         # Суперпользователь видит всё
         if user.is_superuser:
-            return StaffUnit.objects.all()
+            queryset = StaffUnit.objects.all()
+        else:
+            # Используем RBAC engine для фильтрации
+            queryset = get_user_scope_queryset(user, StaffUnit)
 
-        # Используем RBAC engine для фильтрации
-        return get_user_scope_queryset(user, StaffUnit)
+        if self.action == 'list':
+            # Загружаем связи и статусы на страницу списка. При записи
+            # префетч мог бы оставить старый статус в ответе после изменения.
+            return queryset.select_related(
+                'division', 'position', 'employee', 'vacancy'
+            ).prefetch_related(active_status_prefetch())
+        return queryset
 
     # list() метод использует стандартную логику ModelViewSet
     # Фильтрация по ролям происходит в get_queryset()
@@ -252,8 +288,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         Возвращает расширенный формат с дочерними единицами и статусами.
         """
         instance = self.get_object()
-        serializer = StaffUnitDetailedSerializer(instance)
+        serializer = StaffUnitDetailedSerializer(instance, context=self.get_serializer_context())
         return Response(serializer.data)
+
+    def _assert_staff_destination(self, division, parent_id=None):
+        """Authorize the proposed destination, not only the original slot."""
+        if self.request.user.is_superuser:
+            return
+        if not check_permission(self.request.user, 'edit_staffing_position', StaffUnit(division=division)):
+            raise PermissionDenied("Подразделение назначения находится вне вашей области доступа")
+        if parent_id is not None:
+            parent = StaffUnit.objects.filter(pk=parent_id).first()
+            if parent is None:
+                raise ValidationError({'parent_id': 'Штатная единица не найдена'})
+            if not check_permission(self.request.user, 'edit_staffing_position', parent):
+                raise PermissionDenied("Родительская штатная единица находится вне вашей области доступа")
 
     def perform_create(self, serializer):
         """
@@ -274,6 +323,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     "У вас нет прав для создания штатной единицы в этом подразделении"
                 )
 
+        self._assert_staff_destination(division, serializer.validated_data.get('parent_id'))
         serializer.save()
 
     def perform_update(self, serializer):
@@ -291,6 +341,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     "У вас нет прав для редактирования этой штатной единицы"
                 )
 
+        self._assert_staff_destination(
+            serializer.validated_data.get('division', instance.division),
+            serializer.validated_data.get('parent_id'),
+        )
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -336,7 +390,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         self.perform_update(serializer)
 
         # Возвращаем детальную информацию
-        detailed_serializer = StaffUnitDetailedSerializer(instance)
+        detailed_serializer = StaffUnitDetailedSerializer(instance, context=self.get_serializer_context())
         return Response(detailed_serializer.data)
 
     @transaction.atomic
@@ -344,9 +398,15 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         Bulk update штатной единицы, дочерних единиц и статусов сотрудников
         """
-        bulk_serializer = StaffUnitBulkUpdateSerializer(data=request.data)
+        bulk_serializer = StaffUnitBulkUpdateSerializer(instance, data=request.data)
         bulk_serializer.is_valid(raise_exception=True)
         data = bulk_serializer.validated_data
+        _lock_bulk_references(data, instance)
+        bulk_serializer.revalidate_locked()
+        # Revalidation refreshes the root under its row lock: it may have moved
+        # after update() first read/authorized it. Authorize its current source.
+        if not request.user.is_superuser and not check_permission(request.user, 'edit_staffing_position', instance):
+            raise PermissionDenied("Штатная единица находится вне вашей области доступа")
 
         # 1. Обновляем основную штатную единицу
         if 'division' in data:
@@ -355,7 +415,6 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             from organization_management.apps.dictionaries.models import Position
             instance.position = Position.objects.get(id=data['position'])
         if 'employee' in data:
-            from organization_management.apps.employees.models import Employee
             instance.employee = Employee.objects.get(id=data['employee']) if data['employee'] else None
         if 'vacancy' in data:
             instance.vacancy = Vacancy.objects.get(id=data['vacancy']) if data['vacancy'] else None
@@ -364,6 +423,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         if 'parent_id' in data:
             instance.parent = StaffUnit.objects.get(id=data['parent_id']) if data['parent_id'] else None
 
+        self._assert_staff_destination(instance.division, data.get('parent_id'))
         instance.save()
 
         # 2. Обновляем дочерние штатные единицы
@@ -378,7 +438,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         # Проверка прав на дочернюю единицу
                         if not request.user.is_superuser:
                             if not check_permission(request.user, 'edit_staffing_position', child):
-                                continue  # Пропускаем, если нет прав
+                                raise PermissionDenied("Дочерняя штатная единица находится вне вашей области доступа")
 
                         if 'division' in child_data:
                             child.division = Division.objects.get(id=child_data['division'])
@@ -386,7 +446,6 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                             from organization_management.apps.dictionaries.models import Position
                             child.position = Position.objects.get(id=child_data['position'])
                         if 'employee' in child_data:
-                            from organization_management.apps.employees.models import Employee
                             child.employee = Employee.objects.get(id=child_data['employee']) if child_data['employee'] else None
                         if 'vacancy' in child_data:
                             child.vacancy = Vacancy.objects.get(id=child_data['vacancy']) if child_data['vacancy'] else None
@@ -395,9 +454,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         if 'parent_id' in child_data:
                             child.parent = StaffUnit.objects.get(id=child_data['parent_id']) if child_data['parent_id'] else None
 
+                        self._assert_staff_destination(child.division, child_data.get('parent_id'))
                         child.save()
                     except StaffUnit.DoesNotExist:
-                        pass
+                        raise ValidationError({'children': 'Дочерняя штатная единица не найдена. Обновите данные.'})
                 else:
                     # Создание новой дочерней единицы
                     division = Division.objects.get(id=child_data['division'])
@@ -406,8 +466,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     temp_obj = StaffUnit(division=division)
                     if not request.user.is_superuser:
                         if not check_permission(request.user, 'create_staffing_position', temp_obj):
-                            continue  # Пропускаем, если нет прав
+                            raise PermissionDenied("Подразделение назначения находится вне вашей области доступа")
 
+                    self._assert_staff_destination(division, child_data.get('parent_id', instance.id))
                     StaffUnit.objects.create(
                         division_id=child_data.get('division'),
                         position_id=child_data.get('position'),
@@ -443,7 +504,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     # Проверка прав на изменение статуса
                     if not request.user.is_superuser:
                         if not check_permission(request.user, 'change_employee_status', employee):
-                            continue  # Пропускаем, если нет прав
+                            raise PermissionDenied("Нет прав на изменение статуса выбранного сотрудника")
 
                     # Создаем новый статус
                     EmployeeStatus.objects.create(
@@ -456,10 +517,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         created_by=request.user
                     )
                 except Employee.DoesNotExist:
-                    pass
+                    raise ValidationError({'employee_statuses': 'Сотрудник не найден. Обновите данные.'})
 
         # Возвращаем обновленную штатную единицу с детальной информацией
-        serializer = StaffUnitDetailedSerializer(instance)
+        serializer = StaffUnitDetailedSerializer(instance, context=self.get_serializer_context())
         return Response(serializer.data)
 
     @extend_schema(
@@ -471,6 +532,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 )
             ),
             OpenApiParameter("division_id", int, description="Только это подразделение."),
+            OpenApiParameter("directorate_id", int, description="Управление и все его отделы в доступной области."),
             OpenApiParameter(
                 "status_not", str, description=(
                     "Исключить эти коды ДЕЙСТВУЮЩЕГО статуса (через запятую); строки без "
@@ -526,6 +588,14 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         user = request.user
 
         if request.method not in permissions.SAFE_METHODS:
+            if not isinstance(request.data, dict):
+                raise ValidationError('Ожидается объект с массивами строк.')
+            for section in ('employees', 'staff_units', 'employee_statuses'):
+                rows = request.data.get(section, [])
+                if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                    raise ValidationError({section: 'Ожидается массив объектов.'})
+            if 'atomic' in request.data and not isinstance(request.data['atomic'], bool):
+                raise ValidationError({'atomic': 'Ожидается логическое значение.'})
             # Любая запись этой ручки уже допущена `orgstructure.manage` в
             # get_permissions; область обязана происходить из того же права,
             # а не зависеть от набора полей или маркера конкретного клиента.
@@ -621,7 +691,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             # `statuses.selectors`, одним куском. Своя копия здесь уже
             # разъезжалась с копией в `staff_unit/serializers.py`.
             active_status_prefetch()
-        ).order_by('tree_id', 'lft')
+        ).order_by(
+            F('position__level').asc(nulls_last=True),
+            F('import_order').asc(nulls_last=True), 'index', 'id',
+        )
 
         # ── Отбор и страницы (Plane №227) ────────────────────────────────
         #
@@ -646,6 +719,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             start = (page - 1) * page_size
             staff_units = staff_units[start:start + page_size]
 
+        staff_units = list(staff_units)
+        division_ancestors = _staff_division_ancestors(staff_units)
+
         # Создаем плоский список с полной информацией (БЕЗ children)
         result = []
         can_manage_staffing = user.is_superuser or CanManageStaffingTable().has_permission(
@@ -667,6 +743,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 'vacancy': None,
                 'index': unit.index,
                 'parent_id': unit.parent_id,
+                **division_ancestors[unit.division_id],
             }
 
             # Employee с current_status
@@ -702,6 +779,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     'id': unit.employee.id,
                     'first_name': unit.employee.first_name,
                     'last_name': unit.employee.last_name,
+                    'middle_name': unit.employee.middle_name,
                     # Кадровая подпись строки. Всё перечисленное лежит в
                     # модели `Employee` с самого начала и просто не клалось в
                     # ответ: список печатал под именем ПУСТУЮ строку (поле
@@ -736,6 +814,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         'state': current_status.state,
                         'start_date': current_status.start_date,
                         'end_date': current_status.end_date,
+                        'location': current_status.location,
                     } if current_status else None
                 }
                 # Идентификаторы кадрового редактирования не входят в общий
@@ -835,7 +914,32 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         division_id = request.query_params.get('division_id')
         if division_id:
+            try:
+                division_id = int(division_id)
+                if division_id < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValidationError({'division_id': ['Подразделение задаётся положительным числом.']})
             queryset = queryset.filter(division_id=division_id)
+
+        directorate_id = request.query_params.get('directorate_id')
+        if directorate_id:
+            try:
+                directorate_id = int(directorate_id)
+                if directorate_id < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValidationError({'directorate_id': ['Управление задаётся положительным числом.']})
+            directorate = Division.objects.filter(
+                pk=directorate_id, division_type=Division.DivisionType.DIRECTORATE,
+            ).first()
+            if directorate is None:
+                queryset = queryset.none()
+            else:
+                # Intersect descendants with the existing scope; the filter grants no access.
+                queryset = queryset.filter(
+                    division_id__in=directorate.get_descendants(include_self=True).values('id'),
+                )
 
         # Уровень должности («чем меньше число, тем выше»). Нужен полоске
         # руководства: ей десяток строк, а тянула она весь состав
@@ -969,329 +1073,130 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         )
         return page, page_size
 
+    @staticmethod
+    def _directorate_error_message(error):
+        if isinstance(error, IntegrityError):
+            return 'Запись конфликтует с существующими данными. Проверьте уникальные номера и назначения.'
+        return str(error)
+
     def _generate_personnel_number(self):
-        """Генерация уникального табельного номера"""
+        """Allocate a numeric personnel number inside the batch transaction."""
+        from django.db import connection
+        from django.db.models import DecimalField, Max
+        from django.db.models.functions import Cast
+
+        # A transaction lock serializes allocation across different divisions.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74219, 1])
+        maximum = Employee.objects.filter(personnel_number__regex=r'^[0-9]+$').aggregate(
+            value=Max(Cast('personnel_number', DecimalField(max_digits=50, decimal_places=0)))
+        )['value']
+        return str(int(maximum or 0) + 1).zfill(6)
+
+    def _create_directorate_employee(self, values, user):
+        from django.contrib.auth import get_user_model
+        from organization_management.apps.employees.api.serializers import EmployeeSerializer
+
+        if 'id' in values:
+            raise ValidationError('При создании не нужно указывать ID сотрудника')
+        payload = {field: values[field] for field in (
+            'first_name', 'last_name', 'middle_name', 'iin', 'callsign', 'rank',
+        ) if field in values}
+        payload['personnel_number'] = self._generate_personnel_number()
+        serializer = EmployeeSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        employee = Employee(**serializer.validated_data)
+        if values.get('user'):
+            employee.user = get_user_model().objects.get(id=values['user'], employee__isnull=True)
+        employee.full_clean()
+        employee.save()
+        EmployeeStatus.objects.create(
+            employee=employee, status_type=EmployeeStatus.StatusType.IN_SERVICE,
+            start_date=timezone.localdate(), state=EmployeeStatus.StatusState.ACTIVE,
+            comment='Автоматически создан при создании сотрудника', created_by=user,
+        )
+        return employee
+
+    @transaction.atomic
+    def _create_directorate_slot(self, values, employee, division_ids):
         from django.db.models import Max
 
-        # Находим максимальный существующий номер
-        max_number = Employee.objects.filter(
-            personnel_number__regex=r'^\d+$'  # Только числовые номера
-        ).aggregate(
-            max_num=Max('personnel_number')
-        )['max_num']
-
-        if max_number:
-            try:
-                next_number = int(max_number) + 1
-            except (ValueError, TypeError):
-                next_number = 1
-        else:
-            next_number = 1
-
-        # Форматируем с ведущими нулями (6 цифр)
-        return str(next_number).zfill(6)
+        if 'id' in values:
+            raise ValidationError('При создании не нужно указывать ID штатной единицы')
+        division_id = values.get('division')
+        if division_id not in division_ids:
+            raise ValidationError('Подразделение не в вашей области доступа')
+        # Serializes slot index allocation and MPTT writes for this division.
+        division = Division.objects.select_for_update().get(pk=division_id)
+        position = StaffUnitSerializer().fields['position'].run_validation(values.get('position'))
+        if position is None:
+            raise ValidationError('Не указана должность (position)')
+        if employee is None:
+            candidates = Employee.objects.select_for_update()
+            if values.get('iin'):
+                candidates = candidates.filter(iin=values['iin'])
+                if values.get('personnel_number'):
+                    candidates = candidates.filter(personnel_number=values['personnel_number'])
+            else:
+                raise ValidationError('Не удалось найти сотрудника для привязки')
+            employee = candidates.get()
+            if StaffUnit.objects.filter(employee=employee).exists():
+                raise ValidationError('Сотрудник уже назначен на штатную единицу')
+        maximum = StaffUnit.objects.filter(division=division, position=position).aggregate(value=Max('index'))['value']
+        index = maximum + 1 if maximum is not None else values.get('index', 1)
+        parent = StaffUnit.objects.filter(
+            division=division, position__level__lt=position.level,
+        ).order_by('position__level', 'pk').first()
+        if parent is None and division.parent_id:
+            parent = StaffUnit.objects.filter(division_id=division.parent_id).order_by('position__level', 'pk').first()
+        unit = StaffUnit(division=division, position=position, employee=employee, index=index, parent=parent)
+        unit.full_clean()
+        unit.save()
+        return unit
 
     @transaction.atomic
     def _directorate_create(self, request, user):
-        """Создание новых штатных единиц и сотрудников"""
-        from django.utils import timezone
-        from django.core.exceptions import ValidationError
-
-        # Определяем СОБСТВЕННОЕ подразделение пользователя
-        all_divisions = self._own_scope_divisions(user, request)
-
-        if all_divisions is None:
-            return Response(
-                {'error': 'Не удалось определить подразделение пользователя'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Работа с управлением пользователя И всеми дочерними подразделениями;
-        # у суперпользователя — со всем деревом (Plane №304).
-        division_ids = list(all_divisions.values_list('id', flat=True))
-
+        """Each original row owns one independent employee/slot transaction."""
+        divisions = self._own_scope_divisions(user, request)
+        if divisions is None:
+            return Response({'error': 'Не удалось определить подразделение пользователя'}, status=status.HTTP_400_BAD_REQUEST)
+        division_ids = set(divisions.values_list('id', flat=True))
         data = request.data
-        created_items = {
-            'employees': [],
-            'staff_units': [],
-        }
+        employees, slots = data.get('employees', []), data.get('staff_units', [])
+        created = {'employees': [], 'staff_units': []}
         errors = []
-
-        # 1. СПЕРВА создаем всех сотрудников с savepoint для возможного отката
-        if 'employees' in data:
-            for employee_data in data['employees']:
-                # Для создания - не должно быть ID
-                if 'id' in employee_data:
-                    errors.append({'employee': 'При создании не нужно указывать ID сотрудника'})
-                    continue
-
-                # Создаем savepoint для возможности отката если штатка не создастся
-                sid = transaction.savepoint()
-
-                try:
-                    # Генерируем уникальный табельный номер
-                    personnel_number = self._generate_personnel_number()
-
-                    # Создаем сотрудника
-                    employee = Employee(
-                        personnel_number=personnel_number,
-                        first_name=employee_data.get('first_name', ''),
-                        last_name=employee_data.get('last_name', ''),
-                        middle_name=employee_data.get('middle_name', ''),
-                        iin=employee_data.get('iin', ''),
-                        callsign=employee_data.get('callsign', ''),
-                    )
-
-                    if employee_data.get('user'):
-                        from django.contrib.auth import get_user_model
-                        employee.user = get_user_model().objects.get(
-                            id=employee_data['user'], employee__isnull=True
-                        )
-
-                    # Валидация перед сохранением (проверит ИИН)
-                    employee.full_clean()
-                    employee.save()
-
-                    # Обработка rank если указан
-                    if 'rank' in employee_data and employee_data['rank']:
-                        from organization_management.apps.dictionaries.models import Rank
-                        try:
-                            rank = Rank.objects.get(id=employee_data['rank'])
-                            employee.rank = rank
-                            employee.save()
-                        except Rank.DoesNotExist:
-                            errors.append({'employee': f'Созданный ID {employee.id}: Звание с ID {employee_data["rank"]} не найдено'})
-
-                    # Автоматически создаем статус "в строю"
-                    EmployeeStatus.objects.create(
-                        employee=employee,
-                        status_type=EmployeeStatus.StatusType.IN_SERVICE,
-                        start_date=timezone.localdate(),
-                        state=EmployeeStatus.StatusState.ACTIVE,
-                        comment='Автоматически создан при создании сотрудника',
-                        created_by=user
-                    )
-
-                    # Сразу после создания сотрудника ищем его по ИИН и personnel_number
-                    # чтобы получить ID для привязки к штатной единице
-                    found_employee = Employee.objects.get(
-                        iin=employee.iin,
-                        personnel_number=employee.personnel_number
-                    )
-                    employee_id_for_staff_unit = found_employee.id
-
-                    created_items['employees'].append({
-                        'id': employee.id,
-                        'personnel_number': employee.personnel_number,
-                        'first_name': employee.first_name,
-                        'last_name': employee.last_name,
-                        'middle_name': employee.middle_name,
-                        'iin': employee.iin,
-                        '_employee_id_for_staff_unit': employee_id_for_staff_unit,
-                        '_savepoint_id': sid,  # Сохраняем savepoint для возможного отката
+        for index in range(max(len(employees), len(slots))):
+            section = 'employees' if index < len(employees) else 'staff_units'
+            try:
+                with transaction.atomic():
+                    employee = self._create_directorate_employee(employees[index], user) if index < len(employees) else None
+                    unit = None
+                    if index < len(slots):
+                        section = 'staff_units'
+                        unit = self._create_directorate_slot(slots[index], employee, division_ids)
+                # Append only after this pair's savepoint has committed.
+                if index < len(employees):
+                    created['employees'].append({
+                        'id': employee.pk, 'personnel_number': employee.personnel_number,
+                        'first_name': employee.first_name, 'last_name': employee.last_name,
+                        'middle_name': employee.middle_name, 'iin': employee.iin,
+                        'index': index,
                     })
-
-                    # НЕ коммитим savepoint здесь - оставляем его открытым
-                    # Он будет закоммичен автоматически при успешном создании штатной единицы
-                    # Или откачен, если штатная единица не создастся
-
-                except ValidationError as ve:
-                    # Ошибка валидации - откатываем создание сотрудника
-                    transaction.savepoint_rollback(sid)
-                    errors.append({'employee': f'Ошибка валидации: {ve}'})
-                except Exception as e:
-                    # Любая ошибка - откатываем создание сотрудника
-                    transaction.savepoint_rollback(sid)
-                    errors.append({'employee': f'Ошибка создания сотрудника: {str(e)}'})
-
-        # Вспомогательная функция для отката savepoint сотрудника
-        def rollback_employee_savepoint(idx):
-            """Откатывает savepoint сотрудника по индексу"""
-            if idx < len(created_items['employees']):
-                emp_data = created_items['employees'][idx]
-                savepoint_id = emp_data.get('_savepoint_id')
-                if savepoint_id:
-                    try:
-                        transaction.savepoint_rollback(savepoint_id)
-                        # Удаляем из списка созданных
-                        employee_id = emp_data.get('_employee_id_for_staff_unit')
-                        created_items['employees'] = [
-                            e for e in created_items['employees']
-                            if e.get('_employee_id_for_staff_unit') != employee_id
-                        ]
-                    except Exception:
-                        pass  # Игнорируем ошибки отката
-
-        # 2. ПОТОМ создаем штатные единицы и привязываем сотрудников по ИИН
-        if 'staff_units' in data:
-            for idx, staff_unit_data in enumerate(data['staff_units']):
-                # Для создания - не должно быть ID
-                if 'id' in staff_unit_data:
-                    rollback_employee_savepoint(idx)
-                    errors.append({'staff_unit': 'При создании не нужно указывать ID штатной единицы'})
-                    continue
-
-                try:
-                    # Проверяем что подразделение в области доступа
-                    division_id = staff_unit_data.get('division')
-                    if not division_id:
-                        rollback_employee_savepoint(idx)
-                        errors.append({'staff_unit': 'Не указано подразделение (division)'})
-                        continue
-
-                    if division_id not in division_ids:
-                        rollback_employee_savepoint(idx)
-                        errors.append({'staff_unit': f'Подразделение {division_id} не в вашей области доступа'})
-                        continue
-
-                    position_id = staff_unit_data.get('position')
-                    if not position_id:
-                        rollback_employee_savepoint(idx)
-                        errors.append({'staff_unit': 'Не указана должность (position)'})
-                        continue
-
-                    # Генерируем уникальный index для этой комбинации division+position
-                    from django.db.models import Max
-                    max_index = StaffUnit.objects.filter(
-                        division_id=division_id,
-                        position_id=position_id
-                    ).aggregate(max_idx=Max('index'))['max_idx']
-
-                    if max_index is not None:
-                        next_index = max_index + 1
-                    else:
-                        next_index = staff_unit_data.get('index', 1)
-
-                    # Получаем employee_id из созданных сотрудников по индексу
-                    employee_id = None
-                    if idx < len(created_items['employees']):
-                        # Берём ID сотрудника по тому же индексу
-                        employee_id = created_items['employees'][idx].get('_employee_id_for_staff_unit')
-
-                    # Если не нашли по индексу - пробуем найти по ИИН и personnel_number
-                    if not employee_id:
-                        iin = staff_unit_data.get('iin')
-                        personnel_number = staff_unit_data.get('personnel_number')
-
-                        if iin and personnel_number:
-                            # Поиск по обоим полям для точности
-                            try:
-                                found_employee = Employee.objects.get(
-                                    iin=iin,
-                                    personnel_number=personnel_number
-                                )
-                                employee_id = found_employee.id
-                            except Employee.DoesNotExist:
-                                errors.append({'staff_unit': f'Индекс {idx}: Сотрудник с ИИН {iin} и табельным номером {personnel_number} не найден'})
-                            except Employee.MultipleObjectsReturned:
-                                errors.append({'staff_unit': f'Индекс {idx}: Найдено несколько сотрудников с ИИН {iin} и табельным номером {personnel_number}'})
-                        elif iin:
-                            # Поиск только по ИИН
-                            try:
-                                found_employee = Employee.objects.get(iin=iin)
-                                employee_id = found_employee.id
-                            except Employee.DoesNotExist:
-                                errors.append({'staff_unit': f'Индекс {idx}: Сотрудник с ИИН {iin} не найден'})
-                            except Employee.MultipleObjectsReturned:
-                                errors.append({'staff_unit': f'Индекс {idx}: Найдено несколько сотрудников с ИИН {iin}'})
-
-                    # Если сотрудник не найден - пропускаем создание штатной единицы
-                    if not employee_id:
-                        rollback_employee_savepoint(idx)
-                        errors.append({'staff_unit': f'Индекс {idx}: Не удалось найти сотрудника для привязки. Штатная единица не создана.'})
-                        continue
-
-                    # Автоматическое определение родителя
-                    parent_unit = None
-
-                    try:
-                        # 1. Получаем объект должности для проверки уровня
-                        from organization_management.apps.dictionaries.models import Position
-                        current_position = Position.objects.get(id=position_id)
-
-                        # 2. Ищем начальника ВНУТРИ текущего подразделения
-                        # Начальник - это тот, у кого уровень должности МЕНЬШЕ (выше ранг)
-                        internal_boss = StaffUnit.objects.filter(
-                            division_id=division_id,
-                            position__level__lt=current_position.level
-                        ).order_by('position__level').first()
-
-                        if internal_boss:
-                            parent_unit = internal_boss
-                        else:
-                            # 3. Если внутри начальника нет, ищем в РОДИТЕЛЬСКОМ подразделении
-                            current_division = Division.objects.get(id=division_id)
-                            if current_division.parent:
-                                # В родительском подразделении ищем сотрудника с самым высоким рангом (min level)
-                                parent_division_boss = StaffUnit.objects.filter(
-                                    division=current_division.parent
-                                ).order_by('position__level').first()
-
-                                if parent_division_boss:
-                                    parent_unit = parent_division_boss
-
-                    except Exception as e:
-                        # Логируем ошибку определения родителя, но не прерываем создание
-                        print(f"Ошибка определения родителя: {e}")
-                        pass
-
-                    # Создаем штатную единицу
-                    staff_unit = StaffUnit.objects.create(
-                        division_id=division_id,
-                        position_id=position_id,
-                        index=next_index,
-                        employee_id=employee_id,  # Привязываем сотрудника по найденному ID
-                        parent_id=parent_unit.id if parent_unit else None
-                    )
-
-                    created_items['staff_units'].append({
-                        'id': staff_unit.id,
-                        'division': staff_unit.division_id,
-                        'position': staff_unit.position_id,
-                        'employee': staff_unit.employee_id,
-                        'index': staff_unit.index,
+                if unit is not None:
+                    created['staff_units'].append({
+                        'id': unit.pk, 'division': unit.division_id, 'position': unit.position_id,
+                        'employee': unit.employee_id, 'index': unit.index, 'row_index': index,
                     })
-
-                    # Штатная единица успешно создана - НЕ коммитим savepoint
-                    # Он закоммитится автоматически в конце основной транзакции
-
-                except Exception as e:
-                    # Если штатная единица не создалась, откатываем создание связанного сотрудника через savepoint
-                    if employee_id:
-                        # Ищем сотрудника в списке созданных по employee_id
-                        employee_found = False
-                        for emp_data in created_items['employees']:
-                            if emp_data.get('_employee_id_for_staff_unit') == employee_id:
-                                employee_found = True
-                                # Получаем savepoint этого сотрудника и откатываем его
-                                savepoint_id = emp_data.get('_savepoint_id')
-                                if savepoint_id:
-                                    try:
-                                        transaction.savepoint_rollback(savepoint_id)
-                                        # Удаляем из списка созданных сотрудников
-                                        created_items['employees'] = [
-                                            emp for emp in created_items['employees']
-                                            if emp.get('_employee_id_for_staff_unit') != employee_id
-                                        ]
-                                        errors.append({'staff_unit': f'Индекс {idx}: Штатная единица не создана, сотрудник откачен (ID {employee_id})'})
-                                    except Exception as rollback_error:
-                                        errors.append({'staff_unit': f'Индекс {idx}: Ошибка отката сотрудника (ID {employee_id}): {str(rollback_error)}'})
-                                else:
-                                    errors.append({'staff_unit': f'Индекс {idx}: Savepoint не найден для сотрудника (ID {employee_id})'})
-                                break
-
-                        if not employee_found:
-                            errors.append({'staff_unit': f'Индекс {idx}: Сотрудник с ID {employee_id} не найден в списке созданных'})
-
-                    errors.append({'staff_unit': f'Индекс {idx}: Ошибка создания штатной единицы: {str(e)}'})
-
-        if errors and data.get('atomic') is True:
+            except Exception as error:
+                key = 'employee' if section == 'employees' else 'staff_unit'
+                errors.append({key: self._directorate_error_message(error), 'section': section, 'index': index})
+        rolled_back = bool(errors and data.get('atomic') is True)
+        if rolled_back:
             transaction.set_rollback(True)
-        return Response({
-            'success': True,
-            'created': created_items,
-            'errors': errors if errors else None,
-        }, status=status.HTTP_201_CREATED)
+            created = {'employees': [], 'staff_units': []}
+        success = not rolled_back and (not errors or any(created.values()))
+        return Response({'success': success, 'created': created, 'errors': errors or None,
+                         'rolled_back': rolled_back}, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
     def _directorate_update(self, request, user):
@@ -1322,167 +1227,163 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         # 1. Обновление штатных единиц
         if 'staff_units' in data:
-            for staff_unit_data in data['staff_units']:
+            for row_index, staff_unit_data in enumerate(data['staff_units']):
+                error_start = len(errors)
                 try:
-                    staff_unit_id = staff_unit_data.get('id')
-                    if not staff_unit_id:
-                        errors.append({'staff_unit': 'ID штатной единицы обязателен'})
-                        continue
+                    with transaction.atomic():
+                        staff_unit_id = staff_unit_data.get('id')
+                        if not staff_unit_id:
+                            errors.append({'staff_unit': 'ID штатной единицы обязателен'})
+                            continue
 
-                    # Проверяем что штатная единица принадлежит области видимости
-                    staff_unit = StaffUnit.objects.get(id=staff_unit_id, division_id__in=division_ids)
+                        # Проверяем что штатная единица принадлежит области видимости
+                        staff_unit = StaffUnit.objects.get(id=staff_unit_id, division_id__in=division_ids)
 
-                    # Обновляем поля штатной единицы
-                    if 'division' in staff_unit_data and staff_unit_data['division'] in division_ids:
-                        staff_unit.division = Division.objects.get(id=staff_unit_data['division'])
-                    if 'position' in staff_unit_data:
-                        from organization_management.apps.dictionaries.models import Position
-                        staff_unit.position = Position.objects.get(id=staff_unit_data['position'])
-                    if 'index' in staff_unit_data:
-                        staff_unit.index = staff_unit_data['index']
-
-                    staff_unit.save()
-                    updated_items['staff_units'] += 1
+                        if 'division' in staff_unit_data and staff_unit_data['division'] not in division_ids:
+                            raise ValidationError({'division': 'Подразделение не в вашей области доступа.'})
+                        values = {field: staff_unit_data[field] for field in (
+                            'division', 'position', 'index',
+                        ) if field in staff_unit_data}
+                        serializer = StaffUnitSerializer(staff_unit, data=values, partial=True)
+                        serializer.is_valid(raise_exception=True)
+                        serializer.save()
+                        updated_items['staff_units'] += 1
 
                 except StaffUnit.DoesNotExist:
                     errors.append({'staff_unit': f'Штатная единица {staff_unit_id} не найдена или нет доступа'})
                 except Exception as e:
-                    errors.append({'staff_unit': f'ID {staff_unit_id}: {str(e)}'})
+                    errors.append({'staff_unit': f'ID {staff_unit_id}: {self._directorate_error_message(e)}'})
+                finally:
+                    for error in errors[error_start:]:
+                        error.update({'section': 'staff_units', 'index': row_index})
 
         # 2. Обновление сотрудников
         if 'employees' in data:
-            for employee_data in data['employees']:
+            for row_index, employee_data in enumerate(data['employees']):
+                error_start = len(errors)
                 try:
-                    employee_id = employee_data.get('id')
-                    if not employee_id:
-                        errors.append({'employee': 'ID сотрудника обязателен'})
-                        continue
+                    with transaction.atomic():
+                        employee_id = employee_data.get('id')
+                        if not employee_id:
+                            errors.append({'employee': 'ID сотрудника обязателен'})
+                            continue
 
-                    # Проверяем что сотрудник принадлежит области видимости
-                    employee = Employee.objects.select_related('staff_unit__division').get(
-                        id=employee_id,
-                        staff_unit__division_id__in=division_ids
-                    )
+                        # Проверяем что сотрудник принадлежит области видимости
+                        employee = Employee.objects.select_related('staff_unit__division').get(
+                            id=employee_id,
+                            staff_unit__division_id__in=division_ids
+                        )
 
-                    # Обновляем только разрешенные поля
-                    allowed_fields = [
-                        'first_name', 'last_name', 'middle_name', 'iin',
-                        'callsign', 'is_active',
-                    ]
-                    for field in allowed_fields:
-                        if field in employee_data:
-                            setattr(employee, field, employee_data[field])
+                        values = {field: employee_data[field] for field in (
+                            'first_name', 'last_name', 'middle_name', 'iin',
+                            'callsign', 'is_active', 'rank',
+                        ) if field in employee_data}
+                        serializer = EmployeeSerializer(employee, data=values, partial=True)
+                        serializer.is_valid(raise_exception=True)
+                        for field, value in serializer.validated_data.items():
+                            setattr(employee, field, value)
 
-                    # Обработка rank отдельно (это ForeignKey)
-                    if 'rank' in employee_data:
-                        rank_id = employee_data['rank']
-                        if rank_id:
-                            from organization_management.apps.dictionaries.models import Rank
-                            try:
-                                rank = Rank.objects.get(id=rank_id)
-                                employee.rank = rank
-                            except Rank.DoesNotExist:
-                                errors.append({'employee': f'ID {employee_id}: Звание с ID {rank_id} не найдено'})
-                                continue
-                        else:
-                            employee.rank = None
+                        if 'user' in employee_data:
+                            user_id = employee_data['user']
+                            if user_id:
+                                if employee.user_id != int(user_id):
+                                    from django.contrib.auth import get_user_model
+                                    employee.user = get_user_model().objects.get(
+                                        id=user_id, employee__isnull=True
+                                    )
+                            else:
+                                employee.user = None
 
-                    if 'user' in employee_data:
-                        user_id = employee_data['user']
-                        if user_id:
-                            if employee.user_id != int(user_id):
-                                from django.contrib.auth import get_user_model
-                                employee.user = get_user_model().objects.get(
-                                    id=user_id, employee__isnull=True
-                                )
-                        else:
-                            employee.user = None
-
-                    employee.full_clean()
-                    employee.save()
-                    updated_items['employees'] += 1
+                        employee.full_clean()
+                        employee.save()
+                        updated_items['employees'] += 1
 
                 except Employee.DoesNotExist:
                     errors.append({'employee': f'Сотрудник {employee_id} не найден или нет доступа'})
                 except Exception as e:
-                    errors.append({'employee': f'ID {employee_id}: {str(e)}'})
+                    errors.append({'employee': f'ID {employee_id}: {self._directorate_error_message(e)}'})
+                finally:
+                    for error in errors[error_start:]:
+                        error.update({'section': 'employees', 'index': row_index})
 
         # 3. Обновление/создание статусов сотрудников
         if 'employee_statuses' in data:
-            for status_data in data['employee_statuses']:
+            for row_index, status_data in enumerate(data['employee_statuses']):
+                error_start = len(errors)
                 # «Участие в ОМ» этой дверью не ставится — см.
                 # `_refuse_participation_status` (Plane №757). Проверка стоит и
                 # здесь: путей записи статуса у этой ручки ДВА, и закрытый
                 # один оставил бы обход открытым.
                 _refuse_participation_status(status_data.get('status_type'))
                 try:
-                    employee_id = status_data.get('employee')
-                    if not employee_id:
-                        errors.append({'status': 'ID сотрудника обязателен'})
-                        continue
-
-                    # Проверяем что сотрудник принадлежит области видимости
-                    employee = Employee.objects.select_related('staff_unit__division').get(
-                        id=employee_id,
-                        staff_unit__division_id__in=division_ids
-                    )
-
-                    status_id = status_data.get('id')
-
-                    if status_id:
-                        # Обновление существующего статуса
-                        emp_status = EmployeeStatus.objects.get(
-                            id=status_id,
-                            employee=employee
-                        )
-                        serializer = EmployeeStatusSerializer(
-                            emp_status,
-                            data=status_data,
-                            partial=True,
-                            context={'request': request}
-                        )
-                        if serializer.is_valid():
-                            serializer.save(created_by=user)
-                            updated_items['statuses'] += 1
-                        else:
-                            errors.append({'status': f'Employee {employee_id}: {serializer.errors}'})
-                    else:
-                        # Создание нового статуса — ЧЕРЕЗ СЕРВИС, а не через
-                        # сериализатор. Сериализатор кладёт строку РЯДОМ с
-                        # действующим статусом, а модель пересечения запрещает:
-                        # массовое обновление падало на каждом сотруднике, у
-                        # которого статус уже был (то есть почти на каждом), и
-                        # молча не делало ничего. Сервис сначала закрывает
-                        # предыдущий статус — ровно как одиночная смена.
-                        #
-                        # Проверять данные сериализатором здесь тоже нельзя: он
-                        # прогонит ту же проверку пересечений ДО закрытия
-                        # предыдущего статуса и забракует корректный запрос.
-                        # Валидируют модель и сервис, как на одиночном пути.
-                        from organization_management.apps.statuses.application.services import (
-                            StatusApplicationService,
-                        )
-                        # Даты приходят строками из JSON, а сервис и модель
-                        # сравнивают их с датами.
-                        start_date = _as_date(status_data.get('start_date'))
-                        if start_date is None:
-                            errors.append(
-                                {'status': f'Employee {employee_id}: дата начала обязательна '
-                                           f'и должна быть в формате ГГГГ-ММ-ДД'}
-                            )
+                    with transaction.atomic():
+                        employee_id = status_data.get('employee')
+                        if not employee_id:
+                            errors.append({'status': 'ID сотрудника обязателен'})
                             continue
 
-                        StatusApplicationService().create_status(
-                            employee_id=employee.id,
-                            status_type=status_data.get('status_type'),
-                            start_date=start_date,
-                            end_date=_as_date(status_data.get('end_date')),
-                            comment=status_data.get('comment') or '',
-                            location=status_data.get('location') or '',
-                            related_division_id=status_data.get('related_division'),
-                            user=user,
+                        # Проверяем что сотрудник принадлежит области видимости
+                        employee = Employee.objects.select_related('staff_unit__division').get(
+                            id=employee_id,
+                            staff_unit__division_id__in=division_ids
                         )
-                        updated_items['statuses'] += 1
+
+                        status_id = status_data.get('id')
+
+                        if status_id:
+                            # Обновление существующего статуса
+                            emp_status = EmployeeStatus.objects.get(
+                                id=status_id,
+                                employee=employee
+                            )
+                            serializer = EmployeeStatusSerializer(
+                                emp_status,
+                                data=status_data,
+                                partial=True,
+                                context={'request': request}
+                            )
+                            if serializer.is_valid():
+                                serializer.save(created_by=user)
+                                updated_items['statuses'] += 1
+                            else:
+                                errors.append({'status': f'Employee {employee_id}: {serializer.errors}'})
+                        else:
+                            # Создание нового статуса — ЧЕРЕЗ СЕРВИС, а не через
+                            # сериализатор. Сериализатор кладёт строку РЯДОМ с
+                            # действующим статусом, а модель пересечения запрещает:
+                            # массовое обновление падало на каждом сотруднике, у
+                            # которого статус уже был (то есть почти на каждом), и
+                            # молча не делало ничего. Сервис сначала закрывает
+                            # предыдущий статус — ровно как одиночная смена.
+                            #
+                            # Проверять данные сериализатором здесь тоже нельзя: он
+                            # прогонит ту же проверку пересечений ДО закрытия
+                            # предыдущего статуса и забракует корректный запрос.
+                            # Валидируют модель и сервис, как на одиночном пути.
+                            from organization_management.apps.statuses.application.services import (
+                                StatusApplicationService,
+                            )
+                            # Даты приходят строками из JSON, а сервис и модель
+                            # сравнивают их с датами.
+                            start_date = _as_date(status_data.get('start_date'))
+                            if start_date is None:
+                                errors.append(
+                                    {'status': f'Employee {employee_id}: дата начала обязательна '
+                                               f'и должна быть в формате ГГГГ-ММ-ДД'}
+                                )
+                                continue
+
+                            StatusApplicationService().create_status(
+                                employee_id=employee.id,
+                                status_type=status_data.get('status_type'),
+                                start_date=start_date,
+                                end_date=_as_date(status_data.get('end_date')),
+                                comment=status_data.get('comment') or '',
+                                location=status_data.get('location') or '',
+                                related_division_id=status_data.get('related_division'),
+                                user=user,
+                            )
+                            updated_items['statuses'] += 1
 
                 except Employee.DoesNotExist:
                     errors.append({'status': f'Сотрудник {employee_id} не найден или нет доступа'})
@@ -1490,6 +1391,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     errors.append({'status': f'Статус {status_id} не найден'})
                 except Exception as e:
                     errors.append({'status': f'Employee {employee_id}: {str(e)}'})
+                finally:
+                    for error in errors[error_start:]:
+                        error.update({'section': 'employee_statuses', 'index': row_index})
 
         # Формируем ответ
         #
@@ -1509,10 +1413,14 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         if errors:
             response_data['errors'] = errors
-            response_data['success'] = len(errors) < sum(updated_items.values())
+            response_data['success'] = sum(updated_items.values()) > 0
 
-        if errors and data.get('atomic') is True:
+        rolled_back = bool(errors and data.get('atomic') is True)
+        if rolled_back:
             transaction.set_rollback(True)
+            response_data['updated'] = {'staff_units': 0, 'employees': 0, 'statuses': 0}
+            response_data['success'] = False
+        response_data['rolled_back'] = rolled_back
         return Response(response_data, status=status.HTTP_200_OK)
 
     # 🔴 ЗДЕСЬ ЛЕЖАЛ МЁРТВЫЙ ДУБЛЬ `_get_user_division` (Plane №352, Ш-6).

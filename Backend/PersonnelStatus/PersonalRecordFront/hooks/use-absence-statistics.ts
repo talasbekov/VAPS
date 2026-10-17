@@ -20,7 +20,7 @@ export function absenceStatsFailure(error: unknown): AbsenceStatsFailure | null 
   return "other"
 }
 
-export function useAbsenceStatistics() {
+export function useAbsenceStatistics(enabled = true) {
   return useQuery<{
     period: {
       start_date: string
@@ -45,6 +45,7 @@ export function useAbsenceStatistics() {
     }
   }>({
     queryKey: ["absence-statistics"],
+    enabled,
     queryFn: async () => {
       return await apiClient.getAbsenceStatistics()
     },

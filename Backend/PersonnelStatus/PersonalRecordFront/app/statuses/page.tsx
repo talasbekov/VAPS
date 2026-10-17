@@ -5,11 +5,10 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
 import { MassStatusUpdate } from "@/components/mass-status-update"
+import { retainFailedMassSelection } from "@/features/employee-status-update/model/mass-status-result"
 import { StatusCalendarBoard } from "@/widgets/status-calendar"
 import { Card, CardContent } from "@/components/ui/card"
-import { StatCard } from "@/components/stat-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
@@ -19,10 +18,16 @@ import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { modulePermissionsOf } from "@/entities/portal-access";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { ForcesRequestBanner } from "@/features/forces-request-banner/ui/ForcesRequestBanner";
+import { StatusDayClose } from "@/features/ops-daily/status-day-close";
+import { OpsPermissionBoundary } from "@/components/ops-permission-boundary";
 
 export default function StatusesPage() {
+  return <OpsPermissionBoundary><StatusesScreen /></OpsPermissionBoundary>
+}
+
+function StatusesScreen() {
   // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
   // редактирования». Управляющие элементы ей не показываются — обещание
   // действия, которое сервер отклонит, хуже их отсутствия. «Экспорт» остаётся:
@@ -33,12 +38,10 @@ export default function StatusesPage() {
   // Семь ролей заказчика живут в каталоге раздела, и портальный набор их не
   // знает вовсе — под ними экран был бы либо целиком правимым, либо целиком
   // закрытым, смотря какая портальная роль досталась учётке.
-  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading, error: permissionsError } =
     useOpsPermissions()
   const canEdit = hasOpsPermission("status.manage")
-  const allowed = modulePermissionsOf("/statuses").some((code) =>
-    hasOpsPermission(code)
-  )
+  const allowed = moduleOpenFor("/statuses", hasOpsPermission)
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const queryClient = useQueryClient()
 
@@ -52,18 +55,17 @@ export default function StatusesPage() {
     data,
     isLoading: loading,
     error: queryError,
-    refetch,
     isRefetching: refreshing,
     dataUpdatedAt,
-  } = useStaffUnitsPage({ page: 1, pageSize: 1, withSummary: true })
+  } = useStaffUnitsPage({ page: 1, pageSize: 1, withSummary: true }, !opsPermissionsLoading && !permissionsError && allowed)
 
   const stats = useMemo(() => {
     const summary = data?.summary
     return {
-      totalEmployees: summary?.employees ?? 0,
-      needUpdate: summary?.without_status ?? 0,
-      overdue: summary?.overdue ?? 0,
-      scheduled: summary?.scheduled ?? 0,
+      totalEmployees: summary?.employees,
+      needUpdate: summary?.without_status,
+      overdue: summary?.overdue,
+      scheduled: summary?.scheduled,
     }
   }, [data?.summary])
 
@@ -75,12 +77,32 @@ export default function StatusesPage() {
 
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
+  const [refreshingContext, setRefreshingContext] = useState(false)
   const handleRefresh = () => {
     // Обе семьи ключей: сводка шапки и страницы таблицы — разные запросы с
     // 28.08.2026, и «Обновить» обязано освежить оба (Plane №231).
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] })
     queryClient.invalidateQueries({ queryKey: ["staff-units-page"] })
-    refetch()
+    // Расход на деловую дату в карточке сдачи (Plane №1209): поставленный в
+    // таблице статус обязан отразиться в числах, которые начальник сдаёт.
+    queryClient.invalidateQueries({ queryKey: ["ops-daily", "expense-preview"] })
+  }
+
+  const handlePageRefresh = async () => {
+    if (refreshingContext) return
+    setRefreshingContext(true)
+    handleRefresh()
+    try {
+      // Only an explicit page refresh re-resolves tomorrow. Saving a status
+      // must not move an open day-submission draft to another date.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["daily-expense-board", "default-business-date"] }),
+        queryClient.invalidateQueries({ queryKey: ["ops-daily", "submission-divisions"] }),
+        queryClient.invalidateQueries({ queryKey: ["ops-daily", "day-submission"] }),
+      ])
+    } finally {
+      setRefreshingContext(false)
+    }
   }
 
   // Все три вкладки и счётчики читают ОДИН запрос directorate: закрыта ручка —
@@ -89,7 +111,10 @@ export default function StatusesPage() {
   // (Plane №329).
   const denial = directorateDenial(queryError)
   // Отказ — ПОСЛЕ всех хуков (правило хуков React).
-  if (!opsPermissionsLoading && !allowed) {
+  if (opsPermissionsLoading) {
+    return <DashboardLayout><p role="status" className="text-sm text-muted-foreground">Проверяем доступ к статусам…</p></DashboardLayout>
+  }
+  if (permissionsError || !allowed) {
     return <OpsAccessDenied what="статусов сотрудников" />
   }
 
@@ -106,16 +131,19 @@ export default function StatusesPage() {
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
-          eyebrow="Ежедневный расход"
           title="Управление статусами"
-          description="Контроль и обновление статусов сотрудников"
+          description={canEdit
+            ? hasOpsPermission("daily_report.mark_update")
+              ? "Подготовьте статусы сотрудников, проверьте расход на нужную дату и сдайте день."
+              : "Управляйте текущими и запланированными статусами сотрудников вашего подразделения."
+            : "Просмотр текущих и запланированных статусов сотрудников вашего подразделения."}
           actions={
             <div className="flex flex-wrap items-center gap-3">
-              <Badge variant="outline" className="text-sm">
-                Последнее обновление: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
-              </Badge>
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+              <span className="text-xs text-muted-foreground">
+                Обновлено: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
+              </span>
+              <Button variant="outline" size="sm" onClick={handlePageRefresh} disabled={refreshing || refreshingContext || loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing || refreshingContext ? "animate-spin" : ""}`} />
                 Обновить
               </Button>
             </div>
@@ -129,6 +157,7 @@ export default function StatusesPage() {
             пререндере (Plane №112). */}
         <Suspense fallback={null}>
           <ForcesRequestBanner
+            compact
             selectedEmployees={selectedEmployees}
             onSelected={() => {
               setSelectedEmployees([])
@@ -137,45 +166,35 @@ export default function StatusesPage() {
           />
         </Suspense>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard
-            label="Всего сотрудников"
-            value={stats.totalEmployees}
-            caption="Активных записей"
-          />
+        {/* Сдача дня ЗДЕСЬ, а не только на борде расхода (Plane №1197,
+            решение заказчика 12.09.2026): начальник управления ставит
+            статусы и на той же странице выбирает дату и сдаёт день. Блок
+            рисуется только тому, у кого есть право сдачи
+            (`daily_report.mark_update`) — внутри компонента. */}
+        <StatusDayClose employeeCount={stats.totalEmployees ?? 0} />
 
-          <StatCard
-            label="Требует обновления"
-            value={stats.needUpdate}
-            tone="warning"
-            caption="Статусы устарели"
-          />
-
-          <StatCard
-            label="Просрочено"
-            value={stats.overdue}
-            tone="danger"
-            caption="Критические задержки"
-          />
-
-          <StatCard
-            label="Запланировано"
-            value={stats.scheduled}
-            tone="info"
-            caption="Будущие изменения"
-          />
-        </div>
+        <dl aria-label="Сводка статусов" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          {[
+            ["Сотрудников", stats.totalEmployees],
+            ["Без статуса", stats.needUpdate],
+            ["Просрочено", stats.overdue],
+            ["Запланировано", stats.scheduled],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-baseline gap-2">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-semibold tabular-nums">{loading || error ? "—" : value ?? "—"}</dd>
+            </div>
+          ))}
+        </dl>
 
         {/* Main Content */}
         <Tabs defaultValue="table" className="space-y-6">
-          <div className="flex items-center justify-between">
-            {/* Ряд вкладок шире экрана телефона — скроллим сам ряд, а не страницу. */}
-            <TabsList className="max-w-full overflow-x-auto">
-              <TabsTrigger value="table">Таблица сотрудников</TabsTrigger>
-              <TabsTrigger value="calendar">Календарь статусов</TabsTrigger>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <TabsList className={`grid h-auto w-full ${canEdit ? "grid-cols-3" : "grid-cols-2"} sm:inline-flex sm:w-fit`}>
+              <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="table">Таблица сотрудников</TabsTrigger>
+              <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="calendar">Календарь статусов</TabsTrigger>
               {canEdit && (
-                <TabsTrigger value="mass-update">Массовое обновление</TabsTrigger>
+                <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="mass-update">Массовое обновление</TabsTrigger>
               )}
             </TabsList>
 
@@ -187,6 +206,11 @@ export default function StatusesPage() {
           </div>
 
           <TabsContent value="table" className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+              {canEdit
+                ? "Текущий статус меняется с сегодняшнего дня. Для будущего периода откройте «Запланированные статусы» в меню сотрудника."
+                : "Таблица показывает текущие статусы. Будущие периоды доступны в календаре статусов."}
+            </p>
             {error ? (
               <Card>
                 <CardContent className="p-6 text-center text-red-500">
@@ -218,6 +242,7 @@ export default function StatusesPage() {
               <MassStatusUpdate
                 selectedEmployees={selectedEmployees}
                 onSuccess={handleRefresh}
+                onRetainFailedSelection={(submitted, remaining) => setSelectedEmployees(current => retainFailedMassSelection(current, submitted, remaining))}
               />
             </TabsContent>
           )}

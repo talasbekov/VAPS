@@ -1,6 +1,7 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
 from django.urls import path
 from rest_framework.routers import DefaultRouter
+from organization_management.apps.ops.api.views_recon_materials import ReconMaterialsViewSet
 
 from organization_management.apps.ops.api.views_status_calendar import (
     OpsStatusCalendarViewSet,
@@ -11,6 +12,9 @@ from organization_management.apps.ops.api.views_bulletin_issues import (
 from organization_management.apps.ops.api.views_approval_route import (
     OpsApprovalRouteViewSet,
 )
+from organization_management.apps.ops.api.views_service_combat import ServiceCombatDutyViewSet
+from organization_management.apps.ops.api.views_duty_dispatch import DutyDispatchViewSet
+from organization_management.apps.ops.api.views_duty_log import DutyRegisterViewSet
 from organization_management.apps.ops.api.views import (
     AccessCatalogViewSet,
     OpsGvoSummariesViewSet,
@@ -63,6 +67,9 @@ from organization_management.apps.ops.api.views import (
 )
 
 router = DefaultRouter()
+router.register("duty-register", DutyRegisterViewSet, basename="ops-duty-register")
+router.register("duty-dispatch", DutyDispatchViewSet, basename="ops-duty-dispatch")
+router.register("service-combat-duty", ServiceCombatDutyViewSet, basename="ops-service-combat-duty")
 router.register("objects", SecurityObjectViewSet, basename="ops-objects")
 router.register(
     "security-events", SecurityEventViewSet, basename="ops-security-events"
@@ -262,6 +269,21 @@ router.register(
 # PUT /approval-route/ — замена маршрута целиком: роутер у коллекции знает
 # только GET/POST, поэтому явный путь стоит ПЕРЕД маршрутами роутера.
 urlpatterns = [
+    path(
+        "security-events/<str:event_id>/visit-objects/<str:visit_object_id>/recon-materials/",
+        ReconMaterialsViewSet.as_view({"get": "list", "post": "create"}),
+        name="ops-recon-materials",
+    ),
+    path(
+        "security-events/<str:event_id>/visit-objects/<str:visit_object_id>/recon-materials/<str:material_id>/",
+        ReconMaterialsViewSet.as_view({"delete": "destroy"}),
+        name="ops-recon-material-detail",
+    ),
+    path(
+        "security-events/<str:event_id>/visit-objects/<str:visit_object_id>/recon-materials/<str:material_id>/download/",
+        ReconMaterialsViewSet.as_view({"get": "download"}),
+        name="ops-recon-material-download",
+    ),
     path(
         "approval-route/",
         OpsApprovalRouteViewSet.as_view({"get": "list", "put": "replace"}),

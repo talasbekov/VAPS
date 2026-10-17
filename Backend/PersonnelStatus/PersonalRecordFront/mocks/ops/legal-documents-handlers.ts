@@ -30,6 +30,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 48,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-2",
@@ -42,6 +44,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 62,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-3",
@@ -54,6 +58,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 34,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-4",
@@ -66,6 +72,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 19,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-5",
@@ -78,6 +86,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 15,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-6",
@@ -90,6 +100,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 11,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-7",
@@ -102,6 +114,8 @@ const CATALOG: LegalDocument[] = [
     status: "IN_FORCE",
     pages: 9,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
   {
     id: "ld-8",
@@ -114,11 +128,13 @@ const CATALOG: LegalDocument[] = [
     status: "UNDER_REVIEW",
     pages: 7,
     fileUrl: null,
+    version: 1,
+    file: null,
   },
 ];
 
 export const legalDocumentsHandlers = [
   http.get(`*${LEGAL_DOCUMENTS_PATH}`, () =>
-    HttpResponse.json<ListLegalDocumentsResponse>({ results: CATALOG })
+    HttpResponse.json<ListLegalDocumentsResponse>({ results: CATALOG, canManage: false, maxFileSizeBytes: 10485760 })
   ),
 ];

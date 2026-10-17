@@ -330,7 +330,7 @@ def test_division_headcount_allows_an_own_division(world, viewer):
     assert response.json()["division_id"] == world["own"].pk
 
 
-def test_absence_statistics_refuse_an_account_scoped_elsewhere(world):
+def test_absence_statistics_follow_the_grant_even_when_the_account_is_assigned_elsewhere(world):
     user = User.objects.create_user(username="mis-scoped-reader", password="x")
     world["people"]["own"].user = user
     world["people"]["own"].save(update_fields=["user"])
@@ -341,9 +341,13 @@ def test_absence_statistics_refuse_an_account_scoped_elsewhere(world):
     api = APIClient()
     api.force_authenticate(user)
 
+    extra = Employee.objects.create(personnel_number="foreign-scope-extra", first_name="Ещё", last_name="Сотрудник")
+    StaffUnit.objects.create(division=world["foreign"], employee=extra, index=3)
     response = api.get(f"{URL}absence_statistics/")
 
-    assert response.status_code == 403, response.content
+    assert response.status_code == 200, response.content
+    assert response.json()["staff_count"] == 2
+    assert response.json()["division_id"] is None
 
 
 def test_absence_statistics_allow_the_accounts_own_scope(world):
@@ -360,7 +364,8 @@ def test_absence_statistics_allow_the_accounts_own_scope(world):
     response = api.get(f"{URL}absence_statistics/")
 
     assert response.status_code == 200, response.content
-    assert response.json()["division_id"] == world["own"].pk
+    assert response.json()["staff_count"] == 1
+    assert response.json()["division_id"] is None
 
 
 def test_own_status_detail_stays_readable(world, viewer):

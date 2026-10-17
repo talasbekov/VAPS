@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 import { Suspense } from "react";
 
 // Реестр «Итоговые оценки участников» (§19.15-19.16). Состояние живёт в URL —
@@ -326,22 +328,24 @@ function EvaluationRegistryScreen() {
                         {CLOSED_DETAILS_LABEL}
                       </TableCell>
                       <TableCell className="tabular-nums">
+                        {row.groupId ? <span className="text-xs text-muted-foreground">Учитывается отдельно</span> : <>
                         {aggregateLabel(row.aggregateRating)}
                         <span className="ml-1 text-[11px] text-muted-foreground">
                           {row.aggregateState === "READY"
                             ? ""
                             : DATA_STATE_LABEL[row.aggregateState]}
                         </span>
+                        </>}
                       </TableCell>
                       <TableCell>
                         {/* Ссылка несёт ТЕКУЩИЙ запрос: возврат из карточки
                             должен вернуть тот же отбор и страницу (§19.15). */}
-                        <Link
+                        {row.employeeId !== null && !row.groupId ? <Link
                           className="underline"
                           href={`/security-ops/ratings/employees/${row.employeeId}?back=${encodeURIComponent(searchParams.toString())}`}
                         >
                           Открыть агрегат
-                        </Link>
+                        </Link> : <span className="text-xs text-muted-foreground">Коллективная запись</span>}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -378,19 +382,7 @@ function EvaluationRegistryScreen() {
               </button>
             </div>
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не показывается</h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Состав итоговых оценок" items={data.unavailableViews} />
           </>
         )}
       </div>

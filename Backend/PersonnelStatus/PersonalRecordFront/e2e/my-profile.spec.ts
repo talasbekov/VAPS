@@ -6,9 +6,9 @@
  *
  * 1. карточка собрана вокруг ЗАПИСИ СЕРВЕРА (`/api/operations/my-employee/`),
  *    а коды звания, должности и подразделения расшифрованы справочниками;
- * 2. назначения и статусы отобраны по ИДЕНТИФИКАТОРУ этой записи: в реестре
- *    лежат назначения четырёх разных людей, и чужие в профиль попасть не
- *    должны;
+ * 2. назначения и статусы отобраны по ИДЕНТИФИКАТОРУ этой записи: проба
+ *    создаёт свои и контрольные чужие назначения, и чужие в профиль попасть
+ *    не должны;
  * 3. у другой учётки — другой профиль: связь не «первая попавшаяся запись»;
  * 4. учётка без кадровой записи получает ПРИЧИНУ словами сервера, а не пустые
  *    плитки: нули читались бы как «ничего не было».
@@ -16,11 +16,13 @@
  * 🔴 Service worker MSW блокируется на весь файл: без этого перехват запросов
  * не работает, а раздел живой и мок ему не нужен.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test as baseTest, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { uniqueBusinessDate } from './business-date'
 import { assertStep } from './fixture-step'
+import type { EvaluationRegistryResponse, ListOperationalRatingsResponse } from '../entities/operational-rating'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -44,6 +46,7 @@ interface MyEmployee {
 }
 
 interface Assignment {
+  id: string
   employeeId: string
   postId: string
   acknowledgedAt: string | null
@@ -63,28 +66,251 @@ interface StatusRow {
   state: string
 }
 
+interface ProfileRecords {
+  token?: string
+  eventIds: string[]
+  statusIds: number[]
+}
+
+// Ресурсы принадлежат одному тесту, а не всему реестру или общей учётке.
+const test = baseTest.extend<{ profileRecords: ProfileRecords }>({
+  profileRecords: [async ({}, use) => {
+    const records: ProfileRecords = { eventIds: [], statusIds: [] }
+    try {
+      await use(records)
+    } finally {
+      if (records.token !== undefined) {
+        const failures: string[] = []
+        for (const statusId of records.statusIds) {
+          try {
+            await write(records.token, 'POST', `/api/operations/statuses/${statusId}/cancel/`, {
+              reason: probeTitle('Уборка своей пробы профиля'),
+            })
+          } catch (error) {
+            failures.push(String(error))
+          }
+        }
+        for (const eventId of records.eventIds) {
+          try {
+            const base = `/api/ops/security-events/${eventId}/`
+            const current = await get<EventRow>(records.token, base)
+            if (current.stage === 'PLACEMENT') {
+              for (const assignment of current.placementAssignments) {
+                await write(records.token, 'DELETE', `${base}placement/${encodeURIComponent(assignment.id)}/`)
+              }
+            }
+            const removed = await fetch(`${API}${base}`, {
+              method: 'DELETE', headers: { Authorization: `Bearer ${records.token}` },
+            })
+            if (removed.status === 422) {
+              const refusal = await removed.json() as { error_code?: string }
+              expect(refusal.error_code, `неожиданный отказ уборки своего ОМ ${eventId}`).toBe('EVENT_DELETE_FORBIDDEN')
+              // Согласованная расстановка и CLOSED защищены настоящим API.
+              // Метка остаётся для global-teardown → purge_probe_events.
+              console.log(`своё ОМ ${eventId} защищено от удаления — уборка по метке (e2e) в teardown`)
+            } else {
+              await requireStatus(removed, 204, `DELETE ${base}`)
+            }
+          } catch (error) {
+            failures.push(String(error))
+          }
+        }
+        expect(failures, 'уборка собственных записей профиля').toEqual([])
+      }
+    }
+  }, { auto: true }],
+})
+
+async function requireStatus(response: Response, expected: number, step: string): Promise<void> {
+  if (response.status !== expected) {
+    throw new Error(`[фикстура] ${step}: ${response.status}, ожидался ${expected}\n${(await response.text()).slice(0, 600)}`)
+  }
+}
+
 async function tokenFor(username: string, password: string): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
-  return ((await res.json()) as { access: string }).access
+  await requireStatus(res, 200, `вход ${username}`)
+  const body = await res.json() as { access?: string }
+  expect(typeof body.access, `вход ${username} не вернул access`).toBe('string')
+  expect(body.access!.length, `вход ${username} вернул пустой access`).toBeGreaterThan(0)
+  return body.access!
 }
 
 async function get<T>(token: string, path: string): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
+  await requireStatus(res, 200, `GET ${path}`)
   return (await res.json()) as T
+}
+
+async function write<T = unknown>(token: string, method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  await assertStep(response, method, path)
+  if (!response.ok) await requireStatus(response, 200, `${method} ${path}`)
+  return response.status === 204 ? undefined as T : await response.json() as T
 }
 
 async function signIn(page: Page, username: string, password: string): Promise<void> {
   const api = page.context().request
-  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const csrfResponse = await api.get(`${APP}/api/auth/csrf/`)
+  expect(csrfResponse.status(), 'CSRF для входа').toBe(200)
+  const csrf = await csrfResponse.json() as { csrfToken: string }
+  expect(typeof csrf.csrfToken, 'CSRF token отсутствует').toBe('string')
+  const callback = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
+  expect(callback.status(), `вход портала ${username}`).toBe(200)
+  const result = await callback.json() as { url: string }
+  expect(result.url, `вход портала ${username} вернул ошибку`).not.toMatch(/[?&]error=/)
+  const sessionResponse = await api.get(`${APP}/api/auth/session/`)
+  expect(sessionResponse.status(), 'сессия после входа').toBe(200)
+  const session = await sessionResponse.json() as { user?: { name?: string } }
+  expect(session.user?.name, 'сессия принадлежит другой учётке').toBe(username)
+}
+
+async function eventRows(token: string): Promise<EventRow[]> {
+  const rows: EventRow[] = []
+  let page = 1
+  while (true) {
+    const body = await get<{ results: EventRow[]; next: string | null }>(
+      token, `/api/ops/security-events/?page_size=100&page=${page}`,
+    )
+    rows.push(...body.results)
+    if (body.next === null) break
+    // Реестр ОМ отдаёт номер следующей страницы, а не DRF URL.
+    const next = Number(body.next)
+    expect(Number.isInteger(next) && next > page, 'реестр вернул неверную следующую страницу').toBe(true)
+    page = next
+  }
+  return rows
+}
+
+interface AssignedEvent extends EventRow {
+  businessDate: string
+  approvalRoute: { id: string; status: string }[]
+  visitObjects: { id: string }[]
+  reconSectorPosts: { id: string; sector: string; post: string }[]
+}
+
+async function prepareAssignedEvent(
+  token: string,
+  records: ProfileRecords,
+  employeeId: number,
+  label: string,
+): Promise<AssignedEvent> {
+  records.token = token
+  const objects = await get<{ results: { id: string; publishedVersionCount: number }[] }>(
+    token, '/api/ops/security-events/bindable-objects/',
+  )
+  const object = objects.results.find(row => row.publishedVersionCount > 0)
+  expect(object, 'для своей пробы нет объекта с опубликованным паспортом').toBeDefined()
+  const created = await write<AssignedEvent>(token, 'POST', '/api/ops/security-events/', {
+    title: probeTitle(`Мой профиль: ${label} ${Date.now()}`),
+    objectId: object!.id,
+    businessDate: uniqueBusinessDate(),
+    kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
+  })
+  records.eventIds.push(created.id)
+  const base = `/api/ops/security-events/${created.id}/`
+  const imported = await write<AssignedEvent & { reconChecklist: Record<string, unknown>[] }>(
+    token, 'POST', `${base}recon/import-from-passport/`,
+  )
+  await write(token, 'PATCH', `${base}recon/`, {
+    checklist: imported.reconChecklist.map(item => ({ ...item, state: 'NORMAL', done: true, result: 'MATCHES' })),
+    sectorPosts: imported.reconSectorPosts,
+  })
+  const placed = await write<AssignedEvent>(token, 'POST', `${base}recon/complete/`)
+  expect(placed.stage, 'рекогносцировка не привела свою пробу к расстановке').toBe('PLACEMENT')
+  const target = imported.reconSectorPosts[0]
+  expect(target, 'паспорт своей пробы не содержит постов').toBeDefined()
+  await write(token, 'POST', `${base}placement/assign/`, { postId: target.id, employeeId: String(employeeId) })
+  const completed = await write<AssignedEvent>(token, 'POST', `${base}placement/complete/`, {
+    override: true, override_reason: 'Своя проба профиля: проверяется один назначенный пост',
+  })
+  // Глобальный маршрут сохраняется. Только пустому маршруту своего ОМ
+  // добавляем согласующего; затем подписываем ВСЕ строки в серверном порядке.
+  if (completed.approvalRoute.length === 0) {
+    await write(token, 'POST', `${base}approval/route/`, {
+      name: 'Согласующий своей пробы', unit: 'Управление ОМ', position: 'полковник',
+    })
+  }
+  const sent = await write<AssignedEvent>(token, 'POST', `${base}approval/send/`)
+  expect(sent.approvalRoute.length, 'своё ОМ отправлено без маршрута').toBeGreaterThan(0)
+  for (const approver of sent.approvalRoute) {
+    await write(token, 'POST', `${base}approval/route/${encodeURIComponent(approver.id)}/decide/`, {
+      decision: 'APPROVED', comment: '',
+    })
+  }
+  const ready = await get<AssignedEvent>(token, base)
+  expect(ready.approvalRoute).toHaveLength(sent.approvalRoute.length)
+  expect(ready.approvalRoute.filter(row => row.status !== 'APPROVED'), 'своё ОМ подписано не полностью').toEqual([])
+  expect(ready.stage, 'своё ОМ не дошло до ознакомления').toBe('ACKNOWLEDGEMENT')
+  expect(ready.placementAssignments.filter(row => Number(row.employeeId) === employeeId)).toHaveLength(1)
+  return ready
+}
+
+async function prepareClosedRatedEvent(
+  token: string,
+  records: ProfileRecords,
+  employeeId: number,
+  label: string,
+): Promise<AssignedEvent> {
+  const event = await prepareAssignedEvent(token, records, employeeId, label)
+  const base = `/api/ops/security-events/${event.id}/`
+  const assignment = event.placementAssignments.find(row => Number(row.employeeId) === employeeId)!
+  await write(token, 'POST', `${base}acknowledge/${encodeURIComponent(assignment.id)}/`)
+  const conduct = await write<AssignedEvent>(token, 'POST', `${base}acknowledgement/complete/`)
+  expect(conduct.stage, 'своё ОМ не дошло до проведения').toBe('CONDUCT')
+  expect(conduct.visitObjects, 'своё ОМ не содержит объекта посещения').toHaveLength(1)
+  const visit = conduct.visitObjects[0]!
+  await write(token, 'POST', `${base}visit-objects/${visit.id}/evaluations/`, {
+    assignmentId: assignment.id, score: 8, comment: probeTitle('Оценка своей истории'),
+  })
+  await write(token, 'POST', `${base}visit-objects/${visit.id}/close/`, { comment: probeTitle('Закрытие своей истории') })
+  const closed = await get<AssignedEvent>(token, base)
+  expect(closed.stage, 'своё ОМ не закрыто реальным переходом').toBe('CLOSED')
+  return closed
+}
+
+type ProfileStatus = StatusRow & { date_start: string; date_end: string; comment: string }
+
+async function prepareProfileStatus(token: string, records: ProfileRecords, employeeId: number): Promise<ProfileStatus> {
+  records.token = token
+  const { business_date: today } = await get<{ business_date: string }>(token, '/api/operations/strength-report/')
+  const month = monthOfToday()
+  expect(today.slice(0, 7), 'месяц сервера и показанный календарём месяц расходятся').toBe(month)
+  const existing = await get<{ results: ProfileStatus[]; next: string | null }>(
+    token, `/api/operations/statuses/?employee_id=${employeeId}&limit=500`,
+  )
+  expect(existing.next, 'для выбора свободного дня нужна полная история статусов').toBeFalsy()
+  const dayAfter = (iso: string, delta: number) => {
+    const day = new Date(`${iso}T00:00:00Z`)
+    day.setUTCDate(day.getUTCDate() + delta)
+    return day.toISOString().slice(0, 10)
+  }
+  // Будущий день легко отменить в teardown; текущий оставлен для конца
+  // месяца. Существующие статусы не отменяем и пересечения не обходим.
+  const candidates = [...Array.from({ length: 31 }, (_, index) => dayAfter(today, index + 2)), dayAfter(today, 1), today]
+  const start = candidates.find(day => day.startsWith(month) && !existing.results.some(row => row.date_start <= day && day < row.date_end))
+  expect(start, 'в текущем месяце нет свободного дня для собственного статуса').toBeDefined()
+  const created = await write<ProfileStatus>(token, 'POST', '/api/operations/statuses/', {
+    employee_id: employeeId, status_type_code: 'SICK_LEAVE', date_start: start, date_end: dayAfter(start!, 1),
+    comment: probeTitle(`Свой статус профиля ${Date.now()}`),
+    document_basis: probeTitle('Проверка календаря профиля'),
+  })
+  records.statusIds.push(created.id)
+  expect(created.employee_id).toBe(employeeId)
+  return created
 }
 
 /** Месяц, который календарь показывает при открытии, — текущий, в ISO `YYYY-MM`. */
@@ -130,7 +356,8 @@ test.use({ serviceWorkers: 'block' })
 test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('сотрудник БЕЗ права на реестр видит СВОИ назначения и отвечает с карточки (Plane №403, №405)', async ({ page }) => {
+  test('сотрудник БЕЗ права на реестр видит СВОИ назначения и отвечает с карточки (Plane №403, №405)', async ({ page, profileRecords }) => {
+    test.setTimeout(120_000)
     /**
      * `[ОЗН-09]`. До правки вкладка ходила за реестром ОМ, а он открыт только
      * держателю `event.view`: рядовому `acc_employee` профиль отвечал «реестр
@@ -157,234 +384,140 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
 
     // Своё назначение — руками admin, тем же путём, что и человек: ОМ →
     // импорт постов → рекогносцировка закрыта → расстановка.
-    const post = async (path: string, body?: unknown) => {
-      const res = await fetch(`${API}${path}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-      await assertStep(res, 'POST', path)
-      return res
-    }
-    const objects = await get<{ results: { id: string; publishedVersionCount: number }[] }>(
-      admin,
-      '/api/ops/security-events/bindable-objects/',
-    )
-    const object = objects.results.find((o) => o.publishedVersionCount > 0)
-    expect(object, 'нет объекта с опубликованным паспортом').toBeDefined()
-    const created = (await (
-      await post('/api/ops/security-events/', {
-        // 🔴 МЕТКА СТАВИТСЯ ПОМОЩНИКОМ, А НЕ РУКАМИ (Plane №457). Здесь
-        // стояло `Своё назначение (e2e №403) …` — строка, в которой метки
-        // `(e2e)` НЕТ: скобка закрывается после номера. Ни уборка прогона
-        // (`title.includes(PROBE_MARK)`), ни серверная чистилка
-        // (`purge_probe_events --marker '(e2e)'`) такую строку не находят, а
-        // сама проба удалить её не может — своё удаление сервер отбивает,
-        // пока у ОМ есть расстановка, снять которую после согласования тоже
-        // нельзя. К закрытию №449 на стенде так накопилось девять
-        // утверждённых ОМ на 2028 год: у acc_employee в календаре «+7», в
-        // бюллетенях три строки-утечки.
-        title: probeTitle(`Своё назначение №403 ${Date.now()}`),
-        objectId: object!.id,
-        businessDate: '2028-06-06',
-        kind: 'INTERNAL',
-        chiefEmployeeId: await anyChiefId(admin),
-      })
-    ).json()) as { id: string; code: string }
-    const base = `/api/ops/security-events/${created.id}/`
-    try {
-      const imported = (await (await post(`${base}recon/import-from-passport/`)).json()) as {
-        reconChecklist: { done: boolean }[]
-        reconSectorPosts: { id: string; sector: string; post: string }[]
-      }
-      await fetch(`${API}${base}recon/`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          checklist: imported.reconChecklist.map((i) => ({ ...i, state: 'NORMAL', done: true })),
-          sectorPosts: imported.reconSectorPosts,
-        }),
-      })
-      await post(`${base}recon/complete/`)
-      const target = imported.reconSectorPosts[0]
-      const assigned = await post(`${base}placement/assign/`, {
-        postId: target.id,
-        employeeId: String(employeeId),
-      })
-      expect(assigned.status, await assigned.text()).toBe(200)
-      // До «Ознакомления» карточка «готовится» — без кнопок (`[ПРФ-04]`,
-      // Plane №434); ответ сотрудника проверяется на согласованной расстановке.
-      // Паспорт объекта несёт несколько постов, назначен один — завершение
-      // с недобором подтверждается явно, как это делает человек в окне.
-      await post(`${base}placement/complete/`, {
-        override: true,
-        override_reason: 'проба: один пост из расчёта',
-      })
-      const route = (await (
-        await post(`${base}approval/route/`, {
-          name: 'Согласующий пробы', unit: 'Управление ОМ', position: 'полковник',
-        })
-      ).json()) as { approvalRoute: { id: string }[] }
-      await post(`${base}approval/send/`)
-      await post(`${base}approval/route/${route.approvalRoute[0]!.id}/decide/`, {
-        decision: 'APPROVED', comment: '',
-      })
-      // 🔴 `approval/approve/` ЗДЕСЬ БЫЛ ЛИШНИМ И ОТБИВАЛСЯ 422 ВСЕГДА
-      // (Plane №812, найдено проверкой шагов). Этап согласования закрывает
-      // ПОСЛЕДНЯЯ ПОДПИСЬ сама (`[СОГ-09]`): строкой выше объект уже уехал на
-      // «Ознакомление», и согласовывать нечего. Пока ответ не смотрели, отказ
-      // молчал и шаг выглядел работающим — ровно тот случай, ради которого
-      // проверка и заведена, только здесь она нашла не поломку правила, а
-      // лишний шаг, живший в фикстуре с самого начала.
+    const created = await prepareAssignedEvent(admin, profileRecords, employeeId, 'своё назначение №403')
+    const target = created.reconSectorPosts.find(post => post.id === created.placementAssignments[0].postId)!
 
-      // Сервер: своя ручка отдаёт строку, реестр не нужен.
-      const mine = await get<{ results: { eventCode: string; assignmentId: string }[] }>(
+    // Сервер: своя ручка отдаёт строку, реестр не нужен.
+    const mine = await get<{ results: { eventCode: string; assignmentId: string }[] }>(
+      employeeToken,
+      '/api/ops/security-events/my-assignments/',
+    )
+    expect(mine.results.map((r) => r.eventCode)).toContain(created.code)
+
+    // Экран: назначение в «Предстоящих», без «реестр недоступен».
+    await signIn(page, 'acc_employee', password)
+    await page.goto(`${APP}${SCREEN}`)
+    await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
+      timeout: 20_000,
+    })
+    const upcoming = page.locator('div').filter({ hasText: /^Назначения на ОМ/ }).first()
+    await expect(upcoming.getByText(created.code, { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(`${target.sector} · ${target.post}`).first()).toBeVisible()
+    await expect(page.getByText('назначения не показаны')).toHaveCount(0)
+
+    // Plane №405 `[ПРФ-04]`: ответ с карточки. «Не могу заступить» просит
+    // причину (кнопка отправки заперта, пока поле пустое), после отправки
+    // бейдж красный с причиной, сервер хранит отказ; «Ознакомлен,
+    // заступлю» снимает отказ и ставит подтверждение.
+    const assignmentId = (
+      await get<{ results: { eventCode: string; assignmentId: string }[] }>(
         employeeToken,
         '/api/ops/security-events/my-assignments/',
       )
-      expect(mine.results.map((r) => r.eventCode)).toContain(created.code)
-
-      // Экран: назначение в «Предстоящих», без «реестр недоступен».
-      await signIn(page, 'acc_employee', password)
-      await page.goto(`${APP}${SCREEN}`)
-      await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
-        timeout: 20_000,
-      })
-      const upcoming = page.locator('div').filter({ hasText: /^Предстоящие назначения/ }).first()
-      await expect(upcoming.getByText(created.code, { exact: true })).toBeVisible({ timeout: 15_000 })
-      await expect(page.getByText(`${target.sector} · ${target.post}`).first()).toBeVisible()
-      await expect(page.getByText('назначения не показаны')).toHaveCount(0)
-
-      // Plane №405 `[ПРФ-04]`: ответ с карточки. «Не могу заступить» просит
-      // причину (кнопка отправки заперта, пока поле пустое), после отправки
-      // бейдж красный с причиной, сервер хранит отказ; «Ознакомлен,
-      // заступлю» снимает отказ и ставит подтверждение.
-      const assignmentId = (
-        await get<{ results: { eventCode: string; assignmentId: string }[] }>(
+    ).results.find((r) => r.eventCode === created.code)!.assignmentId
+    const card = page.getByTestId(`my-assignment-${assignmentId}`)
+    await card.getByRole('button', { name: 'Не могу заступить' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    const send = dialog.getByRole('button', { name: 'Отправить отказ' })
+    await expect(send).toBeDisabled()
+    await dialog.getByLabel('Причина').fill('Командировка по приказу')
+    await send.click()
+    await expect(dialog).toBeHidden()
+    await expect(card.getByText('Не могу заступить: Командировка по приказу')).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect
+      .poll(async () => {
+        const rows = await get<{ results: { assignmentId: string; declineReason: string | null }[] }>(
           employeeToken,
           '/api/ops/security-events/my-assignments/',
         )
-      ).results.find((r) => r.eventCode === created.code)!.assignmentId
-      const card = page.getByTestId(`my-assignment-${assignmentId}`)
-      await card.getByRole('button', { name: 'Не могу заступить' }).click()
-      const dialog = page.getByRole('dialog')
-      await expect(dialog).toBeVisible()
-      const send = dialog.getByRole('button', { name: 'Отправить отказ' })
-      await expect(send).toBeDisabled()
-      await dialog.getByLabel('Причина').fill('Командировка по приказу')
-      await send.click()
-      await expect(dialog).toBeHidden()
-      await expect(card.getByText('Не могу заступить: Командировка по приказу')).toBeVisible({
-        timeout: 15_000,
+        return rows.results.find((r) => r.assignmentId === assignmentId)?.declineReason ?? null
       })
-      await expect
-        .poll(async () => {
-          const rows = await get<{ results: { assignmentId: string; declineReason: string | null }[] }>(
-            employeeToken,
-            '/api/ops/security-events/my-assignments/',
-          )
-          return rows.results.find((r) => r.assignmentId === assignmentId)?.declineReason ?? null
-        })
-        .toBe('Командировка по приказу')
+      .toBe('Командировка по приказу')
 
-      await card.getByRole('button', { name: 'Ознакомлен, заступлю' }).click()
-      await expect(card.getByText(/^Ознакомлен: /)).toBeVisible({ timeout: 15_000 })
-      await expect(card.getByText('Не могу заступить: Командировка по приказу')).toHaveCount(0)
+    await card.getByRole('button', { name: 'Ознакомлен, заступлю' }).click()
+    await expect(card.getByText(/^Ознакомлен: /)).toBeVisible({ timeout: 15_000 })
+    await expect(card.getByText('Не могу заступить: Командировка по приказу')).toHaveCount(0)
 
-      // `[ПРФ-05]` (Plane №449): в календаре день ОМ несёт ПОЛОСКУ
-      // «ОМ-код · Пост», а не безымянную точку. ОМ пробы стоит в июне 2028 —
-      // листаем месяцы стрелкой до него.
-      await page.getByRole('button', { name: 'Календарь' }).click()
-      const monthTitle = page.getByText(/^Мой календарь · /)
-      await expect(monthTitle).toBeVisible({ timeout: 15_000 })
-      for (let i = 0; i < 60 && !(await monthTitle.textContent())?.includes('Июнь 2028'); i += 1) {
-        await page.getByRole('button', { name: 'Следующий месяц' }).click()
-      }
-      await expect(monthTitle).toContainText('Июнь 2028')
-      // В ячейке — полоски с подписью «ОМ-код · Пост» (до двух, остальное
-      // «+N»: стенд копит назначения соседних проб, и своё может оказаться
-      // за счётчиком) — ищем СВОЁ в панели дня, куда попадают все.
-      await expect(
-        page.locator('[data-slot="day-bars"]').getByText(/· Пост/).first(),
-        'полосок «ОМ-код · Пост» в ячейках нет',
-      ).toBeVisible()
-      await page.getByRole('button', { name: /^6 июня 2028 — / }).click()
-      await expect(
-        page.locator('[data-slot="day-list"]').getByText(`${created.code} · ${target.post}`),
-        'назначение пробы не названо «ОМ-код · Пост» в панели дня',
-      ).toBeVisible()
-
-      // `[ПРФ-08]` (Plane №449): администратор открывает профиль ЭТОГО
-      // сотрудника только на чтение — те же назначения, без кнопок ответа.
-      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-      await page.goto(`${APP}${SCREEN}/${employeeId}`)
-      await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
-        timeout: 20_000,
-      })
-      await expect(page.locator('[data-slot="read-only"]')).toHaveText('Только чтение')
-      const adminCard = page.getByTestId(`my-assignment-${assignmentId}`)
-      await expect(adminCard).toBeVisible({ timeout: 15_000 })
-      await expect(adminCard.getByRole('button', { name: 'Ознакомлен, заступлю' })).toHaveCount(0)
-      await expect(adminCard.getByRole('button', { name: 'Не могу заступить' })).toHaveCount(0)
-
-      // 🔴 ПОДПИСИ ЧУЖОГО ПРОФИЛЯ — НЕ ОТ ПЕРВОГО ЛИЦА (`[ПРФ-08]`, Plane
-      // №662). Соседние подписи переписали ещё в №449, а «Календарь» и
-      // «История» остались с «моими»: их вкладки не получали `readOnly`.
-      await page.getByRole('button', { name: 'Календарь' }).click()
-      await expect(page.getByText(/^Календарь · /)).toBeVisible({ timeout: 15_000 })
-      await expect(
-        page.getByText(/^Мой календарь · /),
-        'чужой профиль называет календарь «моим»',
-      ).toHaveCount(0)
-      await expect(page.getByText('статусов и смен сотрудника', { exact: false })).toBeVisible()
-      await expect(page.getByText('моих статусов и смен', { exact: false })).toHaveCount(0)
-
-      await page.getByRole('button', { name: 'История' }).click()
-      await expect(page.getByText('История заступлений на ОМ')).toBeVisible({ timeout: 15_000 })
-      await expect(
-        page.getByText('с вашим участием', { exact: false }),
-        'пустая история чужого профиля обращается к читателю на «вы»',
-      ).toHaveCount(0)
-    } finally {
-      // ОМ с расстановкой не удаляется (422) — сначала пробуем снять
-      // назначения. После согласования расстановка заморожена, и снять их
-      // уже нельзя: тогда ОМ остаётся, и его добивает общая уборка прогона
-      // по метке `(e2e)` (`global-teardown` → `purge_probe_events --force`).
-      //
-      // 🔴 РЕЗУЛЬТАТ УБОРКИ ПЕЧАТАЕТСЯ, А НЕ ГЛОТАЕТСЯ (Plane №457, тот же
-      // род, что №653). Молчаливая уборка неотличима от несделанной: именно
-      // так девять утверждённых ОМ и накопились незамеченными. Падать здесь
-      // нельзя — уборка не предмет пробы, — но молчать тоже нельзя.
-      const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)
-      for (const row of current.placementAssignments ?? []) {
-        await fetch(`${API}${base}placement/${row.id}/`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${admin}` },
-        })
-      }
-      const removed = await fetch(`${API}${base}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${admin}` },
-      })
-      if (!removed.ok) {
-        console.log(
-          `уборка пробы №403: ОМ ${created.code} не снят (${removed.status}) — ` +
-            'останется до общей уборки прогона по метке (e2e)',
-        )
-      }
+    // `[ПРФ-05]` (Plane №449): в календаре день ОМ несёт ПОЛОСКУ
+    // «ОМ-код · Пост», а не безымянную точку. У своего ОМ — забронированная
+    // дата worker, поэтому листаем к его месяцу, без общей даты июня 2028.
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    const monthTitle = page.getByText(/^Мой календарь · /)
+    await expect(monthTitle).toBeVisible({ timeout: 15_000 })
+    const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+    const [targetYear, targetMonth, targetDay] = created.businessDate.split('-').map(Number)
+    const shown = (await monthTitle.textContent())!.split(' · ')[1].trim().split(' ')
+    const shownMonth = monthNames.indexOf(shown[0])
+    expect(shownMonth, 'показанный месяц календаря не распознан').toBeGreaterThanOrEqual(0)
+    const monthsAhead = (targetYear - Number(shown[1])) * 12 + targetMonth - 1 - shownMonth
+    expect(monthsAhead, 'забронированная дата своей пробы уже в прошлом').toBeGreaterThanOrEqual(0)
+    for (let i = 0; i < monthsAhead; i += 1) {
+      await page.getByRole('button', { name: 'Следующий месяц' }).click()
     }
+    await expect(monthTitle).toHaveText(`Мой календарь · ${monthNames[targetMonth - 1]} ${targetYear}`)
+    // В ячейке — полоски с подписью «ОМ-код · Пост» (до двух, остальное
+    // «+N»: стенд копит назначения соседних проб, и своё может оказаться
+    // за счётчиком) — ищем СВОЁ в панели дня, куда попадают все.
+    await expect(
+      page.locator('[data-slot="day-bars"]').getByText(/· Пост/).first(),
+      'полосок «ОМ-код · Пост» в ячейках нет',
+    ).toBeVisible()
+    await page.getByRole('button', { name: new RegExp(`^${targetDay} \\S+ ${targetYear} — `) }).click()
+    await expect(
+      page.locator('[data-slot="day-list"]').getByText(`${created.code} · ${target.post}`),
+      'назначение пробы не названо «ОМ-код · Пост» в панели дня',
+    ).toBeVisible()
+
+    // `[ПРФ-08]` (Plane №449): администратор открывает профиль ЭТОГО
+    // сотрудника только на чтение — те же назначения, без кнопок ответа.
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto(`${APP}${SCREEN}/${employeeId}`)
+    await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.locator('[data-slot="read-only"]')).toHaveText('Только чтение')
+    const adminCard = page.getByTestId(`my-assignment-${assignmentId}`)
+    await expect(adminCard).toBeVisible({ timeout: 15_000 })
+    await expect(adminCard.getByRole('button', { name: 'Ознакомлен, заступлю' })).toHaveCount(0)
+    await expect(adminCard.getByRole('button', { name: 'Не могу заступить' })).toHaveCount(0)
+
+    // 🔴 ПОДПИСИ ЧУЖОГО ПРОФИЛЯ — НЕ ОТ ПЕРВОГО ЛИЦА (`[ПРФ-08]`, Plane
+    // №662). Соседние подписи переписали ещё в №449, а «Календарь» и
+    // «История» остались с «моими»: их вкладки не получали `readOnly`.
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    await expect(page.getByText(/^Календарь · /)).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.getByText(/^Мой календарь · /),
+      'чужой профиль называет календарь «моим»',
+    ).toHaveCount(0)
+    await expect(page.getByText('статусов и смен сотрудника', { exact: false })).toBeVisible()
+    await expect(page.getByText('моих статусов и смен', { exact: false })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'История' }).click()
+    await expect(page.getByText('История заступлений на ОМ')).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.getByText('с вашим участием', { exact: false }),
+      'пустая история чужого профиля обращается к читателю на «вы»',
+    ).toHaveCount(0)
   })
 
-  test('карточка и назначения собраны вокруг СВОЕЙ кадровой записи', async ({ page }) => {
+  test('карточка и назначения собраны вокруг СВОЕЙ кадровой записи', async ({ page, profileRecords }) => {
+    test.setTimeout(120_000)
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
     expect(me.employee, 'у admin нет кадровой записи — проба вакуумна').not.toBeNull()
     const employee = me.employee as CoreEmployee
 
-    const registry = await get<{ results: EventRow[] }>(
-      token,
-      '/api/ops/security-events/?page_size=100',
-    )
+    const ownEvent = await prepareAssignedEvent(token, profileRecords, employee.id, 'карточка владельца')
+    const personnel = await get<{ results: { id: string }[] }>(token, '/api/ops/personnel/?page_size=2')
+    const foreign = personnel.results.find(row => Number(row.id) !== employee.id)
+    expect(foreign, 'для проверки изоляции нужен второй реальный сотрудник').toBeDefined()
+    const foreignEvent = await prepareAssignedEvent(token, profileRecords, Number(foreign!.id), 'чужое назначение')
+    await prepareProfileStatus(token, profileRecords, employee.id)
+    const registry = { results: await eventRows(token) }
     const mine = assignmentsOf(registry.results, employee.id)
     const all = registry.results.flatMap((event) => event.placementAssignments)
     expect(mine.length, 'у admin нет ни одного назначения — проба вакуумна').toBeGreaterThan(0)
@@ -418,6 +551,13 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByRole('heading', { name: employee.full_name })).toBeVisible({
       timeout: 20_000,
     })
+    const ownAssignment = ownEvent.placementAssignments.find(row => Number(row.employeeId) === employee.id)!
+    const ownAssignmentRow = page.getByRole('listitem').filter({
+      has: page.getByTestId(`my-assignment-${ownAssignment.id}`),
+    })
+    await expect(ownAssignmentRow).toHaveCount(1)
+    await expect(ownAssignmentRow).toContainText(ownEvent.code)
+    await expect(page.getByText(foreignEvent.code, { exact: true }), 'чужое назначение попало в мой профиль').toHaveCount(0)
 
     // Код в карточке заменён подписью справочника, а не напечатан как есть.
     await expect(page.getByText(`${rank!.name} · ${position!.name}`)).toBeVisible()
@@ -526,17 +666,19 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await page.unroute('**/api/ops/evaluation-registry/**')
   })
 
-  test('другая учётка получает ДРУГУЮ запись и свои статусы', async ({ page }) => {
+  test('другая учётка получает ДРУГУЮ запись и свои статусы', async ({ page, profileRecords }) => {
     const adminToken = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
-    const otherToken = await tokenFor('erda', 'erda123')
+    const otherToken = await tokenFor('erda', STAND_PASSWORD)
     const mineAsAdmin = await get<MyEmployee>(adminToken, '/api/operations/my-employee/')
     const mineAsOther = await get<MyEmployee>(otherToken, '/api/operations/my-employee/')
+    expect(mineAsAdmin.employee, 'у admin нет кадровой записи').not.toBeNull()
     expect(mineAsOther.employee, 'у erda нет кадровой записи — проба вакуумна').not.toBeNull()
     expect(
       mineAsOther.employee!.id,
       'обе учётки указывают на одну запись — связь не проверяется',
     ).not.toBe(mineAsAdmin.employee!.id)
 
+    const ownStatus = await prepareProfileStatus(adminToken, profileRecords, mineAsOther.employee!.id)
     const statuses = await get<{
       results: (StatusRow & { date_start: string; date_end: string })[]
       next: string | null
@@ -545,11 +687,12 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       `/api/operations/statuses/?employee_id=${mineAsOther.employee!.id}&limit=200`,
     )
     expect(statuses.results.length, 'у erda нет статусов — вкладка не проверяется').toBeGreaterThan(0)
+    expect(statuses.results.some(row => row.id === ownStatus.id), 'свой статус не попал в выборку erda').toBe(true)
     for (const row of statuses.results) {
       expect(row.employee_id, 'сервер вернул чужой статус').toBe(mineAsOther.employee!.id)
     }
 
-    await signIn(page, 'erda', 'erda123')
+    await signIn(page, 'erda', STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
     await expect(
       page.getByRole('heading', { name: mineAsOther.employee!.full_name }),
@@ -564,6 +707,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // полным ответом ручки больше нельзя: сравнение считалось бы верным
     // только в месяце, в который попали все статусы стенда.
     const periods = page.locator('[data-slot="card"]', { hasText: 'Ближайшие 30 дней' }).first()
+    await expect(periods.getByText(ownStatus.comment, { exact: true }), 'свой статус не показан в календаре erda').toBeVisible()
     // 🔴 `limit`, А НЕ `page_size` (в запросе выше). Списки раздела ОМ
     // пагинируются LimitOffsetPagination: `page_size` она игнорирует и молча
     // отдаёт 50 строк. Проба сравнивала «50 из ручки» с полным списком на
@@ -621,12 +765,14 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     }
   })
 
-  test('день календаря открывает свой состав, а список привязан к месяцу', async ({ page }) => {
+  test('день календаря открывает свой состав, а список привязан к месяцу', async ({ page, profileRecords }) => {
     // Жалоба заказчика в №381: «по дню нельзя кликнуть» и «список нечитаем».
     // Проба стережёт оба ответа сразу — выбор дня и разрез месяца.
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    expect(me.employee, 'у admin нет кадровой записи для календаря').not.toBeNull()
     const employee = me.employee as CoreEmployee
+    const ownStatus = await prepareProfileStatus(token, profileRecords, employee.id)
     const statuses = await get<{ results: (StatusRow & { date_start: string; date_end: string })[] }>(
       token,
       `/api/operations/statuses/?employee_id=${employee.id}&limit=500`,
@@ -639,11 +785,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       inMonth.length,
       'в показанном месяце у стенда нет статусов — проверять выбор дня нечем',
     ).toBeGreaterThan(0)
-    // День, в котором заведомо что-то есть: первый день первого такого статуса
-    // (или первое число, если статус начался в прошлом месяце).
-    const target = inMonth[0].date_start.startsWith(shown)
-      ? inMonth[0].date_start
-      : `${shown}-01`
+    // Выбираем день СВОЕГО статуса, а не случайную прежнюю строку стенда.
+    expect(inMonth.some(row => row.id === ownStatus.id), 'свой статус не попал в показанный месяц').toBe(true)
+    const target = ownStatus.date_start
     const dayNumber = Number(target.slice(8))
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
@@ -659,6 +803,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(dayCard).toBeVisible()
     const dayRows = await dayCard.getByRole('listitem').count()
     expect(dayRows, 'в выбранном дне пусто, хотя статус его покрывает').toBeGreaterThan(0)
+    await expect(dayCard.getByText(ownStatus.comment, { exact: true }), 'в выбранном дне не показан свой статус').toBeVisible()
 
     // Возврат к месяцу — той же кнопкой, что предложена на экране.
     await page.getByRole('button', { name: 'Весь месяц' }).click()
@@ -746,12 +891,12 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
   })
 
   test('учётка без кадровой записи получает причину, а не пустой профиль', async ({ page }) => {
-    const token = await tokenFor('observer', 'observer123')
+    const token = await tokenFor('observer', STAND_PASSWORD)
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
     expect(me.employee, 'у observer появилась кадровая запись — проба вакуумна').toBeNull()
     expect(me.unlinked_reason, 'сервер не назвал причину').toBeTruthy()
 
-    await signIn(page, 'observer', 'observer123')
+    await signIn(page, 'observer', STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
     await expect(page.getByText('Кадровая запись не найдена')).toBeVisible({ timeout: 20_000 })
     // Причина печатается СЛОВАМИ СЕРВЕРА, а не пересказом.
@@ -786,7 +931,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       weapon: '',
       roleCode: null,
       sectionCode: null,
-      employeeHasAccount: false,
+      employeeHasAccount: false, canConfirmWithoutAccount: true,
       acknowledgedAt: acknowledged ? '2026-09-09T18:00:00+05:00' : null,
       acknowledgedVia: acknowledged ? 'personal' : '',
       acknowledgedBy: acknowledged ? 'Серикова Г.' : '',
@@ -879,20 +1024,64 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
   })
 
   test('«История» — закрытые ОМ со средним баллом, без формы и вооружения (Plane №434)', async ({
-    page,
+    page, profileRecords,
   }) => {
+    test.setTimeout(180_000)
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const profile = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    expect(profile.employee, 'у admin нет кадровой записи для истории').not.toBeNull()
     const employee = profile.employee as CoreEmployee
-    const registry = await get<{ results: EventRow[] }>(
-      token,
-      '/api/ops/security-events/?page_size=100',
-    )
+    const methodology = await get<ListOperationalRatingsResponse>(token, '/api/ops/operational-ratings/')
+    expect(methodology.capabilities.operationalRatings, 'оперативный рейтинг выключен на живом стенде').toBe(true)
+    expect(methodology.policy, 'для измеримой истории не задана методика рейтинга').not.toBeNull()
+    const policy = methodology.policy!
+    expect(Number.isInteger(policy.minEvaluations) && policy.minEvaluations > 0, 'методика вернула неверный минимум оценок').toBe(true)
+    expect(Number.isInteger(policy.periodDays) && policy.periodDays > 0, 'методика вернула неверный период').toBe(true)
+    // Агрегат не возникает от одной оценки при minEvaluations > 1. Создаём
+    // весь минимум своими закрытыми ОМ; методику и старые оценки не меняем.
+    // Оценки этапа получают evaluated_at = Clock.today_local(), поэтому
+    // входят в текущий период независимо от уникальной даты назначения.
+    const ownEvents: AssignedEvent[] = []
+    for (let index = 0; index < policy.minEvaluations; index += 1) {
+      ownEvents.push(await prepareClosedRatedEvent(token, profileRecords, employee.id, `своя измеримая история ${index + 1}`))
+    }
+    const ratings = await get<ListOperationalRatingsResponse>(token, '/api/ops/operational-ratings/')
+    expect(ratings.policy, 'методика изменилась во время подготовки своей истории').toEqual(policy)
+    const summaries = ratings.results.filter(row => row.personnelId === String(employee.id))
+    expect(summaries, 'агрегат должен принадлежать своей кадровой записи').toHaveLength(1)
+    const summary = summaries[0]!
+    expect(summary.dataState, 'своих оценок недостаточно для готового агрегата').toBe('READY')
+    expect(summary.evaluationsCount).toBeGreaterThanOrEqual(policy.minEvaluations)
+    expect(summary.aggregateRating, 'сервер не рассчитал агрегат до проверки UI').not.toBeNull()
+    expect(Number.isFinite(summary.aggregateRating)).toBe(true)
+    expect(summary.periodStartsAt).not.toBeNull()
+    expect(summary.periodEndsAt).not.toBeNull()
+    const firstRatingsPage = await get<EvaluationRegistryResponse>(token, `/api/ops/evaluation-registry/?employee=${employee.id}`)
+    expect(firstRatingsPage.page).toBe(1)
+    expect(Number.isInteger(firstRatingsPage.pageCount) && firstRatingsPage.pageCount > 0).toBe(true)
+    const ratingRows = [...firstRatingsPage.results]
+    for (let pageNumber = 2; pageNumber <= firstRatingsPage.pageCount; pageNumber += 1) {
+      const next = await get<EvaluationRegistryResponse>(token, `/api/ops/evaluation-registry/?employee=${employee.id}&page=${pageNumber}`)
+      expect(next.page).toBe(pageNumber)
+      ratingRows.push(...next.results)
+    }
+    for (const event of ownEvents) {
+      const ownRatings = ratingRows.filter(row => row.personnelId === String(employee.id) && row.eventNumber === event.code)
+      expect(ownRatings, `в реестре нет своей единственной оценки ${event.code}`).toHaveLength(1)
+      expect(ownRatings[0]!.aggregateState).toBe('READY')
+      expect(ownRatings[0]!.aggregateRating).toBe(summary.aggregateRating)
+      expect(ownRatings[0]!.evaluatedAt >= summary.periodStartsAt! && ownRatings[0]!.evaluatedAt <= summary.periodEndsAt!, 'своя оценка вне текущего периода методики').toBe(true)
+    }
+    const registry = { results: await eventRows(token) }
     const closedMine = registry.results.filter(
       (event) =>
         event.stage === 'CLOSED' &&
         event.placementAssignments.some((a) => String(a.employeeId) === String(employee.id)),
     )
+    for (const event of ownEvents) {
+      expect(closedMine.some(row => row.id === event.id), `своё закрытое ОМ ${event.id} не попало в историю реестра`).toBe(true)
+    }
+    expect(closedMine.length, 'история не должна проверяться на пустой фикстуре').toBeGreaterThan(0)
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
@@ -905,13 +1094,22 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(card).toBeVisible()
     // Шапка «Участие в ОМ: N мероприятий» — число закрытых ОМ по реестру.
     await expect(card.getByTestId('history-summary')).toContainText(
-      `Участие в ОМ: ${closedMine.length}`,
+      `Участие в ОМ: ${closedMine.length} `,
+    )
+    await expect(card.getByTestId('history-summary')).toContainText(
+      `средний балл ${summary.aggregateRating!.toFixed(1).replace('.', ',')}`,
     )
     for (const column of ['Дата', 'Мероприятие', 'Объект', 'Пост', 'Ознакомление', 'Балл']) {
       await expect(card).toContainText(column)
     }
     for (const gone of ['Форма одежды', 'Вооружение']) {
       await expect(card).not.toContainText(gone)
+    }
+    for (const event of ownEvents) {
+      const ownHistoryRow = card.locator(`a[href="/security-ops/events/${event.id}/"]`).locator('..')
+      await expect(ownHistoryRow).toHaveCount(1)
+      await expect(ownHistoryRow).toContainText(event.code)
+      await expect(ownHistoryRow.locator('[data-slot="history-score"]')).toHaveText('оценён')
     }
     if (closedMine.length > 0) {
       await expect(card).toContainText(closedMine[0]!.code)
@@ -998,7 +1196,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       .click()
     // Свой календарь смену ПОКАЗЫВАЕТ — иначе проверять на чужом нечего.
     await expect(
-      page.locator('[data-slot="day-bars"]').getByText('Дежурство').first(),
+      page.locator('[data-slot="day-bars"]').getByText('Дежурство', { exact: true }).first(),
       'своя смена не нарисована — подмена ручки не доехала, проба вакуумна',
     ).toBeVisible({ timeout: 20_000 })
 
@@ -1008,7 +1206,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       .getByRole('button', { name: 'Календарь' })
       .click()
     await expect(
-      page.locator('[data-slot="day-bars"]').getByText('Дежурство'),
+      // A personnel status such as «Суточное дежурство» belongs to this
+      // employee and may be shown. Only the viewer's shift has this exact label.
+      page.locator('[data-slot="day-bars"]').getByText('Дежурство', { exact: true }),
       'в чужом календаре нарисованы СВОИ смены смотрящего',
     ).toHaveCount(0)
     // И экран говорит, почему их нет, — молчаливая пустота читалась бы как

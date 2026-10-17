@@ -76,7 +76,7 @@ export async function clickRowMenuItem(
  */
 export function staffedRow(page: Page): Locator {
   return page
-    .locator('table tbody tr')
+    .locator('table tbody tr[data-employee-id]')
     .filter({ hasNot: page.getByText('ВАКАНТ') })
     .first()
 }

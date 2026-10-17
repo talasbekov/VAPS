@@ -120,12 +120,17 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
      * по-настоящему, в браузере.
      */
     const MARK = 'Пустой узел (проба)'
+    let injected = false
 
     await page.route(
       (url) =>
         url.pathname.includes('/api/staff_unit/staff-units') &&
         !url.pathname.includes('directorate'),
       async (route) => {
+        if (injected) {
+          await route.continue()
+          return
+        }
         const response = await route.fetch()
         const body = (await response.json()) as {
           results?: Record<string, unknown>[]
@@ -136,7 +141,8 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
           rows.push({
             ...first,
             id: 999001,
-            parent_id: first.id,
+            // Отдельный корень виден при начальном свёрнутом дереве.
+            parent_id: null,
             division: {
               ...(first.division as Record<string, unknown>),
               id: 999001,
@@ -148,6 +154,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
             employee: null,
             vacancy: null,
           })
+          injected = true
         }
         await route.fulfill({ response, json: { ...body, results: rows } })
       },
@@ -156,6 +163,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await expect.poll(() => injected, { timeout: 25_000 }).toBe(true)
 
     const node = page.getByText(MARK).first()
     await expect(node, 'подменённый узел не отрисовался — ветка не исполнилась').toBeVisible({

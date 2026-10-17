@@ -21,6 +21,8 @@
 .board table {
   margin: 0 auto;
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 5px;
 }
 
 .board tbody td {
@@ -29,7 +31,9 @@
   overflow: hidden;
   box-sizing: border-box;
   padding: 5px;
-  border: 1px solid #000;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  box-shadow: 0 2px 0 hsl(var(--border) / .5);
   vertical-align: top;
 }
 
@@ -38,7 +42,10 @@
 .board td:empty {
   border: none;
   background: transparent;
+  box-shadow: none;
 }
+
+.board thead th { border-radius: 8px; }
 
 .board img {
   max-width: 100%;

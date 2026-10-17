@@ -8,7 +8,12 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import { runBackendCommand } from './backend-command'
+import { uniqueBusinessDate } from './business-date'
 import { requireFixture } from './fixtures'
+import { standCall } from './prepare-events'
+import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -25,12 +30,183 @@ interface VehicleRow {
   isActive: boolean
 }
 
+interface OwnVehicle extends VehicleRow { fixtureKey: string }
+type VehicleIdentity = Pick<OwnVehicle, 'fixtureKey' | 'plate' | 'isActive'> & { id?: string }
+interface VehicleAllocation {
+  id: string
+  vehicleId: string | null
+  label: string
+  callsign: string
+  purpose: string
+  plate: string | null
+  armorClass: string | null
+}
+interface EventBody {
+  id: string
+  code: string
+  title: string
+  kind: string
+  businessDate: string
+  vehicles: VehicleAllocation[]
+}
+interface OwnForeignEvent extends EventBody { marker: string; foreignVisitId?: string }
+
+function publicVehicle(car: OwnVehicle): VehicleRow {
+  return { id: car.id, brand: car.brand, plate: car.plate, armorClass: car.armorClass, deployment: car.deployment, isActive: car.isActive }
+}
+
+// The fleet has no public write API. Provisioning is management-only; the
+// registry, allocation and release below still use the real UI/API.
+async function ownVehicle(isActive: boolean): Promise<OwnVehicle> {
+  const fixtureKey = `e2e-vehicle:${randomUUID()}`
+  const plate = `E2E-${fixtureKey.split(':')[1].replace(/-/g, '').slice(0, 28)}`
+  const script = [
+    'import json, os',
+    'from organization_management.apps.operations.models_vehicle import OpsVehicle',
+    'marker = os.environ["E2E_VEHICLE_MARKER"]',
+    'row = OpsVehicle.objects.create(',
+    '    brand="000 E2E ГОН " + marker, plate=os.environ["E2E_VEHICLE_PLATE"],',
+    '    body_class="седан (e2e)", production_year=2026, armor_class="VR7",',
+    '    deployment=marker, note=marker, created_by=marker,',
+    '    is_active=os.environ["E2E_VEHICLE_ACTIVE"] == "1",',
+    ')',
+    'print("FIXTURE_JSON=" + json.dumps({"id": str(row.pk), "brand": row.brand, "plate": row.plate, "armorClass": row.armor_class, "deployment": row.deployment, "isActive": row.is_active, "fixtureKey": marker}))',
+  ].join('\n')
+  const identity = { fixtureKey, plate, isActive }
+  try {
+    const output = await runBackendCommand(['shell', '-c', script], {
+      env: { E2E_VEHICLE_MARKER: fixtureKey, E2E_VEHICLE_PLATE: plate, E2E_VEHICLE_ACTIVE: isActive ? '1' : '0' },
+    })
+    const line = output.split(/\r?\n/).find(row => row.startsWith('FIXTURE_JSON='))
+    if (line === undefined) throw new Error('owned vehicle preparation returned no fixture')
+    const car = JSON.parse(line.slice('FIXTURE_JSON='.length)) as OwnVehicle
+    expect(car).toMatchObject({ fixtureKey, plate, brand: `000 E2E ГОН ${fixtureKey}`, armorClass: 'VR7', deployment: fixtureKey, isActive })
+    expect(Number(car.id)).toBeGreaterThan(0)
+    return car
+  } catch (error) {
+    // The UUID exists before the command. Recover only its exact singleton if
+    // create committed but stdout/DTO did not reach the caller with its PK.
+    let recoveredId: string | null = null
+    try {
+      recoveredId = await removeOwnVehicle(identity)
+    } catch (cleanupError) {
+      await test.info().attach('owned-vehicle-preparation-recovery', {
+        contentType: 'application/json', body: Buffer.from(JSON.stringify({ ...identity, cleanupFailed: true })),
+      })
+      throw new AggregateError([error, cleanupError], 'failed to recover owned vehicle after preparation failure')
+    }
+    await test.info().attach('owned-vehicle-preparation-recovery', {
+      contentType: 'application/json', body: Buffer.from(JSON.stringify({ ...identity, id: recoveredId, cleanupFailed: false })),
+    })
+    throw error
+  }
+}
+
+async function removeOwnVehicle(car: VehicleIdentity): Promise<string | null> {
+  const script = [
+    'import json, os',
+    'from django.db import transaction',
+    'from organization_management.apps.operations.models_vehicle import OpsVehicle, OpsEventVehicle',
+    'removed_id = None',
+    'with transaction.atomic():',
+    '    marker = os.environ["E2E_VEHICLE_MARKER"]',
+    '    owned = OpsVehicle.objects.select_for_update().filter(created_by=marker)',
+    '    vehicle_id = os.environ["E2E_VEHICLE_ID"]',
+    '    if vehicle_id:',
+    '        row = owned.get(pk=vehicle_id)',
+    '    else:',
+    '        rows = list(owned)',
+    '        assert len(rows) <= 1, "ambiguous owned vehicle identity; preserve every row"',
+    '        row = rows[0] if rows else None',
+    '    if row is not None:',
+    '        assert row.brand == "000 E2E ГОН " + marker and row.plate == os.environ["E2E_VEHICLE_PLATE"]',
+    '        assert row.note == marker and row.deployment == marker',
+    '        assert row.body_class == "седан (e2e)" and row.production_year == 2026 and row.armor_class == "VR7"',
+    '        assert row.is_active == (os.environ["E2E_VEHICLE_ACTIVE"] == "1")',
+    '        assert not OpsEventVehicle.objects.filter(vehicle=row).exists(), "owned fixture still has allocations; preserve the vehicle"',
+    '        removed_id = str(row.pk)',
+    '        row.delete()',
+    'print("FIXTURE_REMOVED=" + json.dumps({"id": removed_id, "fixtureKey": marker}))',
+  ].join('\n')
+  const output = await runBackendCommand(['shell', '-c', script], {
+    env: { E2E_VEHICLE_ID: car.id ?? '', E2E_VEHICLE_MARKER: car.fixtureKey, E2E_VEHICLE_PLATE: car.plate, E2E_VEHICLE_ACTIVE: car.isActive ? '1' : '0' },
+  })
+  const line = output.split(/\r?\n/).find(row => row.startsWith('FIXTURE_REMOVED='))
+  if (line === undefined) throw new Error('owned vehicle cleanup returned no identity')
+  const removed = JSON.parse(line.slice('FIXTURE_REMOVED='.length)) as { id: string | null; fixtureKey: string }
+  expect(removed.fixtureKey).toBe(car.fixtureKey)
+  if (car.id !== undefined) expect(removed.id).toBe(car.id)
+  return removed.id
+}
+
+async function prepareEvent(token: string): Promise<OwnForeignEvent> {
+  const marker = `e2e-vehicle-allocation:${randomUUID()}`
+  const created = await standCall(token)('POST', '/api/ops/security-events/', {
+    title: probeTitle(`Проба транспорта ГВО ${marker}`),
+    businessDate: uniqueBusinessDate(),
+    kind: 'FOREIGN',
+  }) as EventBody
+  if (created.id === undefined || created.id === null) throw new Error('owned foreign event returned no ID')
+  return { ...created, id: String(created.id), marker }
+}
+
+async function ownEventDetail(token: string, event: OwnForeignEvent): Promise<EventBody> {
+  const row = await standCall(token)('GET', `/api/ops/security-events/${event.id}/`) as EventBody
+  expect(row).toMatchObject({ id: event.id, title: event.title, kind: 'FOREIGN', businessDate: event.businessDate })
+  expect(event.title).toBe(probeTitle(`Проба транспорта ГВО ${event.marker}`))
+  return row
+}
+
+async function captureForeignVisit(event: OwnForeignEvent): Promise<string> {
+  const script = [
+    'import json, os',
+    'from organization_management.apps.operations.models_event import OpsSecurityEvent',
+    'from organization_management.apps.operations.models_gvo import OpsForeignVisit',
+    'event = OpsSecurityEvent.objects.get(pk=os.environ["E2E_EVENT_ID"], title=os.environ["E2E_EVENT_TITLE"], kind="FOREIGN")',
+    'visit = OpsForeignVisit.objects.get(event=event)',
+    'print("FIXTURE_JSON=" + json.dumps({"eventId": str(event.pk), "visitId": str(visit.pk)}))',
+  ].join('\n')
+  const output = await runBackendCommand(['shell', '-c', script], { env: { E2E_EVENT_ID: event.id, E2E_EVENT_TITLE: event.title } })
+  const line = output.split(/\r?\n/).find(row => row.startsWith('FIXTURE_JSON='))
+  if (line === undefined) throw new Error('owned foreign visit returned no fixture identity')
+  const row = JSON.parse(line.slice('FIXTURE_JSON='.length)) as { eventId: string; visitId: string }
+  expect(row.eventId).toBe(event.id)
+  expect(Number(row.visitId)).toBeGreaterThan(0)
+  return row.visitId
+}
+
+async function purgeOwnEvent(event: OwnForeignEvent): Promise<void> {
+  const script = [
+    'import os',
+    'from django.core.management import call_command',
+    'from django.db import transaction',
+    'from organization_management.apps.operations.models_event import OpsSecurityEvent',
+    'from organization_management.apps.operations.models_gvo import OpsForeignVisit',
+    'with transaction.atomic():',
+    '    row = OpsSecurityEvent.objects.select_for_update().get(pk=os.environ["E2E_EVENT_ID"], title=os.environ["E2E_EVENT_TITLE"], kind="FOREIGN")',
+    '    assert row.title == "Проба транспорта ГВО " + os.environ["E2E_EVENT_MARKER"] + " (e2e)"',
+    '    assert list(OpsSecurityEvent.objects.filter(title__contains=row.title).values_list("pk", flat=True)) == [row.pk]',
+    '    visit_id = os.environ.get("E2E_FOREIGN_VISIT_ID")',
+    '    if visit_id: OpsForeignVisit.objects.get(pk=visit_id, event=row)',
+    '    assert not row.vehicles.exists(), "owned event still has allocations; preserve it"',
+    '    call_command("purge_probe_events", marker=row.title, yes=True, force=True, actor="e2e-vehicles-registry")',
+    '    assert not OpsSecurityEvent.objects.filter(pk=os.environ["E2E_EVENT_ID"]).exists()',
+    '    if visit_id: assert not OpsForeignVisit.objects.filter(pk=visit_id).exists()',
+    'print("FIXTURE_PURGED=ok")',
+  ].join('\n')
+  const output = await runBackendCommand(['shell', '-c', script], {
+    env: { E2E_EVENT_ID: event.id, E2E_EVENT_TITLE: event.title, E2E_EVENT_MARKER: event.marker, E2E_FOREIGN_VISIT_ID: event.foreignVisitId ?? '' },
+  })
+  expect(output).toContain('FIXTURE_PURGED=ok')
+}
+
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
+  expect(res.status, 'vehicle registry account must obtain a token').toBe(200)
   return ((await res.json()) as { access: string }).access
 }
 
@@ -38,7 +214,10 @@ async function fleet(token: string, query = ''): Promise<VehicleRow[]> {
   const res = await fetch(`${API}/api/ops/vehicles/${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  return ((await res.json()) as { results: VehicleRow[] }).results
+  expect(res.status, `GET vehicle registry ${query}`).toBe(200)
+  const body = await res.json() as { results: VehicleRow[] }
+  expect(Array.isArray(body.results)).toBe(true)
+  return body.results
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -46,9 +225,10 @@ async function signIn(page: Page): Promise<void> {
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
     csrfToken: string
   }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
+  expect(response.status(), 'vehicle registry login must succeed').toBe(200)
 }
 
 test.describe(LIVE ? 'транспорт ГОН' : 'транспорт ГОН (скип: нет SMOKE_LIVE=1)', () => {
@@ -131,83 +311,157 @@ test.describe(LIVE ? 'транспорт ГОН' : 'транспорт ГОН (�
     // названа в разделе «Выделяемый транспорт» карточки ОМ вместе с ГРНЗ →
     // сняли → строка ушла. Ровно того, чего не умел свободный текст.
     const token = await apiToken()
-    const car = requireFixture(
-      (await fleet(token))[0],
-      'машина в реестре транспорта (manage.py seed_vehicles)',
-    )
-    const event = requireFixture(
-      (
-        await (
-          await fetch(`${API}/api/ops/security-events/?page_size=100`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        ).json()
-      ).results.find(
-        (row: { stage: string; kind: string }) =>
-          row.stage !== 'CLOSED' && row.kind !== 'INTERNAL',
-      ),
-      'незакрытый визит иностранного ОЛ — панель ГВО есть только у них',
-    ) as { id: string; vehicles: { id: string }[] }
+    let car: OwnVehicle | undefined
+    let event: OwnForeignEvent | undefined
+    const allocationIds: string[] = []
+    let scenarioError: unknown
+    try {
+      car = await ownVehicle(true)
+      expect((await fleet(token)).find(row => row.id === car!.id)).toMatchObject({ ...publicVehicle(car) })
+      event = await prepareEvent(token)
+      expect((await ownEventDetail(token, event)).vehicles).toEqual([])
+      // Create the foreign visit through its supported API. Its internal PK is
+      // audit metadata; /visits/{id} intentionally calls useSecurityEvent(id).
+      const country = `Страна пробы ${event.marker}`
+      const summaryPath = `/api/ops/gvo-summaries/${encodeURIComponent(event.code)}/`
+      const patched = await standCall(token)('PATCH', summaryPath, {
+        section: 'head', values: { country },
+      }) as { omCode: string; patch: { country: string } }
+      expect(patched).toMatchObject({ omCode: event.code, patch: { country } })
+      event.foreignVisitId = await captureForeignVisit(event)
+      const summary = await standCall(token)('GET', summaryPath) as { omCode: string; visit: { status: string } | null; summary: { country: string } }
+      expect(summary).toMatchObject({ omCode: event.code, visit: { status: 'READY' }, summary: { country } })
 
-    // Уборка ДО пробы, а не после: прошлый прогон мог оборваться на середине,
-    // и «уже выделена» превратило бы падение фикстуры в падение проверки.
-    for (const row of event.vehicles) {
-      await fetch(`${API}/api/ops/security-events/${event.id}/vehicles/${row.id}/`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/visits/${event.id}/`)
+      await expect(page.getByRole('heading', { name: `${event.code} · ${event.title}`, exact: true })).toBeVisible()
+      const section = page
+        .locator('[data-slot="card"]')
+        .filter({ has: page.getByRole('heading', { name: 'Выделяемый транспорт' }) })
+      await expect(section).toHaveCount(1)
+      await expect(section).toBeVisible({ timeout: 15_000 })
+
+      await section.getByRole('button', { name: '+ Машина из реестра' }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByRole('textbox', { name: 'Поиск по реестру транспорта' }).fill(car.plate)
+      await dialog.getByRole('button', { name: new RegExp(car.plate) }).click()
+      await dialog.getByLabel('Позывной в кортеже').fill('S1')
+      const purpose = `кортеж ${event.marker}`
+      await dialog.getByLabel('Назначение').fill(purpose)
+      const allocated = page.waitForResponse(response => response.request().method() === 'POST' &&
+        new URL(response.url()).pathname.endsWith(`/security-events/${event!.id}/vehicles/`))
+      await dialog.getByRole('button', { name: 'Выделить' }).click()
+      const allocationResponse = await allocated
+      expect(allocationResponse.status()).toBe(201)
+      const allocationBody = await allocationResponse.json() as EventBody
+      const allocation = allocationBody.vehicles.find(row => row.vehicleId === car!.id)
+      expect(allocation).toBeDefined()
+      allocationIds.push(allocation!.id)
+      expect(allocationBody).toMatchObject({ id: event.id, title: event.title })
+      expect(allocationBody.vehicles).toHaveLength(1)
+      expect(allocation).toMatchObject({ vehicleId: car.id, callsign: 'S1', purpose, plate: car.plate, armorClass: car.armorClass })
+      expect((await ownEventDetail(token, event)).vehicles).toEqual(allocationBody.vehicles)
+      await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+      // The exact owned allocation, not the first release button on the page.
+      const row = section.locator('[data-slot="registry-vehicles"] > div').filter({ hasText: car.plate })
+      await expect(row).toHaveCount(1)
+      await expect(row).toContainText(car.plate)
+      await expect(row).toContainText(car.armorClass)
+      await expect(row).toContainText('из реестра ГОН')
+      const released = page.waitForResponse(response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname.endsWith(`/security-events/${event!.id}/vehicles/${allocation!.id}/`))
+      await row.getByRole('button', { name: 'Снять', exact: true }).click()
+      const releaseResponse = await released
+      expect(releaseResponse.status()).toBe(200)
+      const releaseBody = await releaseResponse.json() as EventBody
+      expect(releaseBody).toMatchObject({ id: event.id, title: event.title, vehicles: [] })
+      expect((await ownEventDetail(token, event)).vehicles).toEqual([])
+      await expect(section).not.toContainText(car.plate, { timeout: 15_000 })
+    } catch (error) {
+      scenarioError = error
+      throw error
+    } finally {
+      const failures: unknown[] = []
+      if (event !== undefined && car !== undefined) {
+        try {
+          // Recover even if the UI POST succeeded before an assertion failed.
+          // Only allocations joining these two captured owned resources qualify.
+          const detail = await ownEventDetail(token, event)
+          for (const row of detail.vehicles.filter(link => link.vehicleId === car!.id)) {
+            if (!allocationIds.includes(row.id)) allocationIds.push(row.id)
+            const removed = await standCall(token)('DELETE', `/api/ops/security-events/${event.id}/vehicles/${row.id}/`) as EventBody
+            expect(removed).toMatchObject({ id: event.id, title: event.title })
+            expect(removed.vehicles.some(link => link.id === row.id)).toBe(false)
+          }
+        } catch (error) { failures.push(error) }
+      }
+      if (event !== undefined) {
+        try { await purgeOwnEvent(event) } catch (error) { failures.push(error) }
+      }
+      if (car !== undefined) {
+        try { await removeOwnVehicle(car) } catch (error) { failures.push(error) }
+      }
+      await test.info().attach('owned-vehicle-allocation-fixture', {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify({ vehicle: car, event, allocationIds, provisioning: 'management-only; registry/allocation/release UI and API are real', cleanupFailures: failures.length }, null, 2)),
       })
+      if (failures.length > 0) throw new AggregateError(scenarioError === undefined ? failures : [scenarioError, ...failures], 'failed to clean up owned vehicle allocation fixtures')
     }
-
-    await signIn(page)
-    // Сводка — на странице визита (`[ГВО-03]`, Plane №441): панели в карточке
-    // ОМ больше нет.
-    await page.goto(`${APP}/security-ops/visits/${event.id}/`)
-    // Раздел ищется по СВОЕЙ карточке: `Section` рисует `[data-slot="card"]`
-    // с заголовком внутри, отдельного `<section>` у него нет.
-    const section = page
-      .locator('[data-slot="card"]')
-      .filter({ has: page.getByRole('heading', { name: 'Выделяемый транспорт' }) })
-      .first()
-    await expect(section).toBeVisible({ timeout: 15_000 })
-
-    await section.getByRole('button', { name: '+ Машина из реестра' }).click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByRole('textbox', { name: 'Поиск по реестру транспорта' }).fill(car.plate)
-    await dialog.getByRole('button', { name: new RegExp(car.plate) }).click()
-    await dialog.getByLabel('Позывной в кортеже').fill('S1')
-    await dialog.getByLabel('Назначение').fill('кортеж')
-    await dialog.getByRole('button', { name: 'Выделить' }).click()
-    await expect(dialog).toBeHidden({ timeout: 15_000 })
-
-    // ГРНЗ и класс брони — то, ради чего заводился реестр: у свободного
-    // текста их не было вовсе.
-    await expect(section).toContainText(car.plate, { timeout: 15_000 })
-    await expect(section).toContainText('из реестра ГОН')
-
-    await section.getByRole('button', { name: 'Снять' }).first().click()
-    await expect(section).not.toContainText(car.plate, { timeout: 15_000 })
   })
 
   test('снятая машина показывается только по прямой просьбе', async ({ page }) => {
     const token = await apiToken()
-    const whole = await fleet(token, '?includeRetired=1')
-    const retired = whole.find((c) => !c.isActive)
-
-    await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const live = await fleet(token)
-    expect(live.every((c) => c.isActive), 'реестр по умолчанию отдал снятую машину').toBe(
-      true,
-    )
-
-    test.skip(
-      retired === undefined,
-      'на стенде нет снятой машины — переключатель проверять не на чем',
-    )
-    await page.getByRole('button', { name: 'Показывать снятые' }).click()
-    await expect(page).toHaveURL(/includeRetired=1/)
-    await expect(
-      page.getByRole('row', { name: new RegExp(retired!.plate) }),
-    ).toBeVisible({ timeout: 10_000 })
+    const retired = await ownVehicle(false)
+    let scenarioError: unknown
+    try {
+      const whole = await fleet(token, '?includeRetired=1')
+      expect(whole.find(row => row.id === retired.id)).toMatchObject({ ...publicVehicle(retired) })
+      const live = await fleet(token)
+      expect(live.every(row => row.isActive), 'реестр по умолчанию отдал снятую машину').toBe(true)
+      expect(live.some(row => row.id === retired.id)).toBe(false)
+      await signIn(page)
+      const defaultLoaded = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === '/api/ops/vehicles/' && url.searchParams.get('includeRetired') !== '1'
+      })
+      await page.goto(`${APP}${SCREEN}`)
+      const defaultResponse = await defaultLoaded
+      expect(defaultResponse.status()).toBe(200)
+      const defaultBody = await defaultResponse.json() as { results: VehicleRow[] }
+      expect(defaultBody.results).toEqual(live)
+      // Absence is meaningful only after the default server response has
+      // rendered. The toggle itself is already visible during loading.
+      if (live.length === 0) {
+        await expect(page.getByText('Реестр транспорта пуст: машины заводятся в Django Admin.', { exact: true })).toBeVisible()
+      } else {
+        const table = page.getByRole('table', { name: 'Реестр бронированных транспортных средств ГОН' })
+        await expect(table).toBeVisible()
+        await expect(table.locator('tbody tr')).toHaveCount(live.length)
+        expect(await table.locator('tbody tr td:nth-child(4)').allTextContents()).toEqual(live.map(row => row.plate))
+      }
+      const ownRow = page.getByRole('row', { name: new RegExp(retired.plate) })
+      await expect(ownRow).toHaveCount(0)
+      const included = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === '/api/ops/vehicles/' && url.searchParams.get('includeRetired') === '1'
+      })
+      await page.getByRole('button', { name: 'Показывать снятые' }).click()
+      expect((await included).status()).toBe(200)
+      await expect(page).toHaveURL(/includeRetired=1/)
+      await expect(ownRow).toBeVisible({ timeout: 10_000 })
+      await expect(ownRow).toContainText(retired.brand)
+    } catch (error) {
+      scenarioError = error
+      throw error
+    } finally {
+      const failures: unknown[] = []
+      try { await removeOwnVehicle(retired) } catch (error) { failures.push(error) }
+      await test.info().attach('owned-retired-vehicle-fixture', {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify({ vehicle: retired, provisioning: 'management-only; real registry toggle', cleanupFailures: failures.length }, null, 2)),
+      })
+      if (failures.length > 0) throw new AggregateError(scenarioError === undefined ? failures : [scenarioError, ...failures], 'failed to clean up owned retired vehicle fixture')
+    }
   })
 })

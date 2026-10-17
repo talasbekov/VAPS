@@ -13,11 +13,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Building2, Users, Shield, AlertCircle } from "lucide-react";
+import { Building2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ParticleField } from "@/components/login/particle-field";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { defaultPortalRoute } from "@/entities/portal-access";
+import { useQueryClient } from "@tanstack/react-query";
 
 /**
  * Куда вернуть после входа. Берём только ВНУТРЕННИЙ путь: `callbackUrl` живёт
@@ -59,7 +60,8 @@ function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingWorkspace, setAwaitingWorkspace] = useState(false);
   const { login, user, sessionExpired, isLoading: authLoading } = useAuth();
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, roles, permissions, error: permissionsError, isLoading: permissionsLoading } = useOpsPermissions();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   // ПРИЧИНА, ПО КОТОРОЙ ЧЕЛОВЕК ЗДЕСЬ (Plane №383). Провайдер сессии уводит
@@ -90,10 +92,10 @@ function LoginScreen() {
     // Права приходят отдельным запросом. До него маршрут не выбираем:
     // «/dashboard» без `orgstructure.view` показывал человеку отказ сразу
     // после успешного входа.
-    if (!permissionsLoading) {
-      router.replace(defaultPortalRoute(hasPermission));
+    if (!permissionsLoading && !permissionsError && permissions !== undefined) {
+      router.replace(defaultPortalRoute(hasPermission, (code) => roles.some(role => role.code === code), permissions));
     }
-  }, [hasPermission, permissionsLoading, router, searchParams, user]);
+  }, [hasPermission, roles, permissions, permissionsError, permissionsLoading, router, searchParams, user]);
 
   // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
   // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
@@ -184,9 +186,19 @@ function LoginScreen() {
   if (!sessionExpired && (awaitingWorkspace || authLoading || (user !== null && user !== undefined))) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <p className="text-sm text-muted-foreground">
-          {awaitingWorkspace || user !== null ? "Открываем рабочее пространство…" : "Проверяем сессию…"}
-        </p>
+        {permissionsError ? (
+          <div role="alert" className="max-w-md space-y-3 text-center">
+            <p className="font-medium">Не удалось загрузить доступные разделы</p>
+            <p className="text-sm text-muted-foreground">Вход выполнен. Повторите загрузку, чтобы открыть рабочее пространство.</p>
+            <Button onClick={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })}>
+              Повторить загрузку
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {awaitingWorkspace || user !== null ? "Открываем рабочее пространство…" : "Проверяем сессию…"}
+          </p>
+        )}
       </div>
     );
   }
@@ -291,9 +303,9 @@ function LoginScreen() {
             </div>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
-            Расход Организации
+            Smart Josparlau
           </h1>
-          <p className="text-gray-600">Система управления персоналом</p>
+          <p className="text-gray-600">Система управления служебной деятельностью подразделений</p>
         </div>
 
         <Card
@@ -418,63 +430,6 @@ function LoginScreen() {
           </CardContent>
         </Card>
 
-        <div
-          className="mt-8 grid grid-cols-2 gap-4 text-center transition-transform duration-500 ease-out animate-fade-in-up"
-          style={{
-            transform: "translate(calc(var(--parallax-x, 0) * 0.2px), calc(var(--parallax-y, 0) * 0.2px))",
-            animationDelay: "0.5s",
-            opacity: 0,
-          }}
-        >
-          <div
-            className="group relative bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-lg border border-white/60 transition-all duration-500 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/30 hover:scale-105 hover:-translate-y-2 hover:border-blue-400/50 cursor-pointer overflow-hidden"
-            style={{
-              transform: "translate(calc(var(--parallax-x, 0) * -0.3px), calc(var(--parallax-y, 0) * -0.3px))",
-              boxShadow:
-                "0 10px 30px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-shimmer pointer-events-none"
-              style={{
-                backgroundSize: "200% 100%",
-                animation: "shimmer 2s infinite",
-              }}
-            />
-
-            <div className="relative z-10 bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-xl w-fit mx-auto mb-3 shadow-md group-hover:shadow-blue-500/40 transition-all duration-300 group-hover:scale-110 group-hover:rotate-6">
-              <Users className="h-5 w-5 text-white" />
-            </div>
-            <p className="relative z-10 text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
-              Сбор сил на ОМ
-            </p>
-          </div>
-          <div
-            className="group relative bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-lg border border-white/60 transition-all duration-500 hover:bg-white hover:shadow-2xl hover:shadow-green-500/30 hover:scale-105 hover:-translate-y-2 hover:border-green-400/50 cursor-pointer overflow-hidden"
-            style={{
-              transform: "translate(calc(var(--parallax-x, 0) * -0.4px), calc(var(--parallax-y, 0) * -0.4px))",
-              boxShadow:
-                "0 10px 30px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-green-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-shimmer pointer-events-none"
-              style={{
-                backgroundSize: "200% 100%",
-                animation: "shimmer 2s infinite",
-              }}
-            />
-
-            <div className="relative z-10 bg-gradient-to-br from-green-600 to-emerald-600 p-2.5 rounded-xl w-fit mx-auto mb-3 shadow-md group-hover:shadow-green-500/40 transition-all duration-300 group-hover:scale-110 group-hover:rotate-6">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <p className="relative z-10 text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
-              Контроль доступа
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );

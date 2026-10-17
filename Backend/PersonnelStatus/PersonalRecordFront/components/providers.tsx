@@ -1,11 +1,23 @@
 "use client"
 
-import { SessionProvider } from "next-auth/react"
+import { SessionProvider, useSession } from "next-auth/react"
 import { AuthProvider } from "@/lib/auth"
-import { type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { useEffect, useRef, type ReactNode } from "react"
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query"
 import { ThemeProvider } from "next-themes"
 import { MotionConfig } from "framer-motion"
+import { currentOpsAuthorityStamp, registerOpsWriteAuthority } from "@/lib/ops-write-authority"
+
+function OpsWriteAuthority() {
+  const client = useQueryClient()
+  const { data: session, status } = useSession()
+  const actor = useRef<string | null>(null)
+  const user = session?.user as { id?: string; email?: string | null } | undefined
+  actor.current = status === "authenticated" && (session as { error?: string } | null)?.error === undefined
+    ? user?.id ?? user?.email ?? null : null
+  useEffect(() => registerOpsWriteAuthority(() => currentOpsAuthorityStamp(client, actor.current)), [client])
+  return null
+}
 
 /**
  * Повтор — только там, где он что-то меняет.
@@ -54,6 +66,7 @@ export function Providers({ children }: { children: ReactNode }) {
               (`EXPIRY_SKEW_MS`), так что реже значило бы узнавать об отказе
               позже, чем он случился. */}
           <SessionProvider refetchInterval={60}>
+            <OpsWriteAuthority />
             <AuthProvider>{children}</AuthProvider>
           </SessionProvider>
         </QueryClientProvider>

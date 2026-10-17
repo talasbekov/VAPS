@@ -32,6 +32,8 @@ from organization_management.apps.operations.expense_layout import (
     document_title,
     header_row,
     member_lines,
+    PERSONNEL_HEAD,
+    personnel_values,
 )
 
 
@@ -115,6 +117,18 @@ def generate_expense_docx(data):
         )
     styled(cells[-2].paragraphs[0], f"+{totals.attached}", TABLE_SIZE_PT, bold=True)
     styled(cells[-1].paragraphs[0], event_cell(totals.event), TABLE_SIZE_PT, bold=True)
+
+    for row in data.rows:
+        if not row.personnel:
+            continue
+        styled(document.add_paragraph(), f"Личный состав — {row.name}", TABLE_SIZE_PT, bold=True)
+        people_table = document.add_table(rows=1, cols=len(PERSONNEL_HEAD))
+        people_table.style = "Table Grid"
+        for cell, label in zip(people_table.rows[0].cells, PERSONNEL_HEAD):
+            styled(cell.paragraphs[0], label, TABLE_SIZE_PT, bold=True)
+        for person in row.personnel:
+            for cell, value in zip(people_table.add_row().cells, personnel_values(person)):
+                styled(cell.paragraphs[0], value, TABLE_SIZE_PT)
 
     buffer = io.BytesIO()
     document.save(buffer)

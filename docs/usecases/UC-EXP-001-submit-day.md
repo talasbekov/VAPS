@@ -5,24 +5,24 @@
 | Модуль | Ежедневный расход |
 | Актор | DIRECTORATE_HEAD (начальник управления), ADMIN |
 | Статус | Done |
-| Основание | `apps/operations/day_submission_service.py` (`submit_day`), `apps/operations/models_submission.py` (`OpsDailySubmission`, `OpsSubmissionControlSettings`), `apps/operations/api/views.py::DailySubmissionViewSet` (`POST /api/operations/daily-submissions/`, `GET …/{id}/export/`), `apps/ops/api/views.py::OpsDailySubmissionsViewSet` + `apps/ops/daily.py` (`/api/ops/daily/daily-submissions/`), `apps/operations/personal_export_service.py::export_submission`; FRONT `app/employees/page.tsx` (режим без `?view` — «Ежедневный расход организации»), `features/daily-expense/ui/DailyExpenseBoard.tsx`, `features/ops-daily/day-submission-panel.tsx`, `entities/daily-grid/index.ts` |
-| Дата актуализации | 2026-09-08 |
+| Основание | `apps/operations/day_submission_service.py` (`submit_day`), `apps/operations/models_submission.py` (`OpsDailySubmission`, `OpsSubmissionControlSettings`), `apps/operations/api/views.py::DailySubmissionViewSet` (`POST /api/operations/daily-submissions/`, `GET …/{id}/export/`), `apps/ops/api/views.py::OpsDailySubmissionsViewSet` + `apps/ops/daily.py` (`/api/ops/daily/daily-submissions/`), `apps/operations/personal_export_service.py::export_submission`; FRONT `app/statuses/page.tsx`, `features/ops-daily/status-day-close.tsx`, `features/ops-daily/day-submission-panel.tsx`, `features/daily-expense/ui/DailyExpenseBoard.tsx`, `entities/daily-grid/index.ts` |
+| Дата актуализации | 2026-10-08 |
 
 ## Цель
 Начальник управления фиксирует («сдаёт») состояние личного состава своего подразделения за деловую дату как неизменяемый снимок с подписью, временем и отметкой опоздания.
 
 ## Предусловия
-- Актор аутентифицирован и имеет право `daily_report.mark_update` с областью, включающей подразделение (`_assert_division_in_scope`).
+- Актор аутентифицирован; для чтения страницы и расхода требуется `status.view`, для сдачи — `daily_report.mark_update` с разрешённой сервером областью подразделения. Изменение статусов отдельно требует `status.manage`.
 - Подразделение существует в дереве (`DivisionTreeSelector.exists`).
-- Деловая дата входит в окно сдачи — сегодня или завтра по часам раздела (`Clock.today_local()`).
+- Дата расхода входит в окно сдачи — сегодня и на 62 дня вперёд включительно по часам раздела (`Clock.today_local()`). Прошлые дни не сдаются.
 - День за это подразделение ещё не сдан ни одной версией (`DailySubmissionSelector.exists_for`).
 - Статусы сотрудников на дату проставлены (снимок собирается с серверного состояния, несохранённые правки экрана в него не попадут).
 
 ## Main Flow
-1. Актор открывает «Ежедневный расход организации» (`/employees` без `?view=`), раскрывает строку своего управления.
-2. Система показывает панель «Сдача дня» с состоянием дня и историей сдач подразделения (`GET /api/ops/daily/daily-submissions/?division_id=`).
+1. Актор открывает «Управление статусами» (`/statuses`). В блоке «Сдача расхода» выбирает «Расход на дату» и доступное управление; единственное доступное управление выбирается автоматически. По умолчанию дата — завтра по часам сервера; выбор сохраняется в `businessDate`, управление — в `submitDivision`.
+2. Система показывает расход выбранного управления на дату и состояние сдачи (`GET /api/operations/strength-report/?business_date=&division_id=`, `GET /api/ops/daily/daily-submissions/?division_id=&business_date=`). Доступные цели определяются ответом `/api/ops/daily/divisions/?business_date=`: `division_type=directorate`, `can_submit=true`.
 3. Актор нажимает «Сдать день».
-4. Система показывает подтверждение: сколько строк изменено, последняя сдача подразделения, ожидаемая категория события (предварительная оценка).
+4. Система показывает подтверждение с выбранной датой, числом сотрудников по списку из расхода управления и последней сдачей, если она есть. Дата относится только к расходу и сдаче: текущие статусы в таблице меняются с сегодняшнего дня; будущие периоды задаются в запланированных статусах.
 5. Актор нажимает «Подтвердить сдачу».
 6. Система проверяет права и область, существование подразделения, окно дат и отсутствие сдачи за день.
 7. Система собирает снимок состава и фактов статусов (`build_division_snapshot`), сравнивает с предыдущей сдачей подразделения и определяет событие: `CHANGED` или `CONFIRMED_NO_CHANGES`.
@@ -32,7 +32,7 @@
 11. При необходимости актор скачивает личную копию сданного дня (`GET /api/operations/daily-submissions/{id}/export/`, .xlsx); факт выдачи пишется в журнал `SUBMISSION_EXPORTED`.
 
 ## Alternative Flow
-- **AF1. Не выбрано подразделение / есть несохранённые правки / дата вне окна (клиент)**: шаг 3 → панель показывает причину («Выберите подразделение.», «Сначала сохраните правки: изменено N», «Сдать можно только за сегодня или завтра.»), запрос не уходит.
+- **AF1. Не выбрано подразделение / есть несохранённые правки / дата вне окна (клиент)**: шаг 3 → панель показывает причину («Выберите подразделение.», «Сначала сохраните правки: изменено N», «Сдать можно за сегодня и на 62 дня вперёд; прошлые дни не сдаются.»), запрос не уходит. При ошибке загрузки управления, расхода или состояния сдачи действие недоступно; доступна повторная загрузка.
 - **AF2. Нет права или подразделение вне области**: шаг 6 → 403 `PERMISSION_DENIED`; экран: «Недостаточно прав на сдачу дня. Требуется право daily_report.mark_update.»
 - **AF3. Подразделение не найдено**: шаг 6 → 404 `ENTITY_NOT_FOUND`; экран: «Подразделение не найдено.»
 - **AF4. Дата вне окна сервера**: шаг 6 → 422 `BUSINESS_DATE_OUT_OF_WINDOW` с `details.allowed`; экран печатает допустимые даты из ответа.
@@ -52,7 +52,7 @@
 | HTTP-аудит (`apps/audit`, AuditMiddleware) | create | запись CREATE на успешный POST |
 
 ## Бизнес-требования (BR)
-- **BR1.** Сдача допустима только за сегодня или завтра по часам раздела; окно считается на момент вызова.
+- **BR1.** Сдача допустима за сегодня и на 62 дня вперёд включительно по часам раздела; окно считается на момент вызова.
 - **BR2.** Один день подразделения сдаётся один раз; повторная фиксация — только поправка (UC-EXP-002).
 - **BR3.** Снимок неизменяем и самодостаточен: расход и светофор выводятся из него без перезапроса живых данных.
 - **BR4.** Событие первой сдачи подразделения — всегда `CHANGED`; далее `CONFIRMED_NO_CHANGES`, если состав и факты совпали с предыдущей сдачей (ФИО, звания и id строк не сравниваются).
@@ -75,17 +75,15 @@
 | ADMIN | полный | `*` (wildcard, без области) |
 | DIRECTORATE_HEAD | полный (сдача + чтение в своей области) | `daily_report.mark_update` (create), `status.view` (list/retrieve/export); `permission_map` `DailySubmissionViewSet`/`OpsDailySubmissionsViewSet`, область — `_assert_division_in_scope` |
 | DEPARTMENT_EXPENSE_OFFICER, DUTY_OFFICER, OPS_STAFF, DUTY_PLANNER, ANALYST, AUDITOR, HEAD_DIRECTORATE_LINE, HEAD_DEPARTMENT_LINE, HEAD_OPS_UNIT, EMPLOYEE, EMPLOYEE_OPS_D2, FORCES_GATHERING_OFFICER | чтение | `status.view` |
-| Остальные роли | нет | нет права в `ROLE_PERMISSIONS` |
+| Остальные роли | по фактическим правам и области | Название роли само по себе не даёт действие; сервер проверяет право и доступное подразделение. |
 
 ## Требования к UX/UI
-- Страница `/employees` (без `?view=`) — вкладка «Ежедневный расход организации» (`DailyExpenseBoard`); гейт страницы — права `forces.command | forces.allocate | forces.select` (`modulePermissionsOf("/employees")`), гейт борда — `status.view`.
-- Строка управления раскрывается; в раскрытой строке — панель «Сдача дня» (`DaySubmissionPanel`), в свёрнутой — бейдж состояния сдачи из общего списочного ответа.
-- Панель: кнопка «Сдать день» → блок подтверждения («Сдать день? Изменено N из M…», последняя сдача, ожидаемая категория) с кнопками «Подтвердить сдачу» / «Отмена»; состояния «Загрузка состояния дня…», «Отправка…», «Не удалось прочитать состояние дня.»; после сдачи — «День сдан: vN · …» и кнопка «Исправить сдачу».
+- Основной вход начальника управления — `/statuses`, право `status.view`. Блок сдачи дополнительно требует `daily_report.mark_update`; управление выбирается только из разрешённых сервером. Пока права или область не подтверждены, действие не показывается.
+- Дополнительный вход — `/employees?view=daily`: страница требует `forces.command | forces.allocate | forces.select`, сам расход — `status.view`. Вид зависит от роли: ответственный получает расход департамента, другие допущенные роли — общий борд. В общем борде панель сдачи остаётся в раскрытой строке управления; она не заменяет основной вход начальника через `/statuses`.
+- Панель: «Сдать день» → «Сдать расход за …? Сотрудников по списку: …» → «Подтвердить сдачу» / «Отмена». После сдачи показываются версия, событие, автор и время; история раскрывается отдельно. «Исправить сдачу» доступно только при `daily_report.correct` и серверном `can_correct=true` для выбранного подразделения.
 - Ошибки: жёлтая плашка (клиентский отказ), красная плашка с сообщением и списком деталей (серверный отказ), «Допустимые даты: …» при 422.
 - Отдельная страница /reports использует тот же расход для просмотра и выгрузки (UC-EXP-004).
 
 ## Открытые вопросы
-- Гейт экрана `/employees` — права сбора сил (`forces.*`), а не `status.view`/`daily_report.mark_update`: роль с правом сдачи, но без `forces.select`, не откроет вкладку расхода (`entities/portal-access`, `OpsAccessDenied what="сбора сил на ОМ"`).
-- Панель показывает «Исправить сдачу» без проверки права `daily_report.correct` (комментарий в коде: «Демо-персона wildcard»); отказ приходит только с сервера (403).
 - Два маршрута на одну операцию: `/api/operations/daily-submissions/` и адаптер `/api/ops/daily/daily-submissions/` (без `retrieve`/`export`); экран `SummaryVersions` ходит в оба.
 - Клиентское окно сдачи считается по браузерной дате, серверное — по часам раздела; истина — `details.allowed` в 422 (отмечено в коде).

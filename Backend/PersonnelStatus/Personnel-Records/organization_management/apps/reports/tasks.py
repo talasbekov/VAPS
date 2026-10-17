@@ -3,6 +3,9 @@ from django.utils import timezone
 from django.core.files.base import ContentFile
 
 from organization_management.apps.reports.models import Report
+from organization_management.apps.reports.application.generation_scope import (
+    GENERATION_SCOPE_FILTER, require_generation_scope,
+)
 from organization_management.apps.reports.infrastructure.generators.docx_generator import (
     DOCXGenerator,
 )
@@ -25,6 +28,13 @@ def generate_report_task(report_id):
     report.save()
 
     try:
+        # Recheck current authority after queueing. Existing jobs without a
+        # selection snapshot still require global scope for a null division.
+        require_generation_scope(report.created_by, report.division_id)
+        selection = (report.filters.get(GENERATION_SCOPE_FILTER)
+                     if isinstance(report.filters, dict) else None)
+        if selection is not None and selection != {'division_id': report.division_id}:
+            raise ValueError('Выбранное подразделение отчёта больше недоступно')
         # Сбор данных
         aggregator = DataAggregator()
         data = aggregator.collect_data(report)

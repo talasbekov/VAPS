@@ -14,6 +14,7 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.utils import timezone
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
@@ -62,8 +63,11 @@ def default_status_start(employee: Employee):
         if (actual or end) is not None
     ]
     if not ends:
-        return employee.hire_date
-    return max(employee.hire_date, max(ends) + timedelta(days=1))
+        # Imported employees may have no known hire date. Do not invent one in
+        # the employee record; initialize their current status from today.
+        return employee.hire_date or timezone.localdate()
+    after_history = max(ends) + timedelta(days=1)
+    return max(employee.hire_date, after_history) if employee.hire_date else after_history
 
 
 @transaction.atomic

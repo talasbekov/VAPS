@@ -56,14 +56,17 @@ const NOBODY = {
 
 test.describe('права экрана согласования', () => {
   test('отказ прав — НЕ загрузка: кнопки выключены, а не приглашают (Plane №573)', () => {
-    // Пока права ЕДУТ — кнопки открыты намеренно: мигание «нельзя → можно»
-    // вводит в заблуждение сильнее, чем секунда доступной кнопки, а сервер
-    // всё равно стоит за ними.
+    // До проверки прав действия закрыты; загрузка не является разрешением.
     const loading = approvalRightsOf({ ...NOBODY, loading: true })
-    expect(loading.manageRoute).toBe(true)
-    expect(loading.send).toBe(true)
-    expect(loading.approve).toBe(true)
-    expect(loading.returnBack).toBe(true)
+    expect(loading.manageRoute).toBe(false)
+    expect(loading.send).toBe(false)
+    expect(loading.approve).toBe(false)
+    expect(loading.returnBack).toBe(false)
+    const cachedWhileLoading = approvalRightsOf({ ...NOBODY, loading: true,
+      canManage: true, canApprove: true, myId: '77',
+      visit: { chiefEmployeeId: '77', deputies: [] },
+    })
+    expect(Object.values(cachedWhileLoading)).toEqual([false, false, false, false, false])
 
     // 🔴 А ПОСЛЕ ОТКАЗА — выключены. Здесь стояло `permissions === undefined`,
     // истинное и после 403/500 навсегда: окно в секунду превращалось в

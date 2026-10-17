@@ -145,5 +145,5 @@ def test_the_schema_version_was_raised(merged_types, division):  # noqa: F811
     расширение снимка нельзя было выкатить, забыв про версию: читатель
     личной копии сверяет её со списком поддерживаемых.
     """
-    assert SCHEMA_VERSION == 8
-    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 8
+    assert SCHEMA_VERSION == 9
+    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 9

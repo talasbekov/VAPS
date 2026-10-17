@@ -1,5 +1,8 @@
 "use client";
 
+import { SummaryCorrection } from "./SummaryCorrection";
+import { VersionSnapshot } from "./VersionSnapshot";
+
 // «Суточный свод» — версии СВОДНОГО заявления департамента (Task 5).
 //
 // Контракт снят ЭМПИРИЧЕСКИ, не по брифу: бриф предполагал вьюсет
@@ -39,17 +42,9 @@
 // обрезан областью, кандидатов по правилу ниже не найдётся, и сработает
 // честная ветка «узел не определён», а не молчаливая подстановка чужого узла.
 //
-// ПРАВИЛО ВЫВОДА УЗЛА (координатор, эмпирически на живом дереве): узел
-// свода — тот, чей РОДИТЕЛЬ сам является КОРНЕМ (`parent_id === null`), и
-// в чьём поддереве лежит НАИБОЛЬШЕЕ число управлений борда (`division_id`
-// строк расхода, проп `boardDivisionIds`). На живых данных стенда это
-// однозначно «Департамент охраны» (id=2, родитель — корень «Служба», id=1):
-// у сироты «Управление (стенд)» (id=6) родителя нет вовсе (сам корень, не
-// подходит под правило вообще), у «Управление объектами» (id=3) родитель
-// (2) сам не корень. При НУЛЕ кандидатов, при максимальном покрытии = 0
-// или при НЕОДНОЗНАЧНОСТИ (два и более кандидата делят максимальное
-// ненулевое покрытие) — компонент НЕ гадает: показывает честную строку и
-// НЕ шлёт запрос версий вовсе (`enabled` гейт запроса версий).
+// Без явного серверного признака кандидат — узел под корнем, чьё поддерево
+// содержит строки расхода. Единственный выбирается автоматически; несколько
+// требуют выбора человека независимо от размера. До выбора версии не читаются.
 //
 // Снимок ОДНОЙ версии («Открыть») отдаёт только `retrieve` вьюсета
 // `daily-submissions` РАЗДЕЛА `/api/operations/` (не адаптер `/api/ops/
@@ -114,7 +109,7 @@ interface SummaryCandidate {
  *      собирается ЗА департамент, и собирать не за что. Чинится структурой.
  *   `no-coverage` — департаменты есть, но ни один не содержит управлений
  *      этого расхода: расход и структура разошлись. Чинится данными.
- *   `ambiguous` — департаментов НЕСКОЛЬКО и они делят расход поровну. Это
+ *   `ambiguous` — расход охватывает НЕСКОЛЬКО департаментов. Это
  *      не поломка вовсе: так выглядит область, накрывающая всю службу.
  *      Здесь системе не хватает не сведений, а ВЫБОРА — и спросить его можно
  *      у человека, а не гадать за него.
@@ -161,10 +156,8 @@ function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
 }
 
 /**
- * Узел свода по правилу координатора — см. заголовок файла: кандидат —
- * узел, чей родитель сам корневой; победитель — кандидат с максимальным
- * (ненулевым) покрытием `boardDivisionIds` в своём поддереве, при условии
- * что он ЕДИНСТВЕННЫЙ такой. `null` — «не определён», честно, не гадаем.
+ * При нескольких узлах с положительным покрытием `boardDivisionIds`
+ * требуется явный выбор; размер покрытия не определяет адресата свода.
  */
 /**
  * Узел свода ПО СЕРВЕРНОМУ ПРИЗНАКУ (Plane №326, решение заказчика 30.08.2026).
@@ -242,29 +235,27 @@ function resolveSummary(
     for (const id of boardSet) if (subtree.has(id)) count += 1;
     return { id: candidate.divisionId, count };
   });
-  const maxCoverage = Math.max(...coverage.map((entry) => entry.count));
-  if (maxCoverage === 0) {
+  const covered = coverage.filter((entry) => entry.count > 0);
+  if (covered.length === 0) {
     return {
       chosen: null,
       reason: "no-coverage",
       candidates: candidates.map((node) => ({ id: node.divisionId, name: nameOf(node.divisionId) })),
     };
   }
-  const winners = coverage.filter((entry) => entry.count === maxCoverage);
-  if (winners.length !== 1) {
+  if (covered.length > 1) {
     return {
       chosen: null,
       reason: "ambiguous",
-      // В выбор идут ТОЛЬКО делящие максимум: департамент, покрывающий два
-      // управления из пятидесяти, — не кандидат на свод этого расхода, и
-      // предложить его значило бы предложить заведомо неверное.
-      candidates: winners.map((entry) => ({ id: entry.id, name: nameOf(entry.id) })),
+      // Размер департамента не определяет, за кого пользователь хочет
+      // собрать или исправить свод. Каждый представленный узел — кандидат.
+      candidates: covered.map((entry) => ({ id: entry.id, name: nameOf(entry.id) })),
     };
   }
   return {
-    chosen: winners[0].id,
+    chosen: covered[0].id,
     reason: "ok",
-    candidates: [{ id: winners[0].id, name: nameOf(winners[0].id) }],
+    candidates: [{ id: covered[0].id, name: nameOf(covered[0].id) }],
   };
 }
 
@@ -272,70 +263,13 @@ function resolveSummary(
 // отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
 // нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
-interface SnapshotBody {
-  rosterCount: number;
-  rowsCount: number;
-  reason: string;
-  sanction: string;
-}
-
-/** Снимок версии читаем ЗАЩИТНО, тем же приёмом, что `parseSubmission` в
- * `entities/daily-grid`: кривое тело не должно падать исключением — честнее
- * показать «пришло в незнакомой форме», чем уронить блок целиком. */
-function parseSnapshotBody(payload: unknown): SnapshotBody | null {
-  const row = asRecord(payload);
-  if (row === null) return null;
-  const snapshot = asRecord(row.snapshot);
-  if (snapshot === null) return null;
-  const roster = Array.isArray(snapshot.roster) ? snapshot.roster : null;
-  const rows = Array.isArray(snapshot.rows) ? snapshot.rows : null;
-  if (roster === null || rows === null) return null;
-  return {
-    rosterCount: roster.length,
-    rowsCount: rows.length,
-    reason: typeof row.reason === "string" ? row.reason : "",
-    sanction: typeof row.sanction === "string" ? row.sanction : "",
-  };
-}
-
-/** Снимок ОДНОЙ версии — свой запрос, только когда версия раскрыта. */
-function VersionSnapshot({ id }: { id: number }) {
-  const detail = useQuery({
-    queryKey: ["daily-expense-board", "summary-snapshot", id],
-    queryFn: () =>
-      opsApiClient.get<unknown>(`/api/operations/daily-submissions/${id}/`),
-  });
-
-  if (detail.isPending) {
-    return <p className="text-muted-foreground">Загрузка снимка версии…</p>;
-  }
-  if (detail.isError) {
-    return (
-      <p role="alert" className="text-muted-foreground">
-        Не удалось открыть снимок версии
-      </p>
-    );
-  }
-  const body = parseSnapshotBody(detail.data);
-  if (body === null) {
-    return (
-      <p role="alert" className="text-muted-foreground">
-        Снимок версии пришёл в незнакомой форме — показать нечем
-      </p>
-    );
-  }
-  return (
-    <p>
-      В списке {body.rosterCount}, отклонений {body.rowsCount}
-      {body.reason && ` · причина: ${body.reason}`}
-      {body.sanction && ` · санкция: ${body.sanction}`}
-    </p>
-  );
-}
-
 interface SummaryVersionsProps {
+  /** Cached context preserves drafts but must not authorize a write. */
+  contextReady?: boolean;
   /** Optional role scope, already validated against the daily hierarchy by the caller. */
   scopeDivisionId?: number;
+  /** Department scopes validated against server division types by the caller. */
+  scopeCandidates?: { id: number; name: string }[];
   /** Дата — из ТОГО ЖЕ ответа расхода, что и остальной борд: оба блока
    * обязаны говорить об одном дне. */
   businessDate: string;
@@ -349,13 +283,19 @@ interface SummaryVersionsProps {
    * «кого торопить». Блок своего списка подразделений не заводит: он уже
    * загружен бордом, и второй запрос за теми же именами был бы лишним. */
   labelOfDivision: (divisionId: number) => string;
+  /** `history` — ТОЛЬКО список версий, без кнопок ступеней и их сообщений
+   * (Plane №1221): на экране ответственного сборка/отправка живут в блоке
+   * `SummaryActionBar` наверху, и вторая пара тех же кнопок внизу означала
+   * бы два главных действия на одном экране. Умолчание `full` — прежнее
+   * поведение для `DailyExpenseBoard`. */
+  variant?: "full" | "history";
 }
 
 /** Отказ сборки СЛОВАМИ. Три случая названы отдельно, потому что человек
  * делает по ним РАЗНОЕ: «не все сдали» — торопить перечисленных, «уже
  * собран» — идти в пересборку (отдельное действие и отдельное право), всё
  * прочее — читать сообщение сервера. */
-function assembleFailureText(failure: OpsApiFailure): string {
+export function assembleFailureText(failure: OpsApiFailure): string {
   // `SUMMARY_CHILDREN_NOT_SUBMITTED` сюда больше не долетает (Plane №990):
   // кнопка всегда шлёт `allow_incomplete: true`, и недостающие управления
   // видны в СПИСКЕ версий/статусе отправки, а не как отказ сборки.
@@ -374,7 +314,7 @@ function assembleFailureText(failure: OpsApiFailure): string {
 /** Список несдавших из отказа ОТПРАВКИ — `null`, если отказ не про
  * неполноту (403/404/409/сеть): им поле причины не решает ничего, и
  * рисовать его значило бы обещать выход из тупика, которого нет. */
-function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
+export function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
   if (failure === null || !(failure instanceof OpsApiError)) return null;
   const raw = failure.details.laggards;
   if (!Array.isArray(raw)) return null;
@@ -383,7 +323,7 @@ function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
     .filter((value) => Number.isFinite(value));
 }
 
-function sendFailureText(
+export function sendFailureText(
   failure: OpsApiFailure | null,
   labelOfDivision: (divisionId: number) => string,
   laggards: number[] | null
@@ -414,8 +354,11 @@ export function SummaryVersions({
   boardDivisionIds,
   labelOfDivision,
   scopeDivisionId,
+  scopeCandidates,
+  variant = "full",
+  contextReady = true,
 }: SummaryVersionsProps) {
-  const [openId, setOpenId] = useState<number | null>(null);
+  const actions = variant !== "history";
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
   // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`), а не своим
@@ -429,16 +372,21 @@ export function SummaryVersions({
   // «сегодня»): борд получает СВОЙ `businessDate` пропом (Plane №988), и
   // дерево сдачи обязано отвечать про ТОТ ЖЕ день, что и расход рядом —
   // иначе свод сверял бы завтрашние управления со вчерашним светофором.
-  const treeQuery = useTrafficLightTree(scopeDivisionId === undefined, dateValid ? businessDate : undefined);
+  const needsTree = scopeDivisionId === undefined && scopeCandidates === undefined;
+  const treeQuery = useTrafficLightTree(needsTree, dateValid ? businessDate : undefined);
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
-  const treeReady = dateValid && (scopeDivisionId !== undefined || (!treeQuery.isPending && !treeQuery.isError));
+  const treeReady = dateValid && (!needsTree || treeQuery.data !== undefined);
+  const writeContextReady = contextReady && (!needsTree || (treeQuery.isSuccess && !treeQuery.isFetching));
   const resolution = useMemo(
     () =>
-      scopeDivisionId !== undefined ? ({ chosen: scopeDivisionId, reason: 'ok', candidates: [] } as SummaryResolution) : treeReady
+      scopeDivisionId !== undefined ? ({ chosen: scopeDivisionId, reason: 'ok', candidates: [] } as SummaryResolution) : scopeCandidates !== undefined
+        ? ({ chosen: scopeCandidates.length === 1 ? scopeCandidates[0].id : null,
+             reason: scopeCandidates.length === 0 ? 'no-department' : scopeCandidates.length > 1 ? 'ambiguous' : 'ok',
+             candidates: scopeCandidates } as SummaryResolution) : treeReady
         ? resolveSummary(treeNodes, boardDivisionIds)
         : ({ chosen: null, reason: "ok", candidates: [] } as SummaryResolution),
-    [treeReady, treeNodes, boardDivisionIds, scopeDivisionId]
+    [treeReady, treeNodes, boardDivisionIds, scopeDivisionId, scopeCandidates]
   );
 
   // ВЫБОР ЧЕЛОВЕКА ПЕРЕВЕШИВАЕТ ПРАВИЛО (Plane №326), но только когда правило
@@ -453,6 +401,41 @@ export function SummaryVersions({
   const summaryDivisionId = resolution.chosen ?? picked;
   const unresolved = treeReady && summaryDivisionId === null;
   const resolved = treeReady && summaryDivisionId !== null;
+
+  // Mutation feedback and draft reasons belong to this date and department.
+  // A keyed child resets them before the new context can paint or submit.
+  return <SummaryVersionsContext
+    key={`${businessDate}:${summaryDivisionId ?? "unresolved"}`}
+    {...{ businessDate, labelOfDivision, scopeCandidates, actions, dateValid,
+      needsTree, treeQuery, resolution, pickable, picked, setPickedId,
+      summaryDivisionId, unresolved, resolved, contextReady: writeContextReady }}
+  />;
+}
+
+interface SummaryVersionsContextProps {
+  contextReady: boolean;
+  businessDate: string;
+  labelOfDivision: SummaryVersionsProps["labelOfDivision"];
+  scopeCandidates: SummaryVersionsProps["scopeCandidates"];
+  actions: boolean;
+  dateValid: boolean;
+  needsTree: boolean;
+  treeQuery: ReturnType<typeof useTrafficLightTree>;
+  resolution: SummaryResolution;
+  pickable: boolean;
+  picked: number | null;
+  setPickedId: (id: number | null) => void;
+  summaryDivisionId: number | null;
+  unresolved: boolean;
+  resolved: boolean;
+}
+
+function SummaryVersionsContext({
+  businessDate, labelOfDivision, scopeCandidates, actions, dateValid,
+  needsTree, treeQuery, resolution, pickable, picked, setPickedId,
+  summaryDivisionId, unresolved, resolved, contextReady,
+}: SummaryVersionsContextProps) {
+  const [openId, setOpenId] = useState<number | null>(null);
 
   const query = useQuery({
     // `summaryDivisionId` — ЧАСТЬ КЛЮЧА: он стоит в URL запроса, и без него
@@ -479,7 +462,7 @@ export function SummaryVersions({
   // словами, как на остальных гейтах экрана. Пока права ещё грузятся, кнопка
   // не рисуется: мигнувшая и исчезнувшая кнопка хуже, чем появившаяся с
   // задержкой.
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
   const canAssemble = hasPermission(SUMMARY_ASSEMBLE_PERMISSION);
   const assemble = useAssembleSummary();
   const send = useSendSummary();
@@ -494,18 +477,29 @@ export function SummaryVersions({
   // решает ни одну из этих причин.
   const sendNeedsReason = sendLaggards !== null && sendLaggards.length > 0;
   const sendFailureMessage = sendFailureText(send.error, labelOfDivision, sendLaggards);
+  const canWrite = actions && resolved && contextReady && query.isSuccess && !query.isFetching && !permissionsLoading && !permissionsError && canAssemble;
+  const canSend = canWrite && assembled && !alreadySent;
+  const sendNow = () => {
+    if (!canSend || send.isPending || (sendNeedsReason && sendReason.trim() === "")) return;
+    send.mutate({ division_id: summaryDivisionId as number, business_date: businessDate, reason: sendReason });
+  };
 
   return (
-    <section role="region" aria-label="Суточный свод" className="space-y-2">
+    <section role="region" aria-label={actions ? "Суточный свод" : "Версии свода"} className="space-y-2">
       <div className="rounded-lg border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
-          <h2 className="text-sm font-semibold">Суточный свод</h2>
-          {resolved && !permissionsLoading && canAssemble && !assembled && (
+          <h2 className="text-sm font-semibold">{actions ? "Суточный свод" : "Версии свода"}</h2>
+          {resolved && <p data-slot="summary-target" className="w-full text-xs text-muted-foreground">
+            Свод за {resolution.candidates.length > 0 ? "департамент" : "подразделение"} «{resolution.candidates.find(item => item.id === summaryDivisionId)?.name ?? labelOfDivision(summaryDivisionId as number)}».
+            {picked !== null && <> <button type="button" className="underline underline-offset-2" onClick={() => setPickedId(null)}>Выбрать другой</button></>}
+          </p>}
+          {canWrite && !assembled && (
             <Button
               type="button"
               size="sm"
               disabled={assemble.isPending}
               onClick={() => {
+                if (!canWrite || assemble.isPending || assembled) return;
                 assemble.reset();
                 assemble.mutate({
                   division_id: summaryDivisionId as number,
@@ -516,40 +510,35 @@ export function SummaryVersions({
               {assemble.isPending ? "Собираем…" : "Собрать свод"}
             </Button>
           )}
-          {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+          {canSend && !sendNeedsReason && (
             <Button
               type="button"
               size="sm"
               disabled={send.isPending || (sendNeedsReason && sendReason.trim() === "")}
-              onClick={() => {
-                send.mutate({
-                  division_id: summaryDivisionId as number,
-                  business_date: businessDate,
-                  reason: sendReason,
-                });
-              }}
+              onClick={sendNow}
             >
               {send.isPending ? "Отправляем…" : "Отправить дежурному"}
             </Button>
           )}
         </div>
+        {actions && assembled && summaryDivisionId !== null && <div className="border-b px-4 py-2"><SummaryCorrection key={`${businessDate}:${summaryDivisionId}`} divisionId={summaryDivisionId} businessDate={businessDate} dataReady={contextReady && query.isSuccess && !query.isFetching} /></div>}
         {/* Кому уходит — сказано вслух и рядом с кнопкой: «отправить» без
             адресата не отвечает на вопрос, что случится по нажатию. */}
-        {resolved && !permissionsLoading && canAssemble && !assembled && (
+        {canWrite && !assembled && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Свод собирается из действующих сдач управлений; недостающие
             остаются видны как «не сдали» — отправка неполного свода
             потребует явной причины.
           </p>
         )}
-        {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+        {canSend && !sendNeedsReason && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Свод собран. Отправка уходит оперативному дежурному, который
             сводит расход за организацию, — отдельным действием со своим
             моментом и автором.
           </p>
         )}
-        {resolved && !permissionsLoading && canAssemble && alreadySent && currentVersion !== null && (
+        {actions && resolved && !permissionsLoading && canAssemble && alreadySent && currentVersion !== null && (
           <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
             Отправлено {formatIsoDateTime(currentVersion.sent_at as string)} ·{" "}
             {currentVersion.sent_by}
@@ -558,30 +547,32 @@ export function SummaryVersions({
             )}
           </p>
         )}
-        {resolved && !permissionsLoading && !canAssemble && (
+        {actions && permissionsError && <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">Не удалось проверить права. Сборка и отправка недоступны до успешной загрузки прав.</p>}
+        {actions && !permissionsLoading && !permissionsError && !canAssemble && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
             Сборка и отправка свода закрыты правом «Суточный отчёт: генерация»
             — свод собирает и отправляет ответственный за расход департамента.
           </p>
         )}
-        {assembleFailureMessage !== null && (
+        {actions && assembleFailureMessage !== null && (
           <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
             {assembleFailureMessage}
           </p>
         )}
-        {assemble.isSuccess && (
+        {actions && assemble.isSuccess && (
           <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
             Свод собран — новая версия в списке ниже
           </p>
         )}
-        {sendFailureMessage !== null && (
+        {actions && sendFailureMessage !== null && (
           <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
             {sendFailureMessage}
           </p>
         )}
-        {sendNeedsReason && !send.isSuccess && (
+        {canSend && sendNeedsReason && !send.isSuccess && (
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
             <input
+              aria-label="Причина неполной отправки"
               type="text"
               value={sendReason}
               onChange={(event) => setSendReason(event.target.value)}
@@ -593,19 +584,13 @@ export function SummaryVersions({
               size="sm"
               variant="outline"
               disabled={send.isPending || sendReason.trim() === ""}
-              onClick={() => {
-                send.mutate({
-                  division_id: summaryDivisionId as number,
-                  business_date: businessDate,
-                  reason: sendReason,
-                });
-              }}
+              onClick={sendNow}
             >
               Подтвердить отправку
             </Button>
           </div>
         )}
-        {send.isSuccess && (
+        {actions && send.isSuccess && (
           <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
             Свод отправлен дежурному
           </p>
@@ -616,15 +601,15 @@ export function SummaryVersions({
         <div className="divide-y" role="list">
           {!dateValid && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
-              деловая дата ещё не известна
+              Загрузка даты расхода…
             </p>
           )}
-          {scopeDivisionId === undefined && dateValid && treeQuery.isPending && (
+          {needsTree && dateValid && treeQuery.isPending && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Загрузка структуры подразделений…
             </p>
           )}
-          {scopeDivisionId === undefined && dateValid && !treeQuery.isPending && treeQuery.isError && (
+          {needsTree && dateValid && !treeQuery.isPending && treeQuery.isError && (
             <p role="alert" className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Не удалось прочитать структуру подразделений — узел свода не определён
             </p>
@@ -639,9 +624,9 @@ export function SummaryVersions({
               «за какой департамент собираем». */}
           {unresolved && resolution.reason === "no-department" && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
-              Свод собирается за департамент, а в вашей области видимости
-              департаментов нет. Если свод нужен вам по работе — область
-              видимости расширяет администратор системы.
+              Свод департамента собирает ответственный из сдач управлений и отправляет дежурному.
+              В вашей области доступны управления и отделы: сдайте расход за управление целиком.
+              Отдельно сдавать каждый отдел не требуется.
             </p>
           )}
           {unresolved && resolution.reason === "no-coverage" && (
@@ -654,9 +639,9 @@ export function SummaryVersions({
           {unresolved && pickable && (
             <div className="space-y-2 px-4 py-3 text-sm text-muted-foreground">
               <p className="whitespace-normal">
-                В вашей области {resolution.candidates.length} департамента, и
-                расход разложен между ними поровну — за какой собирать свод,
-                система не решает за вас.
+                {scopeCandidates !== undefined
+                  ? "Доступно несколько департаментов. Выберите департамент, за который собираете свод."
+                  : "Расход охватывает несколько департаментов — за какой собирать свод, система не решает за вас. Выберите департамент."}
               </p>
               <div className="flex flex-wrap gap-2">
                 {resolution.candidates.map((candidate) => (
@@ -672,20 +657,6 @@ export function SummaryVersions({
                 ))}
               </div>
             </div>
-          )}
-          {resolved && picked !== null && (
-            <p className="whitespace-normal border-b px-4 py-2 text-xs text-muted-foreground">
-              Свод за департамент «{
-                resolution.candidates.find((item) => item.id === picked)?.name ?? ""
-              }» — выбран вами.{" "}
-              <button
-                type="button"
-                className="underline underline-offset-2"
-                onClick={() => setPickedId(null)}
-              >
-                Выбрать другой
-              </button>
-            </p>
           )}
           {resolved && query.isPending && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
@@ -724,7 +695,7 @@ export function SummaryVersions({
                     {openId === version.id ? "Свернуть" : "Открыть"}
                   </button>
                 </div>
-                {openId === version.id && <VersionSnapshot id={version.id} />}
+                {openId === version.id && <VersionSnapshot id={version.id} labelOfDivision={labelOfDivision} />}
               </div>
             ))}
         </div>

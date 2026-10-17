@@ -476,7 +476,7 @@ export function GvoEditForm({
         ) : (
           <div className="space-y-3">
             {draft.persons.map((person, index) => (
-              <fieldset key={`${person.personId ?? "text"}-${index}`} className="space-y-2 rounded-[12px] border p-3" data-slot="gvo-person">
+              <fieldset key={`${person.personId ?? "text"}-${index}`} className="min-w-0 space-y-2 rounded-[12px] border p-3" data-slot="gvo-person">
                 <legend className="px-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
                   Лицо {index + 1}
                   {person.code !== "" ? ` · ${person.code}` : ""}
@@ -516,7 +516,7 @@ export function GvoEditForm({
         )}
       </Block>
 
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))]">
         {(["arrival", "departure"] as GvoSection[]).map((section) => (
           <Block key={section} title={spec(section).title}>
             <Fields
@@ -553,7 +553,7 @@ export function GvoEditForm({
             «Фамилия | позывной | роль» (Plane №952). Оба обязательны для
             утверждения (`REQUIRED_VISIT_FIELDS`), поэтому у каждого — своя
             галочка «уточняется» по ПУТИ поля (№687). */}
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
           <MemberField
             label="Ответственный за ГВО"
             member={draft.responsible}
@@ -572,9 +572,9 @@ export function GvoEditForm({
           />
         </div>
         {draft.groups.length > 0 && (
-          <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
+          <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))]">
             {draft.groups.map((group, groupIndex) => (
-              <fieldset key={groupIndex} className="space-y-2 rounded-[12px] border p-3" data-slot="gvo-group">
+              <fieldset key={groupIndex} className="min-w-0 space-y-2 rounded-[12px] border p-3" data-slot="gvo-group">
                 <legend className="px-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
                   Группа {groupIndex + 1}
                 </legend>
@@ -983,7 +983,7 @@ function Fields({
   grid?: boolean;
 }) {
   return (
-    <div className={grid ? "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]" : "space-y-3"}>
+    <div className={grid ? "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]" : "space-y-3"}>
       {fields.map((field) => (
         <FieldRow
           key={field.key}

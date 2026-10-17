@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Сводный экран оперативного рейтинга (§19.19). Экран НИЧЕГО не считает:
 // агрегат, период, методика и состояние приходят готовыми. Строки
 // отсортированы сервером по подписи, а не по значению: сортировка по рейтингу
@@ -38,7 +40,9 @@ function periodLabel(summary: OperationalRatingSummary): string {
 
 export default function OperationalRatingsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
-  const query = useOperationalRatings();
+  const query = useOperationalRatings({
+    enabled: !permissionsLoading && hasPermission("rating.view_aggregate"),
+  });
   const data = query.data;
 
   if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
@@ -56,7 +60,7 @@ export default function OperationalRatingsPage() {
 
         <RatingsNav />
 
-        {query.isLoading && (
+        {(permissionsLoading || query.isLoading) && (
           <p className="text-sm text-muted-foreground">Загрузка рейтинга…</p>
         )}
         {query.error !== null && (
@@ -123,6 +127,13 @@ export default function OperationalRatingsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {data.capabilities.operationalRatings && data.results.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        Участников рейтинга пока нет.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {data.results.map((summary) => (
                     <TableRow key={summary.employeeId}>
                       <TableCell className="font-medium">
@@ -146,37 +157,11 @@ export default function OperationalRatingsPage() {
               </Table>
             </section>
 
-            <RatingDynamicsSection />
+            {data.capabilities.operationalRatings && data.results.length > 0 && (
+              <RatingDynamicsSection />
+            )}
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">
-                Что в расчёт не входит
-              </h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableFactors.map((factor) => (
-                  <li key={factor.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {factor.label}.{" "}
-                    </span>
-                    {factor.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не показывается</h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Как читать рейтинг" items={[...data.unavailableFactors, ...data.unavailableViews]} />
           </>
         )}
       </div>

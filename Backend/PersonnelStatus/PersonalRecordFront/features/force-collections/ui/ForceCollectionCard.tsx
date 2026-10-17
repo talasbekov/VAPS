@@ -26,7 +26,8 @@
  * поимённо, кого департамент уже отдал; без этого «5 из 46» остаётся числом,
  * за которым нельзя проверить, тех ли людей прислали.
  */
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 
@@ -54,6 +55,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ForceAllocationRow } from "@/entities/security-event";
+import { eventWorkspaceHref } from "@/entities/security-event/model/navigation";
 import {
   FieldErrors,
   StageError,
@@ -430,9 +432,11 @@ const isSent = (row: ForceAllocationRow) => Boolean(row.sentAt);
 function SplitEditor({
   data,
   sentRows,
+  onSavingChange,
 }: {
   data: ForceCollectionWithObjects;
   sentRows: ForceAllocationRow[];
+  onSavingChange: (saving: boolean) => void;
 }) {
   const unsent = useMemo(
     () => data.allocations.filter((row) => !isSent(row) && !row.topUpOf),
@@ -463,6 +467,8 @@ function SplitEditor({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const { departments, isLoading } = useDepartments();
   const split = useSplitCollection(data.eventId);
+  const saving = useRef(false);
+  useEffect(() => () => onSavingChange(false), [onSavingChange]);
   const groupDemands = (data.demandRows ?? []).filter(
     (row) => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD"
   );
@@ -477,6 +483,7 @@ function SplitEditor({
   const sentTotal = sentRows.reduce((sum, row) => sum + (row.need ?? 0), 0);
   const requestedTotal = drafted + sentTotal;
   const patch = (key: string, next: Partial<DraftRow>) => {
+    if (saving.current) return;
     setNotice("");
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...next } : row)));
   };
@@ -506,10 +513,14 @@ function SplitEditor({
     ],
   });
   const save = (draft: boolean) => {
-    if (split.isPending) return;
+    if (saving.current) return;
+    const payload = body(draft);
+    saving.current = true;
+    onSavingChange(true);
     setFieldErrors(null);
     setNotice("");
-    split.mutate(body(draft), {
+    split.mutate(payload, {
+      onSettled: () => { saving.current = false; onSavingChange(false); },
       onSuccess: () => {
         setConfirmOpen(false);
         setNotice(draft ? "Черновик сохранён" : "Запросы отправлены департаментам");
@@ -544,6 +555,7 @@ function SplitEditor({
               aria-label={`Департамент, строка ${index + 1}`}
               className="border-input bg-background h-9 w-full min-w-[12rem] rounded-md border px-2 text-sm"
               value={row.departmentId}
+              disabled={split.isPending}
               onChange={(e) => patch(row.key, { departmentId: e.target.value })}
             >
               <option value="">
@@ -571,6 +583,7 @@ function SplitEditor({
                 title="Срок сдачи списка. Пусто — за сутки до начала мероприятия"
                 className="h-8 w-48 text-xs"
                 value={row.dueAt}
+                disabled={split.isPending}
                 onChange={(e) => patch(row.key, { dueAt: e.target.value })}
               />
             </div>
@@ -580,6 +593,7 @@ function SplitEditor({
                 {groupDemands.map((demand) => (
                   <label key={demand.id} className="flex items-start gap-2 text-xs">
                     <Checkbox
+                      disabled={split.isPending}
                       checked={row.groupDemandIds.includes(demand.id)}
                       onCheckedChange={(checked) =>
                         patch(row.key, {
@@ -608,12 +622,13 @@ function SplitEditor({
               className="ml-auto h-9 w-24 text-right tabular-nums"
               inputMode="numeric"
               value={row.need}
+              disabled={split.isPending}
               onChange={(e) => patch(row.key, { need: e.target.value })}
             />
           </TableCell>
           <TableCell className="text-muted-foreground text-right">—</TableCell>
           <TableCell className="text-muted-foreground">—</TableCell>
-          <TableCell><Label htmlFor={`draft-comment-${row.key}`} className="sr-only">Комментарий Штаба, строка {index + 1}</Label><Input id={`draft-comment-${row.key}`} aria-label={`Комментарий Штаба, строка ${index + 1}`} value={row.comment} onChange={event => patch(row.key, { comment: event.target.value })} className="min-w-40" /></TableCell>
+          <TableCell><Label htmlFor={`draft-comment-${row.key}`} className="sr-only">Комментарий Штаба, строка {index + 1}</Label><Input id={`draft-comment-${row.key}`} aria-label={`Комментарий Штаба, строка ${index + 1}`} value={row.comment} disabled={split.isPending} onChange={event => patch(row.key, { comment: event.target.value })} className="min-w-40" /></TableCell>
           <TableCell className="text-sm" data-slot="department-status">
             Черновик
           </TableCell>
@@ -626,7 +641,9 @@ function SplitEditor({
               className="h-9 w-9"
               aria-label={`Убрать департамент, строка ${index + 1}`}
               title="Убрать департамент из черновика"
+              disabled={split.isPending}
               onClick={() => {
+                if (saving.current) return;
                 setNotice("");
                 setRows((current) => current.filter((r) => r.key !== row.key));
               }}
@@ -643,7 +660,9 @@ function SplitEditor({
               type="button"
               variant="outline"
               size="sm"
+              disabled={split.isPending}
               onClick={() => {
+                if (saving.current) return;
                 setNotice("");
                 const remainder = data.need - requestedTotal;
                 setRows((current) => [
@@ -718,7 +737,7 @@ function SplitEditor({
         </TableCell>
       </TableRow>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog open={confirmOpen} onOpenChange={(open) => { if (!saving.current) setConfirmOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Отправить запросы департаментам?</DialogTitle>
@@ -741,7 +760,7 @@ function SplitEditor({
           </p>
           <StageError error={split.error?.kind === "validation" ? null : split.error ?? null} />
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
+            <Button type="button" variant="outline" disabled={split.isPending} onClick={() => { if (!saving.current) setConfirmOpen(false); }}>
               Отмена
             </Button>
             <Button type="button" disabled={split.isPending} onClick={() => save(false)}>
@@ -751,6 +770,98 @@ function SplitEditor({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/** The overview includes every visit; capacities remain scoped to published demand. */
+function CollectionObjectPlan({
+  data,
+  canViewEvent,
+}: {
+  data: ForceCollectionWithObjects;
+  canViewEvent: boolean;
+}) {
+  const objects = data.objects ?? [];
+  const visits = data.visitObjects ?? objects;
+  const capacities = new Map(objects.map(object => [object.visitObjectId, object]));
+  const demands = new Map(data.needByObject.map(item => [item.visitObjectId, item]));
+  const looseDemand = data.needByObject.filter(item => !item.visitObjectId);
+  // The sum includes unscoped posts; a frozen request remains a separate fact.
+  const shownNeed = data.needByObject.reduce((sum, item) => sum + item.need, 0);
+  const needDiffers = data.needByObject.length > 0 && shownNeed !== data.need;
+
+  return (
+    <section aria-labelledby="collection-need-heading" className="space-y-3 rounded-xl border bg-card p-4" data-slot="collection-need">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 id="collection-need-heading" className="font-semibold">Потребность по объектам ОМ</h3>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {data.visitObjects === undefined
+              ? `Объекты с переданным расчётом: ${visits.length}`
+              : `Объекты ОМ: ${visits.length}`}
+          </p>
+        </div>
+        {canViewEvent && (
+          <Link href={eventWorkspaceHref(data.eventId)} className="text-primary inline-flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline">
+            Объекты мероприятия
+          </Link>
+        )}
+      </div>
+      <p className="text-muted-foreground text-sm">
+        Штаб собирает общий состав ОМ и распределяет сотрудников по объектам. Объекты с незавершённым расчётом показаны отдельно от доступных для назначения.
+      </p>
+      {visits.length === 0 && looseDemand.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {data.visitObjects === undefined
+            ? "Объекты с переданным расчётом пока не получены."
+            : "Объектов посещения у мероприятия нет."}
+        </p>
+      ) : (
+        <ul className="grid gap-3 text-sm lg:grid-cols-2">
+          {visits.map((visit, index) => {
+            const capacity = capacities.get(visit.visitObjectId);
+            const demand = demands.get(visit.visitObjectId);
+            const status = [demand?.statusLabel, demand?.chiefName].filter(Boolean).join(" · ");
+            return (
+              <li
+                key={visit.visitObjectId}
+                data-testid={`collection-object-plan-${visit.visitObjectId}`}
+                data-slot={demand ? "need-by-object" : undefined}
+                className="min-w-0 space-y-2 rounded-lg border p-3"
+              >
+                <p className="text-muted-foreground text-xs">Объект {index + 1}</p>
+                <h4 className="break-words font-semibold">
+                  {canViewEvent ? (
+                    <Link href={eventWorkspaceHref(data.eventId, { visitId: visit.visitObjectId })} className="text-primary inline-flex min-h-11 items-center underline-offset-4 hover:underline">
+                      {visit.objectName}
+                    </Link>
+                  ) : visit.objectName}
+                </h4>
+                {capacity ? (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
+                    <p>{capacity.need === null ? "Потребность не размечена" : <>Потребность <b>{capacity.need}</b></>}</p>
+                    <p>Назначено <b>{capacity.assigned}</b></p>
+                    {capacity.need !== null && <p>Недобор <b>{Math.max(0, capacity.need - capacity.assigned)}</b></p>}
+                  </div>
+                ) : <p className="text-muted-foreground">Расчёт ещё не передан в сбор</p>}
+                {status && <p className="text-muted-foreground text-xs">{status}</p>}
+              </li>
+            );
+          })}
+          {looseDemand.map(item => (
+            <li key="unassigned" data-slot="need-by-object" className="rounded-lg border p-3">
+              {item.objectName} — <b className="tabular-nums">{item.need}</b>
+            </li>
+          ))}
+          {data.needByObject.length > 0 && <li className="font-semibold lg:col-span-2" data-slot="need-total">Итого {shownNeed}</li>}
+        </ul>
+      )}
+      {needDiffers && (
+        <p className="text-xs text-amber-800" data-slot="need-mismatch">
+          Штабу передано {data.need} — расчёт постов изменился после запроса.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -770,6 +881,7 @@ export function ForceCollectionCard({
   const collection = useForceCollection(eventId, { enabled });
   const data = collection.data;
   const access = useChainAccess();
+  const [savingSplit, setSavingSplit] = useState(false);
 
   if (collection.isPending) {
     return (
@@ -783,7 +895,7 @@ export function ForceCollectionCard({
   if (collection.isError || data === undefined) {
     return (
       <div className="space-y-3">
-        <Button variant="ghost" size="sm" onClick={onBack}>
+        <Button variant="ghost" size="sm" disabled={savingSplit} onClick={() => { if (!savingSplit) onBack(); }}>
           <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
           Назад к списку сборов
         </Button>
@@ -794,12 +906,6 @@ export function ForceCollectionCard({
     );
   }
 
-  // Сумма СТРОК, напечатанных рядом (Plane №678) — она и есть «Итого» блока
-  // «Потребность». `data.need` рядом с ними — другой факт: число, которое штаб
-  // получил на завершении рекогносцировки и раскладывает; оно заморожено и
-  // после правки расчёта расходится с живой суммой.
-  const shownNeed = data.needByObject.reduce((sum, item) => sum + item.need, 0);
-  const needDiffers = data.needByObject.length > 0 && shownNeed !== data.need;
   // Таблица `[СБС-12]` показывает ОТПРАВЛЕННЫЕ запросы; черновик штаба живёт
   // строками редактора ниже, и департаменту его не видно (Plane №944).
   const sentRows = data.allocations.filter(isSent);
@@ -809,13 +915,14 @@ export function ForceCollectionCard({
   return (
     <div className="min-w-0 space-y-5">
       <div>
-        <Button variant="ghost" size="sm" onClick={onBack}>
+        <Button variant="ghost" size="sm" disabled={savingSplit} onClick={() => { if (!savingSplit) onBack(); }}>
           <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
           Назад к списку сборов
         </Button>
       </div>
 
       <div className="space-y-1">
+        <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">Сбор сил на всё ОМ</p>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="font-mono text-[11px]">
             {data.code}
@@ -829,7 +936,7 @@ export function ForceCollectionCard({
         </div>
         <h2 className="text-xl font-semibold">{data.title}</h2>
         <p className="text-muted-foreground text-sm">
-          {[formatIsoDate(data.businessDate), data.location, data.eventTime]
+          {[formatIsoDate(data.businessDate), data.eventTime]
             .filter((part) => part !== null && part !== "")
             .join(" · ")}
         </p>
@@ -838,59 +945,7 @@ export function ForceCollectionCard({
       <HqStages current={data.handover.at || data.roster.length > 0 ? 4 : sentRows.length > 0 ? 3 : 2} />
       <p className="rounded-lg border-l-4 border-primary bg-primary/5 p-3 text-sm">Запрос — пожелание Штаба. Департамент вправе выделить меньше, больше или отказаться. Специальные группы идут сверх квоты физического наряда.</p>
 
-      {/* Блок 1 «Потребность» (`[СБС-11]`, Plane №426): по объектам посещения
-          «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов)» → Итого N.
-
-          🔴 «ИТОГО» СЧИТАЕТСЯ ИЗ СТРОК, КОТОРЫЕ НАПЕЧАТАНЫ РЯДОМ (Plane №678).
-          Здесь стояло `data.need` — число, замороженное на завершении
-          рекогносцировки и с тех пор не пересчитываемое, тогда как строки
-          объектов считаются живьём. Поправили `need` поста после
-          рекогносцировки — строки изменились, «Итого» нет; оставили пост без
-          объекта на ОМ с двумя объектами — он выпадал из строк, но сидел в
-          «Итого». Человек читал «„Мейрам“ — 8 · „Рахат“ — 3 · Итого 12» и не
-          мог свести. Теперь сумма верна по построению, а расхождение с тем,
-          что получил штаб, названо отдельной строкой — это РАЗНЫЕ факты, и
-          прятать второй ради первого нельзя. */}
-      <section aria-labelledby="collection-need-heading" className="space-y-3 rounded-xl border bg-card p-4" data-slot="collection-need">
-        <h3 id="collection-need-heading" className="font-semibold">
-          Потребность
-        </h3>
-        {data.needByObject.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Объектов посещения у мероприятия нет.</p>
-        ) : (
-          <ul className="grid gap-2 text-sm lg:grid-cols-2">
-            {data.needByObject.map((item) => (
-              <li key={item.visitObjectId || "unassigned"} data-slot="need-by-object" className="rounded-lg border p-3">
-                {/* Строка «без объекта посещения» — не объект, и кавычек ей не
-                    полагается: она про посты, которые объекту не отнесены. */}
-                {item.visitObjectId === "" ? (
-                  <span>{item.objectName} — </span>
-                ) : (
-                  <span>«{item.objectName}» — </span>
-                )}
-                <b className="tabular-nums">{item.need}</b>
-                <span className="text-muted-foreground">
-                  {" "}
-                  ({[item.statusLabel.toLowerCase(), item.chiefName].filter((p) => p !== "").join(", ")})
-                </span>
-              </li>
-            ))}
-            <li className="font-semibold" data-slot="need-total">
-              Итого {shownNeed}
-            </li>
-          </ul>
-        )}
-        {/* Расхождение НАЗЫВАЕТСЯ, а не сглаживается (Plane №678). Штаб делит
-            число, полученное на завершении рекогносцировки; расчёт постов
-            после этого могли поправить. Оба числа — факты, и молчаливое
-            выравнивание одного по другому спрятало бы то, что расчёт
-            изменился уже после запроса. */}
-        {needDiffers && (
-          <p className="text-xs text-amber-800" data-slot="need-mismatch">
-            Штабу передано {data.need} — расчёт постов изменился после запроса.
-          </p>
-        )}
-      </section>
+      <CollectionObjectPlan data={data} canViewEvent={access.can("event.view")} />
       {(data.demandRows ?? []).some(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD") && <section aria-label="Потребность в специальных группах" className="rounded-xl border bg-card p-4"><h3 className="font-semibold">Специальные группы · сверх физического наряда</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{(data.demandRows ?? []).filter(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD").map(row => <p key={row.id} className="rounded-lg bg-muted/40 p-3 text-sm">{row.specification || row.kindCode} · {row.need} · {row.place}</p>)}</div></section>}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
@@ -966,7 +1021,7 @@ export function ForceCollectionCard({
                   «Запрошено [ввод]»): раскладка — продолжение той строки, в
                   которой показана. Редактор монтируется по ключу сбора, чтобы
                   черновик одного ОМ не пережил переход к другому. */}
-              {editable && <SplitEditor key={data.eventId} data={data} sentRows={sentRows} />}
+              {editable && <SplitEditor key={data.eventId} data={data} sentRows={sentRows} onSavingChange={setSavingSplit} />}
             </TableBody>
           </Table>
         </div>
@@ -995,17 +1050,16 @@ export function ForceCollectionCard({
 /**
  * Блок 3 «Собранные сотрудники → объекты» (`[СБС-13]`, Plane №390).
  *
- * Появляется с первым принятым списком (состав непуст). Слева — люди состава
- * по департаментам с чекбоксами, справа — объекты посещения с ёмкостью
+ * До первого списка объясняет следующий шаг. Слева — люди состава
+ * по департаментам с чекбоксами, справа — доступные объекты с ёмкостью
  * «потребность N / назначено M». Отметил → «На объект…» — люди отданы
  * объекту; «Передать на расстановку» — при недоборе диалог с обязательным
  * комментарием. Перетаскивания нет намеренно: чекбоксы + список делают то же
  * с клавиатуры и на планшете, а drag-and-drop без второго пути был бы
  * недоступен половине пользователей.
  *
- * После передачи блок читается, но не правится: распределение — решение
- * штаба, и менять его после того, как старшие объектов начали расставлять,
- * значило бы менять условия задним числом.
+ * После передачи уже распределённые остаются закреплены за объектами;
+ * новых людей довыделения можно отдать объектам без повторной передачи.
  */
 function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
   const assign = useAssignRosterObjects(data.eventId);
@@ -1016,12 +1070,30 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
   const [comment, setComment] = useState("");
   const roster = data.roster ?? [];
   const objects = data.objects ?? [];
+  const visits = data.visitObjects ?? objects;
   const handedOver = Object.keys(data.handover ?? {}).length > 0;
-  if (roster.length === 0) return null;
-
+  const objectIds = new Set(objects.map(object => object.visitObjectId));
+  const pendingSites = data.visitObjects?.some(visit => !objectIds.has(visit.visitObjectId)) ?? false;
+  const hasTargets = objects.length > 0;
   const objectName = (id: string | null | undefined) =>
     objects.find((o) => o.visitObjectId === id)?.objectName ?? null;
+  const objectLabel = (id: string | null | undefined) => {
+    const name = objectName(id);
+    const index = visits.findIndex(visit => visit.visitObjectId === id);
+    return name === null ? null : `Объект ${index + 1} · ${name}`;
+  };
   const unassigned = roster.filter((m) => !m.visitObjectId).length;
+  // A retained selection cannot move an already handed-over employee after a refetch.
+  const selectable = new Set(roster.filter(member => !handedOver || !member.visitObjectId).map(member => member.employeeId));
+  const selectedIds = picked.filter(employeeId => selectable.has(employeeId));
+  const canAssign = hasTargets && roster.length > 0 && (!handedOver || unassigned > 0);
+  const handoverReason = roster.length === 0
+    ? "Сначала получите списки сотрудников от департаментов."
+    : pendingSites
+      ? "Сначала завершите рекогносцировку всех объектов."
+      : hasTargets && unassigned > 0
+        ? "Сначала отдайте объектам всех собранных."
+        : "";
   const shortfall = objects.filter(
     (o) => o.need !== null && o.assigned < o.need
   );
@@ -1031,7 +1103,7 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
     byDepartment.set(key, [...(byDepartment.get(key) ?? []), member]);
   }
   const togglePicked = (employeeId: string, on: boolean) =>
-    setPicked((prev) => (on ? [...prev, employeeId] : prev.filter((id) => id !== employeeId)));
+    setPicked((prev) => (on ? [...new Set([...prev, employeeId])] : prev.filter((id) => id !== employeeId)));
 
   return (
     <section aria-labelledby="roster-objects-heading" className="space-y-3">
@@ -1053,20 +1125,28 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
                   data.handover.comment ? ` · ${data.handover.comment}` : ""
                 }`
               : `Прислано ${data.gathered} из ${data.need}${
-                  unassigned > 0 ? ` · не распределены: ${unassigned}` : ""
+                  hasTargets && unassigned > 0 ? ` · не распределены: ${unassigned}` : ""
                 }`}
           </p>
+          {handedOver && unassigned > 0 && hasTargets && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              Довыделение: не распределены {unassigned}. Отдайте новых сотрудников объектам; ранее переданные назначения сохраняются.
+            </p>
+          )}
         </div>
         {!handedOver && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={handOver.isPending || unassigned > 0}
-            title={unassigned > 0 ? "Сначала отдайте объектам всех собранных" : undefined}
-            onClick={() => (shortfall.length > 0 ? setDialogOpen(true) : handOver.mutate({ comment: "" }))}
-          >
-            {handOver.isPending ? "Передаю…" : "Передать на расстановку"}
-          </Button>
+          <div className="max-w-sm space-y-1">
+            <Button
+              type="button"
+              size="sm"
+              disabled={handOver.isPending || handoverReason !== ""}
+              aria-describedby={handoverReason ? "roster-handover-reason" : undefined}
+              onClick={() => (shortfall.length > 0 ? setDialogOpen(true) : handOver.mutate({ comment: "" }))}
+            >
+              {handOver.isPending ? "Передаю…" : "Передать на расстановку"}
+            </Button>
+            {handoverReason && <p id="roster-handover-reason" className="text-muted-foreground text-xs">{handoverReason}</p>}
+          </div>
         )}
       </div>
 
@@ -1082,6 +1162,13 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {roster.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="whitespace-normal py-6 text-sm">
+                    Списки сотрудников ещё не получены. После ответа департаментов распределите состав по объектам.
+                  </TableCell>
+                </TableRow>
+              )}
               {[...byDepartment.entries()].map(([department, members]) => (
                 /* 🔴 `Fragment` С КЛЮЧОМ, А НЕ СОКРАЩЁННЫЙ `<>` (Plane №485).
                    Ключ нужен САМОМУ элементу списка; ключи на внутренних
@@ -1105,16 +1192,16 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
                       <TableCell>
                         <Checkbox
                           aria-label={`Отметить ${member.name}`}
-                          disabled={handedOver}
-                          checked={picked.includes(member.employeeId)}
+                          disabled={!hasTargets || !selectable.has(member.employeeId) || assign.isPending}
+                          checked={selectedIds.includes(member.employeeId)}
                           onCheckedChange={(on) => togglePicked(member.employeeId, on === true)}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{member.name}</TableCell>
                       <TableCell className="text-muted-foreground">{member.divisionName || "—"}</TableCell>
                       <TableCell>
-                        {objectName(member.visitObjectId) ?? (
-                          <span className="text-muted-foreground">не распределён</span>
+                        {objectLabel(member.visitObjectId) ?? (
+                          <span className="text-muted-foreground">{visits.length === 0 ? "Общий состав ОМ" : "не распределён"}</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1145,7 +1232,7 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
               );
             })}
           </ul>
-          {!handedOver && (
+          {canAssign && (
             <div className="space-y-2">
               <label className="text-xs font-semibold" htmlFor="roster-target">
                 На объект…
@@ -1154,25 +1241,26 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
                 id="roster-target"
                 className="h-8 w-full rounded-md border bg-background px-2 text-xs"
                 value={target}
+                disabled={assign.isPending}
                 onChange={(e) => setTarget(e.target.value)}
               >
                 <option value="">— выберите объект —</option>
                 {objects.map((o) => (
                   <option key={o.visitObjectId} value={o.visitObjectId}>
-                    {o.objectName}
+                    {objectLabel(o.visitObjectId)}
                   </option>
                 ))}
-                <option value="__none__">снять с объекта</option>
+                {!handedOver && <option value="__none__">снять с объекта</option>}
               </select>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={picked.length === 0 || target === "" || assign.isPending}
+                disabled={selectedIds.length === 0 || (target !== "__none__" && !objectIds.has(target)) || (handedOver && target === "__none__") || assign.isPending}
                 onClick={() =>
                   assign.mutate(
                     {
-                      rows: picked.map((employeeId) => ({
+                      rows: selectedIds.map((employeeId) => ({
                         employeeId,
                         visitObjectId: target === "__none__" ? null : target,
                       })),
@@ -1183,9 +1271,9 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
               >
                 {assign.isPending
                   ? "Отдаю…"
-                  : picked.length === 0
+                  : selectedIds.length === 0
                     ? "Отметьте людей слева"
-                    : `Отдать объекту: ${picked.length}`}
+                    : `Отдать объекту: ${selectedIds.length}`}
               </Button>
               {assign.isError && (
                 <p role="alert" className="text-destructive-ink text-xs">

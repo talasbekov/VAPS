@@ -1,20 +1,21 @@
-import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { uniqueBusinessDate } from './business-date'
 import { assertStep } from './fixture-step'
 import { ROUTES } from './portal-routes'
+import { runBackendCommand } from './backend-command'
+import { acceptRosterFor } from './stand-roster'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-const execFileAsync = promisify(execFile)
-const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
 let probeMarker: string | null = null
+let probeCampaign: { id: string; title: string } | null = null
+type ApprovalStep = { roleLabel: string; unit: string; username: string; fullName: string }
+let approvalSnapshot: { token: string; steps: ApprovalStep[] } | null = null
 
 const CHECKPOINTS = [
   ['бюллетень', 'bulletin-stage.spec.ts', 'Бюллетень мероприятия'],
@@ -49,15 +50,15 @@ async function token(): Promise<string> {
 async function signIn(page: Page): Promise<void> {
   const csrf = await page.request.get(`${APP}/api/auth/csrf/`)
   const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken
-  await page.request.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await page.request.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
+  expect(response.status(), 'вход основной проходки ОМ не принят').toBe(200)
 }
 
 async function shot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  fs.mkdirSync('smoke-results', { recursive: true })
   const body = await page.screenshot({
-    path: `smoke-results/1046-om-${name}.png`,
+    path: process.env.SMOKE_RESULTS_DIR ? testInfo.outputPath(`1046-om-${name}.png`) : `smoke-results/1046-om-${name}.png`,
     fullPage: true,
   })
   await testInfo.attach(name, {
@@ -67,10 +68,8 @@ async function shot(page: Page, testInfo: TestInfo, name: string): Promise<void>
 }
 
 async function purgeOwnEvent(marker: string): Promise<void> {
-  await execFileAsync(
-    path.join(BACKEND_ROOT, '.venv/bin/python'),
+  await runBackendCommand(
     [
-      'manage.py',
       'purge_probe_events',
       '--marker',
       marker,
@@ -78,8 +77,20 @@ async function purgeOwnEvent(marker: string): Promise<void> {
       '--force',
       '--settings=organization_management.config.settings.local_postgres',
     ],
-    { cwd: BACKEND_ROOT, timeout: 120_000 },
+    { timeout: 120_000 },
   )
+}
+
+async function purgeOwnCampaign(campaign: { id: string; title: string }): Promise<void> {
+  // Campaign links protect their event from deletion. Match both captured PK
+  // and the exact unique title before removing this test's campaign only.
+  const script = [
+    'import os',
+    'from organization_management.apps.operations.models_forces import OpsForceCampaign',
+    'row = OpsForceCampaign.objects.get(pk=os.environ["E2E_CAMPAIGN_ID"], title=os.environ["E2E_CAMPAIGN_TITLE"])',
+    'row.delete()',
+  ].join('\n')
+  await runBackendCommand(['shell', '-c', script], { env: { E2E_CAMPAIGN_ID: campaign.id, E2E_CAMPAIGN_TITLE: campaign.title } })
 }
 
 async function call<T>(accessToken: string, method: string, path: string, body?: unknown): Promise<T> {
@@ -114,13 +125,32 @@ test.describe(LIVE ? 'основная проходка ОМ' : 'основна�
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
   test.afterEach(async () => {
-    if (probeMarker === null) return
-    await purgeOwnEvent(probeMarker)
-    probeMarker = null
+    try {
+      if (probeCampaign !== null) {
+        await purgeOwnCampaign(probeCampaign)
+        probeCampaign = null
+      }
+      if (probeMarker !== null) {
+        await purgeOwnEvent(probeMarker)
+        probeMarker = null
+      }
+    } finally {
+      if (approvalSnapshot !== null) {
+        const original = approvalSnapshot
+        approvalSnapshot = null
+        await call(original.token, 'PUT', '/api/ops/approval-route/', { steps: original.steps })
+      }
+    }
   })
 
   test('бюллетень → рекогносцировка → потребность → расстановка → две подписи → ознакомление → проведение', async ({ page }, testInfo) => {
     const accessToken = await token()
+    const previousRoute = await call<{ results: ApprovalStep[] }>(accessToken, 'GET', '/api/ops/approval-route/')
+    approvalSnapshot = { token: accessToken, steps: previousRoute.results.map(({ roleLabel, unit, username, fullName }) => ({ roleLabel, unit, username, fullName })) }
+    await call(accessToken, 'PUT', '/api/ops/approval-route/', { steps: [
+      { roleLabel: 'Первый согласующий проходки', unit: 'Второй департамент', username: '', fullName: 'Первый согласующий проходки' },
+      { roleLabel: 'Второй согласующий проходки', unit: 'Второй департамент', username: '', fullName: 'Второй согласующий проходки' },
+    ] })
     const objects = await call<{ results: { id: string; publishedVersionCount: number }[] }>(
       accessToken,
       'GET',
@@ -152,29 +182,32 @@ test.describe(LIVE ? 'основная проходка ОМ' : 'основна�
     const placement = await call<{
       stage: string
       demandRows: { kindCode: string; need: number }[]
-      reconSectorPosts: { id: string }[]
+      reconSectorPosts: { id: string; need: number }[]
     }>(accessToken, 'POST', `${base}/recon/complete/`)
     expect(placement.stage).toBe('PLACEMENT')
     expect(placement.demandRows.every((row) => row.kindCode !== '' && row.need > 0)).toBe(true)
-    const personnel = await call<{ results: { id: string }[] }>(accessToken, 'GET', '/api/ops/personnel/?page_size=100')
-    for (const [index, post] of placement.reconSectorPosts.entries()) {
-      await call(accessToken, 'POST', `${base}/placement/assign/`, {
-        postId: post.id,
-        employeeId: personnel.results[index]!.id,
-      })
+    const needed = placement.reconSectorPosts.reduce((sum, post) => sum + Math.max(post.need, 1), 0)
+    expect(needed, 'расстановка без потребности не доказывает жизненный цикл').toBeGreaterThan(0)
+    const accepted = await acceptRosterFor(accessToken, event.id, { count: needed })
+    expect(accepted.employeeIds).toHaveLength(needed)
+    let cursor = 0
+    for (const post of placement.reconSectorPosts) {
+      for (let i = 0; i < Math.max(post.need, 1); i += 1) {
+        await call(accessToken, 'POST', `${base}/placement/assign/`, {
+          postId: post.id,
+          employeeId: accepted.employeeIds[cursor++],
+        })
+      }
     }
-    await call(accessToken, 'POST', `${base}/placement/complete/`)
-    let approval = await call<{ approvalRoute: { id: string }[] }>(accessToken, 'POST', `${base}/approval/route/`, {
-      name: 'Первый согласующий проходки', unit: 'Второй департамент', position: 'Руководитель',
-    })
-    approval = await call(accessToken, 'POST', `${base}/approval/route/`, {
-      name: 'Второй согласующий проходки', unit: 'Второй департамент', position: 'Руководитель',
-    })
-    expect(approval.approvalRoute).toHaveLength(2)
-    await call(accessToken, 'POST', `${base}/approval/send/`)
-    for (const approver of approval.approvalRoute) {
+    const complete = await call<{ visitObjects: { id: string }[] }>(accessToken, 'POST', `${base}/placement/complete/`)
+    expect(complete.visitObjects).toHaveLength(1)
+    const visitObjectId = complete.visitObjects[0].id
+    const sent = await call<{ visitObjects: { id: string; approvalRoute: { id: string; status: string }[] }[] }>(accessToken, 'POST', `${base}/approval/send/`, { visitObjectId })
+    const route = sent.visitObjects.find(visit => visit.id === visitObjectId)!.approvalRoute
+    expect(route).toHaveLength(2)
+    for (const approver of route) {
       await call(accessToken, 'POST', `${base}/approval/route/${approver.id}/decide/`, {
-        decision: 'APPROVED', comment: '',
+        decision: 'APPROVED', comment: '', visitObjectId,
       })
     }
 
@@ -183,18 +216,17 @@ test.describe(LIVE ? 'основная проходка ОМ' : 'основна�
     await expect(page.getByRole('heading', { name: 'Ознакомление' })).toBeVisible({ timeout: 20_000 })
     await shot(page, testInfo, '01-acknowledgement-after-two-signatures')
 
-    const campaign = {
-      id: 'main-walkthrough', code: 'РМ-E2E', title: 'Общий пул основной проходки', status: 'DISTRIBUTING',
-      events: [{ eventId: event.id, code: event.code, title: 'Основная проходка ОМ', businessDate: uniqueBusinessDate(), visitObjects: [], demandRows: [] }],
-      pool: [{ employeeId: personnel.results[0]!.id, employeeName: 'Сотрудник проходки', kindCode: 'PHYSICAL_SQUAD', sourceEventIds: [event.id] }],
-      assignments: [], warnings: [],
-    }
-    await page.route((url) => url.pathname.endsWith('/forces/campaigns/'), (route) => route.fulfill({ json: { results: [campaign] } }))
-    await page.route((url) => url.pathname.endsWith('/forces/campaigns/main-walkthrough/'), (route) => route.fulfill({ json: campaign }))
-    await page.route((url) => url.pathname.endsWith('/forces/collections/'), (route) => route.fulfill({ json: { results: [] } }))
+    const campaign = await call<{ id: string; code: string; title: string; pool: { employeeId: string }[] }>(accessToken, 'POST', '/api/ops/security-events/forces/campaigns/', {
+      title: `Общий пул основной проходки · ${probeMarker}`, eventIds: [event.id],
+    })
+    probeCampaign = { id: campaign.id, title: campaign.title }
+    const savedCampaign = await call<typeof campaign>(accessToken, 'GET', `/api/ops/security-events/forces/campaigns/${campaign.id}/`)
+    expect(savedCampaign.pool.map(person => person.employeeId).sort()).toEqual([...accepted.employeeIds].sort())
     await page.goto(`${APP}/employees?view=forces`)
     await page.getByRole('tab', { name: 'Сборы', exact: true }).click()
-    await expect(page.getByText('Общий пул основной проходки', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: `Открыть распределение ${campaign.code}`, exact: true }).click()
+    await expect(page.getByRole('heading', { name: campaign.title, exact: true })).toBeVisible()
+    await expect(page.locator('input[name="campaign-employee"]')).toHaveCount(needed)
     await shot(page, testInfo, '02-shared-force-pool')
 
     await call(accessToken, 'POST', `${base}/acknowledgement/complete/`, {

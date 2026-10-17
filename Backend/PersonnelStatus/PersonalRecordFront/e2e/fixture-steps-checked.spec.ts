@@ -145,7 +145,10 @@ function transitionCalls(source: string): { line: number; text: string }[] {
     //    `apiCall(` — а в `department-requests.spec.ts` именно так и зовут,
     //    причём без проверки статуса: `recon/import-from-passport/` и
     //    `recon/complete/` шли мимо сторожа.
-    if (!/[A-Za-z_$]*(post|patch|put|call|fetch|request)\s*[([]/i.test(text)) return
+    // Response.request().method() читает метаданные уже отправленного
+    // запроса. Это не шаг подготовки, даже внутри waitForResponse.
+    const calls = text.replace(/\b[A-Za-z_$][\w$]*\.request\(\)\.method\(\)/g, '')
+    if (!/[A-Za-z_$]*(post|patch|put|call|fetch|request)\s*[([]/i.test(calls)) return
     found.push({ line: index + 1, text })
   })
   return found
@@ -299,6 +302,12 @@ function silentSpecs(): Record<string, Offence[]> {
   }
   return guilty
 }
+
+test('ожидание ответа не создаёт шаг, а отправка запроса создаёт', () => {
+  expect(transitionCalls("const waiting = page.waitForResponse(response => response.url().includes('/recon/complete/') && response.request().method() === 'POST')")).toEqual([])
+  expect(transitionCalls("const result = await page.request.post('/recon/complete/')")).toHaveLength(1)
+  expect(transitionCalls("const result = await request('/recon/complete/')")).toHaveLength(1)
+})
 
 test('шаги-переходы живых фикстур проверяют ответ (Plane №812, №813)', () => {
   const guilty = silentSpecs()

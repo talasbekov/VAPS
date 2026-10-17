@@ -213,6 +213,12 @@ from organization_management.apps.operations.models_duty import (  # noqa: E402
 )
 
 # Боевые группы на Трассе — свои реестры и смена-агрегат.
+from organization_management.apps.operations.models_duty_log import (  # noqa: E402
+    OpsDutyCreationClosure,  # noqa: F401
+    OpsDutyLogEntry,  # noqa: F401
+    OpsDutyRecordSupplement,  # noqa: F401
+)
+
 from organization_management.apps.operations.models_combat import (  # noqa: E402
     OpsCombatDutyShift,  # noqa: F401
     OpsCombatDutyType,  # noqa: F401
@@ -291,8 +297,15 @@ from organization_management.apps.operations.models_geo import (  # noqa: E402
 )
 from organization_management.apps.operations.models_legal import (  # noqa: E402
     OpsLegalDocument,  # noqa: F401
+    OpsLegalDocumentFile,  # noqa: F401
 )
 from organization_management.apps.operations.models_vehicle import (  # noqa: E402
     OpsEventVehicle,  # noqa: F401
     OpsVehicle,  # noqa: F401
+)
+from organization_management.apps.operations.models_recon_material import (  # noqa: E402
+    OpsReconMaterial,  # noqa: F401
+)
+from organization_management.apps.operations.models_duty_dispatch import (  # noqa: E402,F401
+    OpsDutyDispatchConfig, OpsDutyDispatchAssignment,
 )

@@ -116,7 +116,7 @@ def order_from_xlsx(data):
 
 
 def order_from_docx(data):
-    (table,) = DocxDocument(io.BytesIO(generate_expense_docx(data))).tables
+    table = DocxDocument(io.BytesIO(generate_expense_docx(data))).tables[0]
     text = "\n".join(
         paragraph.text
         for row in table.rows
@@ -183,15 +183,10 @@ def test_every_person_reaches_every_form(data):
 # ── Машиночитаемая форма — по своему договору ────────────────────────────
 
 
-def test_the_csv_carries_numbers_and_no_names(data):
-    """Договор .csv: только числа. Таблица, в ячейке которой лежит двадцать
-    фамилий, не открывается ни одним потребителем CSV так, как он ожидает.
-
-    Проверяется здесь, а не «забыто»: иначе однажды состав протечёт и в неё, а
-    тест «формы совпадают» этого не заметит — он про три другие формы.
-    """
+def test_the_csv_carries_numbers_and_a_separate_personnel_table(data):
     text = generate_expense_csv(data).decode("utf-8-sig")
 
     assert "Управление" in text
     for _, name, _ in PEOPLE:
-        assert name not in text
+        assert name in text
+    assert "Место убытия" in text

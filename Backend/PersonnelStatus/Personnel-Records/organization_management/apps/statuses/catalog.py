@@ -40,6 +40,7 @@ class StatusTypeItem:
     code: str
     label: str
     color: str
+    report_column_code: str
 
 
 def _model():
@@ -67,7 +68,10 @@ def catalog(selectable_only: bool = False) -> list[StatusTypeItem]:
             if (row.legacy_code or "") in NOT_SELECTABLE_LEGACY_CODES:
                 continue
         items.append(
-            StatusTypeItem(code=_code_of(row), label=row.name, color=row.color)
+            StatusTypeItem(
+                code=_code_of(row), label=row.name, color=row.color,
+                report_column_code=row.report_column_code,
+            )
         )
     return items
 

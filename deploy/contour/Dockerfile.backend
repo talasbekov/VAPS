@@ -1,8 +1,15 @@
-FROM smart-josparlau/contour-python-deps:1
+# Колёса собираются в полном образе (Dockerfile.python-deps), рантайм — slim:
+# без компиляторов, git и wheelhouse внутри. Было 1,9 ГБ, стало ~0,45 ГБ.
+FROM smart-josparlau/contour-python-deps:1 AS wheels
+
+# Includes the real PDF converter, fonts and PostgreSQL client, prepared online.
+FROM smart-josparlau/contour-runtime-base:1
 WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 COPY backend/requirements/ ./requirements/
-RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse \
+# Wheelhouse подключается только на время установки и в слой не попадает.
+RUN --mount=type=bind,from=wheels,source=/wheelhouse,target=/wheelhouse \
+    pip install --no-cache-dir --no-index --find-links=/wheelhouse \
       -r requirements/base.txt -c requirements.txt \
     && pip check
 COPY backend/ ./

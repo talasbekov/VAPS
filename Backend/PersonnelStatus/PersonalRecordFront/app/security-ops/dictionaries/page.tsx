@@ -1,170 +1,40 @@
 "use client";
 
-// Реестр справочников: код, название, всего/активных значений.
-import Link from "next/link";
-import { DashboardLayout } from "@/components/dashboard-layout";
-import { PageHeader } from "@/components/page-header";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useDictionaries } from "@/hooks/use-dictionaries";
-import { OpsAccessDenied } from "@/components/ops-access-denied";
-import { LoadFailure } from "@/components/load-failure";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { MODULE_PERMISSION } from "@/entities/portal-access";
-import { STAFF_DICTIONARIES } from "@/entities/staff-dictionary";
+import { BookOpen } from 'lucide-react';
+import { PageHeader } from '@/components/page-header';
+import { Card, CardContent } from '@/components/ui/card';
+import { OpsAccessDenied } from '@/components/ops-access-denied';
+import { useDictionaries } from '@/hooks/use-dictionaries';
+import { useOpsPermissions } from '@/hooks/use-ops-permissions';
+import { DictionariesWorkspace } from '@/features/dictionaries-workspace/ui/DictionariesWorkspace';
 
 export default function DictionariesPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
-  const query = useDictionaries();
+  const { hasPermission, isLoading } = useOpsPermissions();
+  const canView = !isLoading && hasPermission('dictionary.view');
+  const query = useDictionaries({ enabled: canView });
 
-  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/dictionaries"])) {
-    return <OpsAccessDenied what="справочников" />;
-  }
+  if (!isLoading && !canView) return <OpsAccessDenied what="справочников" />;
 
   return (
-    <DashboardLayout>
+    <DictionariesWorkspace>
       <div className="space-y-4">
-        <PageHeader
-          eyebrow="Система"
-          title="Справочники"
-          description="Значения, которые читают формы раздела ОМ"
-        />
-
-        {query.isLoading && (
-          <Card>
-            <CardContent className="p-9 text-center text-sm text-muted-foreground">
-              Загрузка справочников…
-            </CardContent>
-          </Card>
-        )}
-        {query.isError && (
-          <Card>
-            <CardContent className="p-4">
-              <LoadFailure
-                what="справочники"
-                onRetry={() => void query.refetch()}
-                isRetrying={query.isFetching}
-                className="items-center text-center"
-              />
-            </CardContent>
-          </Card>
-        )}
-        {query.data !== undefined && (
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Справочник</TableHead>
-                  <TableHead>Описание</TableHead>
-                  <TableHead>Значений</TableHead>
-                  <TableHead>Активных</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Действия</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {query.data.results.map((definition) => {
-                  // Адрес значений спрашивается У СТРОКИ, а не строится по
-                  // соглашению «код = маршрут» (Plane №344): у справочника
-                  // типов статусов своя таблица и свой экран, и generic-ручка
-                  // его не обслуживает — ссылка по коду вела бы в 404.
-                  const href =
-                    definition.screen === null
-                      ? `/security-ops/dictionaries/${definition.code}`
-                      : `/security-ops/dictionaries/${definition.screen}`;
-                  return (
-                  <TableRow key={definition.code}>
-                    <TableCell>
-                      <Link href={href} className="block">
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {definition.code}
-                        </span>
-                        <span className="block font-semibold">
-                          {definition.label}
-                        </span>
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {definition.description}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {definition.totalCount}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {definition.activeCount}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Link href={href} className="text-primary-ink">
-                        ›
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {/* КАДРОВЫЕ СПРАВОЧНИКИ (Plane №274). Отдельной таблицей, а не строками
-            в общей: у них своя ручка на каждый и своё поле «уровень», которого
-            у значений раздела ОМ нет вовсе. Свести их в один список значило бы
-            показать колонку, пустую у половины строк. */}
+        <PageHeader eyebrow="Система" title="Справочники" description="Значения для мероприятий, кадровых данных, стран и городов." />
         <Card>
-          <CardContent className="p-0">
-            <div className="border-b px-4 py-3">
-              <h2 className="font-semibold">Кадровые справочники</h2>
-              <p className="text-sm text-muted-foreground">
-                Основание штатного расписания и карточки сотрудника
-              </p>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Справочник</TableHead>
-                  <TableHead>Описание</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Действия</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {STAFF_DICTIONARIES.map((meta) => (
-                  <TableRow key={meta.kind}>
-                    <TableCell>
-                      <Link
-                        href={`/security-ops/dictionaries/personnel/${meta.kind}`}
-                        className="block font-semibold"
-                      >
-                        {meta.label}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {meta.description}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Link
-                        href={`/security-ops/dictionaries/personnel/${meta.kind}`}
-                        className="text-primary-ink"
-                      >
-                        ›
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="flex flex-col items-start gap-3">
+            <BookOpen className="h-8 w-8 text-primary-ink" aria-hidden="true" />
+            <h2 className="text-lg font-semibold">Выберите справочник</h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Откройте нужный справочник в перечне. Здесь появятся его значения, поиск и доступные вам действия.
+              Между справочниками можно переключаться, оставаясь рядом со значениями.
+            </p>
+            {query.data !== undefined && !query.isError && <div className="flex flex-wrap gap-x-6 gap-y-2 border-t pt-3 text-sm">
+              <span><strong className="tabular-nums">{query.data.results.length}</strong> справочников</span>
+              <span><strong className="tabular-nums">{query.data.results.reduce((sum, row) => sum + row.totalCount, 0)}</strong> значений</span>
+              <span><strong className="tabular-nums">{query.data.results.reduce((sum, row) => sum + row.activeCount, 0)}</strong> активных</span>
+            </div>}
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
+    </DictionariesWorkspace>
   );
 }

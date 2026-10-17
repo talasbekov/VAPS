@@ -46,12 +46,20 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
     }
   }, [query.data, dirty]);
 
+  const canEdit = canManage && query.data !== undefined && !query.isError
+    && !query.isFetching && !replace.isPending;
+  const saveError = error ?? (replace.error
+    ? "Не удалось сохранить маршрут. Изменения остаются в форме. Повторите попытку."
+    : null);
+
   const update = (index: number, patch: Partial<ApprovalRouteStepInput>) => {
+    if (!canEdit) return;
     setDirty(true);
     setSaved(false);
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
   const move = (index: number, delta: number) => {
+    if (!canEdit) return;
     setDirty(true);
     setSaved(false);
     setRows((prev) => {
@@ -76,11 +84,15 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
       <CardContent className="flex flex-col gap-3">
         {query.isPending && <p className="text-sm text-muted-foreground">Загрузка маршрута…</p>}
         {query.isError && (
-          <p className="text-sm text-red-700" role="alert">
-            Маршрут сейчас недоступен: {query.error.message}
-          </p>
+          <div className="flex flex-wrap items-center gap-2" role="alert">
+            <p className="text-sm text-red-700">Маршрут сейчас недоступен. Повторите загрузку.</p>
+            <Button type="button" size="sm" variant="outline"
+              disabled={query.isFetching} onClick={() => void query.refetch()}>
+              {query.isFetching ? "Загружаем…" : "Повторить загрузку"}
+            </Button>
+          </div>
         )}
-        {query.data !== undefined && rows.length === 0 && (
+        {query.data !== undefined && !query.isError && rows.length === 0 && (
           <p className="text-sm text-muted-foreground" data-slot="approval-route-none">
             Подписантов нет — отправить расстановку на согласование будет некому.
           </p>
@@ -96,7 +108,7 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                     className="mt-0.5 h-8 text-xs"
                     aria-label={`Роль подписанта ${index + 1}`}
                     value={row.roleLabel}
-                    disabled={!canManage}
+                    disabled={!canEdit}
                     onChange={(e) => update(index, { roleLabel: e.target.value })}
                   />
                 </label>
@@ -106,7 +118,7 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                     className="mt-0.5 h-8 text-xs"
                     aria-label={`Подразделение подписанта ${index + 1}`}
                     value={row.unit}
-                    disabled={!canManage}
+                    disabled={!canEdit}
                     onChange={(e) => update(index, { unit: e.target.value })}
                   />
                 </label>
@@ -117,7 +129,7 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                     aria-label={`Учётка подписанта ${index + 1}`}
                     placeholder="без привязки"
                     value={row.username}
-                    disabled={!canManage}
+                    disabled={!canEdit}
                     onChange={(e) => update(index, { username: e.target.value })}
                   />
                 </label>
@@ -130,7 +142,7 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                       type="button"
                       className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
                       aria-label={`Выше: шаг ${index + 1}`}
-                      disabled={index === 0}
+                      disabled={!canEdit || index === 0}
                       onClick={() => move(index, -1)}
                     >
                       ▲
@@ -139,7 +151,7 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                       type="button"
                       className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
                       aria-label={`Ниже: шаг ${index + 1}`}
-                      disabled={index === rows.length - 1}
+                      disabled={!canEdit || index === rows.length - 1}
                       onClick={() => move(index, 1)}
                     >
                       ▼
@@ -148,7 +160,9 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                       type="button"
                       className="rounded px-1 text-muted-foreground hover:bg-muted"
                       aria-label={`Снять шаг ${index + 1}`}
+                      disabled={!canEdit}
                       onClick={() => {
+                        if (!canEdit) return;
                         setDirty(true);
                         setSaved(false);
                         setRows((prev) => prev.filter((_, i) => i !== index));
@@ -168,7 +182,9 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
               type="button"
               size="sm"
               variant="outline"
+              disabled={!canEdit}
               onClick={() => {
+                if (!canEdit) return;
                 setDirty(true);
                 setSaved(false);
                 setRows((prev) => [...prev, { ...EMPTY }]);
@@ -179,9 +195,11 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
             <Button
               type="button"
               size="sm"
-              disabled={!dirty || replace.isPending}
+              disabled={!dirty || !canEdit}
               aria-busy={replace.isPending}
               onClick={() => {
+                if (!canEdit || !dirty) return;
+                setSaved(false);
                 setError(null);
                 replace.mutate({ steps: rows });
               }}
@@ -193,9 +211,9 @@ export function ApprovalRouteCard({ canManage }: { canManage: boolean }) {
                 Маршрут сохранён.
               </span>
             )}
-            {error !== null && (
+            {saveError !== null && (
               <span className="text-xs text-red-700" role="alert">
-                {error}
+                {saveError}
               </span>
             )}
           </div>

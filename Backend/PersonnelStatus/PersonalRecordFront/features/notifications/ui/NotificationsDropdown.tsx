@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,6 +25,7 @@ import {
 } from "../api/notifications-api";
 import { toast } from "@/shared/hooks/use-toast";
 import { LoadFailure } from "@/components/load-failure";
+import { fetchNotificationReport, reportDownloadEndpoint } from "../model/report-download";
 
 // Варианты анимации для списка уведомлений
 const listVariants = {
@@ -63,6 +64,8 @@ export function NotificationsDropdown() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const downloadPending = useRef(false);
 
   const unreadQuery = useQuery({
     queryKey: ["notifications", "unread"],
@@ -115,6 +118,33 @@ export function NotificationsDropdown() {
   // Счётчик на колокольчике — по тому, что ДЕЙСТВИТЕЛЬНО пришло. При частичном
   // отказе он занижен, и об этом говорит строка в самом списке.
   const unreadCount = notifications.length;
+
+  async function downloadReport(notification: Notification, endpoint: string) {
+    if (downloadPending.current) return;
+    downloadPending.current = true;
+    setDownloading(notificationKey(notification));
+    try {
+      const { blob, filename } = await fetchNotificationReport(endpoint);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      try {
+        anchor.href = url;
+        anchor.download = filename ?? "report";
+        document.body.appendChild(anchor);
+        anchor.click();
+      } finally {
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+      }
+      readMutation.mutate(notification);
+      toast({ title: "Отчёт скачан" });
+    } catch {
+      toast({ title: "Не удалось скачать отчёт", description: "Уведомление осталось непрочитанным. Нажмите на него ещё раз, чтобы повторить скачивание.", variant: "destructive" });
+    } finally {
+      downloadPending.current = false;
+      setDownloading(null);
+    }
+  }
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -251,12 +281,19 @@ export function NotificationsDropdown() {
                   <DropdownMenuItem
                     // Уведомление СО ССЫЛКОЙ ведёт туда, о чём сообщает
                     // (Plane №392): «выделите людей» без перехода к списку
-                    // людей — половина уведомления. Отметка прочтения идёт
-                    // тем же нажатием — человек его увидел.
-                    onSelect={() => {
+                    // людей — половина уведомления. Для файлов сначала
+                    // завершаем скачивание; отказ оставляет возможность повтора.
+                    onSelect={(event) => {
+                      const endpoint = reportDownloadEndpoint(n.link);
+                      if (endpoint) {
+                        event.preventDefault();
+                        void downloadReport(n, endpoint);
+                        return;
+                      }
                       readMutation.mutate(n);
                       if (n.link) router.push(n.link);
                     }}
+                    disabled={downloading !== null && reportDownloadEndpoint(n.link) !== null}
                     className="flex flex-col items-start space-y-0.5 py-3 cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <motion.span 
@@ -266,6 +303,7 @@ export function NotificationsDropdown() {
                       transition={{ delay: index * 0.05 + 0.1 }}
                     >
                       {n.title}
+                      {downloading === notificationKey(n) && <Loader2 aria-label="Скачивание отчёта" className="ml-2 inline h-4 w-4 animate-spin" />}
                     </motion.span>
                     <motion.span 
                       className="text-xs text-muted-foreground line-clamp-2"

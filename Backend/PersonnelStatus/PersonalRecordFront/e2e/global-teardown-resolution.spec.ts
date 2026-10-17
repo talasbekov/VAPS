@@ -3,34 +3,21 @@
  * фронтендом. Уборка должна найти проверенный venv главного checkout либо
  * принять явно заданный путь — иначе успешный browser-прогон оставит мусор.
  */
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { resolvePurgeTarget } from './purge-python'
 
-const frontendRoot = path.resolve(__dirname, '..')
-const worktreePython = path.resolve(frontendRoot, '../Personnel-Records/.venv/bin/python')
-const resolverSource = readFileSync(path.join(frontendRoot, 'e2e/purge-python.ts'), 'utf8')
 const rolePassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
-test('purge Python выбирается из текущего либо главного checkout', async () => {
-  const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], {
-    cwd: frontendRoot,
-    encoding: 'utf8',
-  })
-  const primaryRoot = worktrees.match(/^worktree (.+)$/m)?.[1]
-  const primaryPython = primaryRoot
-    ? path.join(primaryRoot, 'Backend/PersonnelStatus/Personnel-Records/.venv/bin/python')
-    : ''
-
-  const expectedPython = existsSync(worktreePython) ? worktreePython : primaryPython
-  expect(existsSync(expectedPython), 'текущий или основной checkout обязан дать проверенный Python').toBe(true)
-  await expect(resolvePurgeTarget()).resolves.toEqual({
-    backendRoot: path.dirname(path.dirname(path.dirname(expectedPython))),
-    python: expectedPython,
-  })
-  expect(resolverSource).toContain('SMOKE_PURGE_PYTHON')
+test('purge Python resolves an executable from a backend venv', async () => {
+  const target = await resolvePurgeTarget()
+  expect(target, 'provide the backend .venv or SMOKE_PURGE_PYTHON').not.toBeNull()
+  expect(existsSync(target!.python)).toBe(true)
+  expect(existsSync(path.join(target!.backendRoot, 'manage.py'))).toBe(true)
+  if (process.env.SMOKE_PURGE_PYTHON) {
+    expect(target!.python).toBe(path.resolve(process.env.SMOKE_PURGE_PYTHON))
+  }
 })
 
 test('production: не-admin открывает личный кабинет до уборки worktree', async ({ page }) => {

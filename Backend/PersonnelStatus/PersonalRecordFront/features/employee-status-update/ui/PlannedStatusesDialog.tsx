@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
-import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
+import { EVENT_PARTICIPATION_STATUS_CODES, addDaysIso } from "@/entities/daily-grid";
 import { employeeIdOfKey } from "../model/row-key";
 import {
   Dialog,
@@ -43,7 +43,7 @@ import {
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
-import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
+import { PERSONNEL_STATUS_SOURCE, apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -169,6 +169,9 @@ export function PlannedStatusesDialog({
   const [reasonError, setReasonError] = useState<string | null>(null);
   /** Пустая дата — тоже ошибка поля: иначе кнопка молча ничего не делает. */
   const [dateError, setDateError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const [refreshRequired, setRefreshRequired] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const employeeIdNum = useMemo(() => {
     if (!employeeId) return null;
@@ -208,6 +211,11 @@ export function PlannedStatusesDialog({
 
   useEffect(() => {
     if (!open) return;
+
+    setCurrentAction(null);
+    setActionError(null);
+    setRefreshRequired(false);
+    setRefreshError(null);
 
     if (!employeeIdNum) {
       setError("Сотрудник не найден или вакантная должность");
@@ -259,6 +267,11 @@ export function PlannedStatusesDialog({
     );
     return opsStatuses.filter((row) => {
       if (row.state !== "PLANNED") return false;
+      // Проекция кадрового статуса (Plane №1209) — та же карточка уже
+      // показана выше из кадрового каталога, где её и правят; сравнение по
+      // датам её не поймало бы (раздел хранит [start, end), кадровая дата
+      // окончания включительная).
+      if (row.source === PERSONNEL_STATUS_SOURCE) return false;
       const canonicalCode =
         legacyCodeByOpsCode.get(row.status_type_code) ?? row.status_type_code;
       return !employeeKeys.has(
@@ -294,12 +307,53 @@ export function PlannedStatusesDialog({
     ]);
     setStatuses(employeeStatuses);
     setOpsStatuses(sectionStatuses);
-    // Обе семьи ключей: сводка шапки и страницы таблицы — разные запросы.
-    queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
-    queryClient.invalidateQueries({ queryKey: ["staff-units-page"] });
+  };
+
+  const refreshAcceptedStatus = async () => {
+    setRefreshError(null);
+    try {
+      await reloadStatuses();
+      setRefreshRequired(false);
+    } catch {
+      setRefreshError("Изменение сохранено. Не удалось обновить список статусов. Повторите загрузку, чтобы продолжить.");
+    }
+  };
+
+  const retryRead = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    try { await refreshAcceptedStatus(); }
+    finally { savingRef.current = false; setIsSaving(false); }
+  };
+
+  const mutateStatus = async (write: () => Promise<unknown>, failure: string) => {
+    if (savingRef.current || refreshRequired) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      await write();
+      // Acknowledged writes must never become retryable because a read fails.
+      setCurrentAction(null);
+      setEditingStatusId(null);
+      setEditForm(null);
+      setRefreshRequired(true);
+      for (const key of ["staff-units-by-directorate", "staff-units-page", "ops-statuses",
+        "status-duty-assignments", "duty-register", "duty-dispatch", "service-combat-duty", "daily-expense-board", "strength-report", "service-summary"]) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      await refreshAcceptedStatus();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : failure);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   const openCurrentAction = (action: "extend" | "terminate") => {
+    if (action === "extend" && !canExtendCurrent) return;
     setCurrentAction(action);
     setEditingStatusId(null);
     setEditForm(null);
@@ -326,7 +380,8 @@ export function PlannedStatusesDialog({
   };
 
   const handleExtend = async () => {
-    if (!statuses?.current) return;
+    if (!statuses?.current || !canExtendCurrent) return;
+    const statusId = statuses.current.id;
     // Молчаливый выход по пустой дате — тот же дефект, что чинит эта задача:
     // кнопка нажимается и не делает ничего. Календарь снимает выбор повторным
     // кликом по той же дате, так что пустое поле здесь достижимо.
@@ -334,26 +389,15 @@ export function PlannedStatusesDialog({
       setDateError("Укажите новую дату окончания.");
       return;
     }
-    try {
-      setIsSaving(true);
-      setActionError(null);
-      await apiClient.extendEmployeeStatus(
-        statuses.current.id,
-        format(extendDate, "yyyy-MM-dd")
-      );
-      await reloadStatuses();
-      setCurrentAction(null);
-    } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Не удалось продлить статус"
-      );
-    } finally {
-      setIsSaving(false);
-    }
+    await mutateStatus(() => apiClient.extendEmployeeStatus(
+      statusId,
+      format(extendDate, "yyyy-MM-dd")
+    ), "Не удалось продлить статус");
   };
 
   const handleTerminate = async () => {
     if (!statuses?.current) return;
+    const statusId = statuses.current.id;
     if (!terminateDate) {
       setDateError("Укажите дату завершения.");
       return;
@@ -362,84 +406,40 @@ export function PlannedStatusesDialog({
       setReasonError("Укажите причину досрочного завершения.");
       return;
     }
-    try {
-      setIsSaving(true);
-      setActionError(null);
-      setReasonError(null);
-      setDateError(null);
-      await apiClient.terminateEmployeeStatus(
-        statuses.current.id,
-        format(terminateDate, "yyyy-MM-dd"),
-        terminateReason.trim()
-      );
-      await reloadStatuses();
-      setCurrentAction(null);
-    } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Не удалось завершить статус"
-      );
-    } finally {
-      setIsSaving(false);
-    }
+    setReasonError(null);
+    setDateError(null);
+    await mutateStatus(() => apiClient.terminateEmployeeStatus(
+      statusId,
+      format(terminateDate, "yyyy-MM-dd"),
+      terminateReason.trim()
+    ), "Не удалось завершить статус");
   };
 
   const handleSaveEdit = async (statusId: number) => {
     if (!editForm || !employeeIdNum) return;
 
-    try {
-      setIsSaving(true);
+    const formatDateForApi = (date?: Date) => {
+      return date ? format(date, "yyyy-MM-dd") : undefined;
+    };
 
-      // Форматируем даты в YYYY-MM-DD
-      const formatDateForApi = (date?: Date) => {
-        return date ? format(date, "yyyy-MM-dd") : undefined;
-      };
-
-      await apiClient.updateEmployeeStatusById(statusId, {
-        employee: employeeIdNum,
-        status_type: editForm.status_type,
-        start_date: formatDateForApi(editForm.start_date),
-        end_date: formatDateForApi(editForm.end_date),
-        comment: editForm.comment,
-      });
-
-      // Обновляем список в диалоге
-      const response = await apiClient.getEmployeePlannedStatuses(
-        employeeIdNum
-      );
-      setStatuses(response);
-      setEditingStatusId(null);
-      setEditForm(null);
-
-      // Инвалидируем кэш для обновления таблицы сотрудников
-      queryClient.invalidateQueries({
-        queryKey: ["staff-units-by-directorate"],
-      });
-    } catch (e) {
-      console.error("Failed to update status:", e);
-      // Причина отказа приезжает с сервера текстом («Нельзя изменить статус,
-      // дата начала которого уже наступила») — своё «не удалось» её прятало, и
-      // окно выглядело сломанным вместо того, чтобы объяснить отказ.
-      //
-      // И печатается она РЯДОМ С ФОРМОЙ, а не в `error` шапки: `error` прячет
-      // всё содержимое диалога, и неудачное сохранение уносило с экрана сам
-      // список статусов вместе с формой, из которой пришло.
-      setActionError(
-        e instanceof Error ? e.message : "Не удалось обновить статус"
-      );
-    } finally {
-      setIsSaving(false);
-    }
+    await mutateStatus(() => apiClient.updateEmployeeStatusById(statusId, {
+      employee: employeeIdNum,
+      status_type: editForm.status_type,
+      start_date: formatDateForApi(editForm.start_date),
+      end_date: formatDateForApi(editForm.end_date),
+      comment: editForm.comment,
+    }), "Не удалось обновить статус");
   };
 
   // Что вообще можно сделать с действующим статусом — решает модель, а не
   // экран. Продление сравнивает новую дату с текущей: у бессрочного статуса
-  // («В строю») даты окончания нет, и сравнивать не с чем — сервер на таком
-  // сравнении падает, поэтому кнопки у него быть не должно. Досрочное
+  // («В строю») даты окончания нет, поэтому продлевать его нельзя. Досрочное
   // завершение заводит взамен «В строю»; завершать сам «В строю» нечем —
   // человек остался бы вовсе без статуса.
   const canExtendCurrent =
     statuses?.current?.state === "active" &&
-    statuses.current.end_date !== null;
+    typeof statuses.current.end_date === "string" &&
+    statuses.current.end_date.trim() !== "";
   const canTerminateCurrent =
     statuses?.current?.state === "active" &&
     statuses.current.status_type !== "in_service";
@@ -477,7 +477,7 @@ export function PlannedStatusesDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!savingRef.current) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-[1000px] w-full max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Запланированные статусы сотрудника</DialogTitle>
@@ -502,8 +502,12 @@ export function PlannedStatusesDialog({
           </Alert>
         )}
 
+        {refreshError && <Alert><AlertDescription>
+          <p>{refreshError}</p>
+          <Button type="button" variant="outline" disabled={isSaving} onClick={() => void retryRead()}>Повторить загрузку статусов</Button>
+        </AlertDescription></Alert>}
         {!loading && !error && statuses && (
-          <div className="max-h-[60vh] pr-4 overflow-y-auto space-y-6">
+          <fieldset disabled={isSaving || refreshRequired} className="min-w-0 max-h-[60vh] pr-4 overflow-y-auto space-y-6">
             {/* Текущий статус */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -551,7 +555,8 @@ export function PlannedStatusesDialog({
                       это единственный способ тронуть текущий статус, и
                       прятать его под hover значило бы прятать всю операцию. */}
                   {statuses.current.state === "active" &&
-                    (currentAction === null ? (
+                    (currentAction === null ||
+                    (currentAction === "extend" && !canExtendCurrent) ? (
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         {canExtendCurrent && (
                           <Button
@@ -1037,7 +1042,11 @@ export function PlannedStatusesDialog({
                         </div>
                         <div>
                           <div className="font-medium">Дата окончания</div>
-                          <div>{formatDate(status.date_end)}</div>
+                          {/* Раздел хранит [start, end) — на экране день
+                              окончания включительно, как у кадровых карточек
+                              выше (`[ОМ-РШ-17]`, проходка №1142: участие на ОМ
+                              05–06.10 печаталось «по 07.10»). */}
+                          <div>{formatDate(addDaysIso(status.date_end, -1))}</div>
                         </div>
                       </div>
                       {status.comment && (
@@ -1068,7 +1077,7 @@ export function PlannedStatusesDialog({
               )}
             </div>
 
-          </div>
+          </fieldset>
         )}
       </DialogContent>
     </Dialog>

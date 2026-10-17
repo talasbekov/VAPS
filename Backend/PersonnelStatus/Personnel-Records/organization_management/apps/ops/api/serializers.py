@@ -324,7 +324,7 @@ def serialize_visit_object(event, visit, *, single):
         "approvalRoute": visit.approval_route or [],
         "approvalRemarks": visit.approval_remarks or [],
         # ВЫВОД, а не поле: «расстановка объекта изменилась после отправки».
-        "approvalStale": security_events.approval_is_stale(event, visit, single=single),
+        "approvalStale": security_events.approval_is_stale(event, visit, single=single, tolerate_map_failure=True),
         # Номер ТЕКУЩЕЙ версии документа «Расстановка сил» (№396/№411): 0 —
         # расстановка ещё не завершалась ни разу.
         "documentVersion": visit.document_version,
@@ -620,7 +620,7 @@ def serialize_security_event(event, *, with_phone=False, read_context=None):
         # `single` — тот же, что у списка объектов: без него внутри снова
         # уходил бы `count()` на каждое мероприятие (Plane №480).
         "approvalStale": security_events.approval_is_stale(
-            event, single=len(visits) == 1
+            event, single=len(visits) == 1, tolerate_map_failure=True
         ),
         # Объекты посещения бюллетеня. Пустой список — только у строк, не
         # прошедших бэкфилл 0035 (их быть не должно); объект мероприятия сюда

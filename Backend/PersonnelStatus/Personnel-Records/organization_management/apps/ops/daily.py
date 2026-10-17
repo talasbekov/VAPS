@@ -21,7 +21,7 @@ from organization_management.apps.operations.selectors import (
 from organization_management.apps.operations.services import PermissionService
 
 
-def visible_division_rows(actor_id, permission_code, submit_permission_code=None, business_date=None):
+def visible_division_rows(actor_id, permission_code, submit_permission_code=None, business_date=None, correct_permission_code=None):
     """Подразделения области актора: [{id: str, name, ancestors, can_submit,
     last_submitted_at}] по имени.
 
@@ -82,6 +82,16 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
         )
         submit_allowed = set(allowed) if submit_ids is None else set(submit_ids)
 
+    # Correction has its own permission scope, independently of submission.
+    # This is the same resolver used by the amend endpoint's scope guard.
+    if correct_permission_code is None:
+        correct_allowed = set()
+    else:
+        correct_ids = PermissionService.visible_division_ids(
+            actor_id, correct_permission_code
+        )
+        correct_allowed = set(allowed) if correct_ids is None else set(correct_ids)
+
     # ОДИН запрос на все подразделения области, а не по запросу на строку:
     # строк здесь столько же, сколько управлений в департаменте.
     last_submissions = DailySubmissionSelector.last_current_by_division(allowed)
@@ -129,6 +139,7 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
                 node["division_type"] if node is not None else None
             ),
             "can_submit": division_id in submit_allowed,
+            "can_correct": division_id in correct_allowed,
             "last_submitted_at": (
                 last.submitted_at.isoformat() if last is not None else None
             ),
@@ -243,7 +254,7 @@ def employee_rows(division_ids):
     """
     from organization_management.apps.employees.models import Employee
     from organization_management.apps.ops.security_events import (
-        personnel_display_name,
+        personnel_full_name,
     )
 
     rows = []
@@ -251,15 +262,19 @@ def employee_rows(division_ids):
         Employee.objects.filter(
             is_active=True, staff_unit__division_id__in=list(division_ids)
         )
-        .select_related("rank", "staff_unit__division")
-        .order_by("last_name", "first_name", "id")
+        .select_related("rank", "staff_unit__division", "staff_unit__position")
+        .order_by("staff_unit__position__level", "last_name", "first_name", "id")
     ):
         rows.append(
             {
                 "id": str(employee.pk),
-                "full_name": personnel_display_name(employee),
+                "full_name": personnel_full_name(employee),
                 "rank_code": employee.rank.name if employee.rank else "",
                 "division_id": employee.staff_unit.division_id,
+                "division_type": employee.staff_unit.division.division_type,
+                "position_level": employee.staff_unit.position.level if employee.staff_unit.position else None,
+                "position_name": employee.staff_unit.position.name if employee.staff_unit.position else "",
+                "position_code": employee.staff_unit.position.code if employee.staff_unit.position else "",
             }
         )
     return rows

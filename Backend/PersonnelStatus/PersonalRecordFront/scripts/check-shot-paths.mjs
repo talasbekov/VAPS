@@ -30,12 +30,11 @@
  * здоровый код, снимают через неделю. Поэтому разбирается тело вызова
  * `.screenshot({ … })`, а не отдельная строка файла.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, dirname, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const E2E = join(root, "e2e");
 
 /** Каталоги, куда снимок класть можно: закрыты `.gitignore` или ведут в `docs/`. */
 const ALLOWED_PREFIX = /^(smoke-results|test-results|playwright-report|\.shot-tmp)\//;
@@ -49,35 +48,51 @@ function walk(dir, out = []) {
   return out;
 }
 
-const offenders = [];
-for (const file of walk(E2E)) {
-  const text = readFileSync(file, "utf8");
-  // Тело вызова `.screenshot({ … })`: и однострочного, и разложенного на
-  // несколько строк. Внутри ищется ТОЛЬКО строковый литерал — вычисляемое
-  // выражение под эту форму не подходит и потому не проверяется.
-  for (const call of text.matchAll(/\.screenshot\(\s*\{([\s\S]{0,400}?)\}\s*\)/g)) {
-    const literal = call[1].match(/\bpath:\s*(['"])([^'"]+)\1/);
-    if (literal === null) continue;
-    const value = literal[2];
-    if (ALLOWED_PREFIX.test(value)) continue;
-    offenders.push({
-      file: file.slice(root.length + 1),
-      line: text.slice(0, call.index).split("\n").length,
-      value,
-    });
+export function inspectShotPaths(projectRoot = root) {
+  // The offline export uses tests/; full checkouts may also contain e2e/.
+  const files = ["e2e", "tests"]
+    .map((dir) => join(projectRoot, dir))
+    .filter((dir) => existsSync(dir))
+    .flatMap((dir) => walk(dir));
+  if (files.length === 0) throw new Error("Нет файлов проверок в tests/ или e2e/.");
+  const offenders = [];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    // Check screenshot calls, not unrelated properties named path.
+    for (const call of text.matchAll(/\.screenshot\(\s*\{([\s\S]{0,400}?)\}\s*\)/g)) {
+      const literal = call[1].match(/\bpath:\s*(['"])([^'"]+)\1/);
+      if (literal === null) continue;
+      const value = literal[2];
+      if (ALLOWED_PREFIX.test(value)) continue;
+      offenders.push({
+        file: relative(projectRoot, file),
+        line: text.slice(0, call.index).split("\n").length,
+        value,
+      });
+    }
   }
+  return { files, offenders };
 }
 
-if (offenders.length > 0) {
-  console.error(
-    "\n🔴 Снимок экрана пишется мимо закрытых `.gitignore` каталогов —\n" +
-      "   каждый прогон оставит неотслеживаемый файл в репозитории:\n" +
-      offenders
-        .map((row) => `   ${row.file}:${row.line}   path: '${row.value}'`)
-        .join("\n") +
-      "\n\n   Класть снимки в `smoke-results/` (артефакт прогона) либо в\n" +
-      "   вычисляемый путь (`path.join(SHOTS, …)` — снимок аудита в `docs/`).\n"
-  );
-  process.exit(1);
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  try {
+    const { files, offenders } = inspectShotPaths();
+    if (offenders.length > 0) {
+      console.error(
+        "\n🔴 Снимок экрана пишется мимо закрытых `.gitignore` каталогов —\n" +
+          "   каждый прогон оставит неотслеживаемый файл в репозитории:\n" +
+          offenders
+            .map((row) => `   ${row.file}:${row.line}   path: '${row.value}'`)
+            .join("\n") +
+          "\n\n   Класть снимки в `smoke-results/` (артефакт прогона) либо в\n" +
+          "   вычисляемый путь (`path.join(SHOTS, …)` — снимок аудита в `docs/`).\n"
+      );
+      process.exitCode = 1;
+    } else {
+      console.log(`[check-shot-paths] проверено файлов: ${files.length}; снимков мимо закрытых каталогов нет.`);
+    }
+  } catch (error) {
+    console.error(`[check-shot-paths] ${error.message}`);
+    process.exitCode = 1;
+  }
 }
-console.log("[check-shot-paths] снимков мимо закрытых каталогов нет.");

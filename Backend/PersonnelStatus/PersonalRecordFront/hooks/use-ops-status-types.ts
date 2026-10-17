@@ -33,6 +33,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient, type OpsStatusType } from "@/lib/api";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export interface OpsStatusTypesResult {
   /** Активные типы в порядке справочника (сервер сортирует по приоритету). */
@@ -51,15 +52,18 @@ export interface OpsStatusTypesResult {
 }
 
 export function useOpsStatusTypes(enabled = true): OpsStatusTypesResult {
+  const access = useOpsPermissions();
+  const canRead = enabled && !access.isLoading && !access.error &&
+    (access.hasPermission("status.view") || access.hasPermission("dictionary.view"));
   const query = useQuery<OpsStatusType[]>({
     queryKey: ["ops-status-types"],
     queryFn: () => apiClient.getOpsStatusTypes(),
     // Справочник меняется в админке, а не по ходу дня.
     staleTime: 5 * 60 * 1000,
-    enabled,
+    enabled: canRead,
   });
 
-  const all = query.data;
+  const all = canRead ? query.data : undefined;
 
   // Ссылки СТАБИЛЬНЫ между рендерами, пока не изменился ответ: `labelOf` и
   // `types` уходят в зависимости `useMemo` у читателей (календарь и
@@ -82,9 +86,9 @@ export function useOpsStatusTypes(enabled = true): OpsStatusTypesResult {
     types,
     all: all ?? [],
     labelOf,
-    isLoading: query.isPending && enabled,
-    isError: query.isError,
-    isFetching: query.isFetching,
-    refetch: () => void query.refetch(),
+    isLoading: (enabled && access.isLoading) || (query.isPending && canRead),
+    isError: canRead && query.isError,
+    isFetching: canRead && query.isFetching,
+    refetch: () => { if (canRead) void query.refetch(); },
   };
 }

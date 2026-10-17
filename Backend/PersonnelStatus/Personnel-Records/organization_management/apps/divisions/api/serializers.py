@@ -47,4 +47,15 @@ class DivisionSerializer(serializers.ModelSerializer):
         """
         Рекурсивно сериализует дочерние подразделения.
         """
-        return DivisionSerializer(obj.get_children(), many=True).data
+        children = obj.get_children()
+        allowed = self.context.get("visible_division_ids")
+        if allowed is not None:
+            children = children.filter(pk__in=allowed)
+        return DivisionSerializer(children, many=True, context=self.context).data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        allowed = self.context.get("visible_division_ids")
+        if allowed is not None and data["parent"] not in allowed:
+            data["parent"] = None
+        return data

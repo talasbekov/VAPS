@@ -13,6 +13,7 @@
  */
 import { probeTitle } from './probe-events'
 import { anyChiefId } from './stand-chief'
+import { uniqueBusinessDate } from './business-date'
 
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
@@ -160,7 +161,7 @@ export async function createOwnEvent(
 
 export async function prepareDemandEvent(
   token: string,
-  businessDate = '2026-08-26',
+  businessDate = uniqueBusinessDate(),
   // `id` дописан к возврату (Plane №675): пробам нужен адрес ручек самого
   // мероприятия (оповещение, довыделение), и искать его по коду через реестр
   // значило бы завести второй способ узнать то, что здесь уже известно.

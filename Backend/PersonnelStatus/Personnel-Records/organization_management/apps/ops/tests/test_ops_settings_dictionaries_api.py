@@ -259,7 +259,7 @@ def admin_api():
     api, _ = client_for(
         "ops-settings-admin", "OPS_ADMIN",
         perms=("settings.view", "settings.manage",
-               "dictionary.view", "dictionary.manage", "audit.view",
+               "dictionary.view", "dictionary_value.manage", "audit.view",
                "object.view"),
     )
     return api
@@ -418,7 +418,10 @@ def test_definitions_with_counts(viewer_api):
     # generic-строкам (`EXTERNAL_DEFINITIONS`). Число подняли ОСОЗНАННО, а не
     # подогнали под вывод: ниже проверено, чем именно десятая отличается от
     # девяти первых.
-    assert len(data) == 10
+    # The fifteenth definition is the expandable administrative duty catalogue.
+    assert len(data) == 15
+    assert by_code["SERVICE_DUTY_KINDS"]["activeCount"] == 12
+    assert {"POSITIONS", "RANKS", "COUNTRIES", "CITIES"} <= by_code.keys()
     assert "PLACEMENT_ROLES" in by_code
     assert "PLACEMENT_SECTIONS" in by_code
 
@@ -448,7 +451,7 @@ def test_usage_tracked_and_not_tracked(viewer_api):
     assert usage["references"][0]["samples"] == ["Допуск «Объект A»"]
     rows = viewer_api.get(f"{DICTS}RETURN_REASONS/entries/").json()["results"]
     usage = rows[0]["usage"]
-    assert usage["status"] == "NOT_TRACKED"
+    assert usage["status"] == "TRACKED"
     assert usage["totalCount"] == 0
     assert "свободный комментарий" in usage["reason"]
 
@@ -483,20 +486,20 @@ def test_create_entry_validations(admin_api):
 
 def test_delete_rules(admin_api):
     group, req, free = seed_dictionary()
-    # NOT_TRACKED — удаление запрещено с причиной
+    original_ids = set(OpsDictionaryEntry.objects.values_list("pk", flat=True))
+    # Free-text values have no stored code references and can be deleted.
     resp = admin_api.delete(f"{DICTS}entries/{free.pk}/")
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "DICTIONARY_USAGE_UNKNOWN"
-    # TRACKED с носителями — 409 с перечислением
+    assert resp.status_code == 204
+    assert not OpsDictionaryEntry.objects.filter(pk=free.pk).exists()
+    # A used group is deactivated; its row and child references remain.
     resp = admin_api.delete(f"{DICTS}entries/{group.pk}/")
-    assert resp.status_code == 409
-    payload = resp.json()
-    assert payload["error_code"] == "DICTIONARY_ENTRY_IN_USE"
-    assert "Допуск «Объект A»" in payload["message"]
-    # требование само NOT_TRACKED (его связи — свободный текст паспортов):
-    # даже «висячий» код не удаляется, только деактивация
+    assert resp.status_code == 200
+    assert resp.json()["result"] == "deactivated"
+    assert OpsDictionaryEntry.objects.get(pk=group.pk).is_active is False
+    assert OpsDictionaryEntry.objects.get(pk=req.pk).group_code == group.code
     resp = admin_api.delete(f"{DICTS}entries/{req.pk}/")
-    assert resp.status_code == 422
+    assert resp.status_code == 204
+    assert not OpsDictionaryEntry.objects.filter(pk=req.pk).exists()
     # TRACKED без носителей — удаляется
     empty_group = OpsDictionaryEntry.objects.create(
         dictionary_code="POST_REQUIREMENT_GROUPS", code="EMPTY",
@@ -504,7 +507,7 @@ def test_delete_rules(admin_api):
     )
     resp = admin_api.delete(f"{DICTS}entries/{empty_group.pk}/")
     assert resp.status_code == 204
-    assert OpsDictionaryEntry.objects.count() == 3
+    assert set(OpsDictionaryEntry.objects.values_list("pk", flat=True)) == original_ids - {free.pk, req.pk}
 
 
 def test_set_active_and_group_guard(admin_api):
@@ -634,7 +637,7 @@ def test_a_missing_group_is_refused(admin_api):
 
 
 def test_editing_is_closed_by_permission(viewer_api):
-    """Читатель справочников их не правит: право `dictionary.manage`."""
+    """Читатель справочников их не правит: право `dictionary_value.manage`."""
     _group, req, _free = seed_dictionary()
 
     resp = viewer_api.patch(
@@ -728,8 +731,10 @@ def test_a_group_holding_roles_is_not_deleted(admin_api):
 
     resp = admin_api.delete(f"{DICTS}entries/{group.pk}/")
 
-    assert resp.status_code == 409, resp.content
-    assert OpsDictionaryEntry.objects.filter(pk=group.pk).exists()
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["result"] == "deactivated"
+    assert OpsDictionaryEntry.objects.get(pk=group.pk).is_active is False
+    assert OpsDictionaryEntry.objects.filter(dictionary_code="EVENT_GROUP_ROLES", group_code=group.code).count() == 1
 
 
 def test_the_physical_squad_has_no_roles_inside(viewer_api, admin_api):

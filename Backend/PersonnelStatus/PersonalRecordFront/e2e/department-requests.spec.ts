@@ -1,3 +1,4 @@
+import { requireIsolatedForcesClone, withOwnedForcesFixture } from './owned-forces-fixture'
 /**
  * «Заявки департаменту» на `/employees?view=forces` (Plane №272, Ш-3).
  *
@@ -365,32 +366,24 @@ test.describe('заявки департаменту', () => {
   })
 
   test('перебор назван числом, а не спрятан за полной полосой', async ({ page }) => {
+    requireIsolatedForcesClone()
     const token = await apiToken()
-    const server = (await (
-      await fetch(`${API}/api/ops/security-events/forces/requests/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).json()) as { results: RequestRow[] }
-    const over = server.results.find((row) => row.need > 0 && row.assigned > row.need)
-    test.skip(
-      over === undefined,
-      'на стенде нет заявки с перебором — проверять нечего (проба не мутирует стенд)',
-    )
-
-    await signIn(page)
-    await page.goto(`${APP}/employees?view=forces`)
-    const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
-    await expect(tab).toBeVisible({ timeout: 30_000 })
-    await tab.click()
-    const section = page.locator('section[aria-labelledby="department-requests-heading"]')
-    await expect(section.getByRole('heading', { name: 'Заявки департаменту' })).toBeVisible({
-      timeout: 30_000,
+    await withOwnedForcesFixture(token, {}, async (fixture) => {
+      const server = await fixture.call('GET', '/api/ops/security-events/forces/requests/')
+      const own = server.results.find((row: { allocationId: string }) =>
+        String(row.allocationId) === String(fixture.allocationId))
+      expect(own).toMatchObject({ need: 1, assigned: 2 })
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const section = page.locator('section[aria-labelledby="department-requests-heading"]')
+      const row = section.locator('tbody tr').filter({ has: page.getByText(fixture.code, { exact: true }) })
+      await expect(row, 'собственная заявка, а не случайный перебор на стенде').toHaveCount(1)
+      await expect(row).toContainText('перебор 1')
+      await expect(row.getByRole('progressbar')).toHaveAttribute('aria-label', 'Собрано 2 из 1 — перебор на 1')
     })
-
-    await expect(
-      section.getByText(`перебор ${over!.assigned - over!.need}`, { exact: false }),
-      'перебор не назван числом — полная полоса читается как «всё в порядке»',
-    ).toBeVisible()
   })
 
   test('раскладка, оповещение и отправка штабу — целиком через ЭТОТ экран (Plane №389)', async ({
@@ -478,15 +471,13 @@ test.describe('заявки департаменту', () => {
         'кнопка отправки не появилась после оповещения',
       ).toBeVisible({ timeout: 15_000 })
 
-      // Отправка без единого выделенного отклоняется СЕРВЕРОМ, и отказ
-      // виден В ДИАЛОГЕ, а не молча.
-      await membersSection.getByRole('button', { name: 'Отправить список в штаб' }).click()
-      await expect(page.getByRole('dialog')).toBeVisible()
-      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+      // Пустой список блокируется до отправки: объяснение видно рядом с
+      // кнопкой. После выделения сотрудника ниже проверяется реальная отправка.
+      await expect(membersSection.getByRole('button', { name: 'Отправить список в штаб' })).toBeDisabled()
       await expect(
-        page.getByText('Никто не выделен — отправлять нечего.', { exact: false }).first(),
-      ).toBeVisible({ timeout: 15_000 })
-      await page.getByRole('dialog').getByRole('button', { name: 'Отмена' }).click()
+        membersSection.getByText('Пустой список отправить нельзя.', { exact: false }),
+      ).toBeVisible()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
 
       // Выделяем человека МИМО экрана (это работа начальника управления,
       // не этой карточки) и отправляем список успешно.
@@ -647,12 +638,13 @@ test.describe('заявки департаменту', () => {
 
       await signIn(page, FORCES_OFFICER_USERNAME, ACCESS_MATRIX_PASSWORD)
       await page.goto(`${APP}/employees?view=forces`)
-      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
-      await expect(tab).toBeVisible({ timeout: 30_000 })
-      await tab.click()
+      await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ', exact: true, level: 1 }))
+        .toBeVisible({ timeout: 30_000 })
+      const requests = page.getByRole('region', { name: 'Заявки департаменту', exact: true })
+      await expect(requests).toBeVisible()
 
       const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
-      await page
+      await requests
         .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
         .click()
 
@@ -882,7 +874,9 @@ test.describe('заявки департаменту', () => {
 
       const answer = page.locator('section[aria-labelledby="answer-heading"]')
       await expect(answer).toBeVisible({ timeout: 20_000 })
-      await expect(answer.getByText(`Запрошено штабом: ${need}`, { exact: false })).toBeVisible()
+      const requested = page.locator('[aria-label="Итоги запроса"] [data-slot="stat-card"]')
+        .filter({ has: page.getByText('Запрошено Штабом', { exact: true }) })
+      await expect(requested.locator('[data-slot="stat-value"]')).toHaveText(String(need))
 
       const rowOf = async () => {
         const fresh = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
@@ -1097,7 +1091,10 @@ test.describe('заявки департаменту', () => {
 
       const banner = page.getByRole('status', { name: `Запрос на ${event.code}` })
       await expect(banner).toBeVisible({ timeout: 30_000 })
-      await expect(banner.getByText('выделено 0 из 2', { exact: false })).toBeVisible()
+      // Сводка и строка управления показывают одинаковые числа. Точное
+      // совпадение различает их; прямая ссылка сразу раскрывает подробности.
+      await expect(banner.getByText('Выделено 0 из 2', { exact: true })).toBeVisible()
+      await expect(banner.getByText('выделено 0 из 2', { exact: true })).toBeVisible()
       await expect(banner.getByText('Первое управление', { exact: false })).toBeVisible()
 
       // Чужая/снятая заявка — словами, а не пустотой.
@@ -1200,7 +1197,11 @@ test.describe('заявки департаменту', () => {
       const row = page.locator('tbody tr', { hasText: 'Токтаров' }).first()
       await expect(row).toBeVisible({ timeout: 30_000 })
       await row.getByRole('checkbox').check()
-      await expect(banner.getByLabel('Вид участия')).toHaveValue('PHYSICAL_SQUAD')
+      const participation = banner.getByRole('group', { name: 'Подгруппа участия ОМ', exact: true })
+      await expect(participation.getByRole('button', { name: 'Физнаряд', exact: true }))
+        .toHaveAttribute('aria-pressed', 'true')
+      await expect(participation.getByRole('button', { name: 'Группы', exact: true }))
+        .toHaveAttribute('aria-pressed', 'false')
       await expect(
         banner.getByText('Физнаряд пока не получает статус участия', { exact: false }),
       ).toBeVisible()

@@ -8,7 +8,8 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_OPS_MOCK_DOMAINS= NEXT_PUBLIC_SENTRY_DSN= SENTRY_DSN=
 RUN NEXTAUTH_SECRET=build-only-placeholder ./node_modules/.bin/next build
 
-FROM smart-josparlau/contour-node-prod-deps:1 AS prod-deps
+# Рантайм — только standalone-вывод Next: он сам несёт нужные модули
+# (трассировка зависимостей). Копия полного prod node_modules (942 МБ) убрана.
 FROM smart-josparlau/contour-node-base:1
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
@@ -17,7 +18,6 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next/cache
 USER nextjs
 EXPOSE 3000

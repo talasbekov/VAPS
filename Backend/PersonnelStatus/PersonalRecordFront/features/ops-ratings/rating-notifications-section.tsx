@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Уведомления раздела оценивания (§19.28). Текст берётся из фиксированного
 // словаря ПО КОДУ: подставлять в формулировки нечего, потому что подстановок
 // нет вовсе. Deep link ведёт на маршрут, который перепроверяет права.
@@ -41,14 +43,7 @@ export function RatingNotificationsSection() {
           ))}
         </ul>
       )}
-      <ul className="mt-3 flex flex-col gap-2">
-        {data.unavailableViews.map((view) => (
-          <li key={view.code} className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{view.label}. </span>
-            {view.reason}
-          </li>
-        ))}
-      </ul>
+      <div className="mt-3"><CapabilityNotes title="Какие уведомления пока недоступны" items={data.unavailableViews} /></div>
     </section>
   );
 }

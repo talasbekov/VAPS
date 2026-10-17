@@ -6,6 +6,7 @@
 import { BACKEND_URL } from "@/shared/config/env";
 import { OpsNetworkError, parseOpsErrorResponse } from "@/lib/ops-errors";
 import { getAccessToken } from "@/lib/access-token";
+import { captureOpsWriteAuthority } from "@/lib/ops-write-authority";
 
 // Токен — из ОБЩЕГО кэша, того же, что у `lib/api.ts` (Plane №343). Здесь
 // была ВТОРАЯ копия хелпера («он не экспортирован, поэтому свой»), и каждая
@@ -24,8 +25,11 @@ class OpsApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    authorize?: () => void,
   ): Promise<T> {
+    const checkAuthority = captureOpsWriteAuthority(endpoint, options.method);
+    authorize?.();
     const url = `${this.baseUrl}${endpoint}`;
 
     // Тело-форма (снимок лица, Plane №951) уходит БЕЗ `Content-Type`:
@@ -44,6 +48,8 @@ class OpsApiClient {
     }
 
     let response: Response;
+    checkAuthority();
+    authorize?.();
     try {
       response = await fetch(url, {
         ...options,
@@ -64,20 +70,24 @@ class OpsApiClient {
     return (await response.json()) as T;
   }
 
-  async get<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint);
+  async get<T>(endpoint: string, authorize?: () => void): Promise<T> {
+    return this.request<T>(endpoint, {}, authorize);
   }
 
-  async post<T>(endpoint: string, body?: unknown): Promise<T> {
+  async post<T>(endpoint: string, body?: unknown, authorize?: () => void): Promise<T> {
     return this.request<T>(endpoint, {
       method: "POST",
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    }, authorize);
   }
 
   /** Отправка формы (файлы) — multipart, Plane №951. */
   async postForm<T>(endpoint: string, form: FormData): Promise<T> {
     return this.request<T>(endpoint, { method: "POST", body: form });
+  }
+
+  async patchForm<T>(endpoint: string, form: FormData): Promise<T> {
+    return this.request<T>(endpoint, { method: "PATCH", body: form });
   }
 
   async patch<T>(endpoint: string, body?: unknown): Promise<T> {

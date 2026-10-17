@@ -72,10 +72,11 @@ def test_the_second_run_changes_nothing(monkeypatch, tmp_path):
 
 def test_skip_ops_leaves_the_section_alone(monkeypatch, tmp_path):
     _photos(monkeypatch, tmp_path)
+    before = list(StatusType.objects.order_by("code").values())
 
     call_command("seed_demo_all", "--skip-ops")
 
-    assert not StatusType.objects.exists(), "раздел ОМ тронут, хотя его просили не трогать"
+    assert list(StatusType.objects.order_by("code").values()) == before, "раздел ОМ тронут, хотя его просили не трогать"
 
 
 def test_ops_steps_are_declared_and_run_after_personnel():

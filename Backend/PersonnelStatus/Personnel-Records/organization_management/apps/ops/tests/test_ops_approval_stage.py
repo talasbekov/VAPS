@@ -161,7 +161,7 @@ class _Stub:
         self.visit = _VisitStub(snapshot)
 
 
-def test_the_snapshot_is_blind_to_the_order_of_assignments():
+def test_the_snapshot_is_blind_to_the_order_of_assignments(monkeypatch):
     """Порядок назначений в списке — деталь хранения, а не факт о составе.
 
     Без сортировки в подписи перестановка тех же людей по тем же постам
@@ -171,6 +171,8 @@ def test_the_snapshot_is_blind_to_the_order_of_assignments():
     ТРИ назначения, а не одно: на списке из одного элемента перестановка не
     меняет ничего, и проба была бы зелена и без сортировки.
     """
+    from organization_management.apps.ops import map_locations
+    monkeypatch.setattr(map_locations, "read", lambda *args, **kwargs: {"objects": {}, "posts": {}})
     rows = [
         {"postId": "p-1", "employeeId": "7"},
         {"postId": "p-2", "employeeId": "3"},
@@ -184,9 +186,11 @@ def test_the_snapshot_is_blind_to_the_order_of_assignments():
     assert service.approval_is_stale(shuffled, shuffled.visit) is False
 
 
-def test_a_different_person_on_the_same_post_changes_the_signature():
+def test_a_different_person_on_the_same_post_changes_the_signature(monkeypatch):
     """Обратная половина: подпись обязана ЛОВИТЬ смену состава, иначе
     «расстановка не менялась» было бы вечнозелёным."""
+    from organization_management.apps.ops import map_locations
+    monkeypatch.setattr(map_locations, "read", lambda *args, **kwargs: {"objects": {}, "posts": {}})
     rows = [
         {"postId": "p-1", "employeeId": "7"},
         {"postId": "p-2", "employeeId": "3"},

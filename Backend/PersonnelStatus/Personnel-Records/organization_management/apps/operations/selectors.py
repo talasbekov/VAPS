@@ -104,6 +104,10 @@ class DivisionTreeSelector:
         return dict(queryset.values_list("id", "name"))
 
     @staticmethod
+    def identity_for(division_id):
+        return Division.objects.filter(pk=division_id).values("name", "division_type").first() or {}
+
+    @staticmethod
     def naming_map(division_ids=None) -> dict:
         """{id: {"name": …, "ancestors": [...]}} — имя И путь ОДНИМ запросом.
 
@@ -163,6 +167,24 @@ class DivisionTreeSelector:
         if division_ids is not None:
             queryset = queryset.filter(id__in=list(division_ids))
         return set(queryset.values_list("id", flat=True))
+
+    @staticmethod
+    def root_id():
+        """Корень организации — подразделение типа «организация» БЕЗ родителя
+        (младшее по id при нескольких), либо None.
+
+        Не «любое без родителя»: тестовые деревья и переносы данных заводят
+        департаменты без родителя, и такой «корень» открыл бы дежурному
+        (`status.manage_root`, Plane №1223) чужой департамент.
+        """
+        return (
+            Division.objects.filter(
+                parent__isnull=True, division_type=Division.DivisionType.ORGANIZATION
+            )
+            .order_by("id")
+            .values_list("id", flat=True)
+            .first()
+        )
 
     @staticmethod
     def all_ids() -> set:
@@ -347,8 +369,14 @@ class EmployeeStatusSelector:
                 "date_start",
                 "date_end",
                 "source",
+                "source_ref",
+                "comment",
             )
         )
+        from organization_management.apps.operations.status_destination import destinations_for
+        destinations = destinations_for(rows)
+        for row in rows:
+            row["destination"] = destinations.get(row["id"], "")
         return _with_participations(rows)
 
 
@@ -384,6 +412,9 @@ class EmployeeSelector:
             "middle_name",
             "rank__name",
             "staff_unit__position__level",
+            "staff_unit__position__name",
+            "staff_unit__position__code",
+            "staff_unit__division__division_type",
         )
         result = {}
         for row in rows:
@@ -392,6 +423,9 @@ class EmployeeSelector:
                 "full_name": " ".join(part for part in parts if part).strip(),
                 "rank": row["rank__name"] or "",
                 "position_level": row["staff_unit__position__level"],
+                "position_name": row["staff_unit__position__name"] or "",
+                "position_code": row["staff_unit__position__code"] or "",
+                "division_type": row["staff_unit__division__division_type"] or "",
             }
         return result
 

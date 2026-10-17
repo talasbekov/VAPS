@@ -1,6 +1,5 @@
 // Домен «Нормативный документ» — законы, приказы, регламенты и инструкции по
-// организации ОМ. Справочник только для чтения: правки нормативной базы
-// делаются не в системе.
+// организации ОМ. Общие карточки и версии файлов.
 
 export const LEGAL_DOCUMENT_KINDS = [
   "LAW",
@@ -45,12 +44,10 @@ export interface LegalDocument {
   /** Строка редакции целиком: «актуален с 02.2024», «обновлён 03.2025». */
   revision: string;
   status: LegalDocumentStatus;
-  pages: number;
-  /**
-   * Адрес файла документа; null — файла в системе нет. Отдельное поле, а не
-   * догадка по коду: хранилища нормативки пока не существует, и «Открыть» без
-   * этого поля пришлось бы либо врать, либо выкидывать из вёрстки.
-   */
+  pages: number | null;
+  version: number;
+  file: LegalFile | null;
+  /** Сохранённая ссылка прежней карточки. При наличии file используется хранилище. */
   fileUrl: string | null;
 }
 
@@ -60,4 +57,16 @@ export const LEGAL_DOCUMENTS_PATH = "/api/ops/legal-documents/";
 
 export interface ListLegalDocumentsResponse {
   results: LegalDocument[];
+  canManage: boolean;
+  maxFileSizeBytes: number;
+}
+
+export interface LegalFile {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  sha256: string;
+  uploadedAt: string;
+  uploadedBy: string | null;
 }

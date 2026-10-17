@@ -125,7 +125,8 @@ def create_shift(*, business_date, duty_type_code, route_ids, coverage_mode,
 
 
 @transaction.atomic
-def submit_roster(shift_id, *, group_leader, members, reserve, submitted_by_unit):
+def submit_roster(shift_id, *, group_leader, members, reserve, submitted_by_unit,
+                  submitted_by_division_id=None):
     if not str(group_leader or "").strip() or not list(members or []):
         raise DomainError("EMPTY_GROUP", 422, message=
             "Укажите старшего группы и не менее одного участника.",
@@ -146,6 +147,7 @@ def submit_roster(shift_id, *, group_leader, members, reserve, submitted_by_unit
     now = _now_iso()
     shift.submission = {
         "submittedByUnitName": submitted_by_unit,
+        "submittedByDivisionId": submitted_by_division_id,
         "groupLeaderEmployeeName": group_leader,
         "memberEmployeeNames": list(members),
         "reserveEmployeeNames": list(reserve or []),
@@ -172,6 +174,9 @@ def review_roster(shift_id, *, decision, return_reason):
         )
     now = _now_iso()
     accepted = decision == "ACCEPT"
+    if accepted:
+        from organization_management.apps.ops.duty_dispatch import guard_combat_acceptance
+        guard_combat_acceptance(shift.business_date, submission)
     shift.submission = {
         **submission,
         "stateCode": "ACCEPTED" if accepted else "RETURNED",
@@ -410,5 +415,7 @@ def replace_member(shift_id, *, outgoing, incoming, reason_code, safe_comment):
         "replacements": [*submission.get("replacements", []), record],
         "updatedAt": now,
     }
+    from organization_management.apps.ops.duty_dispatch import guard_combat_acceptance
+    guard_combat_acceptance(shift.business_date, shift.submission)
     shift.save(update_fields=["submission", "updated_at"])
     return shift

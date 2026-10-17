@@ -263,15 +263,14 @@ def test_the_attached_count_is_printed_with_its_sign(data):
     assert f"+{data.totals.attached}" in text
 
 
-def test_a_long_roster_is_truncated_with_an_honest_tail(catalog):
-    """Молча обрезанный список выглядел бы полным, и читатель распечатки считал
-    бы, что видит всех."""
+def test_a_long_roster_shows_every_employee(catalog):
+    """The printable document includes the full roster."""
     roster = [member(i, full_name=f"Фамилия{i}") for i in range(CELL_MAX_MEMBERS + 5)]
     rows = [fact(i, "DUTY") for i in range(CELL_MAX_MEMBERS + 5)]
 
     text = text_of(generate_expense_pdf(document(catalog, roster, rows)))
 
-    assert re.search(r"ещё\s+5", text)
+    assert all(f"Фамилия{i}" in text for i in range(CELL_MAX_MEMBERS + 5))
 
 
 def test_the_totals_row_is_present(data):

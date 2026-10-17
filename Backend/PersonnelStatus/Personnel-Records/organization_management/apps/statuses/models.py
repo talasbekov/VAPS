@@ -1,5 +1,5 @@
 from datetime import timedelta
-from django.db import models
+from django.db import models, transaction
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -107,6 +107,10 @@ class EmployeeStatus(models.Model):
     )
 
     # Служебная информация
+    # Placement is part of this status, not a second duty-shift workflow.
+    # Snapshot IDs/names survive replacement of draft passport sectors/posts.
+    duty_assignment = models.JSONField(null=True, blank=True, verbose_name='Наряд')
+
     #
     # `blank=True` — не косметика. Колонка в БД и так `null=True`, но `save()`
     # зовёт `full_clean()`, и из-за расхождения системная запись без автора была
@@ -200,7 +204,7 @@ class EmployeeStatus(models.Model):
             from organization_management.apps.employees.models import Employee
             try:
                 employee = Employee.objects.get(pk=self.employee_id)
-                if self.start_date < employee.hire_date:
+                if employee.hire_date is not None and self.start_date < employee.hire_date:
                     raise ValidationError({
                         'start_date': f"Дата начала статуса не может быть раньше даты приема сотрудника ({employee.hire_date})."
                     })
@@ -277,6 +281,7 @@ class EmployeeStatus(models.Model):
                                      f'Для одного сотрудника не может быть пересекающихся активных статусов.'
                     })
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
         """Переопределенный метод сохранения"""
         # Автоматически устанавливаем состояние в зависимости от дат
@@ -294,12 +299,18 @@ class EmployeeStatus(models.Model):
                 self.state = self.StatusState.ACTIVE
 
         self.full_clean()
+        if self.duty_assignment and self.state != self.StatusState.CANCELLED:
+            from organization_management.apps.ops.duty_dispatch import guard_legacy_placement
+            guard_legacy_placement(self.employee_id, self.start_date, self.actual_end_date or self.end_date)
         super().save(*args, **kwargs)
 
     def extend(self, new_end_date, user=None):
         """Продление статуса"""
         if self.state != self.StatusState.ACTIVE:
             raise ValidationError("Можно продлить только активный статус.")
+
+        if self.end_date is None:
+            raise ValidationError("Статус без даты окончания не требует продления.")
 
         if new_end_date <= self.end_date:
             raise ValidationError("Новая дата окончания должна быть позже текущей.")

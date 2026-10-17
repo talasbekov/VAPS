@@ -80,7 +80,7 @@ def warm_event_index(context, status_rows):
             # «По разделу ОМ» (Plane №427, `[СБС-32]`/`[ОЗН-06]`): объект,
             # пост и отметка ознакомления берутся из расстановки мероприятия.
             for event in OpsSecurityEvent.objects.filter(id__in=missing)
-            .only("id", "code", "title", "placement_assignments", "recon_sector_posts")
+            .only("id", "code", "title", "object_name", "placement_assignments", "recon_sector_posts")
             .prefetch_related("visit_objects")
         )
     return index
@@ -313,6 +313,7 @@ class AccountSerializer(serializers.ModelSerializer):
     у двух действий (заведение и сброс), один раз.
     """
 
+    employee_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     full_name = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
@@ -329,9 +330,28 @@ class AccountSerializer(serializers.ModelSerializer):
             "email",
             "is_active",
             "last_login",
+            "employee_id",
             "password",
         ]
         read_only_fields = ["id", "last_login"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        employee = getattr(instance, "employee", None)
+        data["employee_id"] = employee.pk if employee else None
+        data["employee_name"] = str(employee) if employee else None
+        return data
+
+    def validate_employee_id(self, value):
+        from organization_management.apps.employees.models import Employee
+        if value is None:
+            return None
+        employee = Employee.objects.filter(pk=value).first()
+        if employee is None:
+            raise serializers.ValidationError("Сотрудник не найден.")
+        if employee.user_id is not None and employee.user_id != getattr(self.instance, "pk", None):
+            raise serializers.ValidationError("Сотрудник уже связан с другой учётной записью.")
+        return value
 
     def get_full_name(self, user) -> str | None:
         return user.get_full_name() or None
@@ -358,6 +378,24 @@ class AssignRoleRequestSerializer(serializers.Serializer):
         queryset=Role.objects.all(), pk_field=serializers.CharField()
     )
     scope_division_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_user_id(self, value):
+        from django.contrib.auth import get_user_model
+        try:
+            exists = get_user_model().objects.filter(pk=int(value)).exists()
+        except (ValueError, OverflowError):
+            exists = False
+        if not exists:
+            raise serializers.ValidationError("???Сотрудник не найден.")
+        return str(int(value))
+
+    def validate(self, attrs):
+        from organization_management.apps.operations.models import RolePermission
+        if attrs.get("scope_division_id") is not None and RolePermission.objects.filter(
+            role_code=attrs["role_code"], permission_code_id="*"
+        ).exists():
+            raise serializers.ValidationError({"scope_division_id": "Роль со всеми правами выдаётся только на всю службу."})
+        return attrs
 
     def validate_scope_division_id(self, value):
         # Область — не свободное число: внешнего ключа у поля нет (оно
@@ -479,6 +517,8 @@ class _StatusListSerializer(serializers.ListSerializer):
     def to_representation(self, data):
         rows = list(data)
         warm_event_index(self.context, rows)
+        from organization_management.apps.operations.status_destination import destinations_for
+        self.context["_ops_destinations"] = destinations_for(rows, event_index=self.context[_EVENT_INDEX_KEY])
         return super().to_representation(rows)
 
 
@@ -491,6 +531,7 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
     """
 
     state = serializers.SerializerMethodField()
+    destination = serializers.SerializerMethodField()
     # Мероприятия статуса ЕДУТ НАРУЖУ вместе со строкой (Plane №274): экран
     # правки открывает уже выбранное, и вторым запросом за ними ходить некуда
     # — их немного и они принадлежат этой же строке. С Plane №281 у каждого
@@ -504,6 +545,9 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
         # мероприятием был бы свой запрос, и «один запрос на ответ» держалось
         # бы только на том, что у соседних строк ОМ совпадают.
         warm_event_index(self.context, [instance])
+        if "_ops_destinations" not in self.context:
+            from organization_management.apps.operations.status_destination import destinations_for
+            self.context["_ops_destinations"] = destinations_for([instance], event_index=self.context[_EVENT_INDEX_KEY])
         return super().to_representation(instance)
 
     class Meta:
@@ -511,6 +555,7 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
         fields = [
             "id", "employee_id", "status_type_code", "date_start", "date_end",
             "state", "source", "source_ref", "comment", "document_basis",
+            "destination",
             "participations",
             "cancelled_at", "cancelled_by", "cancelled_reason",
             "created_by", "created_at", "updated_at",
@@ -519,6 +564,9 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
 
     def get_state(self, obj) -> str:
         return str(obj.state)
+
+    def get_destination(self, obj) -> str:
+        return self.context["_ops_destinations"].get(obj.pk, "")
 
 
 class SecondmentSerializer(serializers.ModelSerializer):

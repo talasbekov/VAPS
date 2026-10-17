@@ -1,9 +1,12 @@
+import posixpath
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import Http404
 from django.urls import path, include
 from django.views.decorators.cache import cache_page
+from django.views.static import serve as serve_static
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
@@ -13,7 +16,22 @@ def protected_person_photo_legacy(request, name):
     """Never serve the former guessable MEDIA_ROOT photo path."""
     raise Http404
 
+
+def report_file_legacy(request, name):
+    """Stored reports are readable only through their authenticated API action."""
+    raise Http404
+
+
+def public_media(request, path, document_root=None):
+    # static.serve normalizes dot segments after URL routing. Check that same
+    # normalized path so /media/employees/../reports/file cannot bypass denial.
+    normalized = posixpath.normpath(path.replace('\\', '/')).lstrip('/')
+    if normalized.split('/', 1)[0] in ('reports', '..'):
+        raise Http404
+    return serve_static(request, path, document_root=document_root)
+
 urlpatterns = [
+    path('media/reports/<path:name>', report_file_legacy, name='report_file_legacy'),
     path("admin/", admin.site.urls),
 
     # JWT Authentication
@@ -68,6 +86,7 @@ urlpatterns = [
     # далее по плану docs/ops-backend-plan.md). Модели живут в apps/operations
     # рядом с остальными ОМ, здесь — только адреса.
     path("api/ops/", include("organization_management.apps.ops.api.urls")),
+    path("api/integrations/digital-twin/v1/", include("organization_management.apps.ops.api.digital_twin")),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # Прикомандирования: донорский роут был выключен с импорта — вьюхи ходили
@@ -97,4 +116,4 @@ if settings.DEBUG:
     # API. Приватные документы раздела ОМ сюда не попадают сознательно: они
     # лежат вне MEDIA_ROOT и отдаются через проверку права (см.
     # `OPS_PRIVATE_STORAGE_ROOT` в настройках).
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, view=public_media, document_root=settings.MEDIA_ROOT)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/lib/auth";
+import { useAccountProfile } from "../model/use-account-profile";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,10 @@ export function EditProfileDialog({
   open,
   onOpenChange,
 }: EditProfileDialogProps) {
-  const { user } = useAuth();
+  const profile = useAccountProfile(open);
+  const queryClient = useQueryClient();
+  const pendingRef = useRef(false);
+  const [profileSeeded, setProfileSeeded] = useState(false);
   const [loading, setLoading] = useState<null | "profile" | "password">(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -72,24 +76,36 @@ export function EditProfileDialog({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Подставляем данные профиля при открытии — и только один раз на открытие.
-  // Объект user пересоздаётся на каждом обновлении сессии NextAuth (в том
-  // числе фоновом, по возвращении фокуса на вкладку), поэтому засев по
-  // изменению user затирал бы уже введённые имя и почту.
+  // Login names are not personal names. Seed once from a fresh account read;
+  // background refetches must not overwrite the user's draft.
   const seededRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
       seededRef.current = false;
+      setProfileSeeded(false);
+      setFirstName("");
+      setLastName("");
+      setEmail("");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError(null);
+      setFieldErrors({});
+      setSuccess(null);
       return;
     }
-    if (seededRef.current || !user) return;
+    if (seededRef.current || !profile.isSuccess || profile.isFetching || profile.isError || !profile.data) return;
     seededRef.current = true;
-    const nameParts = user.name?.split(" ") || [];
-    setFirstName(nameParts[0] || "");
-    setLastName(nameParts.slice(1).join(" ") || "");
-    setEmail(user.email || "");
-  }, [open, user]);
+    setFirstName(profile.data.first_name);
+    setLastName(profile.data.last_name);
+    setEmail(profile.data.email);
+    setProfileSeeded(true);
+  }, [open, profile.data, profile.isSuccess, profile.isFetching, profile.isError]);
+  const profileReady = profileSeeded && profile.isSuccess && !profile.isFetching && !profile.isError;
+  const changeOpen = (next: boolean) => {
+    if (!pendingRef.current) onOpenChange(next);
+  };
 
   const startAttempt = () => {
     setError(null);
@@ -122,31 +138,36 @@ export function EditProfileDialog({
   };
 
   const handleSaveProfile = async () => {
+    if (pendingRef.current || !profileReady) return;
+    pendingRef.current = true;
     startAttempt();
     setLoading("profile");
 
     try {
-      await updateProfile({
+      const saved = await updateProfile({
         first_name: firstName,
         last_name: lastName,
         email: email,
       });
 
+      // A reconnect read may still hold the pre-save account. Its AbortSignal
+      // must be cancelled before publishing the acknowledged server response.
+      await queryClient.cancelQueries({ queryKey: profile.queryKey, exact: true });
+      queryClient.setQueryData(profile.queryKey, saved);
+      setFirstName(saved.first_name);
+      setLastName(saved.last_name);
+      setEmail(saved.email);
       setSuccess("Профиль успешно обновлен");
-      setTimeout(() => {
-        onOpenChange(false);
-        setSuccess(null);
-        // Обновляем страницу для отображения новых данных
-        window.location.reload();
-      }, 2000);
     } catch (err) {
       showFailure(err, "Ошибка при обновлении профиля");
     } finally {
+      pendingRef.current = false;
       setLoading(null);
     }
   };
 
   const handleChangePassword = async () => {
+    if (pendingRef.current) return;
     startAttempt();
 
     // Проверки, которые сервер сделать не может: он получает ОДИН пароль, а
@@ -171,6 +192,7 @@ export function EditProfileDialog({
       return;
     }
 
+    pendingRef.current = true;
     setLoading("password");
 
     try {
@@ -188,6 +210,7 @@ export function EditProfileDialog({
     } catch (err) {
       showFailure(err, "Ошибка при смене пароля");
     } finally {
+      pendingRef.current = false;
       setLoading(null);
     }
   };
@@ -210,8 +233,10 @@ export function EditProfileDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={!busy}
+        onEscapeKeyDown={(event) => { if (pendingRef.current) event.preventDefault(); }}
+        onInteractOutside={(event) => { if (pendingRef.current) event.preventDefault(); }}>
         <DialogHeader>
           <DialogTitle>Редактировать профиль</DialogTitle>
           <DialogDescription>
@@ -219,7 +244,7 @@ export function EditProfileDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <fieldset disabled={busy} className="space-y-6 py-4" aria-busy={busy}>
           {/* Сообщения об ошибках/успехе. role=alert — чтобы отказ дошёл и до
               того, кто читает экран не глазами: без него смена пароля молча
               не происходила бы. */}
@@ -240,7 +265,13 @@ export function EditProfileDialog({
           )}
 
           {/* Данные профиля */}
-          <div className="space-y-4">
+          {profile.isError ? (
+            <div role="alert" className="space-y-2 text-sm">
+              <p>Не удалось загрузить данные профиля.</p>
+              <Button variant="outline" disabled={profile.isFetching || busy} onClick={() => void profile.refetch()}>Повторить загрузку профиля</Button>
+            </div>
+          ) : !profileReady && <p role="status" className="text-sm text-muted-foreground">Загрузка данных профиля…</p>}
+          <fieldset disabled={!profileReady} className="space-y-4">
             <h3 className="text-lg font-semibold">Личные данные</h3>
 
             <div className="grid grid-cols-2 gap-4">
@@ -284,7 +315,7 @@ export function EditProfileDialog({
 
             <Button
               onClick={handleSaveProfile}
-              disabled={busy}
+              disabled={busy || !profileReady}
               className="w-full"
             >
               {loading === "profile" && (
@@ -292,7 +323,7 @@ export function EditProfileDialog({
               )}
               Сохранить изменения
             </Button>
-          </div>
+          </fieldset>
 
           <div className="border-t pt-6">
             <h3 className="text-lg font-semibold mb-4">Смена пароля</h3>
@@ -353,10 +384,10 @@ export function EditProfileDialog({
               </Button>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={busy} onClick={() => changeOpen(false)}>
             Закрыть
           </Button>
         </DialogFooter>

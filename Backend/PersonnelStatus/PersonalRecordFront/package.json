@@ -9,8 +9,9 @@
     "build": "bash scripts/run-with-worktree-deps.sh build env NEXTAUTH_SECRET=build-only-placeholder next build",
     "dev": "bash scripts/run-with-worktree-deps.sh next next dev --turbo",
     "dev:webpack": "bash scripts/run-with-worktree-deps.sh next next dev",
-    "build:check": "bash scripts/run-with-worktree-deps.sh build env NEXTAUTH_SECRET=build-only-placeholder NEXT_DIST_DIR=.next-build bash scripts/build-lock.sh next build",
-    "gate:front": "bash scripts/run-with-worktree-deps.sh build bash -c 'tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run check:stand && npm run check:deps && npm run build:check'",
+    "build:check": "node scripts/gate-front.mjs --build-only",
+    "gate:front": "node scripts/gate-front.mjs",
+    "gate:worktree": "bash scripts/run-with-worktree-deps.sh build bash -c 'tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run check:stand && npm run check:deps && npm run build:check'",
     "start": "bash scripts/run-with-worktree-deps.sh next next start",
     "dev:guard": "bash scripts/run-with-worktree-deps.sh next bash scripts/dev-guard.sh",
     "stand:prod": "bash scripts/run-with-worktree-deps.sh build bash scripts/prod-stand.sh",
@@ -19,8 +20,11 @@
     "smoke:isolated": "bash scripts/run-with-worktree-deps.sh playwright env SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3109 SMOKE_APP=http://localhost:3109 SMOKE_API=http://127.0.0.1:8101 playwright test --config playwright.smoke.config.ts",
     "check:rewrites": "node scripts/check-rewrites.mjs",
     "check:shots": "node scripts/check-shot-paths.mjs",
+    "test:roles": "node node_modules/@playwright/test/cli.js test --config playwright.roles.config.ts",
+    "test:runtime": "node node_modules/@playwright/test/cli.js test --config playwright.runtime.config.ts",
     "check:stand": "bash scripts/tests/neighbours-test.sh",
-    "check:deps": "bash scripts/tests/ensure-worktree-deps-test.sh"
+    "check:deps": "bash scripts/tests/ensure-worktree-deps-test.sh",
+    "test:integration": "playwright test -c playwright.integration.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -71,6 +75,7 @@
     "sharp": "^0.35.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.5",
+    "three": "0.186.1",
     "turbo": "^2.10.12",
     "zod": "^3.25.67"
   },
@@ -96,6 +101,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "0.186.0",
     "autoprefixer": "^10.4.20",
     "jest": "^29.7.0",
     "postcss": "^8.5.23",

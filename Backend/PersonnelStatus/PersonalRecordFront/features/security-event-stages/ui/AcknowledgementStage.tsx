@@ -48,7 +48,7 @@ import {
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
 import { PersonnelPicker } from "@/features/personnel-picker";
-import { EVENT_MANAGE, STATUS_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
@@ -127,6 +127,10 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
     ? null
     : `Этап ведётся по всему мероприятию: ${behindLabel}`;
   const complete = useCompleteAcknowledgement(event.id);
+  const closeComplete = () => {
+    setCompleteOpen(false);
+    complete.reset();
+  };
   const [scope, setScope] = useState<Scope>("all");
   const [replacing, setReplacing] = useState<PlacementAssignment | null>(null);
   const [confirming, setConfirming] = useState<PlacementAssignment | null>(null);
@@ -139,6 +143,16 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   };
 
   const assignments = event.placementAssignments;
+  const currentConfirmation = assignments.find((row) => row.id === confirming?.id);
+  const confirmationReason =
+    !currentConfirmation
+      ? "Назначение изменилось. Закройте окно и выберите сотрудника заново."
+      : currentConfirmation.employeeHasAccount !== false ||
+          currentConfirmation.canConfirmWithoutAccount !== true
+        ? "Подтвердить может начальник управления этого сотрудника без учётной записи."
+        : currentConfirmation.acknowledgedAt != null
+          ? "Ознакомление уже подтверждено."
+          : null;
   const confirmed = assignments.filter((a) => stateOf(a) === "confirmed");
   const declined = assignments.filter((a) => stateOf(a) === "declined");
   // «Открыл и не нажал» (Plane №452) — своя корзина, но для НАПОМИНАНИЯ она
@@ -222,14 +236,12 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
    * (`_replaces_own_post`, `_leads_as_deputy`). Отсутствие ключа у старых
    * строк значит «ведёт» — умолчание модели, а не «наблюдает».
    *
-   * Пока права и кадровая запись едут, действие считается доступным — та же
-   * договорённость, что в `useChainAccess`: мигание «нельзя → можно» вводит в
-   * заблуждение сильнее, чем секунда доступной кнопки, а сервер всё равно
-   * стоит за ней.
+   * Делегированные действия требуют успешно прочитанной активной кадровой
+   * записи; устаревший ответ после ошибки обновления не даёт полномочий.
    */
   const me = useMyEmployee();
   const myEmployeeId =
-    me.data?.employee != null ? String(me.data.employee.id) : null;
+    me.isSuccess && me.data?.employee?.is_active === true ? String(me.data.employee.id) : null;
   const isStageLead =
     myEmployeeId !== null &&
     ([event.chiefEmployeeId, ...event.visitObjects.map((v) => v.chiefEmployeeId)].some(
@@ -388,9 +400,11 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                   ? `Этап завершается по всему мероприятию: ${behindLabel}`
                   : undefined
               }
-              onClick={() =>
-                allConfirmed ? complete.mutate({}) : setCompleteOpen(true)
-              }
+              onClick={() => {
+                complete.reset();
+                if (allConfirmed) complete.mutate({});
+                else setCompleteOpen(true);
+              }}
             >
               {complete.isPending ? "Завершение…" : "Завершить ознакомление"}
             </Button>
@@ -500,11 +514,11 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           canReplace={canManage && mayReplaceOn(assignment.postId)}
                           canConfirmUnlinked={
                             assignment.employeeHasAccount === false &&
-                            access.can(STATUS_MANAGE)
+                            assignment.canConfirmWithoutAccount === true
                           }
                           confirmReason={
-                            assignment.employeeHasAccount === false
-                              ? access.reason(STATUS_MANAGE)
+                            assignment.canConfirmWithoutAccount !== true
+                              ? "Подтвердить может начальник управления этого сотрудника без учётной записи."
                               : null
                           }
                           onAcknowledge={() => setConfirming(assignment)}
@@ -526,7 +540,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
 
         <StageError error={remindOne.error} />
         <StageError error={remindAll.error} />
-        <StageError error={complete.error} />
+        {!completeOpen && <StageError error={complete.error} />}
 
         {report !== undefined && (
           // 🔴 ЖЕЛТИТ ТОЛЬКО ТО, ЧТО ЧИНЯТ (Plane №900). Исходов у рассылки
@@ -574,6 +588,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           <ReplaceInline
             event={event}
             assignment={replacing}
+            canReplace={canManage && mayReplaceOn(replacing.postId)}
             onClose={() => setReplacing(null)}
           />
         )}
@@ -581,7 +596,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
       </CardContent>
 
       {/* Подтверждение завершения при неподтвердивших (`[ОЗН-04]`). */}
-      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
+      <Dialog open={completeOpen} onOpenChange={(open) => open ? setCompleteOpen(true) : closeComplete()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -603,14 +618,19 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               onChange={(e) => setCompleteComment(e.target.value)}
             />
           </div>
+          <StageError error={complete.error} />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCompleteOpen(false)}>
+            <Button variant="outline" onClick={closeComplete}>
               Отмена
             </Button>
+            <RightGate reason={completeReason || stageBehindReason}>
+              {(describedBy) => (
             <Button
               variant="destructive"
-              disabled={completeComment.trim() === "" || complete.isPending}
+              disabled={completeComment.trim() === "" || complete.isPending || !isEventLead || !eventOnStage || total === 0}
+              aria-describedby={describedBy}
               onClick={() => {
+                if (!isEventLead || !eventOnStage || total === 0) return;
                 void complete
                   .mutateAsync({ force: true, comment: completeComment.trim() })
                   .then(() => {
@@ -622,6 +642,8 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             >
               Завершить без подтверждения всех
             </Button>
+              )}
+            </RightGate>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -664,6 +686,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               />
             </div>
             <StageError error={acknowledge.error} />
+            {confirmationReason && <p role="status" className="text-sm text-muted-foreground">{confirmationReason}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeConfirmation}>
@@ -671,15 +694,16 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             </Button>
             <Button
               disabled={
+                confirmationReason !== null ||
                 deliveryMethod.trim() === "" ||
                 accountAbsenceBasis.trim() === "" ||
                 acknowledge.isPending
               }
               onClick={() => {
-                if (confirming === null) return;
+                if (!currentConfirmation || confirmationReason !== null) return;
                 void acknowledge
                   .mutateAsync({
-                    assignmentId: confirming.id,
+                    assignmentId: currentConfirmation.id,
                     deliveryMethod: deliveryMethod.trim(),
                     accountAbsenceBasis: accountAbsenceBasis.trim(),
                   })
@@ -913,10 +937,12 @@ function AssignmentRow({
 function ReplaceInline({
   event,
   assignment,
+  canReplace,
   onClose,
 }: {
   event: SecurityEvent;
   assignment: PlacementAssignment;
+  canReplace: boolean;
   onClose: () => void;
 }) {
   const [incomingEmployeeId, setIncomingEmployeeId] = useState("");
@@ -925,6 +951,15 @@ function ReplaceInline({
   );
   const replace = useReplaceAssignment(event.id);
   const post = event.reconSectorPosts.find((p) => p.id === assignment.postId);
+  const assignedIds = new Set(event.placementAssignments.map((row) => row.employeeId));
+  const stillAssigned = event.placementAssignments.some((row) => row.id === assignment.id);
+  const blockedReason = !stillAssigned
+    ? "Назначение уже изменено. Закройте форму и выберите актуального сотрудника."
+    : !canReplace
+      ? "Заменить сотрудника может ведущий мероприятия или старший его объекта."
+      : null;
+  const canSubmit = !blockedReason && incomingEmployeeId !== "" &&
+    !assignedIds.has(incomingEmployeeId) && reasonCode.trim() !== "" && !replace.isPending;
   return (
     <section
       aria-label="Замена отказавшегося"
@@ -956,6 +991,8 @@ function ReplaceInline({
           onPick={(id) => setIncomingEmployeeId((current) => (current === id ? "" : id))}
           pageSize={8}
           searchInputId="ack-replace-search"
+          disabledIds={assignedIds}
+          disabledNote="уже назначен на мероприятие"
         />
       </div>
       <StageError error={replace.error} />
@@ -963,10 +1000,14 @@ function ReplaceInline({
         <Button type="button" variant="outline" onClick={onClose}>
           Отмена
         </Button>
+        <RightGate reason={blockedReason}>
+          {(describedBy) => (
         <Button
           type="button"
-          disabled={replace.isPending || incomingEmployeeId === "" || reasonCode.trim() === ""}
+          disabled={!canSubmit}
+          aria-describedby={describedBy}
           onClick={() => {
+            if (!canSubmit) return;
             void replace
               .mutateAsync({ assignmentId: assignment.id, incomingEmployeeId, reasonCode: reasonCode.trim() })
               .then(onClose)
@@ -975,6 +1016,8 @@ function ReplaceInline({
         >
           {replace.isPending ? "Замена…" : "Заменить"}
         </Button>
+          )}
+        </RightGate>
       </div>
     </section>
   );

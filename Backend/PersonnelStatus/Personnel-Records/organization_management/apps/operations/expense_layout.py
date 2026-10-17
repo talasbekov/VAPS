@@ -58,9 +58,26 @@ def event_cell(event):
 TOTALS_LABEL = "ИТОГО"
 DATE_FORMAT = "%d.%m.%Y"
 
-# Сколько имён печатается в ячейке. Полный состав в данных остаётся — режет
-# только вывод, и хвост честно сообщает, сколько скрыто.
+# Retained for old callers; personnel output is no longer truncated.
 CELL_MAX_MEMBERS = 20
+
+PERSONNEL_HEAD = ("ФИО", "Звание", "Должность", "Статус", "Период отсутствия", "Место убытия")
+
+
+def absence_period(start, end):
+    """Display the last absent day inclusively; storage remains [start, end)."""
+    from datetime import timedelta
+    if start is None or end is None:
+        return ""
+    last = end - timedelta(days=1)
+    if start == last:
+        return start.strftime(DATE_FORMAT)
+    return f"{start.strftime(DATE_FORMAT)}–{last.strftime(DATE_FORMAT)}"
+
+
+def personnel_values(person):
+    return (person.full_name, person.rank, person.position_name, person.status_name,
+            absence_period(person.date_start, person.date_end), person.destination)
 
 FONT_NAME = "Times New Roman"
 TITLE_SIZE_PT = 16
@@ -98,20 +115,10 @@ def member_line(member):
     """«звание ФИО — ДД.ММ.ГГГГ–ДД.ММ.ГГГГ»; без звания — без лишнего пробела."""
     name = " ".join(part for part in (member.rank, member.full_name) if part)
     return (
-        f"{name} — {member.date_start.strftime(DATE_FORMAT)}"
-        f"–{member.date_end.strftime(DATE_FORMAT)}"
+        f"{name} — {absence_period(member.date_start, member.date_end)}"
     )
 
 
 def member_lines(members):
-    """Строки состава ячейки с усечением и честным хвостом.
-
-    Хвост «… ещё N» обязателен: молча обрезанный список выглядел бы как
-    полный, и читатель документа считал бы, что видит всех.
-    """
-    shown = list(members)[:CELL_MAX_MEMBERS]
-    lines = [member_line(member) for member in shown]
-    hidden = len(members) - len(shown)
-    if hidden > 0:
-        lines.append(f"… ещё {hidden}")
-    return lines
+    """Every member is visible, including rosters longer than a page."""
+    return [member_line(member) for member in members]

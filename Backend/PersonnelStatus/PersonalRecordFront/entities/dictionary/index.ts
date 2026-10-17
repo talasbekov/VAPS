@@ -15,7 +15,8 @@ export type DictionaryCode =
   | "POST_REQUIREMENT_GROUPS"
   | "PLACEMENT_ROLES"
   | "EVENT_PARTICIPATION_KINDS"
-  | "EVENT_GROUP_ROLES";
+  | "EVENT_GROUP_ROLES"
+  | "SERVICE_DUTY_KINDS";
 
 export interface DictionaryDefinition {
   /** Код generic-справочника ЛИБО внешнего (`STATUS_TYPES`, Plane №344):
@@ -26,11 +27,20 @@ export interface DictionaryDefinition {
   description: string;
 }
 
+export interface DictionaryEntryRef {
+  id: string;
+  code: string;
+}
+
+export type DictionaryChange = { operation: string; at: string; actor: string };
+
 export interface DictionaryEntry {
   id: string;
   dictionaryCode: DictionaryCode;
   code: string;
   label: string;
+  /** Казахское наименование (UC-REF-001); пустая строка — перевода нет. */
+  labelKk: string;
   description: string;
   isActive: boolean;
   /** Только для POST_REQUIREMENTS — код записи POST_REQUIREMENT_GROUPS. */
@@ -42,6 +52,14 @@ export interface DictionaryEntry {
   /** Входит ли владелец группы в область status.manage текущего пользователя. */
   isOwn?: boolean;
   updatedAt: string;
+  lastChange?: DictionaryChange | null;
+  replacementFamily?: { rootId: string; currentId: string; memberIds: string[]; totalCount: number };
+  /** Дата неактуальности (UC-REF-001): ставится при деактивации. */
+  inactiveSince: string | null;
+  /** Прежняя запись, которую эта заменила. */
+  supersedes: DictionaryEntryRef | null;
+  /** Преемник; у записи с преемником активировать и удалять нечего. */
+  supersededBy: DictionaryEntryRef | null;
 }
 
 /**
@@ -86,6 +104,10 @@ export function dictionaryEntrySetActivePath(id: string): string {
 export function dictionaryEntryPath(id: string): string {
   return `${DICTIONARIES_PATH}entries/${id}/`;
 }
+/** Замена преемником (UC-REF-001, «Редактирование»). */
+export function dictionaryEntrySupersedePath(id: string): string {
+  return `${DICTIONARIES_PATH}entries/${id}/supersede/`;
+}
 
 export interface DictionaryDefinitionSummary extends DictionaryDefinition {
   totalCount: number;
@@ -113,8 +135,10 @@ export interface ListDictionaryEntriesResponse {
 }
 
 export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
+  confirmSimilar?: boolean;
   code: string;
   label: string;
+  labelKk?: string;
   description: string;
   groupCode?: string | null;
   ownerDivisionId?: string | null;
@@ -125,6 +149,7 @@ export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
  * принимает, форма не показывает. */
 export interface UpdateDictionaryEntryRequest extends Record<string, unknown> {
   label: string;
+  labelKk?: string;
   description: string;
   groupCode?: string | null;
   ownerDivisionId?: string | null;
@@ -134,3 +159,10 @@ export interface SetDictionaryEntryActiveRequest
   extends Record<string, unknown> {
   isActive: boolean;
 }
+
+export type SupersedeDictionaryEntryRequest = CreateDictionaryEntryRequest;
+
+/** Ответ DELETE: 204 — удалено; 200 с телом — деактивировано по связям. */
+export type RemoveDictionaryEntryResult =
+  | { result: "deleted" }
+  | { result: "deactivated"; entry: DictionaryEntryView };

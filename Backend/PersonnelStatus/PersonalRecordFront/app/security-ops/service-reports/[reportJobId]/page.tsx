@@ -1,9 +1,13 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Карточка работы отчёта (§22.27 «Прямые ссылки», §22.28). Доступ
 // перепроверяется на каждый запрос карточки; параметры чужого запуска сюда не
 // приезжают — сервер вырезает их из ответа, экран печатает причину.
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { LoadFailure } from "@/components/load-failure";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
@@ -31,18 +35,25 @@ const INLINE_ACTIONS: readonly ReportJobAction["code"][] = [
 ];
 
 export default function ReportJobPage() {
+  const queryClient = useQueryClient();
   const params = useParams<{ reportJobId: string }>();
   const reportJobId = params.reportJobId ?? "";
   const jobQuery = useReportJob(reportJobId);
 
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content));
-  const rerun = useRerunReportJob(() => undefined);
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobQuery.readKey);
+  const rerun = useRerunReportJob(() => undefined, jobQuery.readKey);
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
 
   // Выше ветки jobQuery.error: без гварда отказ по правам приезжал сюда как
   // 403 и печатался экраном «Работа недоступна» — той же формулировкой, что
   // и чужой/удалённый запуск.
-  if (!permissionsLoading && !hasPermission("report.generate")) {
+  if (permissionsError) {
+    return <DashboardLayout><LoadFailure what="права доступа к отчётам" onRetry={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })} /></DashboardLayout>;
+  }
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Проверяем доступ к отчётам…</p></DashboardLayout>;
+  }
+  if (!hasPermission("report.generate")) {
     return <OpsAccessDenied what="карточки работы отчёта" />;
   }
 
@@ -55,6 +66,7 @@ export default function ReportJobPage() {
           <p className="text-sm text-muted-foreground">
             {jobQuery.error.message}
           </p>
+          <LoadFailure what="работу отчёта" onRetry={() => void jobQuery.refetch()} isRetrying={jobQuery.isFetching} />
           <p>
             <Link
               className="text-sm font-semibold text-primary-ink underline"
@@ -197,8 +209,9 @@ export default function ReportJobPage() {
                   key={action.code}
                   type="button"
                   className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                  disabled={!action.available || download.isPending || rerun.isPending}
+                  disabled={!action.available || download.isPending || rerun.isPending || jobQuery.canAct === false}
                   onClick={() => {
+                    if (jobQuery.canAct === false) return;
                     if (action.code === "DOWNLOAD" && artifact !== null) {
                       download.mutate({ artifactId: artifact.artifactId });
                     } else if (
@@ -254,21 +267,7 @@ export default function ReportJobPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-dashed bg-muted/30 p-4">
-          <h2 className="mb-2 text-sm font-semibold">Чего в этой карточке нет</h2>
-          <ul className="flex flex-col gap-2">
-            {[...data.unavailableBlocks, ...data.unavailableArtifactFields].map(
-              (block) => (
-                <li key={block.code} className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {block.label}
-                  </span>{" "}
-                  — {block.reason}
-                </li>
-              )
-            )}
-          </ul>
-        </section>
+        <CapabilityNotes title="Состав карточки отчёта" items={[...data.unavailableBlocks, ...data.unavailableArtifactFields]} />
       </div>
     </DashboardLayout>
   );

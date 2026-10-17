@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { apiClient, type StaffUnitStatistics } from "@/lib/api";
 import { retryUnlessClientError } from "@/lib/query-retry";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /**
  * Счётчики штата по области актора. Кормит список отделов у фильтра на
@@ -12,8 +14,12 @@ import { retryUnlessClientError } from "@/lib/query-retry";
  * настоящая ошибка в ней потерялась бы.
  */
 export function useStaffUnitStatistics() {
+  const { status } = useSession();
+  const { hasPermission, isLoading, error } = useOpsPermissions();
   return useQuery<StaffUnitStatistics>({
     queryKey: ["staff-unit-statistics"],
+    enabled: status === "authenticated" && !isLoading && !error &&
+      (hasPermission("orgstructure.view") || hasPermission("status.view")),
     queryFn: async () => {
       return await apiClient.getStaffUnitStatistics();
     },

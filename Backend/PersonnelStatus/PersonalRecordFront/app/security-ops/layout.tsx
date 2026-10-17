@@ -18,15 +18,10 @@
 // как запрос прав ['ops-me'] у них общий — достаточно одного гейта на
 // сегмент. Честный 403 сюда НЕ попадает и обрабатывается страницами как
 // прежде (OpsAccessDenied).
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Fragment, useEffect, type ReactNode } from "react";
 import { OpsNotificationBell } from "@/features/ops-notifications/notification-bell";
-import {
-  OpsPermissionsUnavailable,
-  isPermissionsCheckFailure,
-} from "@/components/ops-permissions-unavailable";
+import { OpsPermissionBoundary } from "@/components/ops-permission-boundary";
 import { useOpsMockWorker } from "@/hooks/use-ops-mock-worker";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { startOpsWs, stopOpsWs } from "@/lib/ops-ws";
 
 export default function SecurityOpsLayout({
@@ -37,10 +32,6 @@ export default function SecurityOpsLayout({
   // Старт мок-слоя — общий хук: тот же мок нужен экранам доступа на
   // /settings/*, и две копии эффекта разошлись бы при первой правке.
   const ready = useOpsMockWorker();
-  const queryClient = useQueryClient();
-  const { error: permissionsError, isLoading: permissionsLoading } =
-    useOpsPermissions();
-  const [isRetrying, setIsRetrying] = useState(false);
 
   useEffect(() => {
     // Транспорт стартует ПОСЛЕ готовности мок-слоя: его REST-инвалидации
@@ -60,24 +51,8 @@ export default function SecurityOpsLayout({
     );
   }
 
-  // Проверяется ПОСЛЕ готовности мок-слоя: до неё запрос прав ещё не
-  // отработал, и ветка всё равно не сработала бы.
-  if (isPermissionsCheckFailure(permissionsError)) {
-    return (
-      <OpsPermissionsUnavailable
-        isRetrying={isRetrying || permissionsLoading}
-        onRetry={() => {
-          setIsRetrying(true);
-          queryClient
-            .refetchQueries({ queryKey: ["ops-me"] })
-            .finally(() => setIsRetrying(false));
-        }}
-      />
-    );
-  }
-
   return (
-    <>
+    <OpsPermissionBoundary>
       {/* 🔴 `children` приходит от Next МАССИВОМ сегментов. Отрендеренный
           рядом с соседом (колокольчиком) он читается React как список, и
           на каждом экране раздела в консоль летело «Each child in a list
@@ -86,6 +61,6 @@ export default function SecurityOpsLayout({
           потомком, и обход списка не начинается. */}
       <Fragment key="ops-segment">{children}</Fragment>
       <OpsNotificationBell />
-    </>
+    </OpsPermissionBoundary>
   );
 }

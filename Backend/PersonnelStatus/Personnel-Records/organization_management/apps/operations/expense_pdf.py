@@ -44,6 +44,8 @@ from organization_management.apps.operations.expense_layout import (
     document_title,
     header_row,
     member_lines,
+    PERSONNEL_HEAD,
+    personnel_values,
 )
 
 FONTS_DIR = Path(__file__).resolve().parent / "fonts"
@@ -208,5 +210,20 @@ def generate_expense_pdf(data):
             ]
         )
     )
-    document.build([para(document_title(data), title_style), Spacer(1, 4 * mm), table])
+    story = [para(document_title(data), title_style), Spacer(1, 4 * mm), table]
+    for row in data.rows:
+        if not row.personnel:
+            continue
+        story.extend([Spacer(1, 4 * mm), para(f"Личный состав — {row.name}", title_style)])
+        people_rows = [[para(label) for label in PERSONNEL_HEAD]]
+        people_rows.extend([para(value) for value in personnel_values(person)] for person in row.personnel)
+        people_table = Table(people_rows, repeatRows=1, splitByRow=1, splitInRow=1,
+                             colWidths=[60 * mm, 25 * mm, 55 * mm, 40 * mm, 40 * mm, 57 * mm])
+        people_table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_BOLD),
+        ]))
+        story.append(people_table)
+    document.build(story)
     return buffer.getvalue()

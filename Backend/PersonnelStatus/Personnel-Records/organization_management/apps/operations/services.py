@@ -4,6 +4,7 @@ Backend/VAPS; логика не менялась, заменены только 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models import (
     Role,
@@ -21,6 +22,21 @@ WILDCARD = "*"
 # только гейт ручки: на нём же держится отбой «снял админскую роль сам у
 # себя», и разъехавшийся литерал сделал бы отбой молча бесполезным.
 ACCESS_ADMIN_PERMISSION = "admin.roles"
+# «Обзор на уровне департамента» ПРОИЗВОДИТСЯ из роли начальника управления
+# (Plane №1201, поручение заказчика 12.09.2026). До этого требование №348
+# («остальные модули на уровне своего управления, за исключением Обзор —
+# Обзор на уровне департамента») выражалось ВТОРЫМ грантом роли-добавки
+# `OVERVIEW_DEPARTMENT`, который ставил только сев `seed_access_matrix`.
+# В закрытой сети учётки завели руками — по одной роли на человека, — и
+# «Обзор» схлопнулся до управления: конструкцию из двух грантов с разными
+# областями руками не воспроизводит никто. Теперь грант профиля из этого
+# набора на управление (или отдел) САМ порождает грант `OVERVIEW_DEPARTMENT`
+# на ближайший департамент. Порождается именно роль-добавка с одним правом
+# (`orgstructure.view`), а не расширение области профиля: статусы и всё
+# остальное остаются на управлении (проба `test_overview_at_department.py`).
+# Явный второй грант сева не мешает — он совпадает с производным.
+OVERVIEW_AT_DEPARTMENT_ROLES = frozenset({"HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"})
+OVERVIEW_DEPARTMENT_ROLE = "OVERVIEW_DEPARTMENT"
 
 
 class PermissionService:
@@ -117,7 +133,72 @@ class PermissionService:
             user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now
         )
         grants += [(d.scope_division_id, d.duty_role_code) for d in active_duties]
-        return grants
+        return grants + cls.derived_grants(grants)
+
+    @classmethod
+    def derived_grants(cls, grants, *, tree=None) -> list:
+        """Пары ``(scope_division_id, role_code)``, ПРОИЗВОДНЫЕ от грантов.
+
+        Единственное правило — «Обзор на уровне департамента» у ролей из
+        `OVERVIEW_AT_DEPARTMENT_ROLES` (см. комментарий у константы). Грант
+        без области ничего не порождает: он и так накрывает всё. Область на
+        департаменте или выше — тоже: подниматься некуда, а поднять обзор до
+        организации значило бы показать начальнику департамента всю Службу.
+        Дерево читается одним сканом и передаётся снаружи, когда вызывающий
+        решает многих пользователей за раз.
+        """
+        scopes = {
+            scope_division_id
+            for scope_division_id, role_code in grants
+            if role_code in OVERVIEW_AT_DEPARTMENT_ROLES and scope_division_id is not None
+        }
+        if not scopes:
+            return []
+        if tree is None:
+            tree = cls._division_parents()
+        derived = set()
+        for scope_division_id in scopes:
+            department_id = cls._department_of(scope_division_id, tree)
+            if department_id is not None:
+                derived.add((department_id, OVERVIEW_DEPARTMENT_ROLE))
+        return sorted(derived, key=lambda pair: pair[0])
+
+    @staticmethod
+    def _division_parents() -> dict:
+        """id → (parent_id, division_type) одним сканом подразделений."""
+        return {
+            division_id: (parent_id, division_type)
+            for division_id, parent_id, division_type in Division.objects.values_list(
+                "id", "parent_id", "division_type"
+            )
+        }
+
+    @staticmethod
+    def _department_of(division_id, tree) -> int | None:
+        """Ближайший департамент СТРОГО ВЫШЕ подразделения; None — если его
+        нет или подразделение само департамент/организация."""
+        node = tree.get(division_id)
+        if node is None:
+            return None
+        parent_id, division_type = node
+        if division_type in (
+            Division.DivisionType.DEPARTMENT,
+            Division.DivisionType.ORGANIZATION,
+        ):
+            return None
+        seen = set()
+        while parent_id is not None and parent_id not in seen:
+            seen.add(parent_id)
+            parent = tree.get(parent_id)
+            if parent is None:
+                return None
+            grand_id, parent_type = parent
+            if parent_type == Division.DivisionType.DEPARTMENT:
+                return parent_id
+            if parent_type == Division.DivisionType.ORGANIZATION:
+                return None
+            parent_id = grand_id
+        return None
 
     @classmethod
     def unscoped_permissions(cls, user_id) -> set:
@@ -204,6 +285,21 @@ class PermissionService:
         )
         if not grants:
             return result
+        # Производные гранты — тем же правилом, что и у `_active_grants`:
+        # объектная авторизация не должна отвечать на «видит ли департамент»
+        # иначе, чем списочные селекторы.
+        tree = None
+        by_user: dict[str, list] = {}
+        for user_id, scope_division_id, role_code in grants:
+            by_user.setdefault(user_id, []).append((scope_division_id, role_code))
+        for user_id, pairs in by_user.items():
+            if any(code in OVERVIEW_AT_DEPARTMENT_ROLES for _, code in pairs):
+                if tree is None:
+                    tree = cls._division_parents()
+                grants.extend(
+                    (user_id, scope_division_id, role_code)
+                    for scope_division_id, role_code in cls.derived_grants(pairs, tree=tree)
+                )
         holding_roles = set(
             RolePermission.objects.filter(
                 role_code_id__in={role_code for _, _, role_code in grants},
@@ -221,6 +317,27 @@ class PermissionService:
         if WILDCARD in perms:
             return True
         return permission_code in perms
+
+    @classmethod
+    def status_write_division_ids(cls, user_id):
+        """Область ЗАПИСИ статусов: подразделения `status.manage` плюс — при
+        праве `status.manage_root` — ровно корень организации (Plane №1223,
+        `[РАСХ-РШ-07]`).
+
+        Сотрудники департаментов носят `division_id` своего департамента,
+        поэтому «корень в разрешённых» и есть «только Руководство Службы»
+        — без обхода дерева и особых случаев в проверке. None — как у
+        :meth:`visible_division_ids`: безскоуповый `status.manage`/wildcard
+        видит всё, и корень добавлять не к чему.
+        """
+        allowed = cls.visible_division_ids(user_id, "status.manage")
+        if allowed is None:
+            return None
+        if cls.active_grants_for_permission(user_id, "status.manage_root"):
+            root_id = DivisionTreeSelector.root_id()
+            if root_id is not None:
+                allowed = set(allowed) | {root_id}
+        return allowed
 
     @classmethod
     def visible_division_ids(cls, user_id, permission_code):
@@ -503,7 +620,9 @@ class RoleAdminService:
         базе.
         """
         role_codes = list(
-            UserRole.objects.filter(user_id=user_id, is_active=True)
+            UserRole.objects.filter(
+                user_id=user_id, is_active=True, scope_division_id__isnull=True
+            )
             .exclude(id=excluded_user_role_id)
             .values_list("role_code_id", flat=True)
         )
@@ -597,6 +716,7 @@ class AccountAdminService:
         last_name="",
         email="",
         is_active=True,
+        employee_id=None,
         actor,
     ):
         """Завести учётку; вернуть (пользователь, временный пароль или None).
@@ -629,6 +749,8 @@ class AccountAdminService:
             entity_id=user.pk,
             new_value=cls._snapshot(user),
         )
+        if employee_id is not None:
+            cls.link_employee(user, employee_id, actor=actor)
         return user, temporary
 
     @classmethod
@@ -641,7 +763,11 @@ class AccountAdminService:
         """
         from organization_management.apps.operations import audit_service
 
+        from django.contrib.auth import get_user_model
+        user = get_user_model().objects.select_for_update().get(pk=user.pk)
         old_value = cls._snapshot(user)
+        if "employee_id" in fields:
+            cls.link_employee(user, fields["employee_id"], actor=actor)
         for name in ("first_name", "last_name", "email", "is_active"):
             if name in fields and fields[name] is not None:
                 setattr(user, name, fields[name])
@@ -655,6 +781,42 @@ class AccountAdminService:
             new_value=cls._snapshot(user),
         )
         return user
+
+    @classmethod
+    @transaction.atomic
+    def link_employee(cls, user, employee_id, *, actor):
+        from django.contrib.auth import get_user_model
+        from django.db.models import Q
+        from rest_framework.exceptions import ValidationError as APIValidationError
+        from organization_management.apps.employees.models import Employee
+        from organization_management.apps.operations import audit_service
+
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        rows = list(Employee.objects.select_for_update().filter(
+            Q(user_id=user.pk) | Q(pk=employee_id)
+        ).order_by("pk"))
+        old = next((row for row in rows if row.user_id == user.pk), None)
+        target = next((row for row in rows if row.pk == employee_id), None)
+        if employee_id is not None:
+            if target is None:
+                raise APIValidationError({"employee_id": "Сотрудник не найден."})
+            if target.user_id not in (None, user.pk):
+                raise APIValidationError({"employee_id": "Сотрудник уже связан с другой учётной записью."})
+        if getattr(old, "pk", None) == employee_id:
+            return
+        if old is not None:
+            old.user_id = None
+            old.save(update_fields=["user", "updated_at"])
+        if target is not None:
+            target.user_id = user.pk
+            target.save(update_fields=["user", "updated_at"])
+        user._state.fields_cache.pop("employee", None)
+        audit_service.record(
+            actor=actor, action=audit_service.ACCESS_ACCOUNT_EMPLOYEE_LINKED,
+            entity_type=audit_service.ENTITY_ACCOUNT, entity_id=user.pk,
+            old_value={"employee_id": getattr(old, "pk", None)},
+            new_value={"employee_id": employee_id, "employee_name": str(target) if target else None},
+        )
 
     @classmethod
     @transaction.atomic

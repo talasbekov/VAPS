@@ -7,7 +7,7 @@
 // Каждый объект уезжает на сервер СВОИМ запросом — эндпоинт добавляет по
 // одному, и частичный успех здесь честнее общего отката: добавленные объекты
 // остаются, а неудачные названы поимённо.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { opsApiClient } from "@/lib/ops-api";
 import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
+import { isReadAccessBlocked, readWithAccessCheck } from "@/lib/query-read-access";
+import { LoadFailure } from "@/components/load-failure";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   BINDABLE_OBJECTS_PATH,
@@ -56,10 +58,19 @@ export function AddVisitObjectsDialog({
 
   const objectsQuery = useQuery<{ results: BindableObject[] }>({
     queryKey: ["ops-bindable-objects"],
-    queryFn: () =>
-      opsApiClient.get<{ results: BindableObject[] }>(BINDABLE_OBJECTS_PATH),
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(queryClient, queryKey, signal, () =>
+      opsApiClient.get<{ results: BindableObject[] }>(BINDABLE_OBJECTS_PATH)),
     enabled: open,
   });
+  const hardReadFailure = isReadAccessBlocked(queryClient, ["ops-bindable-objects"]);
+  const catalogAvailable = objectsQuery.data !== undefined && !hardReadFailure;
+  const context = useMemo(() => ({}), [open, event.id, hardReadFailure]);
+  const currentContext = useRef(context);
+  const mounted = useRef(false);
+  currentContext.current = context;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { if (hardReadFailure) setPicked([]); }, [hardReadFailure]);
+  const isCurrent = (submitted: object) => mounted.current && currentContext.current === submitted;
 
   const alreadyAdded = useMemo(
     () =>
@@ -73,27 +84,29 @@ export function AddVisitObjectsDialog({
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const all = objectsQuery.data?.results ?? [];
+    const all = catalogAvailable ? objectsQuery.data?.results ?? [] : [];
     if (needle === "") return all;
     return all.filter((object) =>
       `${object.code} ${object.name}`.toLowerCase().includes(needle)
     );
-  }, [objectsQuery.data, search]);
+  }, [objectsQuery.data, search, catalogAvailable]);
+  const eligiblePicked = picked.filter(id => catalogAvailable && !alreadyAdded.has(id) && objectsQuery.data?.results.some(row => row.id === id));
 
   const mutation = useMutation({
-    mutationFn: async (objectIds: string[]) => {
+    mutationFn: async ({ objectIds, eventId }: { objectIds: string[]; eventId: string; context: object }) => {
       const failed: string[] = [];
       for (const objectId of objectIds) {
         try {
-          await addVisitObject({ eventId: event.id, objectId });
+          await addVisitObject({ eventId, objectId });
         } catch {
           failed.push(objectId);
         }
       }
       return failed;
     },
-    onSuccess: (failed, objectIds) => {
+    onSuccess: (failed, { objectIds, context: submitted }) => {
       invalidateSecurityEvents(queryClient);
+      if (!isCurrent(submitted)) return;
       const added = objectIds.length - failed.length;
       if (failed.length === 0) {
         toast({
@@ -115,7 +128,8 @@ export function AddVisitObjectsDialog({
         variant: "destructive",
       });
     },
-    onError: (error) =>
+    onError: (error, variables) => {
+      if (!isCurrent(variables.context)) return;
       toast({
         title: "Не удалось добавить объекты",
         description: friendlyOpsErrorMessage(
@@ -123,7 +137,8 @@ export function AddVisitObjectsDialog({
           "Нет права добавлять объекты посещения на это мероприятие."
         ),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   function toggle(objectId: string): void {
@@ -154,19 +169,20 @@ export function AddVisitObjectsDialog({
             placeholder="Поиск по названию или коду объекта"
             aria-label="Поиск объекта"
             value={search}
+            disabled={mutation.isPending}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
+        {objectsQuery.isError && <LoadFailure what="реестр объектов" className="rounded-md border p-3"
+          description={catalogAvailable ? "Поиск и выбор сохранены. Повторите чтение перед добавлением." : undefined}
+          onRetry={() => { void objectsQuery.refetch(); }} isRetrying={objectsQuery.isFetching} />}
+        {mutation.isPending && <p role="status" className="text-sm text-muted-foreground">Добавляем выбранные объекты. Закрытие окна не отменяет начатое добавление.</p>}
+        {catalogAvailable && eligiblePicked.length !== picked.length && <p role="status" className="text-sm text-muted-foreground">Часть выбранных объектов уже добавлена или недоступна. Проверьте выбор.</p>}
         <div className="max-h-72 overflow-y-auto rounded-md border">
           {objectsQuery.isPending && (
             <p className="p-4 text-sm text-muted-foreground">
               Загрузка реестра объектов…
-            </p>
-          )}
-          {objectsQuery.isError && (
-            <p className="p-4 text-sm text-destructive-ink" role="alert">
-              Реестр объектов недоступен — выбрать объект не из чего.
             </p>
           )}
           {objectsQuery.isSuccess && rows.length === 0 && (
@@ -188,7 +204,7 @@ export function AddVisitObjectsDialog({
                       type="checkbox"
                       className="h-4 w-4 rounded border-input"
                       checked={picked.includes(object.id)}
-                      disabled={added || mutation.isPending}
+                      disabled={added || mutation.isPending || objectsQuery.isError}
                       onChange={() => toggle(object.id)}
                     />
                     <span className="flex-1">
@@ -222,15 +238,15 @@ export function AddVisitObjectsDialog({
             Отмена
           </Button>
           <Button
-            onClick={() => mutation.mutate(picked)}
-            disabled={picked.length === 0 || mutation.isPending}
+            onClick={() => { if (open && !mutation.isPending && !objectsQuery.isError && eligiblePicked.length > 0) mutation.mutate({ objectIds: [...eligiblePicked], eventId: event.id, context }); }}
+            disabled={eligiblePicked.length === 0 || mutation.isPending || objectsQuery.isError || !catalogAvailable}
           >
             {mutation.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
             )}
-            {picked.length === 0
+            {eligiblePicked.length === 0
               ? "Добавить"
-              : `Добавить (${picked.length})`}
+              : `Добавить (${eligiblePicked.length})`}
           </Button>
         </DialogFooter>
       </DialogContent>

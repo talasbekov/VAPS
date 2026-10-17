@@ -36,7 +36,7 @@ export function ProtectedPhoto({
 
     void (async () => {
       const token = await getAccessToken();
-      if (!token) return;
+      if (!token || disposed) return;
       // Same-origin keeps the JWT in the browser request and lets the Next
       // rewrite select the active backend in both dev and production.
       const response = await fetch(url ?? "", {

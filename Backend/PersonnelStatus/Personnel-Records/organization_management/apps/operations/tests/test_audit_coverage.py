@@ -835,7 +835,46 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # `[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировку
     # не завершить. Назначение переехало ВЫШЕ, к первой правке расчёта (№862),
     # и повторять его здесь незачем — сценарий и так идёт со старшим.
+    # Working material has its own actual upload/read/remove lifecycle, separate
+    # from issued-document attachments. Exercise its real permission gates and
+    # bytes here so every declared material audit action is actually written.
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+    from rest_framework.test import APIClient
+    from organization_management.apps.operations.services import LegacyRoleSync, RoleAdminService
+
+    material_user = get_user_model().objects.create_user(username="audit-recon-materials", password="x")
+    material_role = "AUDIT_RECON_MATERIALS"
+    for permission_code, permission_name in (
+        ("event.view", "Просмотр охранных мероприятий"),
+        ("event.stage_override", "Перевод ОМ на любой этап"),
+    ):
+        RoleAdminService.save_permission(permission_code, name=permission_name, actor=ACTOR)
+    RoleAdminService.save_role(material_role, name="Покрытие материалов рекогносцировки", actor=ACTOR)
+    RoleAdminService.change_role_permissions(material_role, add=["event.view", "event.stage_override"], actor=ACTOR)
+    RoleAdminService.assign_role(LegacyRoleSync.actor_id_for_user(material_user), material_role, actor=ACTOR)
+    material_api = APIClient()
+    material_api.force_authenticate(user=material_user)
+    material_visit = om.visit_objects.first()
+    material_url = f"/api/ops/security-events/{om.pk}/visit-objects/{material_visit.pk}/recon-materials/"
+    material_png = io.BytesIO()
+    Image.new("RGB", (2, 2), (7, 8, 9)).save(material_png, format="PNG")
+    with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path / "recon-private")):
+        material_created = material_api.post(material_url, {"file": SimpleUploadedFile("audit-recon.png", material_png.getvalue(), content_type="image/png")}, format="multipart")
+        assert material_created.status_code == 201, material_created.content
+        material_id = material_created.json()["id"]
+        material_read = material_api.get(f"{material_url}{material_id}/download/")
+        assert material_read.status_code == 200, material_read.content if not material_read.streaming else "streaming"
+        assert b"".join(material_read.streaming_content) == material_png.getvalue()
+        assert material_api.delete(f"{material_url}{material_id}/").status_code == 204
+
     event_service.complete_recon(om.pk)
+    from organization_management.apps.ops import map_locations
+    with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path / "map-private")):
+        visit_id = str(om.visit_objects.first().pk)
+        map_locations.update(om.pk, {"targetType": "object", "targetId": visit_id, "location": {"latitude": 51.128, "longitude": 71.43}}, actor=ACTOR)
+        map_locations.update(om.pk, {"targetType": "object", "targetId": visit_id, "location": None}, actor=ACTOR)
     # Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
     # завершение рекогносцировки оставляет ОМ уже на «Расстановке», и ручное
     # утверждение потребности здесь отбилось бы «не на этом этапе».
@@ -1187,14 +1226,21 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         "RETURN_REASONS", code="COVERAGE", label="Покрытие журнала",
         description="", group_code=None, actor=ACTOR,
     )
-    dict_service.set_entry_active(
-        dict_entry.pk, is_active=False, actor=ACTOR
-    )
     # Правка значения — своё событие (Plane №274): «завели» и «переименовали»
     # отвечают на разные вопросы, и фильтр журнала обязан их различать.
     dict_service.update_entry(
         dict_entry.pk, label="Покрытие журнала (правка)", description="",
         group_code=None, actor=ACTOR,
+    )
+    dict_service.set_entry_active(
+        dict_entry.pk, is_active=False, actor=ACTOR
+    )
+    replaced = dict_service.create_entry(
+        "RETURN_REASONS", code="COVERAGE_OLD", label="Прежнее значение",
+        description="", group_code=None, actor=ACTOR,
+    )
+    dict_service.supersede_entry(
+        replaced.pk, code="COVERAGE_NEW", label="Новое значение", actor=ACTOR,
     )
     tracked = dict_service.create_entry(
         "POST_REQUIREMENT_GROUPS", code="COVERAGE_GROUP",
@@ -1377,6 +1423,11 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     person = gvo_service.create_person(
         name="Лицо покрытия журнала", category="FOREIGN", actor=ACTOR
     )
+    gvo_service.update_person(person["id"], {"name": "Лицо покрытия (правка)"}, actor=ACTOR)
+    from django.contrib.auth import get_user_model
+    from organization_management.apps.operations.services import AccountAdminService
+    linked_account = get_user_model().objects.create_user(username="audit-linked-account")
+    AccountAdminService.link_employee(linked_account, make_employee().pk, actor=ACTOR)
     png = _io.BytesIO()
     Image.new("RGB", (2, 2), (1, 2, 3)).save(png, format="PNG")
     with override_settings(MEDIA_ROOT=str(tmp_path / "media")):
@@ -1419,6 +1470,73 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             SimpleUploadedFile("o.png", object_png.getvalue(), content_type="image/png"),
             actor=ACTOR,
         )
+
+    # Расстановка выделенных дежурных: реальные сервисные записи настройки,
+    # назначения и отмены должны присутствовать в общем словаре журнала.
+    from datetime import time
+    from organization_management.apps.ops import duty_dispatch
+
+    RoleAdminService.save_permission("duty.dispatch", name="Расстановка", actor=ACTOR)
+    RoleAdminService.save_permission("admin.roles", name="Настройка доступа", actor=ACTOR)
+    RoleAdminService.change_role_permissions(
+        "COVERAGE_ROLE", add=["duty.dispatch", "admin.roles"], actor=ACTOR,
+    )
+    RoleAdminService.assign_role(ACTOR, "COVERAGE_ROLE", actor=ACTOR)
+    StatusType.objects.filter(code="DUTY").update(report_column_code="ON_DUTY")
+    dispatch_person = employee_in(coverage_department)
+    dispatch_person.last_name = "Диспетчеризация"
+    dispatch_person.save(update_fields=["last_name"])
+    dispatch_source = OpsEmployeeStatus.objects.create(
+        employee_id=dispatch_person.pk, status_type_code="DUTY",
+        date_start=TODAY, date_end=TODAY + timedelta(days=1),
+    )
+    with clock.override(TODAY):
+        duty_dispatch.configure_receiver(ACTOR, coverage_department.pk)
+        dispatched = duty_dispatch.create_assignment(
+            ACTOR, employee_id=dispatch_person.pk, status_id=dispatch_source.pk,
+            business_date=TODAY, start_time=time(8), end_time=time(20),
+            placement={"kind": "GROUP", "object_id": str(coverage_object.pk), "group_id": "duty-group-1"},
+        )
+        duty_dispatch.cancel_assignment(ACTOR, dispatched["id"], "Проверка журнала")
+
+    # Normative file actions are exercised through the real mutation service.
+    from organization_management.apps.ops import legal_documents
+    from pypdf import PdfWriter
+
+    RoleAdminService.save_permission("legal.manage", name="Нормативные документы", actor=ACTOR)
+    RoleAdminService.change_role_permissions("COVERAGE_ROLE", add=["legal.manage"], actor=ACTOR)
+    legal_pdf = _io.BytesIO()
+    legal_writer = PdfWriter()
+    legal_writer.add_blank_page(width=72, height=72)
+    legal_writer.write(legal_pdf)
+    with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path / "legal-private")):
+        legal_document = legal_documents.create_document(
+            {"kind": "LAW", "code": "COVERAGE-LEGAL", "title": "Учебный документ покрытия",
+             "status": "IN_FORCE", "file": SimpleUploadedFile("training.pdf", legal_pdf.getvalue())},
+            actor=ACTOR,
+        )
+        legal_documents.update_document(legal_document["id"], {"expectedVersion": 1, "revision": "Учебная правка"}, actor=ACTOR)
+
+    # Administrative duty facts are separate from personnel status/allocation.
+    from organization_management.apps.ops import duty_log
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+    RoleAdminService.save_permission("duty.manage", name="Учёт дежурств", actor=ACTOR)
+    RoleAdminService.change_role_permissions("COVERAGE_ROLE", add=["duty.manage"], actor=ACTOR)
+    for code, label in [("GBR", "ГБР"), ("SAKSHY", "Смена Сакшы")]:
+        OpsDictionaryEntry.objects.get_or_create(dictionary_code="SERVICE_DUTY_KINDS", code=code,
+            defaults={"label": label, "is_active": True})
+    with clock.override(TODAY):
+        body = {"employee_id": dispatch_person.pk, "service_duty_code": "GBR",
+            "planned_start": clock.Clock.now(), "planned_end": clock.Clock.now() + timedelta(hours=1),
+            "location_label": "Служебный журнал", "document_basis": "Учебная проверка", "note": ""}
+        log, _ = duty_log.create_record(ACTOR, body)
+        duty_log.update_record(ACTOR, log["id"], {"expected_revision": 1, "reason": "Уточнение записи", "note": "Проверка истории"})
+        duty_log.classify_record(ACTOR, log["id"], "SAKSHY", "Уточнение вида")
+        duty_log.mark_execution(ACTOR, log["id"], "acknowledge")
+        duty_log.mark_execution(ACTOR, log["id"], "start")
+        duty_log.mark_execution(ACTOR, log["id"], "complete")
+        second, _ = duty_log.create_record(ACTOR, body)
+        duty_log.cancel_record(ACTOR, second["id"], "Запись внесена ошибочно")
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

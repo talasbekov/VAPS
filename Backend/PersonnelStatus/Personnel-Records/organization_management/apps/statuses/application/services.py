@@ -19,6 +19,7 @@ from organization_management.apps.statuses.participation_guard import (
     refuse_manual_participation,
 )
 from organization_management.apps.statuses.selectors import status_on_date
+from organization_management.apps.statuses.duty_assignments import normalize_assignment, assignment_location
 from organization_management.apps.divisions.models import Division
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,8 @@ class StatusApplicationService:
         comment: str = "",
         location: str = "",
         related_division_id: Optional[int] = None,
-        user=None
+        user=None,
+        duty_assignment=None,
     ) -> EmployeeStatus:
         """
         Создание нового статуса сотрудника
@@ -61,6 +63,14 @@ class StatusApplicationService:
         # видел отказ, поставленный во вью кадровой ручки. Разбор — в
         # `statuses/participation_guard.py`.
         refuse_manual_participation(status_type)
+        # Validate before closing or cancelling any existing status. The same
+        # transaction stores placement and status, including calls outside HTTP.
+        duty_assignment = normalize_assignment(duty_assignment, status_type=status_type,
+            start_date=start_date, end_date=end_date)
+        if duty_assignment is not None:
+            location = assignment_location(duty_assignment)
+            from organization_management.apps.ops.duty_dispatch import guard_legacy_placement
+            guard_legacy_placement(employee_id, start_date, end_date)
 
         try:
             employee = Employee.objects.get(pk=employee_id)
@@ -113,6 +123,7 @@ class StatusApplicationService:
             end_date=end_date,
             comment=comment,
             location=location,
+            duty_assignment=duty_assignment,
             related_division=related_division,
             created_by=user,
             actual_end_date=None,  # Явно устанавливаем None при создании
@@ -718,7 +729,8 @@ class StatusApplicationService:
         self,
         division_id: Optional[int] = None,
         start_date: Optional[date] = None,
-        end_date: Optional[date] = None
+        end_date: Optional[date] = None,
+        *, division_ids=None,
     ) -> Dict[str, Any]:
         """
         Получение статистики по типам отсутствий за период и количеству штата
@@ -740,7 +752,11 @@ class StatusApplicationService:
         from organization_management.apps.staff_unit.models import StaffUnit
         from organization_management.apps.divisions.models import Division
 
-        if division_id:
+        if division_ids is not None:
+            staff = StaffUnit.objects.filter(division_id__in=division_ids, employee__isnull=False)
+            staff_count = staff.count()
+            employee_ids = staff.values_list("employee_id", flat=True)
+        elif division_id:
             # Для конкретного подразделения и всех дочерних
             try:
                 division = Division.objects.get(pk=division_id)

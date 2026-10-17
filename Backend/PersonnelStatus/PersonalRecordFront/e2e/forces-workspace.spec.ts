@@ -54,11 +54,11 @@ test.describe('рабочие места сбора сил', () => {
   test('старая ссылка свода открывает расход с сохранённой датой', async ({ page }) => {
     await signIn(page, 'acc_forces_officer')
     await page.goto(`${APP}/employees?view=department-summary&businessDate=2026-09-10`)
-    await expect(page.getByRole('heading', { name: 'Ежедневный расход', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: 'Ежедневный расход', level: 1, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('aside').getByRole('link', { name: 'Ежедневный расход', exact: true })).toHaveAttribute('aria-current', 'page')
     await page.reload()
     await expect(page).toHaveURL(/businessDate=2026-09-10/)
-    await expect(page.getByRole('heading', { name: 'Ежедневный расход', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ежедневный расход', level: 1, exact: true })).toBeVisible()
   })
 
   test('начальник управления сохраняет прежний гейт раздела сбора сил', async ({ page }) => {

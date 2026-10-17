@@ -29,6 +29,7 @@ _SECTIONS = (
 )
 _KINDS = ("NUMBER", "CHOICE")
 _DICTIONARIES = (
+    "SERVICE_DUTY_KINDS",
     "RETURN_REASONS",
     "POST_REQUIREMENTS",
     "SEASONAL_CORRECTIONS",
@@ -99,6 +100,8 @@ class OpsPolicySetting(TimeStampedModel):
 
 
 class OpsPolicySectionVersion(TimeStampedModel):
+    admin_readonly = True
+
     section_code = models.CharField(max_length=50, unique=True)
     version = models.CharField(max_length=100)
 
@@ -146,8 +149,21 @@ class OpsDictionaryEntry(TimeStampedModel):
     dictionary_code = models.CharField(max_length=50)
     code = models.CharField(max_length=100)
     label = models.CharField(max_length=255)
+    # Казахское наименование (UC-REF-001). Пустая строка — «перевода нет»:
+    # существующие данные и сиды перевода не имеют. Уникален код, не подпись.
+    label_kk = models.CharField(max_length=255, blank=True, default="")
     description = models.TextField(blank=True)
     is_active = models.BooleanField()
+    # Жизненный цикл значения (UC-REF-001, подпроект 2).
+    # Дата неактуальности: ставится при деактивации, снимается при активации.
+    inactive_since = models.DateField(null=True, blank=True)
+    # Запись-преемник («редактирование по сути» заводит новую запись и
+    # закрывает прежнюю). PROTECT, как у OpsIssuedDocument.supersedes: цепь
+    # «взамен» рваться не должна.
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="superseded_by",
+    )
     # Код записи справочника-родителя: у требования поста это его группа, у
     # роли — вид участия (группа). Пары перечислены в `ops.dictionaries`.
     group_code = models.CharField(max_length=100, null=True)

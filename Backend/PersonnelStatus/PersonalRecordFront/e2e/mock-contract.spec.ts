@@ -11,9 +11,10 @@
  * Как гонять. Нужен ВТОРОЙ dev-сервер, поднятый на моке (основной стенд живой):
  *
  *   NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access \
+ *   NEXT_PUBLIC_OPS_DATA_SOURCE=mock NEXT_PUBLIC_OPS_LIVE_DOMAINS= \
  *   NEXT_DIST_DIR=.next-mock npm run dev:webpack -- -p 3107
  *   SMOKE_MOCK_APP=http://localhost:3107 npm run playwright -- \
- *     -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
+ *     -c playwright.mock.config.ts
  *
  * Свой `NEXT_DIST_DIR` обязателен: два `next dev` делят `.next` и травят
  * сборку друг друга, а `NEXT_PUBLIC_*` инлайнятся в сборку — на общем кэше
@@ -22,7 +23,7 @@
  * Без `SMOKE_MOCK_APP` проба скипается ВСЛУХ (в имени describe), а не молча:
  * тихий скип читается как зелень.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from './mock-fixture'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const MOCK_APP = process.env.SMOKE_MOCK_APP ?? ''
@@ -56,20 +57,39 @@ test.describe(
         timeout: 30_000,
       })
 
-      const outcome = await page.evaluate(async () => {
-        try {
-          const response = await fetch(
-            '/api/ops/security-events/__missing-handler__/not-a-handler/'
-          )
-          return `network-response:${response.status}`
-        } catch (error) {
-          return `blocked:${error instanceof Error ? error.message : String(error)}`
-        }
+      const leaked: string[] = []
+      await page.context().route('**/api/ops/security-events/__missing-handler__/**', async route => {
+        leaked.push(route.request().method())
+        await route.fulfill({ status: 599, body: 'Unhandled mock request reached the network' })
       })
-      expect(outcome).toBe('network-response:500')
+      const outcome = await page.evaluate(async () => {
+        const responses = []
+        for (const method of ['GET', 'POST']) {
+          const response = await fetch('/api/ops/security-events/__missing-handler__/not-a-handler/', { method })
+          responses.push(response.status)
+        }
+        return responses
+      })
+      expect(outcome).toEqual([500, 500])
+      expect(leaked, 'Neither reads nor mutations may bypass an active mock domain').toEqual([])
       expect(mswErrors.join('\n')).toContain(
         'intercepted a request without a matching request handler'
       )
+      let livePermissionReads = 0
+      await page.context().route('**/api/operations/my-permissions/', async route => {
+        livePermissionReads += 1
+        await route.continue()
+      })
+      const bypass = await page.evaluate(async () => {
+        const session = await fetch('/api/auth/session/')
+        const data = await session.json()
+        const permissions = await fetch('/api/operations/my-permissions/', {
+          headers: { Authorization: `Bearer ${data.user.accessToken}` },
+        })
+        return { session: session.status, permissions: permissions.status }
+      })
+      expect(bypass).toEqual({ session: 200, permissions: 200 })
+      expect(livePermissionReads, 'Permissions outside mock domains still use the live API').toBeGreaterThan(0)
     })
 
     test('бюллетень заводится БЕЗ объекта и остаётся на бюллетене', async ({
@@ -445,21 +465,31 @@ test.describe(
           })
           return { status: res.status, body: await res.json() }
         }
+        // Capacity is a count of distinct people. Keep enough accepted members
+        // for four places and a fifth attempt beyond the post's need.
+        const personnel = await (await fetch('/api/ops/personnel/?page=1&page_size=50')).json()
+        const current = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const existing = current.forceAllocation[0].members.map((row: any) => row.employeeId)
+        const additions = []
+        for (const person of personnel.results.filter((row: any) => !existing.includes(row.id)).slice(0, 4)) {
+          additions.push(await post('members/', { employeeId: person.id }))
+        }
         await post('submit/')
         const noReason = await post('return/', {})
         const returned = await post('return/', { reason: 'Нужны люди с допуском' })
         await post('submit/')
         const accepted = await post('accept/')
-        return { noReason, returned, accepted }
+        return { additions, noReason, returned, accepted }
       }, allocationId)
 
       expect(decided.noReason.status).toBe(400)
+      expect(decided.additions.map(row => row.status)).toEqual([200, 200, 200, 200])
       expect(decided.returned.body.forceAllocation[0].status).toBe('RETURNED')
       expect(decided.returned.body.forceAllocation[0].decisionComment).toBe(
         'Нужны люди с допуском',
       )
       expect(decided.accepted.body.forceAllocation[0].status).toBe('ACCEPTED')
-      expect(decided.accepted.body.forceRoster).toHaveLength(1)
+      expect(decided.accepted.body.forceRoster).toHaveLength(5)
 
       // Расстановка (СС-6): у ОМ с составом посторонний на пост не встаёт, а
       // принятый — встаёт. Без второй половины проба доказывала бы лишь, что
@@ -467,8 +497,8 @@ test.describe(
       const placed = await page.evaluate(async (rosterId: string) => {
         const fresh = await (await fetch('/api/ops/security-events/se-1/')).json()
         const postId = fresh.reconSectorPosts[0]?.id
-        const roster = await (await fetch('/api/ops/personnel/?page=1&page_size=5')).json()
-        const stranger = roster.results.find((row: any) => row.id !== rosterId)
+        const roster = await (await fetch('/api/ops/personnel/?page=1&page_size=50')).json()
+        const stranger = roster.results.find((row: any) => !fresh.forceRoster.some((member: any) => member.employeeId === row.id))
         const assign = async (employeeId: string) => {
           const res = await fetch('/api/ops/security-events/se-1/placement/assign/', {
             method: 'POST',
@@ -492,14 +522,17 @@ test.describe(
       // вообще, а не что гард считает расчёт.
       const overNeed = await page.evaluate(
         async ([postId, employeeId]: [string, string]) => {
-          const assign = async (withReason: boolean) => {
+          const fresh = await (await fetch('/api/ops/security-events/se-1/')).json()
+          const available = fresh.forceRoster.map((row: any) => row.employeeId as string)
+            .filter((id: string) => !fresh.placementAssignments.some((row: any) => row.employeeId === id))
+          const assign = async (candidateId: string, withReason: boolean) => {
             const res = await fetch('/api/ops/security-events/se-1/placement/assign/', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify(
                 withReason
-                  ? { postId, employeeId, override: true, override_reason: 'добор до расчёта' }
-                  : { postId, employeeId },
+                  ? { postId, employeeId: candidateId, override: true, override_reason: 'добор до расчёта' }
+                  : { postId, employeeId: candidateId },
               ),
             })
             return { status: res.status, body: await res.json() }
@@ -513,20 +546,24 @@ test.describe(
             }
           }
           const before = await state()
+          const duplicate = await assign(employeeId, true)
           // Внутри расчёта — тихо: место в запасе ещё есть.
-          const within = before.taken < before.need ? await assign(false) : null
+          const within = before.taken < before.need ? await assign(available.shift()!, false) : null
           // Добираем пост до расчёта, чтобы упереться в границу.
           for (let guard = 0; guard < 20; guard += 1) {
             const now = await state()
             if (now.taken >= now.need) break
-            await assign(true)
+            const result = await assign(available.shift()!, true)
+            if (result.status !== 200) throw new Error(JSON.stringify(result))
           }
           const filled = await state()
-          return { within, filled, over: await assign(false) }
+          return { duplicate, within, filled, over: await assign(available.shift()!, false) }
         },
         [placed.postId, members.employeeId] as [string, string],
       )
 
+      expect(overNeed.duplicate.status).toBe(422)
+      expect(overNeed.duplicate.body.error_code).toBe('DOUBLE_ASSIGNMENT')
       expect(overNeed.within?.status, 'место в расчёте есть — гард молчать обязан').toBe(200)
       expect(overNeed.filled.taken).toBeGreaterThanOrEqual(overNeed.filled.need)
       expect(overNeed.over.status).toBe(409)

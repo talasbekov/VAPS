@@ -36,8 +36,8 @@ from organization_management.apps.operations.strength_report import (
     denominator_of,
     expense_from_snapshot,
     title_of,
-    resolve_status,
     resolve_status_row,
+    names_of,
 )
 
 
@@ -65,6 +65,23 @@ class ExpenseCell:
 
 
 @dataclass(frozen=True)
+class ExpensePersonnel:
+    """One complete personnel entry, independent of numeric expense columns."""
+
+    employee_id: int
+    full_name: str
+    rank: str
+    status_name: str
+    date_start: date | None
+    date_end: date | None
+    destination: str = ""
+    position_level: int | None = None
+    position_name: str = ""
+    position_code: str = ""
+    division_type: str = ""
+
+
+@dataclass(frozen=True)
 class ExpenseRow:
     """Строка документа — одно подразделение."""
 
@@ -81,6 +98,7 @@ class ExpenseRow:
     #: старые снимки печатаются тем, что в них есть (до деления участия все
     #: привлечённые ложатся в «наряд», потому что другого кода тогда не было).
     event: dict = field(default_factory=lambda: {"total": 0, "group": 0, "squad": 0})
+    personnel: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -121,6 +139,7 @@ def _parsed_facts(snapshot):
                 "status_type_code": row["status_type_code"],
                 "date_start": date.fromisoformat(row["date_start"]),
                 "date_end": date.fromisoformat(row["date_end"]),
+                "destination": row.get("destination") or "",
                 # Участия ПЕРЕНОСЯТСЯ В ФАКТ (Plane №486): после слияния
                 # статусов вид занятости («наряд» или «боевая группа») живёт
                 # только здесь, и, потеряв его тут, расход напечатал бы
@@ -149,14 +168,12 @@ def build_expense_document(
     расхождение означает дефект группировки, и документ выходить не должен —
     подписывают его, а не сообщение об ошибке.
 
-    Период члена — действующий на дату факт ПОБЕДИВШЕГО кода; при нескольких
-    таких берётся самый ранний, а равные начала разводит конец. Тай-брейк
-    нужен не для красоты: без него документ зависел бы от порядка строк в
-    снимке и дважды подряд выходил бы разным.
+    Период, место и статус человека берутся из ОДНОЙ победившей строки по
+    общему правилу дневного расхода. Снимок хранит порядок фактов; равные
+    начала не должны заставлять документ выбрать другой источник.
 
-    Не по списку (победитель вне штата) в колонки не попадает — ровно как в
-    живом расходе; поимённо такие люди в документе не показываются, потому
-    что колонки для них нет.
+    Победитель вне штата в числовые колонки не попадает — ровно как в живом
+    расходе; полный поимённый состав содержит и таких сотрудников.
     """
     # ВСЁ, ЧТО СНИМОК ЗАМОРОЗИЛ, БЕРЁТСЯ ИЗ НЕГО — здесь, а не у вызывающего.
     #
@@ -177,6 +194,9 @@ def build_expense_document(
     facts_by_employee = _parsed_facts(snapshot)
 
     members = {column: [] for column in columns_order}
+    personnel = []
+    from organization_management.apps.operations.expense_layout import column_label
+    status_names = names_of(snapshot, {})
     # Состав перебирается в КАНОНИЧЕСКОМ порядке, и потому ячейки заполняются
     # по нему сами: один проход задаёт порядок сразу всем колонкам, и разойтись
     # им негде. Сортировать каждую ячейку отдельно значило бы завести столько
@@ -187,7 +207,20 @@ def build_expense_document(
     # завели позже.
     for member in order_roster(snapshot.get("roster", [])):
         employee_facts = facts_by_employee.get(member["employee_id"], ())
-        winner = resolve_status(employee_facts, business_date, catalog)
+        acting = resolve_status_row(employee_facts, business_date, catalog)
+        winner = acting["status_type_code"] if acting else DERIVED_IN_SERVICE
+        personnel.append(ExpensePersonnel(
+            employee_id=member["employee_id"],
+            full_name=member.get("full_name", ""), rank=member.get("rank", ""),
+            status_name=status_names.get(winner) or column_label(catalog.column[winner]),
+            date_start=acting["date_start"] if acting else None,
+            date_end=acting["date_end"] if acting else None,
+            destination=acting["destination"] if acting else "",
+            position_level=member.get("position_level"),
+            position_name=member.get("position_name", ""),
+            position_code=member.get("position_code", ""),
+            division_type=member.get("division_type", ""),
+        ))
         if not catalog.counts_in_staff.get(winner, True):
             continue
         column = catalog.column[winner]
@@ -196,15 +229,6 @@ def build_expense_document(
             # взять период неоткуда. Число в ячейке при этом есть, поэтому
             # именно она и не участвует в сверке ниже.
             continue
-        acting = min(
-            (
-                fact
-                for fact in employee_facts
-                if fact["status_type_code"] == winner
-                and fact["date_start"] <= business_date < fact["date_end"]
-            ),
-            key=lambda fact: (fact["date_start"], fact["date_end"]),
-        )
         members[column].append(
             ExpenseCellMember(
                 rank=member.get("rank", ""),
@@ -264,6 +288,7 @@ def build_expense_document(
         # Приданные — чужие люди: число есть, членов не бывает.
         attached=ExpenseCell(count=attached),
         event=event,
+        personnel=tuple(personnel),
     )
     return ExpenseDocumentData(
         division_title=division_title,

@@ -1,14 +1,9 @@
 "use client";
 
-// Охраняемые лица: каталог профилей с делением «Наши / Иностранные».
-//
-// Прямая связь «лицо → мероприятие» появилась 23.08.2026
-// (SecurityEvent.protectedPersonId, выбирается в окне «Создать бюллетень»), но
-// у ОМ, заведённых раньше, её нет. Поэтому обе кнопки карточки по-прежнему
-// собирают ответ из сводок ГВО (по совпадению ФИО — оно покрывает и новые ОМ:
-// лицо бюллетеня попадает в сводку) и честно говорят, когда совпадений нет. В
-// прототипе на их месте стоял тост-заглушка «Показаны мероприятия…».
-import { useState } from "react";
+// Каталог доступен отдельно от реестра ОМ. Связи читаются по запросу и праву.
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { CreatePerson } from "@/features/gvo-section-edit/ui/ProtectedPersonPickDialog";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -17,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
-import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useAllSecurityEvents } from "@/hooks/use-all-security-events";
 import { useGvoSummaries, summariesByCode } from "@/hooks/use-gvo-summaries";
 import {
   useProtectedPersons,
@@ -34,34 +29,24 @@ import type {
 } from "@/entities/protected-person";
 
 import type { SecurityEvent } from "@/entities/security-event";
+import { eventsForProtectedPerson, objectsForProtectedPerson } from "@/entities/protected-person/model/event-links";
+import { ProtectedPhoto } from "@/shared/ui/protected-photo";
+import { LoadFailure } from "@/components/load-failure";
 
-// Реестр ОМ читается целиком: связь с лицом ищется по сводкам, а не запросом
-// с фильтром — фильтровать по охраняемому лицу бэк не умеет.
-const PAGE_SIZE = 200;
-
-// Однострочная константа, а не текст прямо в JSX (тот же приём, что и у
-// PERSONS_REGISTRY_GAP_LINE на карточке ГВО, entities/gvo-summary): e2e пинит
-// её ДОСЛОВНО (см. e2e/protected-persons.spec.ts), а JSX схлопывает переносы
-// строк по своим правилам.
-const EVENTS_LINK_GAP_LINE =
-  "Связь показана по совпадению имени в сводках ГВО — прямой ссылки «лицо → мероприятие» в модели нет; появится бэк-этапом.";
-
-// Отдельная ветка от пустого состояния: без неё отказ реестра ОМ или сводок
-// ГВО выглядел бы как честное «не назван ни в одной сводке» — та же строка,
-// но неправда, потому что данные не загрузились, а не отсутствуют. Идиома —
-// как у EventsTab профиля (profile/page.tsx): «X сейчас недоступен — Y».
+const EVENTS_LINK_DESCRIPTION =
+  "Участие указано в бюллетене, объектах посещения или сводке ГВО.";
 const LINKS_ERROR_LINE =
-  "Реестр ОМ или сводки ГВО сейчас не отвечают — связанные мероприятия показать нечем.";
+  "Не удалось загрузить связанные мероприятия. Попробуйте открыть список ещё раз.";
 
 type Disclosure = { personId: string; kind: "events" | "objects" } | null;
 
 export default function ProtectedPersonsPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
+  const [editor, setEditor] = useState<ProtectedPerson | "new" | null>(null);
   const [category, setCategory] = useState<ProtectedPersonCategory>("OURS");
   // История открывается по кнопке и грузится только тогда: список закрытых ОМ
   // нужен по запросу, а не всем строкам каталога сразу.
   const [historyFor, setHistoryFor] = useState<ProtectedPerson | null>(null);
-  const historyQuery = usePersonEventHistory(historyFor?.id ?? null);
   const [disclosure, setDisclosure] = useState<Disclosure>(null);
 
   // `catalog.view`, а не `event.view` (решение заказчика 28.08.2026,
@@ -69,37 +54,37 @@ export default function ProtectedPersonsPage() {
   // реестра мероприятий. Пока экран спрашивал право чтения ОМ, выдать
   // одно без другого было нельзя.
   const canView = hasPermission(MODULE_PERMISSION["/security-ops/persons"]);
-  const personsQuery = useProtectedPersons({ enabled: canView });
-  const eventsQuery = useSecurityEvents(
-    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },
-    { enabled: canView }
-  );
-  // Сводки — СОБРАННЫЕ, с сервера (Plane №166): связь «лицо → мероприятие»
-  // ищется по составу сводки, и считать её в браузере значило бы держать
-  // правило сборки во втором месте.
-  const summariesQuery = useGvoSummaries({ enabled: canView });
+  const canViewLinks = canView && hasPermission("event.view");
+  const accessReady = !permissionsLoading && permissionsError === null && canView;
+  const personsQuery = useProtectedPersons({ enabled: accessReady });
+  const accessReadFailed = personsQuery.readAccessBlocked;
+  const catalogAvailable = accessReady && personsQuery.data !== undefined && !accessReadFailed;
+  const loadLinks = catalogAvailable && canViewLinks && disclosure !== null;
+  const eventsQuery = useAllSecurityEvents({ enabled: loadLinks });
+  const summariesQuery = useGvoSummaries({ enabled: loadLinks });
+  const historyQuery = usePersonEventHistory(catalogAvailable ? historyFor?.id ?? null : null);
+  const canManage = catalogAvailable && hasPermission("dictionary.manage");
+  useEffect(() => {
+    if (!catalogAvailable) { setEditor(null); setHistoryFor(null); setDisclosure(null); }
+  }, [catalogAvailable]);
+
+  if (permissionsLoading) return <DashboardLayout><p role="status" className="text-sm text-muted-foreground">Проверка доступа к каталогу…</p></DashboardLayout>;
 
   if (!permissionsLoading && !canView) {
     return <OpsAccessDenied what="каталога охраняемых лиц" />;
   }
 
-  const summaries = summariesByCode(summariesQuery.data);
-  const events = eventsQuery.data?.results ?? [];
+  // Disabling queries does not remove their cached data after permission revocation.
+  const summaries = summariesByCode(canViewLinks ? summariesQuery.data : undefined);
+  const events = canViewLinks ? eventsQuery.data ?? [] : [];
   const persons = (personsQuery.data?.results ?? []).filter(
     (person) => person.category === category
   );
 
-  /** Мероприятия, в сводке ГВО которых названо это лицо. */
   function eventsOf(person: ProtectedPerson): SecurityEvent[] {
-    const needle = person.name.trim().toLowerCase();
-    return events.filter((event) => {
-      // Сводки нет — мероприятие в подборку НЕ попадает. Домысливать состав
-      // нечем: «лицо здесь названо» это факт из сводки, а не догадка.
-      const summary = summaries[event.code]?.summary;
-      return (summary?.persons ?? []).some(
-        (item) => item.name.trim().toLowerCase() === needle
-      );
-    });
+    return canViewLinks && disclosure?.personId === person.id
+      ? eventsForProtectedPerson(person, events, summaries)
+      : [];
   }
 
   return (
@@ -111,6 +96,7 @@ export default function ProtectedPersonsPage() {
           description="Профили лиц, в отношении которых организуются охранные мероприятия"
         />
 
+        {canManage && <Button onClick={() => setEditor("new")}>Добавить охраняемое лицо</Button>}
         <div className="flex gap-2">
           {PROTECTED_PERSON_CATEGORIES.map((value) => (
             <Button
@@ -130,30 +116,29 @@ export default function ProtectedPersonsPage() {
           ))}
         </div>
 
+        {personsQuery.isError && <LoadFailure what="каталог охраняемых лиц"
+          description={catalogAvailable ? "Показаны последние загруженные данные. Открытый черновик сохранён." : undefined}
+          onRetry={() => { void personsQuery.refetch(); }} isRetrying={personsQuery.isFetching} />}
         {personsQuery.isLoading ? (
           <Card>
             <CardContent className="p-9 text-center text-sm text-muted-foreground">
               Загрузка каталога…
             </CardContent>
           </Card>
-        ) : personsQuery.isError ? (
-          <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive-ink">
-              Не удалось загрузить каталог охраняемых лиц.
-            </CardContent>
-          </Card>
-        ) : persons.length === 0 ? (
+        ) : !catalogAvailable ? null : persons.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">
             В этой категории пока нет охраняемых лиц.
           </p>
         ) : (
           <div className="flex flex-col gap-3">
             {persons.map((person) => (
+              <div key={person.id} className="space-y-2">
+              {canManage && <Button variant="outline" className="h-auto max-w-full whitespace-normal break-words text-left" onClick={() => setEditor(person)}>Редактировать {person.name}</Button>}
               <PersonCard
-                key={person.id}
                 person={person}
                 events={eventsOf(person)}
-                isLoadingLinks={eventsQuery.isLoading || summariesQuery.isLoading}
+                canViewLinks={canViewLinks}
+                isLoadingLinks={loadLinks && (eventsQuery.isPending || summariesQuery.isPending)}
                 isErrorLinks={eventsQuery.isError || summariesQuery.isError}
                 disclosure={
                   disclosure?.personId === person.id ? disclosure.kind : null
@@ -167,13 +152,21 @@ export default function ProtectedPersonsPage() {
                 }
                 onHistory={setHistoryFor}
               />
+              </div>
             ))}
           </div>
         )}
       </div>
 
+      <Dialog open={catalogAvailable && editor !== null} onOpenChange={(open) => { if (!open) setEditor(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          {catalogAvailable && editor !== null && <CreatePerson key={editor === "new" ? "new" : editor.id} catalog allowed={canManage}
+            readFailure={personsQuery.isError ? { onRetry: () => { void personsQuery.refetch(); }, isRetrying: personsQuery.isFetching } : undefined}
+            person={editor === "new" ? undefined : editor} onBack={() => setEditor(null)} onCreated={(person) => { setCategory(person.category); setEditor(null); }} />}
+        </DialogContent>
+      </Dialog>
       <EventHistoryDialog
-        open={historyFor !== null}
+        open={catalogAvailable && historyFor !== null}
         onClose={() => setHistoryFor(null)}
         subject={historyFor?.name ?? ""}
         relatedLabel="Объекты, которые лицо посетило в этом мероприятии"
@@ -182,6 +175,8 @@ export default function ProtectedPersonsPage() {
         relatedEmpty="Объекты посещения у мероприятия не заведены — лицо названо в бюллетене"
         isLoading={historyQuery.isLoading}
         isError={historyQuery.isError}
+        onRetry={() => { void historyQuery.refetch(); }}
+        isRetrying={historyQuery.isFetching}
         rows={(historyQuery.data?.results ?? []).map((row) => ({
           eventId: row.eventId,
           code: row.code,
@@ -209,6 +204,7 @@ export default function ProtectedPersonsPage() {
 function PersonCard({
   person,
   events,
+  canViewLinks,
   isLoadingLinks,
   isErrorLinks,
   disclosure,
@@ -217,6 +213,7 @@ function PersonCard({
 }: {
   person: ProtectedPerson;
   events: SecurityEvent[];
+  canViewLinks: boolean;
   isLoadingLinks: boolean;
   isErrorLinks: boolean;
   disclosure: "events" | "objects" | null;
@@ -236,8 +233,9 @@ function PersonCard({
             баг-класс, что Task 9 нашла на карточке ГВО (плашка страны, фото
             ОЛ): без override под тёмную тему текст (text-muted-foreground,
             в тёмной теме почти белый) читался почти белым по почти белому. */}
-        <div className="flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-[16px] bg-muted text-[12px] text-muted-foreground shadow-[0_10px_24px_hsl(221.2_83.2%_53.3%_/_.15)]">
-          Фото
+        <div className="relative flex h-[104px] w-[104px] shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-muted text-[12px] text-muted-foreground shadow-[0_10px_24px_hsl(221.2_83.2%_53.3%_/_.15)]">
+          <span aria-hidden="true">{person.photoUrl ? "Фото недоступно" : "Нет фото"}</span>
+          <ProtectedPhoto url={person.photoUrl} alt={person.name} className="absolute inset-0 h-full w-full object-cover" />
         </div>
         <div className="min-w-56 flex-1">
           <div className="flex flex-wrap items-center gap-[10px]">
@@ -321,6 +319,7 @@ function PersonCard({
           <PersonLinks
             person={person}
             events={events}
+            canView={canViewLinks}
             kind={disclosure}
             isLoading={isLoadingLinks}
             isError={isErrorLinks}
@@ -335,31 +334,31 @@ function PersonLinks({
   person,
   events,
   kind,
+  canView,
   isLoading,
   isError,
 }: {
   person: ProtectedPerson;
   events: SecurityEvent[];
   kind: "events" | "objects";
+  canView: boolean;
   isLoading: boolean;
   isError: boolean;
 }) {
-  // Блок «Мероприятия с участием» — только у панели событий: подпись честно
-  // называет, ЧТО именно за связь показана, и остаётся на месте ВО ВСЕХ
-  // состояниях — включая загрузку и отказ. Ревью ветки 22.08 нашло обратное:
-  // ранние `return` по `isLoading`/`isError` стояли ВЫШЕ заголовка, и
-  // подпись про природу связи пропадала ровно там, где читателю всего
-  // нужнее понять, чего именно он не видит.
+  // Keep context visible while loading or retrying an authorized selection.
   const heading = kind === "events" && (
     <div className="mb-2">
       <h3 className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
         Мероприятия с участием
       </h3>
       <p className="mt-1 text-[11.5px] text-muted-foreground">
-        {EVENTS_LINK_GAP_LINE}
+        {EVENTS_LINK_DESCRIPTION}
       </p>
     </div>
   );
+  if (!canView) {
+    return <p className="text-[12.5px] text-muted-foreground">Для просмотра связанных мероприятий нужно право «Просмотр мероприятий». Каталог и история лица доступны отдельно.</p>;
+  }
   if (isLoading) {
     return (
       <>
@@ -368,10 +367,7 @@ function PersonLinks({
       </>
     );
   }
-  // Отдельная ветка ОТ пустого состояния ниже: без неё отказ запроса и
-  // настоящее отсутствие совпадений печатали БЫ ОДНУ И ТУ ЖЕ строку —
-  // «не назван ни в одной сводке ГВО» звучала бы правдиво, а была ложью
-  // (данные не загрузились, а не отсутствуют).
+  // A failed page must not be presented as an empty set of related events.
   if (isError) {
     return (
       <>
@@ -385,8 +381,7 @@ function PersonLinks({
       <>
         {heading}
         <p className="text-[12.5px] text-muted-foreground">
-          {person.name} не назван ни в одной сводке ГВО — связанных мероприятий и
-          объектов нет.
+          Связанные мероприятия не найдены.
         </p>
       </>
     );
@@ -413,25 +408,22 @@ function PersonLinks({
       </>
     );
   }
-  // Объект у ОМ один — снимок имени; уникализируем, чтобы повторы визитов на
-  // тот же объект не размножали строки.
-  const objects = Array.from(
-    new Map(
-      events.map((event) => [event.objectId ?? event.objectName, event])
-    ).values()
-  );
+  const objects = objectsForProtectedPerson(person, events);
+  if (objects.length === 0) {
+    return <p className="text-[12.5px] text-muted-foreground">Мероприятия найдены, но связь лица с конкретными объектами посещения не указана.</p>;
+  }
   return (
     <ul className="space-y-1">
-      {objects.map((event) => (
-        <li key={event.objectId ?? event.objectName} className="text-[12.5px]">
-          {event.objectId === null ? (
-            <span className="font-semibold">{event.objectName}</span>
+      {objects.map((object) => (
+        <li key={object.id === null ? `name:${object.name}` : `id:${object.id}`} className="text-[12.5px]">
+          {object.id === null ? (
+            <span className="font-semibold">{object.name}</span>
           ) : (
             <Link
-              href={`/security-ops/objects/${event.objectId}`}
+              href={`/security-ops/objects/${object.id}`}
               className="font-semibold text-primary-ink"
             >
-              {event.objectName}
+              {object.name}
             </Link>
           )}
         </li>

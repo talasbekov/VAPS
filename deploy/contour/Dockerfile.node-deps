@@ -6,7 +6,3 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps && npm cache clean --force
-
-FROM base AS prod-deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force

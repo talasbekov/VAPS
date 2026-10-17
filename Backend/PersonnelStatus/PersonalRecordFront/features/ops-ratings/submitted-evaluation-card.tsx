@@ -13,6 +13,7 @@ import {
   useSubmittedEvaluationDetail,
 } from "@/hooks/use-ops-ratings";
 import { EvaluationConflictNotice } from "./evaluation-conflict-notice";
+import { GroupRoster } from "./group-roster";
 import {
   DIRECTION_LABEL,
   RATING_DEFAULT_SCORE,
@@ -186,6 +187,8 @@ export function SubmittedEvaluationCard({
         <dd className="font-mono">{submitted.evaluationId}</dd>
       </dl>
 
+      <GroupRoster snapshot={submitted.groupSnapshot} />
+
       {data.chain === null ? (
         <p className="mt-3 text-xs text-muted-foreground">
           История исправлений не показывается: право на просмотр цепочки
@@ -230,9 +233,7 @@ export function SubmittedEvaluationCard({
       )}
       {!editing && !data.canCorrect && (
         <p className="mt-2 text-xs text-muted-foreground">
-          Исправление недоступно: право на исправление оценки не выдано.
-          Отправленная запись не редактируется — исправление создаёт новую
-          (§19.18).
+          {data.correctionUnavailableReason ?? "Исправление недоступно: право на исправление оценки не выдано. Отправленная запись не редактируется — исправление создаёт новую (§19.18)."}
         </p>
       )}
 

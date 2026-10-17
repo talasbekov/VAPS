@@ -29,7 +29,8 @@ DIVISION_HEADCOUNT_URL = "/api/statuses/statuses/division_headcount/"
 @pytest.fixture
 def api():
     client = APIClient()
-    client.force_authenticate(User.objects.create_user("status-reader-actions"))
+    from organization_management.apps.operations.tests.test_bulk_status_api import client_for
+    client, _ = client_for("status-reader-actions", "STATUS_READER", perms=("status.view",))
     return client
 
 

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { businessDateForWorker } from './business-date'
 import { fixtureRangeSize, resolveFixtureDateCommandTarget } from './global-setup'
+import { findBackendRoot } from './backend-layout'
 
 test('17 workers receive distinct dates without a hidden modulo limit', () => {
   const rangeDays = fixtureRangeSize(17)
@@ -30,7 +31,7 @@ test('global setup rejects a worker count beyond the reservation boundary', () =
 })
 
 test('fixture date command always uses manage.py from this worktree', async () => {
-  const backendRoot = path.resolve(__dirname, '../../Personnel-Records')
+  const backendRoot = findBackendRoot(path.resolve(__dirname, '..'))!
   const command = path.join(
     backendRoot,
     'organization_management/apps/operations/management/commands/reserve_e2e_fixture_dates.py',

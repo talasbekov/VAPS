@@ -17,7 +17,7 @@ const APP = process.env.SMOKE_APP ?? 'http://localhost:3108'
 const PASSWORD = process.env.ROLE_ACCOUNTS_PASSWORD ?? ''
 
 /** Роли берутся из переменной: список в коде разошёлся бы со справочником. */
-const ROLES = (process.env.ROLE_ACCOUNTS_LIST ?? '').split(',').filter(Boolean)
+const ROLES = (process.env.ROLE_ACCOUNTS_LIST ?? '').split(',').map((role) => role.trim().replace(/^role_/i, '')).filter(Boolean)
 
 const SCREENS = ['/dashboard', '/statuses', '/security-ops/events', '/employees?view=forces']
 
@@ -69,9 +69,10 @@ async function permissionsOf(username: string): Promise<Set<string>> {
 async function signIn(page: Page, username: string): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username, password: PASSWORD, json: 'true' },
   })
+  expect(response.status(), `вход роли ${username} не принят`).toBe(200)
 }
 
 test.describe(LIVE ? 'роли: проход по учёткам' : 'роли (скип: нет SMOKE_LIVE=1)', () => {

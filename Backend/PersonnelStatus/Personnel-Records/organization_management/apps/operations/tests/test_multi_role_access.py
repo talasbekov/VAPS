@@ -114,6 +114,7 @@ def test_role_built_by_admin_works_the_moment_it_is_granted():
     запись в справочнике, а ЖИВОЙ доступ носителя — включая то, что права
     новой роли ложатся ПОВЕРХ уже имевшейся.
     """
+    User.objects.create_user(pk=int(TARGET_USER), username="role-target-353")
     api, _admin = admin_client("role-builder-353")
     Permission.objects.get_or_create(
         code="dictionary.manage", defaults={"name": "Ведение справочников"}

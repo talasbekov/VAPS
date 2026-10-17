@@ -55,6 +55,24 @@ def test_publisher_reaches_the_group_assembled_by_the_contract(django_user_model
     assert envelope["message"]["title"] == "Отчет готов"
 
 
+@pytest.mark.django_db
+@override_settings(CHANNEL_LAYERS=IN_MEMORY)
+def test_report_notification_link_resolves_to_authenticated_download(django_user_model):
+    from django.urls import resolve, reverse
+    from organization_management.apps.notifications.models import Notification
+    from organization_management.apps.notifications.services.websocket_service import send_report_ready_notification
+    from organization_management.apps.reports.models import Report
+
+    user = django_user_model.objects.create_user(username='report-link-reader')
+    report = Report.objects.create(created_by=user, job_id='report-link-job')
+    send_report_ready_notification(report)
+    notification = Notification.objects.get(recipient=user)
+    assert notification.link == reverse('report-download', kwargs={'pk': report.pk})
+    match = resolve(notification.link)
+    assert match.url_name == 'report-download'
+    assert match.kwargs['pk'] == str(report.pk)
+
+
 def _without_comments(text: str) -> str:
     """Комментарии и докстринги выбрасываются ДО разбора.
 

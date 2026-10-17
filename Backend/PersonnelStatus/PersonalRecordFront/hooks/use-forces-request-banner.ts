@@ -12,6 +12,7 @@ import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { StaffingDemandRow } from "@/entities/security-event";
 import { FORCE_CAMPAIGN_RESERVES_KEY } from "@/hooks/use-force-campaigns";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export interface DirectorateForcesRequest {
   eventId: string;
@@ -67,13 +68,14 @@ export interface DirectorateForcesRequestsResponse {
 }
 
 export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}) {
+  const { hasPermission } = useOpsPermissions();
   return useQuery<DirectorateForcesRequestsResponse, OpsApiFailure>({
     queryKey: DIRECTORATE_FORCES_REQUESTS_KEY,
     queryFn: () =>
       opsApiClient.get<DirectorateForcesRequestsResponse>(
         directorateForcesRequestsPath()
       ),
-    enabled: options.enabled ?? true,
+    enabled: (options.enabled ?? true) && hasPermission("status.manage"),
     // Нет права `status.manage` — 403; повторять его нечего, а баннера у
     // такого человека и быть не должно.
     retry: false,
@@ -81,13 +83,14 @@ export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}
 }
 
 export function useDirectorateForcesRequest(allocationId: string | null) {
+  const { hasPermission } = useOpsPermissions();
   return useQuery<DirectorateForcesRequest, OpsApiFailure>({
     queryKey: ["ops-directorate-forces-request", allocationId],
     queryFn: () =>
       opsApiClient.get<DirectorateForcesRequest>(
         directorateForcesRequestPath(allocationId as string)
       ),
-    enabled: allocationId !== null,
+    enabled: allocationId !== null && hasPermission("status.manage"),
     // Чужая или снятая заявка — 404, и повторять его нечего.
     retry: false,
   });

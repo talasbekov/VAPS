@@ -7,8 +7,28 @@
  */
 export function employeeIdOfKey(key: string | null): number | null {
   if (!key) return null;
-  const [, employeePart] = key.split("-");
+  // Голый id (без дефиса) — тоже ключ: экраны свода (Plane №1233) знают
+  // сотрудника только по id расхода, у них нет штатной единицы в ключе.
+  // Тот же разбор, что у `employeeIdOf` таблицы статусов.
+  const parts = key.split("-");
+  const employeePart = parts.length > 1 ? parts[1] : parts[0];
   if (!employeePart || employeePart.startsWith("vacant")) return null;
   const parsed = Number.parseInt(employeePart, 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+interface EmployeeUnitIdentity {
+  id: number;
+  employee?: { id: number } | null;
+  employees?: readonly { employee?: { id: number } | null }[];
+}
+
+/** A bare key is an employee ID; a compound key also selects its exact slot. */
+export function staffUnitOfEmployeeKey<T extends EmployeeUnitIdentity>(key: string | null, units: readonly T[]): T | undefined {
+  const employeeId = employeeIdOfKey(key);
+  if (employeeId === null || key === null) return undefined;
+  const parts = key.split("-");
+  const unitId = parts.length > 1 ? Number(parts[0]) : null;
+  return units.find(unit => (unitId === null || unit.id === unitId) &&
+    (unit.employee?.id === employeeId || unit.employees?.some(row => row.employee?.id === employeeId)));
 }

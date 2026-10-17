@@ -99,6 +99,25 @@ def totals(event, allocations):
     }
 
 
+def visit_objects_context(event):
+    """All sites of this collection, separate from published allocation targets."""
+    return [
+        {
+            "visitObjectId": str(visit.pk),
+            "objectId": (
+                str(visit.security_object_id)
+                if visit.security_object_id is not None
+                else None
+            ),
+            "objectName": visit.object_name,
+            "stage": visit.stage,
+        }
+        for visit in sorted(
+            event.visit_objects.all(), key=lambda visit: (visit.position, visit.pk)
+        )
+    ]
+
+
 def need_by_object(event):
     """`[СБС-11]`: «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов) · „Рахат“ — 3».
 
@@ -302,6 +321,7 @@ def enrich_allocations(event, allocations):
 def detail_extras(event, allocations):
     """Дополнение к `force_collection_detail` (Ш-2 №271) полями `[СБС-11]`/`[СБС-12]`."""
     return {
+        "visitObjects": visit_objects_context(event),
         "needByObject": need_by_object(event),
         "demandRows": event.demand_rows or [],
         "totals": totals(event, allocations),
@@ -334,6 +354,7 @@ def board_row(event, *, urgent_days=None, read_context=None):
         "businessDate": event.business_date.isoformat(),
         "eventTime": event.event_time.strftime("%H:%M") if event.event_time is not None else None,
         "location": event.location or event.object_name,
+        "visitObjects": visit_objects_context(event),
         "stage": event.stage,
         "need": t["need"],
         "requested": t["requested"],

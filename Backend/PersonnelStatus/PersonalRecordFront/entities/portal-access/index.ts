@@ -42,6 +42,9 @@ export const MODULE_PERMISSION = {
   // сводка отвечала, а защищённое дерево штатки закономерно возвращало 403.
   "/organization": "orgstructure.view",
   "/statuses": "status.view",
+  "/security-ops/combat-duty": "duty.view",
+  "/security-ops/duty-dispatch": ["duty.dispatch", "admin.roles"],
+  "/security-ops/duty-register": ["duty.view", "analytics.view", "duty.manage", "status.manage", "duty.dispatch", "admin.roles"],
   // Сбор сил открывают ТРИ права, а не одно: делит потребность
   // (`forces.command`), оповещает управления (`forces.allocate`) и выделяет
   // людей (`forces.select`) — это три разные роли на одном экране, и
@@ -68,13 +71,13 @@ export const MODULE_PERMISSION = {
   // что у реестра: визит показывает то же, что карточка ОМ.
   "/security-ops/visits": "event.view",
   "/security-ops/persons": "catalog.view",
-  "/security-ops/laws": "catalog.view",
+  "/security-ops/laws": ["catalog.view", "legal.manage"],
   "/security-ops/vehicles": "event.view",
   "/security-ops/analytics/operations": "analytics.operations",
   "/security-ops/service-reports": "report.generate",
-  // «Свод по Службе» дополнительно закрыт ролевой картой ниже: одного
-  // `status.view` недостаточно, иначе его увидят все читатели статусов.
-  "/security-ops/service-summary": null,
+  // Reading statuses and entering the service workspace require separate
+  // permissions; the conjunctive requirement is below.
+  "/security-ops/service-summary": "status.view",
   "/security-ops/dictionaries": "dictionary.view",
   "/security-ops/settings": "settings.view",
   "/settings/permissions": "admin.roles",
@@ -89,31 +92,42 @@ export const MODULE_PERMISSION = {
   "/feedback": "feedback.view",
 } as const satisfies Record<string, string | readonly string[] | null>;
 
-/** Роль модуля, если одного права раздела недостаточно.
- *
- * Пункт «Свод по Службе» нельзя открывать одним `status.view`: это право
- * получают и обычные читатели статусов. Роль ответственного за сбор сил —
- * отдельная граница рабочего места и должна быть общей для меню и страницы.
- */
-export const MODULE_ROLE = {
-  "/security-ops/service-summary": "FORCES_GATHERING_OFFICER",
-} as const satisfies Record<string, string | readonly string[]>;
+/** Additional conjunctive permissions; MODULE_PERMISSION arrays retain OR semantics. */
+export const MODULE_REQUIRED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  "/statuses": ["status.workspace"],
+  "/security-ops/service-summary": ["service_summary.view"],
+};
+export const MODULE_ROLE: Readonly<Record<string, string | readonly string[]>> = {};
 
 export type ModuleHref = keyof typeof MODULE_PERMISSION;
 
 /**
- * Стартовые рабочие экраны портала в понятном порядке. Личный кабинет не
- * входит в список: после входа человеку нужна работа, а не карточка профиля.
+ * Стартовые рабочие экраны портала в понятном порядке. Для обычного
+ * сотрудника рабочая задача — собственные назначения в личном кабинете.
  * Администратор сохраняет привычный старт с «Обзора»; для остальных маршрут
  * выбирается по той же карте прав, что и меню и гейты экранов.
  */
 const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
+  "/employees",
+  "/statuses",
+  "/security-ops/duty-register",
   "/security-ops/objects",
   "/security-ops/events",
-  "/statuses",
   "/security-ops/command-center",
   "/dashboard",
+  "/reports",
+  "/security-ops/service-reports",
+  "/security-ops/analytics",
+  "/security-ops/analytics/operations",
+  "/security-ops/persons",
 ];
+
+// These grants only allow reading shared information or personal feedback.
+// Any additional/unknown grant keeps the ordinary workspace selection below.
+const PERSONAL_EMPLOYEE_PERMISSIONS = new Set([
+  "catalog.view", "document.view", "feedback.create", "feedback.view",
+  "object.view", "status.view", "status.workspace",
+]);
 
 /**
  * Права пункта по его адресу — СПИСОК, потому что модуль может открываться
@@ -148,27 +162,48 @@ export function moduleRolesOf(href: string): readonly string[] {
 export function moduleOpenFor(
   href: string,
   hasPermission: (code: string) => boolean,
-  hasRole: (code: string) => boolean = () => true,
+  hasRole: (code: string) => boolean = () => false,
 ): boolean {
   const codes = modulePermissionsOf(href);
   const roles = moduleRolesOf(href);
   return (
     (codes.length === 0 || codes.some(hasPermission)) &&
+    (MODULE_REQUIRED_PERMISSIONS[href] ?? []).every(hasPermission) &&
     (roles.length === 0 || hasPermission("*") || roles.some(hasRole))
   );
 }
 
 /** Выбрать первый доступный рабочий экран сразу после входа. */
-export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
+export function defaultPortalRoute(
+  hasPermission: (code: string) => boolean,
+  hasRole: (code: string) => boolean = () => false,
+  permissions?: Iterable<string>,
+): ModuleHref {
   if (hasPermission("*")) return "/dashboard";
-  // Старт «Сбора сил» задаёт та же карта `forces.*`, что открывает сам экран.
-  // Это покрывает дополнительные и составные роли, а снятое право сразу
-  // возвращает человека к следующему доступному рабочему маршруту.
-  if (moduleOpenFor("/employees", hasPermission)) {
-    return "/employees";
+  // Workspace permissions use the same conjunction as the menu and page.
+  if (moduleOpenFor("/security-ops/service-summary", hasPermission, hasRole)) {
+    return "/security-ops/service-summary";
+  }
+  if (
+    hasRole("EMPLOYEE") && permissions !== undefined &&
+    Array.from(permissions).every(code => PERSONAL_EMPLOYEE_PERMISSIONS.has(code))
+  ) {
+    return "/security-ops/profile";
+  }
+  // Руководитель ведёт статусы, даже если может подбирать людей по запросу.
+  // Управление распределением сил сохраняет приоритет рабочего места /employees.
+  if (
+    hasPermission("status.manage") &&
+    !hasPermission("forces.allocate") &&
+    !hasPermission("forces.command") &&
+    moduleOpenFor("/statuses", hasPermission, hasRole)
+  ) {
+    return "/statuses";
   }
   return (
-    DEFAULT_WORKSPACE_ROUTES.find((href) => moduleOpenFor(href, hasPermission)) ??
+    DEFAULT_WORKSPACE_ROUTES.find((href) =>
+      (href !== '/security-ops/duty-register' || ['duty.view', 'duty.manage', 'status.manage', 'duty.dispatch'].some(hasPermission)) &&
+      moduleOpenFor(href, hasPermission, hasRole)) ??
     "/security-ops/profile"
   );
 }

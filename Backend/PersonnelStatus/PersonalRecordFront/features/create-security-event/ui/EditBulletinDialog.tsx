@@ -45,6 +45,7 @@ import { PersonDetailsFields, detailsOf } from "./PersonDetailsFields";
 import type { PersonDetailsMap } from "./PersonDetailsFields";
 import type { SecurityEvent } from "@/entities/security-event";
 import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
+import { LoadFailure } from "@/components/load-failure";
 
 const LABEL_CLASS = "text-[11.5px] font-bold text-muted-foreground";
 const CONTROL_CLASS = "h-10 rounded-lg";
@@ -133,6 +134,10 @@ export function EditBulletinDialog({
 }) {
   const { toast } = useToast();
   const personsQuery = useProtectedPersons();
+  const selectedLabels = new Map((event.protectedPersons ?? []).map(person => [person.id, person.name]));
+  if (event.protectedPersonId && event.protectedPersonName?.trim() && !selectedLabels.has(event.protectedPersonId)) {
+    selectedLabels.set(event.protectedPersonId, event.protectedPersonName);
+  }
   const form = useZodForm(formSchema, valuesOf(event));
   // Атрибуты визита лиц (Plane №418) — вне zod-формы: строк столько, сколько
   // отмечено лиц, и состав меняется по ходу правки.
@@ -248,7 +253,7 @@ export function EditBulletinDialog({
         </DialogHeader>
 
         <form
-          className="space-y-3"
+          className="min-w-0 space-y-3"
           noValidate
           onSubmit={(submitEvent) =>
             void handleSubmit(
@@ -350,6 +355,7 @@ export function EditBulletinDialog({
                   подписи и в связке с текстом ошибки. Свой литерал здесь
                   разошёлся бы с ними при первом переименовании поля. */}
               {(control) => (
+                <>
                 <ProtectedPersonsPicker
                   selectId={control.id}
                   value={watch("protectedPersonIds") ?? []}
@@ -358,7 +364,13 @@ export function EditBulletinDialog({
                   }
                   options={personsQuery.data?.results ?? []}
                   loading={personsQuery.isPending}
+                  failed={personsQuery.isError || personsQuery.readAccessBlocked}
+                  selectedLabels={selectedLabels}
                 />
+                {(personsQuery.isError || personsQuery.readAccessBlocked) && <LoadFailure what="справочник охраняемых лиц"
+                  description="Форма и выбранные лица мероприятия сохранены. Повторите чтение, чтобы изменить выбор."
+                  onRetry={() => { void personsQuery.refetch(); }} isRetrying={personsQuery.isFetching} />}
+                </>
               )}
             </Field>
 

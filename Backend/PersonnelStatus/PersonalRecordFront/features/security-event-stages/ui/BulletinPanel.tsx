@@ -190,7 +190,7 @@ function EventFacts({ event }: { event: SecurityEvent }) {
               : SECURITY_EVENT_KIND_LABEL[event.kind]
           }
         />
-        <Fact label="Объект проведения" value={objectLabel(event)} />
+        <Fact label={(event.visitObjects ?? []).length > 1 ? "Основной объект бюллетеня" : "Объект проведения"} value={objectLabel(event)} />
         <Fact label="Место / адрес" value={address} />
         <Fact
           label="Локация"

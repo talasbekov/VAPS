@@ -6,11 +6,15 @@ import sys
 from pathlib import Path
 
 root, dest = map(Path, sys.argv[1:])
-prefixes = {
-    'Backend/PersonnelStatus/Personnel-Records/': 'backend',
-    'Backend/PersonnelStatus/PersonalRecordFront/': 'frontend',
-    'deploy/contour/': 'deploy/contour',
-}
+layouts = (
+    ('PersonnelStatus/Personnel-Records/', 'PersonnelStatus/PersonalRecordFront/'),
+    ('Backend/PersonnelStatus/Personnel-Records/', 'Backend/PersonnelStatus/PersonalRecordFront/'),
+    ('backend/', 'frontend/'),
+)
+layout = next((pair for pair in layouts if all((root / path).is_dir() for path in pair)), None)
+if layout is None:
+    raise SystemExit('Cannot find backend/frontend source directories')
+prefixes = {layout[0]: 'backend', layout[1]: 'frontend', 'deploy/contour/': 'deploy/contour'}
 excluded_dirs = {
     'node_modules', '.venv', 'venv', '.git', '__pycache__', 'media',
     'private_storage', 'staticfiles', 'logs', 'e2e', 'tests', '__tests__',
@@ -18,7 +22,7 @@ excluded_dirs = {
 }
 names = subprocess.check_output(
     ['git', '-C', str(root), 'ls-files', '-z', '--', *prefixes],
-).decode().split('\0')
+).decode('utf-8').split('\0')
 count = 0
 for name in filter(None, names):
     prefix = next(p for p in prefixes if name.startswith(p))
@@ -42,7 +46,7 @@ deploy.mkdir(parents=True, exist_ok=True)
 for name in (
     'build-bundle.sh', 'install.sh', 'snapshot.py', 'docker-compose.yml', '.env.example',
     'Dockerfile.python-deps', 'Dockerfile.node-deps', 'Dockerfile.backend',
-    'Dockerfile.frontend', 'Dockerfile.proxy', 'entrypoint.sh', 'nginx.conf', 'README.md',
+    'Dockerfile.frontend', 'Dockerfile.proxy', 'Dockerfile.runtime-base', 'entrypoint.sh', 'nginx.conf', 'README.md',
     'proxy-entrypoint.sh', 'nginx-error-filter.awk',
 ):
     shutil.copy2(root / 'deploy/contour' / name, deploy / name)
