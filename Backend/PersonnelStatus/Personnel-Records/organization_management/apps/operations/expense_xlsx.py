@@ -28,6 +28,8 @@ from organization_management.apps.operations.expense_layout import (
     document_title,
     header_row,
     member_lines,
+    PERSONNEL_HEAD,
+    personnel_values,
 )
 
 
@@ -101,6 +103,24 @@ def generate_expense_xlsx(data):
 
     sheet.page_setup.orientation = "landscape"
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+
+    people_sheet = workbook.create_sheet("Личный состав")
+    people_sheet.append(("Подразделение", *PERSONNEL_HEAD))
+    for row in data.rows:
+        for person in row.personnel:
+            people_sheet.append((row.name, *personnel_values(person)))
+    people_sheet.freeze_panes = "A2"
+    people_sheet.auto_filter.ref = people_sheet.dimensions
+    for cells in people_sheet:
+        for cell in cells:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+            cell.font = Font(name=FONT_NAME, size=TABLE_SIZE_PT, bold=cell.row == 1)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    for index in range(1, len(PERSONNEL_HEAD) + 2):
+        people_sheet.column_dimensions[get_column_letter(index)].width = 28
+    people_sheet.page_setup.orientation = "landscape"
+    people_sheet.page_setup.paperSize = people_sheet.PAPERSIZE_A4
 
     buffer = io.BytesIO()
     workbook.save(buffer)

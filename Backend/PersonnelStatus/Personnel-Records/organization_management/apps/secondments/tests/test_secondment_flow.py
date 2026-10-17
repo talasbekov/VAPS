@@ -305,3 +305,90 @@ def test_host_division_sees_the_person_as_incoming(api, scene):
     # И ни в коем случае не оба сразу у одной стороны.
     assert host_row["seconded_out"] == 0
     assert home_row["seconded_in"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+@pytest.mark.parametrize("resolved", ["approved", "rejected", "cancelled"])
+def test_resolved_request_cannot_be_decided_again(api, scene, decision, resolved):
+    request_id = scene["request"].pk
+    if resolved == "rejected":
+        response = api.post(reverse("secondmentrequest-reject", args=[request_id]),
+                            {"reason": "Нет потребности"}, format="json")
+    else:
+        response = _approve(api, request_id)
+    assert response.status_code == 200, response.data
+    if resolved == "cancelled":
+        response = api.post(reverse("secondmentrequest-return-employee", args=[request_id]),
+                            {"reason": "Работа завершена"}, format="json")
+        assert response.status_code == 200, response.data
+
+    before_request = SecondmentRequest.objects.values().get(pk=request_id)
+    before_statuses = list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values())
+    response = api.post(reverse(f"secondmentrequest-{decision}", args=[request_id]),
+                        {"reason": "Повторное решение"}, format="json")
+    assert response.status_code == 409, response.data
+    assert SecondmentRequest.objects.values().get(pk=request_id) == before_request
+    assert list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values()) == before_statuses
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("decision", ["approve", "reject", "return-employee"])
+def test_decision_rechecks_state_after_initial_object_read(api, scene, monkeypatch, decision):
+    from organization_management.apps.secondments.api.views import SecondmentRequestViewSet
+
+    if decision == "return-employee":
+        assert _approve(api, scene["request"].pk).status_code == 200
+    original_get = SecondmentRequestViewSet.get_object
+
+    def resolve_after_read(view):
+        stale = original_get(view)
+        # Another receiving-side decision commits after the first read, before
+        # this action takes its request lock. Never decide from the stale copy.
+        SecondmentRequest.objects.filter(pk=stale.pk).update(status="rejected", rejection_reason="Первое решение")
+        return stale
+
+    monkeypatch.setattr(SecondmentRequestViewSet, "get_object", resolve_after_read)
+    before_statuses = list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values())
+    response = api.post(reverse(f"secondmentrequest-{decision}", args=[scene["request"].pk]),
+                        {"reason": "Второе решение"}, format="json")
+    assert response.status_code == 409, response.data
+    scene["request"].refresh_from_db()
+    assert scene["request"].status == "rejected"
+    assert scene["request"].rejection_reason == "Первое решение"
+    assert list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values()) == before_statuses
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("mismatch", ["pending", "rejected", "cancelled", "destination", "start"])
+def test_unrelated_request_cannot_return_an_active_secondment(api, scene, mismatch):
+    assert _approve(api, scene["request"].pk).status_code == 200
+    unrelated = SecondmentRequest.objects.create(
+        employee=scene["employee"],
+        from_division=scene["home"],
+        to_division=scene["home"] if mismatch == "destination" else scene["host"],
+        start_date=scene["today"] + timedelta(days=1) if mismatch == "start" else scene["request"].start_date,
+        end_date=scene["request"].end_date,
+        status=mismatch if mismatch in {"pending", "rejected", "cancelled"} else "approved",
+    )
+    before_requests = list(SecondmentRequest.objects.order_by("pk").values())
+    before_statuses = list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values())
+    response = api.post(reverse("secondmentrequest-return-employee", args=[unrelated.pk]),
+                        {"reason": "Возврат по устаревшей заявке"}, format="json")
+    assert response.status_code == 409, response.data
+    assert list(SecondmentRequest.objects.order_by("pk").values()) == before_requests
+    assert list(EmployeeStatus.objects.filter(employee=scene["employee"]).order_by("pk").values()) == before_statuses
+
+
+@pytest.mark.django_db
+def test_return_matches_start_and_destination_after_end_extension(api, scene):
+    assert _approve(api, scene["request"].pk).status_code == 200
+    EmployeeStatus.objects.filter(employee=scene["employee"], status_type=_ST.SECONDED_TO).update(
+        end_date=scene["request"].end_date + timedelta(days=3))
+    response = api.post(reverse("secondmentrequest-return-employee", args=[scene["request"].pk]),
+                        {"reason": "Вернулся после продления"}, format="json")
+    assert response.status_code == 200, response.data
+    scene["request"].refresh_from_db()
+    assert scene["request"].status == "cancelled"
+    assert not EmployeeStatus.objects.filter(employee=scene["employee"], status_type=_ST.SECONDED_TO,
+                                            state=EmployeeStatus.StatusState.ACTIVE).exists()

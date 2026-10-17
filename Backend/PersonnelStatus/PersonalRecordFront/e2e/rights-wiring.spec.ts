@@ -43,11 +43,14 @@ const WIRED_RIGHTS: { file: string; counts: Record<string, number> }[] = [
       send: 2,
       // Ответить на замечание: четыре действия одной строки замечания.
       answerRemarks: 4,
-      approve: 1,
-      returnBack: 2,
     },
   },
 ]
+
+// Signing and returning now share identity/order/loading validation. Their
+// rendered buttons are exercised by scripts/tests/approval-decision.test.cjs;
+// counting only literal !rights.* would miss the shared decision gate.
+const DELEGATED_RIGHTS = new Set(['approve', 'returnBack'])
 
 /**
  * Права, которые экран объявляет, но НИ ОДНОЙ кнопкой не гейтит, — с причиной.
@@ -136,7 +139,7 @@ test.describe('право гейтит кнопку, а не только объ
     expect(declared.length, 'интерфейс прав не разобран — проба смотрит в пустоту').toBeGreaterThan(3)
 
     const wired = new Set(Object.keys(WIRED_RIGHTS[0].counts))
-    const orphans = declared.filter((name) => !wired.has(name) && !UNWIRED_RIGHTS.has(name))
+    const orphans = declared.filter((name) => !wired.has(name) && !DELEGATED_RIGHTS.has(name) && !UNWIRED_RIGHTS.has(name))
     expect(
       orphans,
       'право объявлено, но ни одной кнопки не гейтит и в исключения не внесено: ' +
@@ -175,6 +178,15 @@ test.describe('право гейтит кнопку, а не только объ
     // файл переименуют или разбор `disabled={…}` сломается (урок №825).
     const source = readFileSync(join(ROOT, WIRED_RIGHTS[0].file), 'utf8')
     expect(disabledExpressions(source).length, 'на экране не найдено ни одного `disabled`').toBeGreaterThan(8)
-    expect(countRights(source).size, 'ни одно право не найдено в `disabled`').toBeGreaterThan(2)
+    expect(countRights(source).size, 'не найдены прямые гейты отправки и замечаний').toBe(Object.keys(WIRED_RIGHTS[0].counts).length)
+  })
+
+  test('все три действия решения подключены к общему гейту подписи', () => {
+    const source = readFileSync(join(ROOT, WIRED_RIGHTS[0].file), 'utf8')
+    const decisions = disabledExpressions(source).filter(expression => /decisionReason\(/.test(expression))
+    expect(decisions).toHaveLength(3)
+    for (const expression of decisions) expect(expression).toMatch(/decisionReason\([\s\S]*\) !== null/)
+    expect(source).toMatch(/const decisionReason = \(index: number\) => approvalDecisionReason\(/)
+    expect(source).toMatch(/canApprove: permissions !== undefined && rights\.approve/)
   })
 })

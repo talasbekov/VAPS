@@ -238,6 +238,11 @@ def _assert_no_conflict(
     exclude_pk=None,
     override=False,
 ):
+    if status_type_code in PARTICIPATION_STATUS_CODES:
+        from organization_management.apps.ops.duty_dispatch import assert_no_dispatch_overlap, interval
+        start, _ = interval(date_start)
+        end, _ = interval(date_end)
+        assert_no_dispatch_overlap(employee_id, start, end)
     # Классифицируем каждый живой пересекающийся статус декларативной
     # матрицей. Предикат пересечения полуинтервалов живёт ЗДЕСЬ (в запросе),
     # матрица остаётся чистой. Жёсткий → 422 (ограничение БД подстраховывает

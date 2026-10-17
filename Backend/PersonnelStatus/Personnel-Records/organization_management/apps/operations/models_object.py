@@ -206,6 +206,8 @@ class OpsPassportVersion(TimeStampedModel):
     обеих).
     """
 
+    admin_readonly = True
+
     security_object = models.ForeignKey(
         OpsSecurityObject,
         on_delete=models.CASCADE,

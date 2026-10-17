@@ -1,0 +1,60 @@
+import { randomUUID, createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { expect, test } from "@playwright/test";
+
+const APP = "http://localhost:3356";
+test("real multipart upload accepts 10 MiB through the frontend and preserves validation failures", async ({ page }, testInfo) => {
+  test.skip(process.env.SMOKE_LIVE !== "1" || process.env.LEGAL_FILES_MUTATION !== "1", "Explicit mutation authorization on the isolated legal-files clone is required");
+  test.setTimeout(120_000);
+  expect(process.env.SMOKE_APP).toBe(APP);
+  expect(process.env.SMOKE_API).toBe("http://127.0.0.1:18351");
+  expect(process.env.PR_DB_NAME).toBe("smart_eight_hours_20261009");
+  expect(process.env.SMOKE_DOCKER_CONTAINER).toBe("smart-eight-hours-20261009-backend-1");
+  expect(Boolean(process.env.ROLE_ACCOUNTS_PASSWORD)).toBe(true);
+  const csrf = await (await page.request.get(APP + "/api/auth/csrf/")).json();
+  const signed = await page.request.post(APP + "/api/auth/callback/credentials/", {
+    form: { csrfToken: csrf.csrfToken, username: "role_reference_admin", password: process.env.ROLE_ACCOUNTS_PASSWORD!, json: "true" },
+  });
+  expect((await signed.json()).url).not.toContain("error=");
+  await page.goto(APP + "/security-ops/laws/");
+  await page.getByRole("button", { name: "Добавить документ", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Добавить документ", exact: true });
+  const marker = "УЧ-ПРЕДЕЛ-" + randomUUID().slice(0, 12);
+  await dialog.getByLabel("Номер документа").fill(marker);
+  await dialog.getByLabel("Название", { exact: true }).fill("Учебная проверка размера файла");
+  let writes = 0;
+  page.on("request", request => {
+    if (new URL(request.url()).pathname === "/api/ops/legal-documents/" && request.method() === "POST") writes++;
+  });
+  await dialog.getByLabel("Файл документа").setInputFiles({ name: "Слишком-большой.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(10 * 1024 * 1024 + 1, 32) });
+  await dialog.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Файл больше");
+  expect(writes).toBe(0);
+  await dialog.getByLabel("Файл документа").setInputFiles({ name: "Повреждённый.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a PDF") });
+  const invalid = page.waitForResponse(response => new URL(response.url()).pathname === "/api/ops/legal-documents/" && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: "Сохранить", exact: true }).click();
+  expect((await invalid).status()).toBe(400);
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.getByLabel("Номер документа")).toHaveValue(marker);
+  const bytes = Buffer.alloc(10 * 1024 * 1024, 32);
+  (await readFile(path.join(__dirname, "fixtures/legal-training.pdf"))).copy(bytes);
+  await dialog.getByLabel("Файл документа").setInputFiles({ name: "Учебный-предел.pdf", mimeType: "application/pdf", buffer: bytes });
+  const success = page.waitForResponse(response => new URL(response.url()).pathname === "/api/ops/legal-documents/" && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: "Сохранить", exact: true }).click();
+  const response = await success;
+  expect(response.status()).toBe(201);
+  const document = await response.json();
+  expect(document.file.size).toBe(bytes.length);
+  await expect(dialog).toHaveCount(0);
+  testInfo.annotations.push({ type: "owned-clone-fixture", description: marker + "; document=" + document.id });
+  await page.getByLabel("Поиск по нормативной базе").fill(marker);
+  await expect(page.getByRole("article")).toHaveCount(1);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать PDF", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe("Учебный-предел.pdf");
+  const downloaded = await readFile((await download.path())!);
+  expect(createHash("sha256").update(downloaded).digest("hex")).toBe(createHash("sha256").update(bytes).digest("hex"));
+  expect(writes).toBe(2);
+});

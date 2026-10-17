@@ -31,6 +31,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { LoadFailure } from "@/components/load-failure";
 import {
   Table,
   TableBody,
@@ -149,7 +150,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
 
       {/* Таблица шире экрана прокручивается ВНУТРИ себя: страница вбок
           ездить не должна. */}
-      <div className="overflow-x-auto rounded-lg border">
+      {requests.isError ? <LoadFailure what="список заявок на силы" description={requests.error?.message} onRetry={() => void requests.refetch()} isRetrying={requests.isFetching} /> : <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -179,19 +180,6 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                   </TableCell>
                 </TableRow>
               ))}
-
-            {!requests.isPending && requests.isError && (
-              <TableRow>
-                <TableCell colSpan={7}>
-                  {/* Отказ ОБЪЯВЛЯЕТСЯ, а не только краснеет: без role=alert
-                      его не услышит тот, кто читает экран не глазами. */}
-                  <p role="alert" className="text-destructive-ink text-sm">
-                    {requests.error?.message ??
-                      "Заявки не загрузились — список показать нечем"}
-                  </p>
-                </TableCell>
-              </TableRow>
-            )}
 
             {!requests.isPending && !requests.isError && rows.length === 0 && (
               <TableRow>
@@ -293,7 +281,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
               ))}
           </TableBody>
         </Table>
-      </div>
+      </div>}
     </section>
   );
 }

@@ -7,8 +7,11 @@
 недостающее право.
 """
 import datetime as dt
+import hashlib
 
-from django.db import transaction
+from django.db import connection, transaction
+from django.db.models import CharField
+from django.db.models.functions import Cast
 
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
@@ -22,10 +25,90 @@ from organization_management.apps.operations.models_duty import (
 from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
 )
+from organization_management.apps.operations.services import PermissionService
 from organization_management.apps.ops.security_events import (
     personnel_display_name,
     resolve_applicable_version,
 )
+
+
+# Older internal callers supply an audit actor, not an authorization identity.
+# Every HTTP caller must pass scope_actor explicitly; None denies access.
+_TRUSTED_SCOPE = object()
+_MAX_IDENTIFIER = 9223372036854775807
+
+
+def _actor_scope(actor, permission):
+    if actor is _TRUSTED_SCOPE:
+        return None
+    if actor is None:
+        return set()
+    return PermissionService.visible_division_ids(actor, permission)
+
+
+def _permission_denied():
+    return DomainError(
+        "PERMISSION_DENIED", 403,
+        message="Запись находится вне доступной области подразделений.",
+    )
+
+
+def _identifier(value):
+    raw = str(value or "")
+    if (not raw.isascii() or not raw.isdigit() or len(raw) > 19
+            or raw.startswith("0") or int(raw) > _MAX_IDENTIFIER):
+        return None
+    return int(raw)
+
+
+def visible_shifts(actor, permission="duty.view"):
+    """Live legacy payloads follow the current canonical employee placement.
+
+    A frozen journal supplement authorizes its historical journal projection,
+    not the live planner payload. Names and malformed IDs never imply scope.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    rows = OpsDutyShift.objects.all()
+    scope = _actor_scope(actor, permission)
+    if scope is None:
+        return rows
+    people = Employee.objects.filter(pk__gt=0, staff_unit__division_id__in=scope)
+    keys = people.annotate(legacy_id=Cast("pk", output_field=CharField())).values("legacy_id")
+    return rows.filter(employee_id__in=keys)
+
+
+def _require_row_access(actor, row, permission):
+    if actor is not _TRUSTED_SCOPE and not visible_shifts(actor, permission).filter(pk=row.pk).exists():
+        raise _permission_denied()
+
+
+def require_shift_access(actor, shift_id, permission="duty.view"):
+    key = _identifier(shift_id)
+    row = OpsDutyShift.objects.filter(pk=key).first() if key else None
+    if row is None:
+        raise _shift_not_found(shift_id)
+    _require_row_access(actor, row, permission)
+    return row
+
+
+def _require_global_scope(actor, permission):
+    if _actor_scope(actor, permission) is not None:
+        raise DomainError(
+            "PERMISSION_DENIED", 403,
+            message="Общий месячный план требует права без ограничения подразделением.",
+        )
+
+
+def _require_object_catalog(actor):
+    # Security objects have no division owner. Their shared catalog has its
+    # own permission; employee scope must never be guessed from object names.
+    if _actor_scope(actor, "duty.manage") is not None and (
+            actor is None or not PermissionService.has_permission(actor, "object.view")):
+        raise DomainError(
+            "PERMISSION_DENIED", 403,
+            message="Для общего каталога объектов нужно право просмотра объектов.",
+        )
 
 
 def _now_iso():
@@ -222,10 +305,11 @@ _NO_APPROVE_REASON = "Нужно право утверждения плана (o
 _PLAN_STATE_LABEL = {"DRAFT": "черновик", "APPROVED": "утверждён"}
 
 
-def month_shifts(month):
+def month_shifts(month, *, scope_actor=_TRUSTED_SCOPE):
+    month = _require_month(month)
     year, month_number = int(month[:4]), int(month[5:7])
     return list(
-        OpsDutyShift.objects.filter(
+        visible_shifts(scope_actor).filter(
             business_date__year=year, business_date__month=month_number
         )
     )
@@ -364,21 +448,33 @@ def build_plan_actions(record, rights, validation_is_current):
     return [create_draft(), check_conflicts(), approve(), reopen(), add_shift()]
 
 
-def monthly_plan_response(month, rights):
+def monthly_plan_response(month, rights, *, scope_actor=_TRUSTED_SCOPE):
     record = OpsDutyMonthlyPlan.objects.filter(month=month).first()
-    shifts = month_shifts(month)
+    shifts = month_shifts(month, scope_actor=scope_actor)
     duty_types = list(OpsDutyType.objects.all())
     policy = read_conflict_policy()
     conflicts = detect_conflicts(shifts, duty_types, policy)
     fingerprint = plan_fingerprint(shifts)
     active = [s for s in shifts if s.state_code != "CANCELLED"]
     shifts_sorted = sorted(shifts, key=lambda s: (s.business_date, s.pk))
+    serialized = serialize_plan(record)
+    scoped = _actor_scope(scope_actor, "duty.view") is not None
+    action_rights = dict(rights)
+    if scoped and serialized is not None:
+        serialized.update(lastValidation=None, history=[], approvedBy=None)
+    if _actor_scope(scope_actor, "duty.manage") is not None:
+        action_rights["canManage"] = False
+    if _actor_scope(scope_actor, "duty.approve_plan") is not None:
+        action_rights["canApprove"] = False
+    actions = build_plan_actions(record, action_rights, _validation_current(record, fingerprint))
+    if rights["canManage"]:
+        # Adding an employee's scoped shift is independent of changing the
+        # single organization-wide monthly lifecycle.
+        actions[-1] = build_plan_actions(record, rights, False)[-1]
     return {
         "month": month,
-        "record": serialize_plan(record),
-        "actions": build_plan_actions(
-            record, rights, _validation_current(record, fingerprint)
-        ),
+        "record": serialized,
+        "actions": actions,
         "shifts": [serialize_shift(s) for s in shifts_sorted],
         "passportStatuses": [passport_status_of(s) for s in shifts_sorted],
         "conflicts": conflicts,
@@ -398,15 +494,24 @@ def monthly_plan_response(month, rights):
 
 
 def _require_month(month):
-    if not isinstance(month, str) or len(month) != 7 or month[4] != "-":
-        raise _validation({"month": ["Укажите месяц в формате ГГГГ-ММ."]})
-    return month
+    if isinstance(month, str):
+        try:
+            first_day = dt.date.fromisoformat(month + "-01")
+        except ValueError:
+            pass
+        else:
+            if first_day.isoformat()[:7] == month:
+                return month
+    # A calendar alias must not acquire a different advisory lock for the
+    # same shifts. Accept exactly the canonical ASCII YYYY-MM month.
+    raise _validation({"month": ["Укажите месяц в формате ГГГГ-ММ."]})
 
 
 @transaction.atomic
-def create_draft(month):
+def create_draft(month, *, scope_actor=_TRUSTED_SCOPE):
+    _require_global_scope(scope_actor, "duty.manage")
     month = _require_month(month)
-    if OpsDutyMonthlyPlan.objects.filter(month=month).exists():
+    if _lock_month(month) is not None:
         raise DomainError(
             "PLAN_ALREADY_EXISTS", 422, message="План на этот месяц уже создан."
         )
@@ -426,12 +531,25 @@ def create_draft(month):
     )
 
 
-def _lock_plan(month):
-    record = (
+def _lock_month(month):
+    """One transaction lock even before a monthly plan row exists.
+
+    All writers acquire month advisory -> monthly row -> shift row. The
+    advisory key uses a fixed namespace and stable digest, never Python hash.
+    """
+    month = _require_month(month)
+    key = int.from_bytes(hashlib.sha256(f"ops.duty.month:{month}".encode()).digest()[:8], "big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+    return (
         OpsDutyMonthlyPlan.objects.select_for_update()
-        .filter(month=_require_month(month))
+        .filter(month=month)
         .first()
     )
+
+
+def _lock_plan(month):
+    record = _lock_month(month)
     if record is None:
         raise DomainError(
             "PLAN_NOT_FOUND", 422, message="Плана на этот месяц нет."
@@ -440,7 +558,8 @@ def _lock_plan(month):
 
 
 @transaction.atomic
-def check_plan(month):
+def check_plan(month, *, scope_actor=_TRUSTED_SCOPE):
+    _require_global_scope(scope_actor, "duty.manage")
     record = _lock_plan(month)
     if record.state_code == "APPROVED":
         raise DomainError(
@@ -481,7 +600,8 @@ def check_plan(month):
 
 
 @transaction.atomic
-def approve_plan(month, *, actor):
+def approve_plan(month, *, actor, scope_actor=_TRUSTED_SCOPE):
+    _require_global_scope(scope_actor, "duty.approve_plan")
     record = _lock_plan(month)
     fingerprint = plan_fingerprint(month_shifts(month))
     if (
@@ -515,12 +635,9 @@ def approve_plan(month, *, actor):
 
 
 @transaction.atomic
-def reopen_plan(month):
-    record = (
-        OpsDutyMonthlyPlan.objects.select_for_update()
-        .filter(month=_require_month(month))
-        .first()
-    )
+def reopen_plan(month, *, scope_actor=_TRUSTED_SCOPE):
+    _require_global_scope(scope_actor, "duty.approve_plan")
+    record = _lock_month(month)
     if record is None or record.state_code != "APPROVED":
         raise DomainError(
             "INVALID_STAGE_TRANSITION", 422,
@@ -553,23 +670,23 @@ def reopen_plan(month):
 
 
 def _plan_locked(business_date):
-    record = OpsDutyMonthlyPlan.objects.filter(
-        month=business_date.isoformat()[:7]
-    ).first()
+    record = _lock_month(business_date.isoformat()[:7])
     return record is not None and record.state_code == "APPROVED"
 
 
 def _find_employee(employee_id):
     from organization_management.apps.employees.models import Employee
 
-    if not str(employee_id or "").isdigit():
+    key = _identifier(employee_id)
+    if key is None:
         return None
-    return Employee.objects.filter(pk=employee_id, is_active=True).first()
+    return Employee.objects.filter(pk=key, is_active=True).first()
 
 
 @transaction.atomic
 def create_shift(*, business_date, duty_type_code, object_id, sector_id,
-                 post_id, employee_id, note, override, override_reason, actor):
+                 post_id, employee_id, note, override, override_reason, actor,
+                 scope_actor=_TRUSTED_SCOPE):
     field_errors = {}
     try:
         parsed_date = dt.date.fromisoformat(str(business_date or ""))
@@ -599,9 +716,16 @@ def create_shift(*, business_date, duty_type_code, object_id, sector_id,
     employee = _find_employee(employee_id)
     if employee is None:
         raise _validation({"employeeId": ["Сотрудник не найден."]})
+    scope = _actor_scope(scope_actor, "duty.manage")
+    if scope is not None and not employee.__class__.objects.filter(
+            pk=employee.pk, staff_unit__division_id__in=scope).exists():
+        raise _permission_denied()
+    _require_object_catalog(scope_actor)
+    from organization_management.apps.ops.duty_dispatch import guard_legacy_placement
+    guard_legacy_placement(employee.pk, parsed_date, parsed_date)
     security_object = (
-        OpsSecurityObject.objects.filter(pk=object_id).first()
-        if str(object_id).isdigit()
+        OpsSecurityObject.objects.filter(pk=_identifier(object_id)).first()
+        if _identifier(object_id) is not None
         else None
     )
     if security_object is None:
@@ -742,10 +866,16 @@ def create_shift(*, business_date, duty_type_code, object_id, sector_id,
 
 
 def _lock_shift(shift_id):
-    if not str(shift_id).isdigit():
+    key = _identifier(shift_id)
+    if key is None:
         raise _shift_not_found(shift_id)
+    day = OpsDutyShift.objects.filter(pk=key).values_list("business_date", flat=True).first()
+    if day is None:
+        raise _shift_not_found(shift_id)
+    # business_date is immutable through all service and API writers.
+    _lock_month(day.isoformat()[:7])
     shift = (
-        OpsDutyShift.objects.select_for_update().filter(pk=shift_id).first()
+        OpsDutyShift.objects.select_for_update().filter(pk=key).first()
     )
     if shift is None:
         raise _shift_not_found(shift_id)
@@ -753,8 +883,9 @@ def _lock_shift(shift_id):
 
 
 @transaction.atomic
-def cancel_shift(shift_id, *, reason, actor):
+def cancel_shift(shift_id, *, reason, actor, scope_actor=_TRUSTED_SCOPE):
     shift = _lock_shift(shift_id)
+    _require_row_access(scope_actor, shift, "duty.manage")
     reason = str(reason or "").strip()
     if reason == "":
         raise _validation({"reason": ["Укажите причину отмены."]})
@@ -785,8 +916,9 @@ def cancel_shift(shift_id, *, reason, actor):
     return shift
 
 
-def _transition(shift_id, from_state, to_state, message, **stamps):
+def _transition(shift_id, from_state, to_state, message, *, scope_actor=_TRUSTED_SCOPE, **stamps):
     shift = _lock_shift(shift_id)
+    _require_row_access(scope_actor, shift, "duty.manage")
     if shift.state_code != from_state:
         raise DomainError("INVALID_STAGE_TRANSITION", 422, message=message)
     shift.state_code = to_state
@@ -799,36 +931,37 @@ def _transition(shift_id, from_state, to_state, message, **stamps):
 
 
 @transaction.atomic
-def acknowledge_shift(shift_id):
+def acknowledge_shift(shift_id, *, scope_actor=_TRUSTED_SCOPE):
     return _transition(
         shift_id, "PLANNED", "ACKNOWLEDGED",
         "Ознакомление отмечается на запланированной смене.",
-        acknowledged_at=True,
+        scope_actor=scope_actor, acknowledged_at=True,
     )
 
 
 @transaction.atomic
-def clock_in_shift(shift_id):
+def clock_in_shift(shift_id, *, scope_actor=_TRUSTED_SCOPE):
     return _transition(
         shift_id, "ACKNOWLEDGED", "ACTIVE",
         "Заступить можно после ознакомления.",
-        actual_start=True,
+        scope_actor=scope_actor, actual_start=True,
     )
 
 
 @transaction.atomic
-def clock_out_shift(shift_id):
+def clock_out_shift(shift_id, *, scope_actor=_TRUSTED_SCOPE):
     return _transition(
         shift_id, "ACTIVE", "COMPLETED",
         "Завершить можно только смену на дежурстве.",
-        actual_end=True,
+        scope_actor=scope_actor, actual_end=True,
     )
 
 
 # ── Справочные выборки формы создания ───────────────────────────────────────
 
 
-def plan_objects(business_date):
+def plan_objects(business_date, *, scope_actor=_TRUSTED_SCOPE):
+    _require_object_catalog(scope_actor)
     results = []
     for security_object in OpsSecurityObject.objects.prefetch_related(
         "passport_versions"
@@ -884,7 +1017,7 @@ def plan_objects(business_date):
     return results
 
 
-def duty_candidates(business_date):
+def duty_candidates(business_date, *, scope_actor=_TRUSTED_SCOPE):
     from organization_management.apps.employees.models import Employee
 
     active = list(OpsDutyShift.objects.exclude(state_code="CANCELLED"))
@@ -893,6 +1026,9 @@ def duty_candidates(business_date):
         .select_related("rank", "staff_unit__division")
         .order_by("last_name", "first_name", "id")
     )
+    scope = _actor_scope(scope_actor, "duty.manage")
+    if scope is not None:
+        employees = employees.filter(staff_unit__division_id__in=scope)
     results = []
     for employee in employees:
         key = str(employee.pk)
@@ -927,19 +1063,15 @@ def duty_candidates(business_date):
     return results
 
 
-def shift_detail(shift_id):
-    if not str(shift_id).isdigit():
-        raise _shift_not_found(shift_id)
-    shift = OpsDutyShift.objects.filter(pk=shift_id).first()
-    if shift is None:
-        raise _shift_not_found(shift_id)
+def shift_detail(shift_id, *, scope_actor=_TRUSTED_SCOPE):
+    shift = require_shift_access(scope_actor, shift_id)
     policy = read_conflict_policy()
     duty_types = list(OpsDutyType.objects.all())
     day_conflicts = [
         c
         for c in detect_conflicts(
             list(
-                OpsDutyShift.objects.filter(employee_name=shift.employee_name)
+                visible_shifts(scope_actor).filter(employee_name=shift.employee_name)
             ),
             duty_types,
             policy,

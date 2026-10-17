@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Suspense } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { defaultPortalRoute } from "@/entities/portal-access";
+import { legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole, resolveWorkspaceView } from "@/features/forces-workspace/model/workspace";
 
 /**
  * Подписи сегментов маршрута. Ключ — сегмент URL как есть.
@@ -20,17 +24,17 @@ import { ChevronRight } from "lucide-react";
  * - `statuses` на странице — «Управление статусами», не «Статусы сотрудников».
  * - `changelog` H1 — «Журнал: сообщено → исправлено» со стрелкой, в крошке
  *   нечитаем; подпись сокращена до «Журнал».
- * - `reports` H1 в коде БЕЗ «ё» («Отчеты») — подпись повторяет посимвольно.
- * - `service-reports` H1 (Plane №985, [ОТЧ-ОМ-01]) переименован в «Отчёты по
- *   ОМ» — то же имя, что в сайдбаре и заголовке экрана; было «Отчёты
- *   службы», расходилось с меню.
+ * - `reports` и `service-reports` называют источник отчётов; общий вход
+ *   «Отчёты» в меню сохраняет оба существующих адреса.
  * - `export`/`evaluations`/`workspace` под `ratings/` — H1 расходится с
  *   именем сегмента сильнее, чем у соседей: «Выгрузка рейтинга»,
  *   «Итоговые оценки участников», «Оценивание участников» соответственно.
  */
 const SEGMENT_LABELS: Record<string, string> = {
   "security-ops": "Охранные мероприятия",
-  "command-center": "Командный центр",
+  "command-center": "Оперативный контроль",
+  "duty-dispatch": "Расстановка дежурств",
+  "duty-register": "Журнал дежурств",
   events: "Реестр ОМ",
   gvo: "Реестр ГВО",
   persons: "Охраняемые лица",
@@ -39,7 +43,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   ratings: "Оперативный рейтинг",
   analytics: "Аналитика службы",
   operations: "Аналитика мероприятий",
-  "service-reports": "Отчёты по ОМ",
+  "service-reports": "Дежурства и документы ОМ",
   history: "История отчётов",
   export: "Выгрузка рейтинга",
   evaluations: "Итоговые оценки участников",
@@ -52,9 +56,10 @@ const SEGMENT_LABELS: Record<string, string> = {
   profile: "Мой профиль",
   dashboard: "Обзор",
   employees: "Сбор сил на ОМ",
+  "service-employees": "Сотрудники подразделения",
   organization: "Структура организации",
   statuses: "Управление статусами",
-  reports: "Отчеты",
+  reports: "Расход и кадровые отчёты",
 };
 
 /**
@@ -77,22 +82,31 @@ const SEGMENT_LABELS: Record<string, string> = {
 const SEGMENTS_WITHOUT_PAGE = new Set(["security-ops"]);
 
 /** Бренд первым звеном крошек — как в прототипе: «Smart Жоспарлау / Экран».
- * Ведёт на командный центр, а не на «/»: корень редиректит, и звено-петля в
- * крошках читалась бы как сломанная ссылка. */
-const BRAND_CRUMB = {
-  href: "/security-ops/command-center/",
-  label: "Smart Жоспарлау",
-} as const;
-
+ * Ведёт прямо на доступный стартовый экран; до проверки прав перехода нет. */
 export function Breadcrumbs() {
+  return <Suspense fallback={null}><BreadcrumbsInner /></Suspense>;
+}
+
+function BreadcrumbsInner() {
   const pathname = usePathname();
+  const query = useSearchParams();
+  const access = useOpsPermissions();
+  const trusted = !access.isLoading && !access.error && access.permissions !== undefined;
+  const brandHref = trusted ? defaultPortalRoute(access.hasPermission, code => access.roles.some(role => role.code === code), access.permissions) : "";
+  const workspaceRole = resolveWorkspaceRole(access);
+  const workspaceView = workspaceRole === "responsible" || workspaceRole === "expense" || workspaceRole === "headquarters"
+    ? resolveWorkspaceView(workspaceRole, new URLSearchParams(query), access.hasPermission("status.view")) : null;
+  const employeesLabel = workspaceView === "desk" ? "Рабочий стол"
+    : workspaceView === "daily" ? "Ежедневный расход"
+    : workspaceView === "forces" ? workspaceRole === "headquarters" ? "Распределения" : "Сбор сил на ОМ"
+    : legacyWorkspaceTitle(legacyWorkspaceView(query.get("view")));
   const segments = pathname.split("/").filter(Boolean);
 
   const crumbs: { href: string; label: string; linked: boolean }[] = [];
   let href = "";
   for (const segment of segments) {
     href += `/${segment}`;
-    const label = SEGMENT_LABELS[segment];
+    const label = href === "/employees" ? employeesLabel : SEGMENT_LABELS[segment];
     if (label)
       crumbs.push({
         href: `${href}/`,
@@ -105,7 +119,7 @@ export function Breadcrumbs() {
 
   // Бренд не подменяет первый сегмент, а встаёт перед ним: «Охранные
   // мероприятия» — настоящий раздел со своим адресом, и терять его нельзя.
-  const trail = [{ ...BRAND_CRUMB, linked: true }, ...crumbs];
+  const trail = [{ href: brandHref, label: "Smart Жоспарлау", linked: trusted }, ...crumbs];
 
   return (
     <nav aria-label="Хлебные крошки" className="min-w-0">

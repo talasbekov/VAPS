@@ -25,7 +25,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   CalendarIcon,
@@ -39,18 +38,21 @@ import {
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
-import { removeDutyAssignment } from "@/entities/duty-assignment";
-import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateDutyViews } from "@/hooks/use-duty-assignments";
+import { useStaffUnitsSelection } from "@/hooks/use-staff-units-page";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { canManageStatusSelection } from "@/entities/status/access";
 import { employeeIdOfKey } from "../model/row-key";
 import {
-  EMPLOYEE_STATUS_CODE_BY_LABEL,
-  EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusColor,
-  getEmployeeStatusPaint,
 } from "@/lib/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
+import { formatIsoDate } from "@/shared/lib/date";
+import { statusServerDates } from "../model/status-action-date";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { toast } from "@/shared/hooks/use-toast";
+import { readMassStatusResult } from "../model/mass-status-result";
 import {
   EMPTY_MASS_STATUS_FORM,
   massStatusSchema,
@@ -60,12 +62,15 @@ import {
 interface MassStatusUpdateProps {
   selectedEmployees: string[];
   onSuccess?: () => void;
+  onRetainFailedSelection: (submitted: string[], remaining: string[]) => void;
 }
 
 export function MassStatusUpdate({
   selectedEmployees,
   onSuccess,
+  onRetainFailedSelection,
 }: MassStatusUpdateProps) {
+  const queryClient = useQueryClient();
   const {
     control,
     register,
@@ -82,6 +87,8 @@ export function MassStatusUpdate({
   // каждом сабмите сносит `root`, а поля они не называют и чинить их в форме
   // нечем. Поэтому отдельное состояние, живущее до следующего сабмита.
   const [failures, setFailures] = useState<string[]>([]);
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [partialSummary, setPartialSummary] = useState<string | null>(null);
 
   // Штатные единицы ВЫБРАННЫХ сотрудников, а не весь состав подразделения
   // (Plane №234): диалог ищет в ответе ровно те строки, которые человек
@@ -98,11 +105,32 @@ export function MassStatusUpdate({
         .filter((id): id is number => id !== null),
     [selectedEmployees]
   );
-  const { data } = useStaffUnitsPage(
-    { employeeIds: selectedEmployeeIds, pageSize: 200 },
-    selectedEmployeeIds.length > 0
+  const access = useOpsPermissions();
+  const serverDateQuery = useQuery({
+    queryKey: ["employee-status-update", "server-date"],
+    queryFn: () => apiClient.getTomorrowBlockState({}),
+    enabled: !access.isLoading && !access.error && access.hasPermission("status.manage"),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const serverDates = useMemo(() => {
+    if (!serverDateQuery.data) return null;
+    try { return statusServerDates(serverDateQuery.data.business_date); }
+    catch { return null; }
+  }, [serverDateQuery.data]);
+  const dateReady = serverDates !== null && serverDateQuery.isSuccess && !serverDateQuery.isFetching && !serverDateQuery.isError;
+  const dateFailed = serverDateQuery.isError || (serverDateQuery.isSuccess && serverDates === null);
+  const dateMessage = dateFailed
+    ? "Не удалось определить текущую дату. Повторите загрузку перед сохранением."
+    : "Уточняем текущую дату…";
+  const { data, isSuccess: selectionLoaded, isError: selectionFailed, isFetching: selectionFetching, refetch: reloadSelection } = useStaffUnitsSelection(
+    selectedEmployeeIds, access.hasPermission("status.manage"),
   );
-  const staffUnits = data?.staff_units || [];
+  const staffUnits = data || [];
+  const selectionEditable = selectionLoaded && !selectionFetching && !selectionFailed && canManageStatusSelection(access, selectedEmployees, staffUnits);
+  const selectionMessage = selectionFailed ? "Не удалось проверить выбранных сотрудников. Повторите загрузку перед изменением статусов." : !selectionLoaded || selectionFetching
+    ? "Проверяем выбранных сотрудников…"
+    : "Среди выбранных есть сотрудники, статусы которых вы не можете менять, или недоступные строки. Вернитесь в таблицу и оставьте только сотрудников своей области редактирования.";
 
   // 🔴 СПИСОК С СЕРВЕРА, А НЕ ИЗ КОПИИ В КОДЕ (Plane №354). Жалоба заказчика
   // дословно: «в админке добавил новый статус, там она не появилась» — это
@@ -116,6 +144,8 @@ export function MassStatusUpdate({
     types: catalogTypes,
     isLoading: statusTypesLoading,
     error: statusTypesError,
+    isFetching: statusTypesFetching,
+    retry: retryStatusTypes,
   } = useEmployeeStatusTypes();
   // 🔴 «УЧАСТИЕ В ОМ» В МАССОВОЙ ПРОСТАНОВКЕ НЕ ПРЕДЛАГАЕТСЯ (Plane №757).
   // Правила этого статуса живут в разделе ОМ: мероприятие обязательно и
@@ -134,32 +164,51 @@ export function MassStatusUpdate({
   const statusTypes = catalogTypes
     .filter((item) => !EVENT_PARTICIPATION_STATUS_CODES.has(item.code))
     .map((item) => ({
-      value: item.label,
+      value: item.code,
       label: item.label,
       color: item.color || getEmployeeStatusColor(item.code as never),
     }));
-  // Обратный перевод «подпись → код» строится ИЗ ТОГО ЖЕ ответа: статический
-  // словарь знает только тринадцать старых подписей и на заведённом в админке
-  // типе вернул бы undefined — форма отказала бы «Неверный тип статуса».
-  const codeByLabel = new Map(catalogTypes.map((item) => [item.label, item.code]));
-
   const status = watch("status");
+  const catalogReady = !statusTypesLoading && !statusTypesError && !statusTypesFetching && statusTypes.length > 0;
   const startDate = watch("startDate");
   const endDate = watch("endDate");
   const comment = watch("comment");
+  const inService = status === "in_service";
+  const periodReady = inService || Boolean(startDate && endDate && startDate <= endDate);
+  const periodReadiness = !status ? "Сначала выберите статус"
+    : inService ? "Сегодня, без даты окончания"
+    : !startDate && !endDate ? "Укажите даты начала и окончания"
+    : !startDate ? "Укажите дату начала"
+    : !endDate ? "Укажите дату окончания"
+    : startDate > endDate ? "Дата окончания раньше даты начала"
+    : "Период указан";
 
   const submit = async (values: MassStatusFormValues) => {
+    if (unconfirmed) return;
     setFailures([]);
+    setPartialSummary(null);
     // «В строю» — бессрочный статус по умолчанию, дат не требует. Берём от
     // ЗНАЧЕНИЙ сабмита, а не от подписки `watch`: сборка запроса читает только
     // `values`, и второй источник того же признака разошёлся бы.
     const submittedInService =
-      values.status === EMPLOYEE_STATUS_LABELS.in_service;
+      values.status === "in_service";
 
     // Выбор сотрудников живёт в таблице снаружи формы — это не её поле, но без
     // него обновлять нечего. Поэтому проверка есть, а место ей — в сводке.
     if (selectedEmployees.length === 0) {
       setError("root", { message: "Выберите сотрудников для обновления" });
+      return;
+    }
+    if (!selectionEditable) {
+      setError("root", { message: selectionMessage });
+      return;
+    }
+    if (!catalogReady) {
+      setError("root", { message: "Дождитесь загрузки типов статусов или повторите её. Черновик сохранён в форме." });
+      return;
+    }
+    if (!dateReady || !serverDates) {
+      setError("root", { message: dateMessage });
       return;
     }
 
@@ -211,12 +260,8 @@ export function MassStatusUpdate({
         return;
       }
 
-      // Преобразуем статус в формат API: сперва по справочнику сервера,
-      // и только потом по старому словарю — он остаётся как запасной путь на
-      // случай, если справочник не доехал (Plane №354).
-      const apiStatusType =
-        codeByLabel.get(values.status) ??
-        EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
+      // Подписи каталога могут совпадать или изменяться; в форме хранится код.
+      const apiStatusType = catalogTypes.find(item => item.code === values.status)?.code;
       if (!apiStatusType) {
         setError("root", { message: "Неверный тип статуса" });
         return;
@@ -230,7 +275,7 @@ export function MassStatusUpdate({
       // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
       // бессрочный статус начинается сегодня и не кончается.
       const startDateValue = submittedInService
-        ? formatDate(new Date())
+        ? serverDates.today
         : formatDate(values.startDate!);
 
       // Формируем массив статусов для отправки
@@ -254,42 +299,33 @@ export function MassStatusUpdate({
       // в теле (success/errors). Раньше ответ не читался вовсе — форма
       // рапортовала об успехе там, где не обновился никто, и снимала наряды
       // на основании этого рапорта.
-      const applied = Number(response?.updated?.statuses ?? 0);
-      // Сервер кладёт причины парами {поле: текст}. Показываем текст: JSON со
-      // скобками и кавычками читателю ничего не объясняет.
-      const serverFailures: string[] = Array.isArray(response?.errors)
-        ? response.errors.map((item: unknown) => {
-            if (typeof item === "string") return item;
-            if (item && typeof item === "object") {
-              const values = Object.values(item as Record<string, unknown>);
-              if (values.length > 0) return values.map(String).join(" ");
-            }
-            return JSON.stringify(item);
-          })
-        : [];
-
-      if (applied === 0) {
-        setFailures(
-          serverFailures.length > 0
-            ? serverFailures
-            : ["Не удалось обновить ни одного сотрудника."]
-        );
+      const result = readMassStatusResult(response, employeesWithIds.map(item => item.employeeId));
+      setFailures(result.messages);
+      if (result.kind === "unconfirmed") {
+        setUnconfirmed(true);
+        // Invalidation respects current enabled/permission gates; do not replay.
+        void queryClient.invalidateQueries({ queryKey: ["staff-units-page"] });
+        void queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
+        void invalidateDutyViews(queryClient);
         return;
       }
+      if (result.kind === "rejected") return;
+      const applied = result.applied!;
+      if (result.kind === "partial") {
+        const remaining = new Set(result.remainingEmployeeIds!);
+        const failedKeys = selectedEmployees.filter(key => {
+          const id = employeeIdOfKey(key);
+          return id !== null && remaining.has(id);
+        });
+        if (failedKeys.length !== remaining.size) { setUnconfirmed(true); return; }
+        onRetainFailedSelection([...selectedEmployees], failedKeys);
+        setPartialSummary(`Обновлено ${applied} из ${employeesWithIds.length}. Черновик сохранён для не обновившихся сотрудников.`);
+      } else {
+        reset(EMPTY_MASS_STATUS_FORM);
+      }
 
-      // Наряды снимаются ТОЛЬКО когда статус действительно записан: массовая
-      // форма не спрашивает объект и пост, поэтому даже массовое «На
-      // дежурстве» не может подтвердить прежний наряд — он говорил про другой
-      // период и другое место. Но снимать наряд под несостоявшееся обновление
-      // значит развести данные: человек остаётся на дежурстве, а из «Дежурных
-      // сил» объекта пропадает.
-      selectedEmployees.forEach((selectedId) =>
-        removeDutyAssignment(selectedId)
-      );
-
-      // Reset form
-      reset(EMPTY_MASS_STATUS_FORM);
-      setFailures(serverFailures);
+      // Re-read actual server results, including partial success.
+      void invalidateDutyViews(queryClient);
 
       // Вызываем callback для обновления данных
       if (onSuccess) {
@@ -299,7 +335,7 @@ export function MassStatusUpdate({
       // alert() блокирует вкладку и не читается скринридером как сообщение
       // приложения; тост в проекте уже есть и используется соседними экранами.
       toast(
-        serverFailures.length > 0
+        result.kind === "partial"
           ? {
               title: "Статус обновлён частично",
               description: `Обновлено ${applied} из ${employeesWithIds.length}; часть строк не обновлена.`,
@@ -319,6 +355,13 @@ export function MassStatusUpdate({
           ? error.message
           : "Произошла ошибка при обновлении статусов";
       setError("root", { message: errorMessage });
+      const status = (error as { status?: unknown } | null)?.status;
+      if (typeof status !== "number" || ![400, 401, 403, 404, 405, 409, 422].includes(status)) {
+        setUnconfirmed(true);
+        void queryClient.invalidateQueries({ queryKey: ["staff-units-page"] });
+        void queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
+        void invalidateDutyViews(queryClient);
+      }
     }
   };
 
@@ -360,6 +403,7 @@ export function MassStatusUpdate({
                       <Select value={input.value} onValueChange={input.onChange}>
                         <SelectTrigger
                           {...field}
+                          className="w-full"
                           ref={input.ref}
                           onBlur={input.onBlur}
                         >
@@ -371,7 +415,7 @@ export function MassStatusUpdate({
                             }
                           />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[min(20rem,var(--radix-select-content-available-height))]">
                           {/* Пустой список читается как поломка, поэтому три
                               состояния справочника названы словами (Plane
                               №354): едет, не доехал, пуст. */}
@@ -383,39 +427,15 @@ export function MassStatusUpdate({
                               {statusTypesLoading
                                 ? "Загружаем справочник статусов…"
                                 : statusTypesError
-                                  ? "Справочник статусов не загрузился. Обновите страницу."
+                                  ? "Справочник статусов не загрузился. Повторите загрузку ниже."
                                   : "Справочник типов статусов пуст — заведите тип в разделе «Система → Справочники»."}
                             </div>
                           )}
-                          {statusTypes.map((statusType) => {
-                            // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
-                            // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
-                            // в соседнем диалоге): inline-стиль Radix-пункта классами не
-                            // задать, но и знать про классы ему незачем.
-                            const colors = getEmployeeStatusPaint(
-                              statusType.value
-                            ).hex;
-
-                            return (
-                              <SelectItem
-                                key={statusType.value}
-                                value={statusType.value}
-                                style={{
-                                  backgroundColor: colors.bg,
-                                  color: colors.text,
-                                  ["--status-bg" as any]: colors.bg,
-                                  ["--status-text" as any]: colors.text,
-                                }}
-                                className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
-                              >
-                                <div className="flex items-center w-full">
-                                  <span className="font-medium">
-                                    {statusType.label}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
+                          {statusTypes.map((statusType) => (
+                            <SelectItem key={statusType.value} value={statusType.value}>
+                              {statusType.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     )}
@@ -424,10 +444,21 @@ export function MassStatusUpdate({
               </Field>
 
               {/* Date Range */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {statusTypesError && (
+                <div className="space-y-2 text-sm">
+                  <p role="alert">Типы статусов не загрузились. Черновик сохранён.</p>
+                  <Button type="button" variant="outline" className="h-auto min-h-9 whitespace-normal" disabled={statusTypesFetching || isSubmitting} onClick={() => void retryStatusTypes()}>
+                    Повторить загрузку типов статусов
+                  </Button>
+                </div>
+              )}
+              {statusTypesFetching && <p role="status" className="text-sm text-muted-foreground">Загружаем типы статусов…</p>}
+
+              {status && !inService && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field
                   name="startDate"
                   label="Дата начала"
+                  required
                   error={errors.startDate}
                 >
                   {(field) => (
@@ -469,6 +500,7 @@ export function MassStatusUpdate({
                 <Field
                   name="endDate"
                   label="Дата окончания"
+                  required
                   error={errors.endDate}
                 >
                   {(field) => (
@@ -506,7 +538,11 @@ export function MassStatusUpdate({
                     />
                   )}
                 </Field>
-              </div>
+              </div>}
+              {status && <p className="text-sm text-muted-foreground">
+                {inService ? serverDates ? `Этот статус будет действовать с ${formatIsoDate(serverDates.today)} без даты окончания.` : "Уточняем дату начала бессрочного статуса…"
+                  : "Период сохраняется по указанным датам. Будущие периоды сохраняются как запланированные."}
+              </p>}
 
               {/* Comment */}
               <Field name="comment" label="Комментарий" error={errors.comment}>
@@ -519,51 +555,6 @@ export function MassStatusUpdate({
                   />
                 )}
               </Field>
-
-              {/* Options */}
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <Controller
-                    control={control}
-                    name="notifyManagers"
-                    render={({ field: input }) => (
-                      <Checkbox
-                        id="notifyManagers"
-                        ref={input.ref}
-                        checked={input.value}
-                        onBlur={input.onBlur}
-                        onCheckedChange={(checked) =>
-                          input.onChange(checked === true)
-                        }
-                      />
-                    )}
-                  />
-                  <Label htmlFor="notifyManagers" className="text-sm">
-                    Уведомить руководителей подразделений
-                  </Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller
-                    control={control}
-                    name="scheduleUpdate"
-                    render={({ field: input }) => (
-                      <Checkbox
-                        id="scheduleUpdate"
-                        ref={input.ref}
-                        checked={input.value}
-                        onBlur={input.onBlur}
-                        onCheckedChange={(checked) =>
-                          input.onChange(checked === true)
-                        }
-                      />
-                    )}
-                  />
-                  <Label htmlFor="scheduleUpdate" className="text-sm">
-                    Запланировать автоматическое обновление
-                  </Label>
-                </div>
-              </div>
 
               {/* То, что не относится к конкретному полю: отказ сервера при
                   сохранении и причины непринятых строк. */}
@@ -584,14 +575,28 @@ export function MassStatusUpdate({
               )}
 
               {/* Submit Button */}
-              <div className="flex justify-end space-x-3">
-                <Button type="button" variant="outline">
+              {partialSummary && <p role="status" className="text-sm">{partialSummary}</p>}
+              {unconfirmed && <p role="alert" className="text-sm text-destructive">Результат не подтверждён. Проверьте статусы выбранных сотрудников в таблице перед новым изменением.</p>}
+              {!dateReady && (
+                <div role={dateFailed ? "alert" : "status"} className="space-y-2 text-sm text-muted-foreground">
+                  <p>{dateMessage}</p>
+                  {dateFailed && <Button type="button" variant="outline" disabled={serverDateQuery.isFetching} onClick={() => void serverDateQuery.refetch()}>Повторить загрузку даты</Button>}
+                </div>
+              )}
+              {selectedEmployees.length > 0 && !selectionEditable && (
+                <div role="status" className="space-y-2 text-sm text-muted-foreground">
+                  <p>{selectionMessage}</p>
+                  {selectionFailed && <Button type="button" variant="outline" disabled={selectionFetching} onClick={() => void reloadSelection()}>Повторить проверку</Button>}
+                </div>
+              )}
+              <div className="flex flex-wrap justify-end gap-3">
+                <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => { reset(EMPTY_MASS_STATUS_FORM); setFailures([]); setUnconfirmed(false); setPartialSummary(null); }}>
                   <X className="h-4 w-4 mr-2" />
-                  Отмена
+                  Очистить форму
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || selectedEmployees.length === 0}
+                  disabled={isSubmitting || unconfirmed || !selectionEditable || !dateReady || !catalogReady}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   {isSubmitting ? (
@@ -630,7 +635,9 @@ export function MassStatusUpdate({
             <div>
               <Label className="text-sm font-medium">Период действия:</Label>
               <div className="mt-1 text-sm">
-                {startDate && endDate ? (
+                {inService ? (
+                  serverDates ? `С ${formatIsoDate(serverDates.today)} · без даты окончания` : "Уточняем дату начала…"
+                ) : startDate && endDate ? (
                   `${format(startDate, "dd.MM.yyyy")} - ${format(
                     endDate,
                     "dd.MM.yyyy"
@@ -674,7 +681,11 @@ export function MassStatusUpdate({
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm">Статус выбран</span>
+              <span className="text-sm">{dateReady ? "Текущая дата подтверждена" : dateFailed ? "Текущая дата недоступна" : "Проверяем текущую дату"}</span>
+              {dateReady ? <CheckCircle aria-hidden="true" className="h-4 w-4 text-green-600" /> : <X aria-hidden="true" className="h-4 w-4 text-red-600" />}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">{status ? "Статус выбран" : "Выберите статус"}</span>
               {status ? (
                 <CheckCircle className="h-4 w-4 text-green-600" />
               ) : (
@@ -682,17 +693,17 @@ export function MassStatusUpdate({
               )}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm">Сотрудники выбраны</span>
-              {selectedEmployees.length > 0 ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-sm">{selectionEditable ? "Сотрудники проверены" : selectedEmployees.length > 0 ? "Проверка сотрудников не завершена" : "Выберите сотрудников"}</span>
+              {selectionEditable ? (
+                <CheckCircle aria-hidden="true" className="h-4 w-4 text-green-600" />
               ) : (
                 <X className="h-4 w-4 text-red-600" />
               )}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm">Даты корректны</span>
-              {!startDate || !endDate || startDate <= endDate ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-sm">{periodReadiness}</span>
+              {periodReady ? (
+                <CheckCircle aria-hidden="true" className="h-4 w-4 text-green-600" />
               ) : (
                 <X className="h-4 w-4 text-red-600" />
               )}

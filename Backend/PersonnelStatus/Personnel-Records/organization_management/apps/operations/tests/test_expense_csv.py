@@ -182,7 +182,7 @@ def test_the_data_row_carries_the_numbers(data):
 
 
 def test_the_totals_row_has_no_number_and_carries_the_label(data):
-    totals = rows_of(generate_expense_csv(data))[-1]
+    totals = next(row for row in rows_of(generate_expense_csv(data)) if len(row) > 1 and row[1] == TOTALS_LABEL)
 
     assert totals[0] == ""
     assert totals[1] == TOTALS_LABEL
@@ -195,16 +195,13 @@ def test_the_totals_row_has_no_number_and_carries_the_label(data):
 # ── Чего в машиночитаемой форме нет ──────────────────────────────────────
 
 
-def test_the_csv_carries_no_member_names(data):
-    """CSV — таблица чисел.
-
-    Ячейка с двадцатью фамилиями не откроется ни одним потребителем CSV так,
-    как он ожидает; поимённый состав живёт в документных формах.
-    """
+def test_the_csv_carries_personnel_in_a_separate_section(data):
+    """Numeric cells stay numeric; detail follows in one row per employee."""
     blob = generate_expense_csv(data).decode("utf-8-sig")
 
-    assert "Петров" not in blob
-    assert "Иванов" not in blob
+    assert "Петров Пётр" in blob
+    assert "Иванов Иван" in blob
+    assert "Место убытия" in blob
 
 
 def test_the_renderer_does_not_reorder_or_recount(data):

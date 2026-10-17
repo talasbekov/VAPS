@@ -16,17 +16,18 @@
 // этого поля: кнопка «назад», сброс фильтров, ссылка с параметром. Такое
 // изменение подхватывается в черновик, а НЕ фиксируется обратно — иначе два
 // эффекта начали бы толкать друг друга по кругу.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useDebouncedCommit(
   external: string,
   commit: (value: string) => void,
   delayMs = 350
-): [string, (value: string) => void] {
+): [string, (value: string) => void, () => void] {
   const [draft, setDraft] = useState(external);
   // Последнее значение, о котором фиксация уже знает: граница между «человек
   // ещё печатает» и «это пришло снаружи».
   const settled = useRef(external);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Колбэк держим в ref: вызывающие передают стрелку прямо в JSX, и в
   // зависимостях эффекта она пересоздавала бы таймер на каждом рендере —
   // фиксация не наступала бы вовсе, пока родитель перерисовывается.
@@ -42,11 +43,23 @@ export function useDebouncedCommit(
   useEffect(() => {
     if (draft === settled.current) return;
     const timer = setTimeout(() => {
+      timerRef.current = null;
       settled.current = draft;
       commitRef.current(draft);
     }, delayMs);
-    return () => clearTimeout(timer);
+    timerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (timerRef.current === timer) timerRef.current = null;
+    };
   }, [draft, delayMs]);
 
-  return [draft, setDraft];
+  const cancel = useCallback(() => {
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    settled.current = external;
+    setDraft(external);
+  }, [external]);
+
+  return [draft, setDraft, cancel];
 }

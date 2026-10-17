@@ -66,14 +66,14 @@ function AccessPermissionsScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasGlobalPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   const search = searchParams.get("search") ?? "";
   const selectedCode = searchParams.get("code");
-  const canManage = hasPermission(ACCESS_ADMIN_PERMISSION);
+  const canManage = hasGlobalPermission(ACCESS_ADMIN_PERMISSION);
 
-  const permissionsQuery = useAccessPermissions(search);
-  const catalogQuery = useAccessCatalog();
+  const permissionsQuery = useAccessPermissions(search, { enabled: canManage });
+  const catalogQuery = useAccessCatalog({ enabled: canManage });
   const [isCreating, setCreating] = useState(false);
 
   function updateParam(key: string, value: string): void {
@@ -90,7 +90,10 @@ function AccessPermissionsScreen() {
     updateParam("search", value)
   );
 
-  if (!permissionsLoading && !canManage) {
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Загрузка прав доступа…</p></DashboardLayout>;
+  }
+  if (!canManage) {
     return <OpsAccessDenied what="справочника прав" />;
   }
 
@@ -106,7 +109,7 @@ function AccessPermissionsScreen() {
         <PageHeader
           eyebrow="Настройки"
           title="Права"
-          description="Право — это то, что проверяют ручки системы. Здесь видно, какие функции открывает каждое право, и заводятся новые."
+          description="Права определяют доступ к разделам и действиям. Выберите право, чтобы увидеть, какие функции оно открывает."
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -126,8 +129,8 @@ function AccessPermissionsScreen() {
           </Button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Card>
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Card className="min-w-0">
             <CardHeader className="pb-2">
               <CardTitle className="text-[14px]">
                 Справочник прав
@@ -309,7 +312,7 @@ function PermissionDetails({
 
   if (permission === null) {
     return (
-      <Card>
+      <Card className="min-w-0">
         <CardContent className="p-9 text-center text-[13px] text-muted-foreground">
           Выберите право слева, чтобы увидеть, какие функции оно открывает.
         </CardContent>
@@ -318,10 +321,10 @@ function PermissionDetails({
   }
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="pb-2">
         <CardTitle className="text-[14px]">{permission.name}</CardTitle>
-        <p className="font-mono text-[12px] text-muted-foreground">
+        <p className="break-all font-mono text-[12px] text-muted-foreground">
           {permission.code}
         </p>
       </CardHeader>
@@ -354,8 +357,7 @@ function PermissionDetails({
             удалить строку справочника значило бы оставить закрытую ручку без
             объяснения, чем именно она закрыта. */}
         <p className="text-[11.5px] text-muted-foreground">
-          Отключённое право остаётся в справочнике: его код стоит в гейтах
-          ручек, и удалить его нельзя.
+          Отключение права не снимает доступ. Чтобы отозвать его, удалите право из роли или снимите назначение роли у пользователя.
         </p>
         {setActive.error !== null && (
           <p className="text-[12px] text-destructive">
@@ -365,7 +367,12 @@ function PermissionDetails({
 
         <div className="border-t pt-3">
           <h3 className="mb-2 text-[13px] font-semibold">Где применяется</h3>
-          {isCatalogLoading ? (
+          {permission.code === "status.workspace" ? (
+            <p className="text-[12.5px] text-muted-foreground">
+              Открывает экран «Статусы сотрудников» вместе с правом просмотра статусов.
+              Чтение данных и изменение статусов определяются отдельными правами и их областями.
+            </p>
+          ) : isCatalogLoading ? (
             <p className="text-[12.5px] text-muted-foreground">
               Загрузка каталога функций…
             </p>

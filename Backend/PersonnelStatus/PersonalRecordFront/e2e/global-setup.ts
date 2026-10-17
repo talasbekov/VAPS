@@ -15,6 +15,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FullConfig } from '@playwright/test'
 import { resolvePurgeTarget } from './purge-python'
+import { findBackendRoot } from './backend-layout'
 import { standVerdict } from './stand-alive'
 
 /** Отметка для уборки: предполётная отказала, проб не было вовсе (ревью №823).
@@ -25,7 +26,7 @@ import { standVerdict } from './stand-alive'
 export const PREFLIGHT_FAILED = 'STAND_PREFLIGHT_FAILED'
 const DATES_PER_WORKER = 256
 const MAX_FIXTURE_WORKERS = 64
-const CURRENT_BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
+const CURRENT_BACKEND_ROOT = findBackendRoot(path.resolve(__dirname, '..')) ?? ''
 const FIXTURE_DATE_COMMAND = path.join(
   CURRENT_BACKEND_ROOT,
   'organization_management/apps/operations/management/commands/reserve_e2e_fixture_dates.py',

@@ -270,4 +270,3 @@ def test_person_facts_print_as_key_equals_value_not_as_python_dicts():
     assert values["person1_data_1"] == "Группа крови = А (II) Rh +"
     assert values["person1_data_2"] == "Рост = 181 см"
     assert values["person1_data_3"] == "Строка старого образца"
-

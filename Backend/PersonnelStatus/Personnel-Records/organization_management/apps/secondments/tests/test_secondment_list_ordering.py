@@ -24,7 +24,8 @@ URL = "/api/secondments/secondment-requests/"
 @pytest.fixture
 def api():
     client = APIClient()
-    client.force_authenticate(get_user_model().objects.create_superuser(username="sec-order-admin"))
+    from organization_management.apps.operations.tests.test_bulk_status_api import client_for
+    client, _ = client_for("sec-order-reader", "SECONDMENT_READER", perms=("status.view",))
     return client
 
 

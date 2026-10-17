@@ -148,3 +148,61 @@ def test_the_statuses_screen_stays_on_the_own_directorate(tree):
     assert response.status_code == 200, response.data
     assert response.data["division"]["name"] == "Первое управление"
     assert response.data["summary"]["employees"] == 2
+
+
+# ── Обзор по департаменту ОДНИМ грантом (Plane №1201, 12.09.2026) ─────────
+#
+# Заказчик развернул систему в закрытой сети и завёл учётки руками — по одной
+# роли на человека. Второй грант `OVERVIEW_DEPARTMENT` руками никто не
+# воспроизвёл, и «Обзор» начальника управления схлопнулся до управления.
+# Теперь департаментский обзор ПРОИЗВОДИТСЯ из самой роли начальника
+# управления (`PermissionService.OVERVIEW_AT_DEPARTMENT_ROLES`): грант профиля
+# на управление сам даёт `OVERVIEW_DEPARTMENT` на его департамент. Явный второй
+# грант (как его ставит `seed_access_matrix`) продолжает работать — он просто
+# совпадает с производным.
+
+
+def line_head_of(tree, *, role_code):
+    """Начальник управления из каталога заказчика — ОДИН грант на управление."""
+    user = get_user_model().objects.create_user(username=f"line-{role_code.lower()}")
+    grant(user, role_code, ["status.view", "orgstructure.view"], tree["left"])
+    # Роль-добавка существует в каталоге (её заводит сид), но человеку НЕ
+    # выдана — ровно положение учётки, заведённой руками в закрытой сети.
+    overview_role, _ = OpsRole.objects.get_or_create(
+        code="OVERVIEW_DEPARTMENT", defaults={"name": "Обзор на уровне департамента"}
+    )
+    permission, _ = OpsPermission.objects.get_or_create(
+        code="orgstructure.view", defaults={"name": "orgstructure.view"}
+    )
+    OpsRolePermission.objects.get_or_create(
+        role_code=overview_role, permission_code=permission
+    )
+    return user
+
+
+@pytest.mark.parametrize("role_code", ["HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"])
+def test_the_line_head_role_alone_widens_the_overview_to_the_department(tree, role_code):
+    response = overview(line_head_of(tree, role_code=role_code))
+
+    assert response.status_code == 200, response.data
+    assert response.data["summary"]["staff_units_count"] == 3, (
+        "один грант профиля начальника управления обязан открыть «Обзор» на департамент"
+    )
+
+
+@pytest.mark.parametrize("role_code", ["HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"])
+def test_the_derived_overview_does_not_widen_the_statuses(tree, role_code):
+    user = line_head_of(tree, role_code=role_code)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get(
+        reverse("staffunit-directorate-management"),
+        {"page": 1, "page_size": 1, "with_summary": "true"},
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["division"]["name"] == "Первое управление"
+    assert response.data["summary"]["employees"] == 2, (
+        "производный обзор расширил статусы: должны остаться на управлении"
+    )

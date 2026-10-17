@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  // Local Windows previews use next start with existing dependencies. Windows
+  // can deny symlink creation while tracing standalone output from a junction.
+  output: process.env.NEXT_STANDALONE === "0" ? undefined : "standalone",
   // Каталог сборки — переопределяемый. `next build` в том же каталоге, где
   // работает `next dev`, перетирает общий `.next`: живой стенд начинает
   // отдавать 500 и HTML вместо JSON, а идущий по нему e2e-обход падает с
@@ -26,6 +28,9 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
+    // A 10 MiB file also needs multipart headers and metadata in the request.
+    // The API independently validates the file's 10 MiB limit.
+    middlewareClientMaxBodySize: "12mb",
     // Официальная мера против раздувания webpack в dev (Next 15+). ЗАМЕРЕНО на
     // этом проекте 25.08.2026: старт 1802 → 781 МБ, после трёх проходов по 15
     // маршрутам и HMR-правки 2904 → 2241 МБ. Цена — чуть более долгая
@@ -49,6 +54,11 @@ const nextConfig = {
       process.env.BACKEND_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
       "http://localhost:8100";
+    // Optional employee-photo service for deployments whose API server does
+    // not serve uploaded files. Other media and all API routes keep backendUrl.
+    const employeeMediaUrl = (
+      process.env.BACKEND_EMPLOYEE_MEDIA_URL?.trim() || backendUrl
+    ).replace(/\/+$/, "");
 
     console.log(
       "🔧 [Next.js Rewrites] Настройка прокси для бэкенда:",
@@ -59,6 +69,11 @@ const nextConfig = {
     );
 
     return [
+      // Specific allowlist comes before /media/*; file paths have no extra slash.
+      {
+        source: "/media/employees/photos/:path*",
+        destination: `${employeeMediaUrl}/media/employees/photos/:path*`,
+      },
       // Проксируем все /api/* запросы на бэкенд, КРОМЕ /api/auth/* (NextAuth роуты)
       // FIX: rewrites срезали завершающий слэш (`:path*` не несёт пустой
       // сегмент) — Django с APPEND_SLASH=False отвечал 404 на каждый прокси-

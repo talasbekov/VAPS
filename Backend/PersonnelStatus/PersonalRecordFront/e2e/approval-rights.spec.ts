@@ -49,13 +49,6 @@ async function apiToken(): Promise<string> {
   return ((await res.json()) as { access: string }).access
 }
 
-async function events(token: string): Promise<EventRow[]> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=100`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return ((await res.json()) as { results: EventRow[] }).results
-}
-
 /**
  * ОМ на «Согласовании» с ОТПРАВЛЕННЫМ маршрутом — тем же путём, что и проба
  * `approval-stage`: заводится от админа, посты из паспорта, каждый пост
@@ -113,11 +106,12 @@ async function prepareSentEvent(token: string): Promise<string> {
     }
   }
   await call('POST', `${base}/placement/complete/`)
-  await call('POST', `${base}/approval/route/`, {
-    name: 'Проба: согласующий',
-    unit: 'Второй департамент',
-    position: 'Начальник',
-  })
+  const candidates = await call('GET', `${base}/approval/candidates/`)
+  const approver = candidates.results.find(
+    (row: { username: string; userId: string }) => row.username === 'acc_dept_head_d2',
+  )
+  expect(approver, 'нужна действующая учётка согласующего с привязанным сотрудником').toBeDefined()
+  await call('POST', `${base}/approval/route/select/`, { approverUserId: approver.userId })
   await call('POST', `${base}/approval/send/`)
   // id СВОЕЙ фикстуры (Plane №853) — см. разбор у `sentEvent`.
   return String(created.id)
@@ -133,7 +127,12 @@ async function prepareSentEvent(token: string): Promise<string> {
 async function sentEvent(): Promise<EventRow | undefined> {
   const token = await apiToken()
   const id = await prepareSentEvent(token)
-  const target = (await events(token)).find((e) => e.id === id)
+  const response = await fetch(`${API}/api/ops/security-events/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(response.status, 'свой ОМ должен читаться напрямую, независимо от страницы реестра').toBe(200)
+  const target = await response.json() as EventRow
+  expect(String(target.id)).toBe(id)
   expect(target, `не удалось подготовить свой ОМ на «Согласовании» (${id})`).toBeDefined()
   expect(
     hasPending(target!),
@@ -204,7 +203,7 @@ test.describe(LIVE ? 'права согласования' : 'права сог�
 
     const approve = card.getByRole('button', { name: 'Согласовать', exact: true }).first()
     await expect(approve).toBeDisabled()
-    await expectReasonReads(page, approve, /утверждающий/)
+    await expectReasonReads(page, approve, /согласующий с правом подписи/)
     await page.screenshot({
       path: path.join(SHOTS, 'approval-rights-employee-d2.png'),
       fullPage: true,
@@ -220,9 +219,11 @@ test.describe(LIVE ? 'права согласования' : 'права сог�
     const card = page.getByRole('region', { name: 'Согласование расстановки' })
     await expect(card).toBeVisible()
 
-    const approve = card.getByRole('button', { name: 'Согласовать', exact: true }).first()
+    const ownRow = card.getByRole('row').filter({ has: page.getByText('учётка acc_dept_head_d2', { exact: true }) })
+    await expect(ownRow).toBeVisible()
+    const approve = ownRow.getByRole('button', { name: 'Согласовать', exact: true })
     await expect(approve).toBeEnabled()
-    await expect(card.getByRole('button', { name: 'Вернуть', exact: true }).first()).toBeEnabled()
+    await expect(ownRow.getByRole('button', { name: 'Вернуть', exact: true })).toBeEnabled()
     // Отправка и маршрут остаются у ведущего: подпись — не правка.
     await expect(card.getByRole('button', { name: 'Отправить на согласование' })).toBeDisabled()
     await page.screenshot({

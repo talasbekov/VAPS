@@ -36,6 +36,8 @@ export interface ServiceAssignment {
 export interface ServiceEmployee {
   id: number;
   full_name: string;
+  /** Relative media URL; optional while older server responses remain in cache. */
+  photo_url?: string | null;
   personnel_number: string;
   callsign: string;
   rank: string | null;

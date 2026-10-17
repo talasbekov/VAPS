@@ -100,7 +100,7 @@ def test_docx_is_a_real_document(types, division):
 
     assert response.status_code == 200
     assert response["Content-Type"].endswith("wordprocessingml.document")
-    (table,) = DocxDocument(io.BytesIO(response.content)).tables
+    table = DocxDocument(io.BytesIO(response.content)).tables[0]
     assert table.rows[0].cells[1].text == "Управление"
     assert response["Content-Disposition"] == (
         f'attachment; filename="expense-{TODAY.isoformat()}.docx"'

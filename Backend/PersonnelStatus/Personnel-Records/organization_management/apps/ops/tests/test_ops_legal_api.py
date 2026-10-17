@@ -63,6 +63,7 @@ def test_list_shape_ordering_and_string_ids():
     assert set(rows[0]) == {
         "id", "kind", "code", "title", "description",
         "revision", "status", "pages", "fileUrl",
+        "version", "file",
     }
     assert isinstance(rows[0]["id"], str)
     assert rows[0]["fileUrl"] is None

@@ -122,7 +122,7 @@ def test_an_old_snapshot_without_the_field_at_all_still_builds(catalog):
     assert printed_names(document(catalog, roster)) == ["Абрамов", "Яковлев"]
 
 
-def test_the_order_survives_the_truncation_of_a_long_cell(catalog):
+def test_the_order_is_preserved_for_every_person_in_a_long_cell(catalog):
     """Усечение режет ХВОСТ канонического порядка, а не случайных людей.
 
     Иначе в документе оставались бы двадцать произвольных фамилий, и «показаны
@@ -134,7 +134,8 @@ def test_the_order_survives_the_truncation_of_a_long_cell(catalog):
 
     # Старший по должности — с наибольшим i (уровень 100-i наименьший).
     assert printed[0].startswith("капитан Сотрудник25")
-    assert "ещё 5" in printed[-1]
+    assert len(printed) == 25
+    assert printed[-1].startswith("капитан Сотрудник01")
 
 
 def test_the_document_is_stable_when_the_snapshot_order_changes(catalog):

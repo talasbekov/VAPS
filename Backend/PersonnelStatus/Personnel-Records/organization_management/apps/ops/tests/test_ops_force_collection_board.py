@@ -12,6 +12,7 @@ import datetime as dt
 from unittest import mock
 
 import pytest
+from organization_management.apps.operations import clock
 
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_forces import OpsDepartmentRequest
@@ -93,6 +94,7 @@ def test_status_follows_the_spec(manager, hq):  # noqa: F811
     assert row["shortage"] == row["need"]
 
 
+@clock.override(dt.datetime(2026, 9, 25, tzinfo=dt.timezone.utc))
 def test_urgent_and_new_go_first(manager, hq):  # noqa: F811
     """«Срочно» — вверх, даже если по дате мероприятие позже (🔴 мутация:
     сортировка по одной дате роняет пробу)."""

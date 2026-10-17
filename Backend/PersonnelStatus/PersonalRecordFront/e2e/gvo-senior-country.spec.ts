@@ -29,7 +29,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-const SHOTS = path.join(__dirname, '..', '.shot-tmp-952')
+const SHOTS = process.env.SMOKE_RESULTS_DIR ? path.join(process.env.SMOKE_RESULTS_DIR, 'gvo-senior-country') : path.join(__dirname, '..', '.shot-tmp-952')
 const PROBE_PERSON = 'Проба-952 Лицо со страной (e2e)'
 const PROBE_COUNTRY = 'Черногория-952'
 const PROBE_POSITION = 'Президент пробы 952'

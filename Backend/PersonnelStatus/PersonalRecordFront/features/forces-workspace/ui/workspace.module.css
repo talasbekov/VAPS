@@ -31,3 +31,9 @@
 .detail { padding:22px; overflow-x:auto; }
 @media(max-width:1050px) { .processGrid { grid-template-columns:1fr; }.queueRow { grid-template-columns:90px minmax(0,1fr) auto; }.queueRow>div:nth-child(3) { grid-column:2; }.queueRow>.action { grid-column:3; grid-row:1 / span 2; } }
 @media(max-width:600px) { .titleRow { flex-direction:column; }.metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }.queueRow { grid-template-columns:1fr; }.queueRow>div:nth-child(3),.queueRow>.action { grid-column:auto; grid-row:auto; }.badge,.overdue { width:fit-content; }.processNext { align-items:flex-start; flex-direction:column; }.detail { padding:12px; }.nav a { padding:9px; } }
+/* «Назад на рабочий стол» (Plane №1199): тот же язык, что у `.action`, но без рамки — это возврат, а не действие процесса. */
+.back { display:inline-flex; align-items:center; gap:6px; min-height:40px; margin-bottom:8px; padding:6px 10px 6px 4px; color:#2e4c81; font-size:14px; font-weight:650; border-radius:8px; }
+.back:hover { background:#edf3ff; }
+.back:focus-visible { outline:3px solid #4776ce; outline-offset:2px; }
+:global(.dark) .back { color:#a9c3f0; }
+:global(.dark) .back:hover { background:#1b2a4d; }

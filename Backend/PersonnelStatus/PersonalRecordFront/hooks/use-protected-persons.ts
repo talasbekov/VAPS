@@ -4,6 +4,7 @@
 // «Наши / Иностранные», у него нет, а вкладка — фильтр на клиенте.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
+import { isReadAccessBlocked, readWithAccessCheck } from "@/lib/query-read-access";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   PROTECTED_PERSONS_PATH,
@@ -18,12 +19,16 @@ import type {
 } from "@/entities/protected-person";
 
 export function useProtectedPersons(options: { enabled?: boolean } = {}) {
-  return useQuery<ListProtectedPersonsResponse, OpsApiFailure>({
+  const client = useQueryClient();
+  const key = ["ops-protected-persons"] as const;
+  const query = useQuery<ListProtectedPersonsResponse, OpsApiFailure>({
     queryKey: ["ops-protected-persons"],
-    queryFn: () =>
-      opsApiClient.get<ListProtectedPersonsResponse>(PROTECTED_PERSONS_PATH),
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(client, queryKey, signal, () =>
+      opsApiClient.get<ListProtectedPersonsResponse>(PROTECTED_PERSONS_PATH)),
     enabled: options.enabled ?? true,
   });
+  const readAccessBlocked = isReadAccessBlocked(client, key);
+  return { ...query, data: readAccessBlocked ? undefined : query.data, readAccessBlocked };
 }
 
 /**
@@ -63,12 +68,29 @@ export function useUploadProtectedPersonPhoto() {
 }
 
 export function usePersonEventHistory(id: string | null) {
-  return useQuery<ListPersonHistoryResponse, OpsApiFailure>({
+  const client = useQueryClient();
+  const key = ["ops-person-history", id] as const;
+  const query = useQuery<ListPersonHistoryResponse, OpsApiFailure>({
     queryKey: ["ops-person-history", id],
-    queryFn: () =>
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(client, queryKey, signal, () =>
       opsApiClient.get<ListPersonHistoryResponse>(
         protectedPersonHistoryPath(id as string)
-      ),
+      )),
     enabled: id !== null,
+  });
+  const readAccessBlocked = isReadAccessBlocked(client, key);
+  return { ...query, data: readAccessBlocked ? undefined : query.data, readAccessBlocked };
+}
+
+/** Catalog edits also refresh every summary that reads profile values. */
+export function useUpdateProtectedPerson() {
+  const client = useQueryClient();
+  return useMutation<ProtectedPerson, OpsApiFailure, { id: string; values: CreateProtectedPersonRequest }>({
+    mutationFn: ({ id, values }) => opsApiClient.patch<ProtectedPerson>(`${PROTECTED_PERSONS_PATH}${encodeURIComponent(id)}/`, values),
+    onSuccess: () => {
+      for (const key of ["ops-protected-persons", "ops-gvo-summary", "ops-gvo-summaries"]) {
+        void client.invalidateQueries({ queryKey: [key] });
+      }
+    },
   });
 }

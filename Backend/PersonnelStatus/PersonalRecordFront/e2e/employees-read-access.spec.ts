@@ -36,8 +36,8 @@ async function signInAsOperator(page: Page): Promise<void> {
   const res = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: {
       csrfToken: csrf.csrfToken,
-      username: 'erda',
-      password: 'erda123',
+      username: process.env.OPERATOR_USERNAME ?? 'erda',
+      password: process.env.OPERATOR_PASSWORD ?? STAND_PASSWORD,
       json: 'true',
     },
   })

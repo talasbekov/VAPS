@@ -12,11 +12,12 @@ import { apiClient } from "@/lib/api";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function useBusinessDate(selected: string | undefined) {
+export function useBusinessDate(selected: string | undefined, enabled = true) {
   const defaultQuery = useQuery({
     queryKey: ["daily-expense-board", "default-business-date"],
     queryFn: () => apiClient.getTomorrowBlockState({}),
     staleTime: 5 * 60_000,
+    enabled,
   });
 
   const isOverridden = selected !== undefined && ISO_DATE.test(selected);
@@ -37,5 +38,8 @@ export function useBusinessDate(selected: string | undefined) {
     defaultDate: defaultQuery.data?.business_date ?? null,
     defaultBlocked,
     defaultLaggards,
+    dateError: !isOverridden && defaultQuery.isError,
+    retryDate: defaultQuery.refetch,
+    isRetryingDate: defaultQuery.isFetching,
   };
 }

@@ -850,37 +850,43 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
         },
       )
 
-      await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=pending-a`)
-      const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
-      const first = stage.locator('[data-slot="recon-check-item"]').first()
-      const picker = stage.getByLabel('Объект посещения')
-      await first.getByRole('button', { name: 'Норма' }).click()
-      await stage.getByRole('button', { name: 'Сохранить', exact: true }).click()
-      await saveStarted
+      try {
+        await signIn(page)
+        await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=pending-a`)
+        const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+        const first = stage.locator('[data-slot="recon-check-item"]').first()
+        const picker = stage.getByLabel('Объект посещения')
+        await first.getByRole('button', { name: 'Норма' }).click()
+        await stage.getByRole('button', { name: 'Сохранить', exact: true }).click()
+        await saveStarted
 
-      await picker.selectOption('pending-b')
-      await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
-      await first.getByRole('button', { name: 'Норма' }).click()
-      await expect(first).toHaveAttribute('data-state', 'NORMAL')
-      const responseDone = page.waitForResponse(
-        (response) =>
-          response.url().endsWith(`/api/ops/security-events/${target!.id}/recon/`) &&
-          response.request().method() === 'PATCH',
-      )
-      releaseSave()
-      await responseDone
-      await expect(
-        stage.getByRole('button', { name: 'Сохранить', exact: true }),
-      ).toBeVisible()
+        await picker.selectOption('pending-b')
+        await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
+        await first.getByRole('button', { name: 'Норма' }).click()
+        await expect(first).toHaveAttribute('data-state', 'NORMAL')
+        const responseDone = page.waitForResponse(
+          (response) =>
+            response.url().endsWith(`/api/ops/security-events/${target!.id}/recon/`) &&
+            response.request().method() === 'PATCH',
+        )
+        releaseSave()
+        await responseDone
+        await expect(
+          stage.getByRole('button', { name: 'Сохранить', exact: true }),
+        ).toBeVisible()
 
-      await expect(first).toHaveAttribute('data-state', 'NORMAL')
-      await picker.selectOption('pending-a')
-      await expect(page).toHaveURL(/visit=pending-a(?:&|$)/)
-      await expect(first).toHaveAttribute('data-state', 'NORMAL')
-      await picker.selectOption('pending-b')
-      await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
-      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+        await expect(first).toHaveAttribute('data-state', 'NORMAL')
+        await picker.selectOption('pending-a')
+        await expect(page).toHaveURL(/visit=pending-a(?:&|$)/)
+        await expect(first).toHaveAttribute('data-state', 'NORMAL')
+        await picker.selectOption('pending-b')
+        await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
+        await expect(first).toHaveAttribute('data-state', 'NORMAL')
+      } finally {
+        // Finish delayed handlers before Playwright closes the page.
+        releaseSave()
+        await page.unrouteAll({ behavior: 'wait' })
+      }
     })
   })
 })
@@ -945,7 +951,7 @@ async function prepareEvent(token: string): Promise<string> {
 async function createWithObject(token: string): Promise<EventRow> {
   return (await createOwnEvent(standCall(token), token, {
     name: 'Проба старта с рекогносцировки',
-    businessDate: '2026-08-25',
+    businessDate: uniqueBusinessDate(),
   })) as EventRow
 }
 
@@ -979,7 +985,7 @@ async function createRequestFixture(
   const created = await call('POST', '/api/ops/security-events/', {
     title: probeTitle('Проба запроса штабу'),
     objectId: object.id,
-    businessDate: '2026-08-25',
+    businessDate: uniqueBusinessDate(),
     kind: 'INTERNAL',
     chiefEmployeeId: (await call('GET', '/api/ops/personnel/?page_size=1')).results[0].id,
   })

@@ -15,6 +15,8 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+const OBJECT_RIGHT_REASON = 'Оценивать, фиксировать инциденты и закрывать объект могут ведущий ОМ или назначенный старший этого объекта.'
+const EVENT_RIGHT_REASON = 'Переводит этапы и закрывает мероприятие ведущий ОМ с правом управления мероприятием'
 
 interface Summary {
   rows: { assignmentId: string | null; score: number | null; replaced: boolean }[]
@@ -132,7 +134,8 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
   })
 
   /**
-   * Панель закрыта правом `event.manage` (Plane №644).
+   * Панель закрыта объектным правом: `event.manage` либо назначенный
+   * ведущий мероприятия / старший выбранного объекта (Plane №644, №1132).
    *
    * До правки читателю ОМ панель показывала «Оценки не загрузились — обновите
    * страницу» (это был 403, а не сбой сети), десять включённых кнопок шкалы в
@@ -202,14 +205,11 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     // Панель НЕ спрятана — конвенция раздела: недоступное выключается, а не
     // исчезает, иначе человек не знает, что этот блок вообще существует.
     //
-    // 🔴 ПИН ПОПРАВЛЕН ОСОЗНАННО (доводка №913 по ревью №825). Панель
-    // формулировала ту же причину своими словами, отдельно от общего блока
-    // `AccessHints` этапа — ровно «частокол формулировок», которому №913
-    // была посвящена. Текст теперь совпадает с канонической строкой права
-    // (`chain-access.ts`, та же, что стережёт RIGHT_REASON в пробе №777
-    // ниже), а не своим пересказом.
+    // Оценки относятся к выбранному объекту: назначенный старший может
+    // вести свой объект, не получая права закрыть мероприятие целиком.
+    // Поэтому здесь нужна объектная причина, а не общий event.manage.
     await expect(panel.locator('[data-slot="evaluation-locked"]')).toHaveText(
-      'Переводит этапы и закрывает мероприятие ведущий ОМ или штаб',
+      OBJECT_RIGHT_REASON,
     )
     await expect(panel.locator('[data-slot="evaluation-progress"]')).toHaveText(
       'Сводка закрыта правом',
@@ -244,10 +244,6 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
   test('причина отказа у кнопок закрытия видна, а не спрятана в title (Plane №777)', async ({
     page,
   }) => {
-    // Формулировка причины — ОДНОЙ константой на всю пробу: она же приходит
-    // из `chain-access.ts`, и правка текста там не должна требовать четырёх
-    // правок здесь.
-    const RIGHT_REASON = 'Переводит этапы и закрывает мероприятие ведущий ОМ или штаб'
     const token = await apiToken()
     const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
     const registry = (await (
@@ -289,21 +285,12 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     await expect(button).toBeVisible({ timeout: 15_000 })
     await expect(button, 'кнопка закрытия открыта тому, у кого нет права').toBeDisabled()
 
-    // 🔴 ПИН ПЕРЕПИСАН ОСОЗНАННО (Plane №913). Здесь стояли два своих слота —
-    // `close-visit-locked` и `close-event-locked`, — по одному у каждой
-    // кнопки. Панели рисуются на «Проведении» одновременно, право у них одно,
-    // и человек без права читал одну и ту же фразу ДВАЖДЫ: тот самый
-    // «частокол», ради которого в №801 появился общий блок `AccessHints`.
-    // Теперь причина сказана один раз блоком (`data-slot="access-note"`), а
-    // обе кнопки ссылаются на неё `aria-describedby`. Проба следует за этим и
-    // проверяет ровно то, что важно: строка ОДНА, и обе кнопки ведут к ней.
-    // Считается ЛЮБАЯ видимая строка с этим текстом, а не только слот общего
-    // блока: обёртка вне блока рисует свой слот (`right-hint`), и проба,
-    // привязанная к одному имени, на возврате повтора показала бы «0 строк»
-    // вместо «2» — краснела бы, но врала о причине. Проверено мутацией.
+    // У закрытия объекта и закрытия ОМ разные права. Объектная подпись
+    // относится к своей кнопке; общая причина event.manage по-прежнему
+    // должна быть напечатана один раз на этапе.
     const hints = page
       .locator('[data-slot="access-note"], [data-slot="right-hint"]')
-      .filter({ hasText: RIGHT_REASON })
+      .filter({ hasText: EVENT_RIGHT_REASON })
     await expect(
       hints,
       'причина отказа напечатана не один раз — экран снова частокол',
@@ -311,12 +298,22 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     await expect(
       hints.first(),
       'выключенная кнопка не объясняет, чьё это действие',
-    ).toHaveText(RIGHT_REASON)
+    ).toHaveText(EVENT_RIGHT_REASON)
+    await expect(hints).toBeVisible()
 
     // Связь кнопки с подписью — не украшение: у читалки другого пути к ней нет.
     const describedBy = await button.getAttribute('aria-describedby')
     expect(describedBy, 'кнопка не связана с подписью через aria-describedby').not.toBeNull()
-    await expect(page.locator(`#${describedBy}`)).toHaveText(RIGHT_REASON)
+    expect(describedBy, 'у кнопки пустая связь с подписью').not.toBe('')
+    const objectHint = page.locator(`[id=${JSON.stringify(describedBy)}]`)
+    await expect(objectHint, 'объектная подпись отсутствует или её ID повторяется').toHaveCount(1)
+    await expect(objectHint, 'причина объектного права скрыта').toBeVisible()
+    await expect(objectHint).toHaveText(OBJECT_RIGHT_REASON)
+    await expect(button).toHaveAccessibleDescription(OBJECT_RIGHT_REASON)
+    await expect(
+      button.locator('..').getByText(OBJECT_RIGHT_REASON, { exact: true }),
+      'причина отказа повторяется у кнопки закрытия объекта',
+    ).toHaveCount(1)
 
     expect(
       await button.getAttribute('title'),
@@ -340,13 +337,23 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
       eventDescribedBy,
       'кнопка закрытия мероприятия не связана с подписью через aria-describedby',
     ).not.toBeNull()
-    await expect(page.locator(`#${eventDescribedBy}`)).toHaveText(RIGHT_REASON)
-    // И это ТА ЖЕ САМАЯ строка, а не вторая с тем же текстом: иначе повтор
-    // вернулся бы незаметно — с виду проба осталась бы зелёной.
+    expect(eventDescribedBy, 'у кнопки закрытия мероприятия пустая связь с подписью').not.toBe('')
+    const eventHint = page.locator(`[id=${JSON.stringify(eventDescribedBy)}]`)
+    await expect(eventHint, 'общая подпись отсутствует или её ID повторяется').toHaveCount(1)
+    await expect(eventHint, 'причина общего права скрыта').toBeVisible()
+    await expect(eventHint).toHaveText(EVENT_RIGHT_REASON)
+    await expect(closeEvent).toHaveAccessibleDescription(EVENT_RIGHT_REASON)
+    expect(eventDescribedBy, 'кнопка закрытия ОМ не ссылается на единственную общую причину').toBe(await hints.getAttribute('id'))
+    const addJournal = page.getByRole('button', { name: 'Добавить запись', exact: true })
+    await expect(addJournal).toBeDisabled()
+    await expect(addJournal).toHaveAccessibleDescription(EVENT_RIGHT_REASON)
+    expect(await addJournal.getAttribute('aria-describedby')).toBe(eventDescribedBy)
+    // Разные причины требуют разных ARIA-подписей: старший объекта
+    // не получает права закрывать мероприятие целиком.
     expect(
       eventDescribedBy,
-      'кнопки ссылаются на разные подписи — причина напечатана дважды',
-    ).toBe(describedBy)
+      'разные права ошибочно ссылаются на одну подпись',
+    ).not.toBe(describedBy)
     expect(
       await closeEvent.getAttribute('title'),
       'title вернулся на кнопку закрытия мероприятия — подсказка снова мертва',

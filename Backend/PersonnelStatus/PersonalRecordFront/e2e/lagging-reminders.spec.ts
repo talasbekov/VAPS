@@ -21,9 +21,9 @@
  * перехватывает запросы приложения, и подмены ниже не применились бы.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
-import { execFileSync } from 'node:child_process'
-import path from 'node:path'
+import { runBackendCommand } from './backend-command'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -35,100 +35,59 @@ const SCREEN = '/security-ops/analytics'
  * не позаимствованная у стенда: отметка прочтения необратима (write-once
  * `read_at`, ручки «снять отметку» в API нет вовсе — см. отчёт задачи), и
  * брать «первое попавшееся непрочитанное» значило бы рисковать съесть боевую
- * запись на любом стенде, где очередь не пуста ровно нашей пробой. Сеется и
- * убирается штатным инструментом бэка (`seed_lagging_probe` +
- * `check_lagging_submissions` — это ФИКСТУРА, а не прод-код, докстринг
- * команды говорит об этом прямо), запущенным как подпроцесс из САМОГО теста —
- * не руками между прогонами.
+ * запись на любом стенде, где очередь не пуста ровно нашей пробой. Для этой
+ * проверки read_at создаётся одна собственная строка через ORM и удаляется
+ * только она. Существующие письма, настройки контроля и водяной знак не
+ * меняются. Эмиттер проверяется отдельно; предмет здесь — отметка прочтения.
  */
-const BACKEND_DIR = path.resolve(__dirname, '../../Personnel-Records')
-const PYTHON = path.join(BACKEND_DIR, '.venv/bin/python')
 const DJANGO_ENV = {
   DJANGO_SETTINGS_MODULE: 'organization_management.config.settings.local_postgres',
 }
-// Маркер СВОЕЙ записи: PROBE_DIVISION_ID сида
-// (organization_management/apps/operations/management/commands/seed_lagging_probe.py)
-// — синтетический id БЕЗ внешнего ключа на реальное подразделение (в дереве
+// Маркер СВОЕЙ записи — синтетический id БЕЗ внешнего ключа на подразделение (в дереве
 // светофора его нет и быть не может), поэтому строка ленты с этим маркером
 // заведомо не может быть боевым уведомлением.
 const FIXTURE_DIVISION_ID = 999_000_001
-const FIXTURE_RECIPIENT = '1' // = actor_id админа, под которым ходит вся спека
 
-function manage(args: string[], extraEnv: Record<string, string> = {}): string {
-  return execFileSync(PYTHON, ['manage.py', ...args], {
-    cwd: BACKEND_DIR,
-    env: { ...process.env, ...DJANGO_ENV, ...extraEnv },
-    // stderr — DEBUG SQL-лог раздела (шумный и не нужен); наружу берём
-    // только stdout, куда управляющие команды печатают свой результат.
-    stdio: ['ignore', 'pipe', 'ignore'],
-    encoding: 'utf-8',
-  })
+async function manage(args: string[], extraEnv: Record<string, string> = {}): Promise<string> {
+  return runBackendCommand(args, { env: { ...DJANGO_ENV, ...extraEnv } })
 }
 
-interface ControlSettingsSnapshot {
-  control_hour: string
-  required_division_ids: number[]
-  default_notify_recipient: string
-}
+interface OwnNotification { id: number; fixtureKey: string }
 
-/** Сеет ОДНУ непрочитанную запись с маркером `FIXTURE_DIVISION_ID` для
- * `FIXTURE_RECIPIENT`, снеся прежние уведомления этого получателя (так
- * устроен сам `seed_lagging_probe`) — после сеева в ленте получателя ровно
- * одна строка, наша. */
-function seedLaggingNotification(): void {
-  manage(['seed_lagging_probe', `--recipient=${FIXTURE_RECIPIENT}`])
-  manage(['check_lagging_submissions'])
-}
-
-/** Настройки контроля сдачи ДО сеева — `seed_lagging_probe` перезаписывает
- * `control_hour`/`required_division_ids`/`default_notify_recipient` синглтона
- * (нужно ему для ровно одного дня в плане), и это тот самый глобальный
- * стенд-эффект, который другие спеки (например `service-analytics.spec.ts`)
- * читают по умолчанию. Снимается ДО сеева, а не хардкодится — восстановлены
- * будут РОВНО те значения, что были. */
-function readControlSettings(): ControlSettingsSnapshot {
-  const script = [
-    'import json',
-    'from organization_management.apps.operations.models_submission import OpsSubmissionControlSettings',
-    's = OpsSubmissionControlSettings.objects.filter(singleton_key=1).first()',
-    'print("FIXTURE_JSON=" + json.dumps({',
-    '    "control_hour": s.control_hour.isoformat() if s else "17:00:00",',
-    '    "required_division_ids": s.required_division_ids if s else [],',
-    '    "default_notify_recipient": s.default_notify_recipient if s else "",',
-    '}))',
-  ].join('\n')
-  const out = manage(['shell', '-c', script])
-  const line = out.split('\n').find((entry) => entry.startsWith('FIXTURE_JSON='))
-  if (!line) {
-    throw new Error(`не удалось прочитать настройки контроля сдачи: ${out}`)
-  }
-  return JSON.parse(line.slice('FIXTURE_JSON='.length)) as ControlSettingsSnapshot
-}
-
-/** Возвращает синглтон настроек контроля сдачи РОВНО к снимку, снятому
- * `readControlSettings()` до сеева, — вызывается из `finally`, а не «по
- * памяти». */
-function writeControlSettings(snapshot: ControlSettingsSnapshot): void {
+async function seedLaggingNotification(): Promise<OwnNotification> {
+  const fixtureKey = `e2e-read-receipt:${randomUUID()}`
   const script = [
     'import json, os',
-    'from datetime import time',
-    'from organization_management.apps.operations.models_submission import OpsSubmissionControlSettings',
-    'data = json.loads(os.environ["FIXTURE_SNAPSHOT"])',
-    'h, m, sec = (int(part) for part in data["control_hour"].split(":"))',
-    'OpsSubmissionControlSettings.objects.update_or_create(',
-    '    singleton_key=1,',
-    '    defaults={',
-    '        "control_hour": time(h, m, sec),',
-    '        "required_division_ids": data["required_division_ids"],',
-    '        "default_notify_recipient": data["default_notify_recipient"],',
-    '    },',
+    'from django.contrib.auth import get_user_model',
+    'from organization_management.apps.operations.clock import Clock',
+    'from organization_management.apps.operations.models_notification import OpsNotification',
+    'actor = get_user_model().objects.get(username=os.environ["E2E_NOTIFICATION_USERNAME"], is_active=True)',
+    'row = OpsNotification.objects.create(',
+    '    recipient=str(actor.pk), kind=OpsNotification.Kind.SUBMISSION_LAGGING, business_date=Clock.today_local(),',
+    `    payload={"laggard_division_ids": [${FIXTURE_DIVISION_ID}]},`,
+    '    dedupe_key=os.environ["E2E_NOTIFICATION_KEY"], created_by="e2e-read-receipt",',
     ')',
-    'print("FIXTURE_RESTORED=ok")',
+    'print("FIXTURE_JSON=" + json.dumps({"id": row.pk, "fixtureKey": row.dedupe_key}))',
   ].join('\n')
-  const out = manage(['shell', '-c', script], { FIXTURE_SNAPSHOT: JSON.stringify(snapshot) })
-  if (!out.includes('FIXTURE_RESTORED=ok')) {
-    throw new Error(`не удалось восстановить настройки контроля сдачи: ${out}`)
-  }
+  const out = await manage(['shell', '-c', script], { E2E_NOTIFICATION_USERNAME: STAND_USERNAME, E2E_NOTIFICATION_KEY: fixtureKey })
+  const line = out.split('\n').find((entry) => entry.startsWith('FIXTURE_JSON='))
+  if (!line) throw new Error('не удалось создать собственную фикстуру напоминания')
+  const fixture = JSON.parse(line.slice('FIXTURE_JSON='.length)) as OwnNotification
+  if (!Number.isSafeInteger(fixture.id) || fixture.id <= 0 || fixture.fixtureKey !== fixtureKey) throw new Error('неверный ответ подготовки напоминания')
+  return fixture
+}
+
+async function removeOwnNotification(fixture: OwnNotification): Promise<void> {
+  const script = [
+    'import os',
+    'from organization_management.apps.operations.models_notification import OpsNotification',
+    'row = OpsNotification.objects.get(pk=os.environ["E2E_NOTIFICATION_ID"], dedupe_key=os.environ["E2E_NOTIFICATION_KEY"], created_by="e2e-read-receipt")',
+    `assert row.payload.get("laggard_division_ids") == [${FIXTURE_DIVISION_ID}]`,
+    'row.delete()',
+    'print("FIXTURE_REMOVED=ok")',
+  ].join('\n')
+  const out = await manage(['shell', '-c', script], { E2E_NOTIFICATION_ID: String(fixture.id), E2E_NOTIFICATION_KEY: fixture.fixtureKey })
+  if (!out.includes('FIXTURE_REMOVED=ok')) throw new Error('не удалось убрать собственную фикстуру напоминания')
 }
 
 interface TrafficNode {
@@ -161,6 +120,7 @@ async function apiToken(): Promise<string> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
+  expect(res.status, 'учётка напоминаний не получила токен').toBe(200)
   return ((await res.json()) as { access: string }).access
 }
 
@@ -168,15 +128,17 @@ async function get<T>(token: string, path: string): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
+  expect(res.status, `GET ${path} не принят`).toBe(200)
   return (await res.json()) as T
 }
 
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
-  await api.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
+  expect(response.status(), 'вход читателя напоминаний не принят').toBe(200)
 }
 
 function feed(page: Page) {
@@ -317,16 +279,12 @@ test.describe(LIVE ? 'напоминания об отставших' : 'нап�
   })
 
   test('отметка прочтения ставит read_at на СЕРВЕРЕ — не только гасит строку', async ({ page }) => {
-    // Настройки контроля сдачи — на память, до сеева: seed_lagging_probe их
-    // перезапишет, finally обязан вернуть РОВНО эти значения.
-    const originalSettings = readControlSettings()
+    const fixture = await seedLaggingNotification()
     try {
       // Тест сеет СВОЮ фикстуру, а не берёт первую попавшуюся непрочитанную
       // запись ленты: на любом стенде, где очередь не пуста ровно этой
       // пробой, «первое непрочитанное» рискует необратимо съесть боевое
       // уведомление (read_at — write-once, снять отметку в API нечем).
-      seedLaggingNotification()
-
       // ЖИВАЯ лента, без routeFeed: кнопка обязана бить по РЕАЛЬНОЙ строке —
       // перехват здесь доказал бы только разметку, не контракт ручки.
       const token = await apiToken()
@@ -338,7 +296,7 @@ test.describe(LIVE ? 'напоминания об отставших' : 'нап�
       // выше) — «первое непрочитанное» здесь намеренно не участвует.
       const target = before.results.find(
         (row) =>
-          row.read_at === null &&
+          row.id === fixture.id && row.read_at === null &&
           (row.payload.laggard_division_ids ?? []).includes(FIXTURE_DIVISION_ID),
       )
       expect(
@@ -394,9 +352,8 @@ test.describe(LIVE ? 'напоминания об отставших' : 'нап�
         `read_at уведомления pk=${target!.id} обязан выставиться сервером`,
       ).not.toBeNull()
     } finally {
-      // Восстановление — в коде, а не «руками между прогонами»: выполняется
-      // и на зелёном, и на красном пути (assert внутри try бросает раньше).
-      writeControlSettings(originalSettings)
+      // Cleanup matches only this row's captured PK and unique fixture key.
+      await removeOwnNotification(fixture)
     }
   })
 })

@@ -27,7 +27,7 @@
 // (со своим собственным внутренним запросом истории версий) монтируется
 // ТОЛЬКО при раскрытии строки — при схлопывании её место занимает лёгкий
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
@@ -48,9 +48,12 @@ import { StatCard } from "@/components/stat-card";
 import { cn } from "@/lib/utils";
 import { formatIsoDate, formatIsoDateTime, localIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
+import { effectiveDailyStatus } from "../model/directorate-summary";
+import { StatusDetails } from "./StatusDetails";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { canManageStatusInDivision } from "@/entities/status/access";
 import { useBusinessDate } from "../model/business-date";
 import {
   DAILY_DIVISIONS_PATH,
@@ -78,21 +81,19 @@ import { SummaryVersions } from "./SummaryVersions";
 // текст одного производного случая: статуса на дату нет, и человек в строю.
 // Печатать вместо него код `IN_SERVICE` значило бы показывать служебную
 // строку там, где справочник ещё едет.
-const IN_SERVICE_FALLBACK = "В строю";
 
 // Цвет пилюли НАМЕРЕННО один на все статусы: каталог несёт только код и
 // подпись, а колонка расхода (`report_column_code`, 11 колонок) и код статуса
 // раздела (17 кодов) — разные пространства кодов; придумывать между ними
 // раскраску значило бы завести локальный словарь, который и запрещён. Соседний
 // вид того же экрана («Сбор сил») пилюли КРАСИТ — у него в руках кадровые коды
-// `EMPLOYEE_STATUS_PAINT`, к кодам раздела не сводимые. Расхождение видно
-// глазом, поэтому оно названо вслух подписью под списком (`PAINT_GAP_LINE`), а
-// не оставлено читателю на догадку.
+// `EMPLOYEE_STATUS_PAINT`, к кодам раздела не сводимые. Это ограничение
+// реализации; пользовательская подпись объясняет дату и правило учёта.
 //
 // Однострочная константа, а не текст прямо в JSX: JSX схлопывает переносы
 // строк по своим правилам, а строка пинится e2e-пробой дословно.
-const PAINT_GAP_LINE =
-  "Статусы в списке показаны одной пилюлей без цвета: коды статусов раздела и колонки расхода — разные пространства кодов, и раскраска между ними была бы придуманным на фронте словарём; появится бэк-этапом.";
+const STATUS_DATE_HINT =
+  "Статусы показаны на выбранную дату. Сотрудник без отдельной отметки учитывается в строю.";
 
 /** Нет активного статуса на дату — не «нет данных», а derived «в строю»
  * (тот же инвариант, что в `use-forces-gathering.ts`).
@@ -100,17 +101,6 @@ const PAINT_GAP_LINE =
  * `labelOf` приходит из справочника: чистая функция от каталога, а не чтение
  * модульной константы — каталог живёт в запросе и на модульном уровне его
  * не достать. */
-function statusLabel(
-  code: string | null,
-  labelOf: (code: string) => string,
-  catalogReady: boolean
-): string {
-  if (code === null) {
-    return catalogReady ? labelOf("IN_SERVICE") : IN_SERVICE_FALLBACK;
-  }
-  return labelOf(code);
-}
-
 /** Строка управления для `DivisionGroup`. Экспортируется целиком — тот же
  * набор полей нужен «Сдаче дня» (Task 3/4): id, списочно, колонки расхода. */
 export interface DivisionRowVM {
@@ -136,13 +126,14 @@ export interface DivisionRowVM {
 interface DailyDivisionRow {
   id: string;
   name: string;
+  division_type?: string | null;
   ancestors?: string[];
   can_submit?: boolean;
   last_submitted_at?: string | null;
 }
 
 interface DailyEmployeesResponse {
-  results: { id: string; full_name: string; rank_code: string }[];
+  results: { id: string; full_name: string; rank_code: string; division_id?: number | string | null }[];
 }
 
 const SKELETON_ROWS = 3;
@@ -244,6 +235,7 @@ interface DivisionGroupProps {
   open: boolean;
   onToggle: () => void;
   submissionsSummary: DivisionSubmissionSummary;
+  contextReady: boolean;
 }
 
 function DivisionGroup({
@@ -253,7 +245,10 @@ function DivisionGroup({
   open: openRequested,
   onToggle,
   submissionsSummary,
+  contextReady,
 }: DivisionGroupProps) {
+  const access = useOpsPermissions();
+  const savingRef = useRef(false);
   // ПРАВИЛО СОСТОЯНИЯ, а не права (Plane №295). Сводящему за департамент
   // список НЕсданного управления не раскрывается: пока день не сдан, список —
   // черновик, и считать по нему расход значит считать по незаконченным
@@ -286,6 +281,11 @@ function DivisionGroup({
   // нет вовсе (запрос ещё не отправлялся, показывать нечего).
   const [everOpened, setEverOpened] = useState(open);
   if (open && !everOpened) setEverOpened(true);
+  // A read retry can temporarily make a submitted unit non-expandable for
+  // a corrector. Preserve that existing draft while hiding and locking it;
+  // a deliberate collapse or a confirmed missing submission still closes it.
+  const keepSubmissionPanel = open || (openRequested && everOpened &&
+    (submissionsSummary.isPending || submissionsSummary.isError));
 
   // Ключ НЕ "daily-employees" (тот занят `use-forces-gathering.ts`: тот хук
   // грузит людей по всем управлениям СРАЗУ и БЕЗУСЛОВНО, при любом виде
@@ -293,10 +293,10 @@ function DivisionGroup({
   // чужой уже тёплый кэш — раскрытие строки не делало бы запроса вовсе, и
   // фильтр `division_id` было бы нечем проверить.
   const employees = useQuery<DailyEmployeesResponse>({
-    queryKey: ["daily-expense-board", "employees", row.id],
+    queryKey: ["daily-expense-board", "employees", row.id, businessDate],
     queryFn: () =>
       opsApiClient.get<DailyEmployeesResponse>(
-        `${DAILY_EMPLOYEES_PATH}?division_id=${row.id}`
+        `${DAILY_EMPLOYEES_PATH}?division_id=${row.id}&business_date=${businessDate}`
       ),
     enabled: open,
     staleTime: 5 * 60 * 1000,
@@ -307,10 +307,6 @@ function DivisionGroup({
     enabled: open,
   });
 
-  const statusByEmployee = new Map<number, string>();
-  for (const entry of statuses.data ?? []) {
-    statusByEmployee.set(entry.employee_id, entry.status_type_code);
-  }
 
   // Справочник типов — общий запрос на весь экран (ключ `ops-status-types`
   // один): раскрытые управления читают уже прогретый кэш, а не ходят за
@@ -325,9 +321,22 @@ function DivisionGroup({
   );
   const createStatus = useCreateOpsStatus();
 
-  const isPending = employees.isPending || statuses.isPending;
-  const isError = employees.isError || statuses.isError;
+  const isPending = employees.isPending || statuses.isPending || catalog.isLoading;
+  const isError = employees.isError || statuses.isError || catalog.isError;
   const people = employees.data?.results ?? [];
+  const canEditPerson = (person: DailyEmployeesResponse["results"][number] | undefined) => {
+    const divisionId = Number(person?.division_id);
+    return person !== undefined && Number.isSafeInteger(divisionId) && divisionId > 0 &&
+      contextReady && employees.isSuccess && !employees.isFetching && !access.isLoading && !access.error &&
+      canManageStatusInDivision(access, divisionId);
+  };
+  const selectedPerson = people.find(person => person.id === statusFor?.id);
+  const canSubmitStatus = canEditPerson(selectedPerson);
+  const statusByEmployee = new Map<number, OpsEmployeeStatusRow | null | undefined>();
+  for (const person of people) {
+    try { statusByEmployee.set(Number(person.id), effectiveDailyStatus((statuses.data ?? []).filter(entry => entry.employee_id === Number(person.id)), businessDate, catalog.all)); }
+    catch { statusByEmployee.set(Number(person.id), undefined); }
+  }
 
   const nonZeroColumns = Object.entries(row.columns).filter(([, count]) => count > 0);
 
@@ -407,7 +416,8 @@ function DivisionGroup({
           Компонент панели НЕ переписан: бейдж «День сдан: vN · …» и кнопка
           «Исправить сдачу» внутри неё — её собственная восстановленная логика. */}
       <div className="border-t px-3 py-2 text-sm">
-        {open ? (
+        {keepSubmissionPanel && (
+          <div hidden={!open}>
           <DaySubmissionPanel
             key={`${row.id}-${businessDate}`}
             divisionId={String(row.id)}
@@ -418,10 +428,12 @@ function DivisionGroup({
             localDrift={[]}
             submission={submissionsSummary.submission}
             submissions={submissionsSummary.submissions}
-            isLoading={submissionsSummary.isPending}
+            isLoading={!open || !contextReady || submissionsSummary.isPending}
             isError={submissionsSummary.isError}
           />
-        ) : (
+          </div>
+        )}
+        {!open && (
           <CollapsedSubmissionBadge
             summary={submissionsSummary}
             row={row}
@@ -458,7 +470,7 @@ function DivisionGroup({
               {!isPending && !isError && people.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="whitespace-normal text-muted-foreground">
-                    людей в срезе нет
+                    На выбранную дату сотрудников нет
                   </TableCell>
                 </TableRow>
               )}
@@ -474,18 +486,14 @@ function DivisionGroup({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">
-                          {statusLabel(
-                            statusByEmployee.get(Number(person.id)) ?? null,
-                            catalog.labelOf,
-                            !catalog.isLoading
-                          )}
+                          <StatusDetails status={statusByEmployee.get(Number(person.id))} labelOf={catalog.labelOf} />
                         </Badge>
                         {/* ПРОСТАНОВКА СТАТУСА (Plane №274, Ш-4). Экрана для
                             этого не было вовсе: доска только показывала
                             статусы, и первый шаг суточного расхода
                             («начальник управления каждому проставляет
                             статус») проходился вызовами API. */}
-                        <Button
+                        {canEditPerson(person) && <Button
                           type="button"
                           variant="outline"
                           size="sm"
@@ -497,7 +505,7 @@ function DivisionGroup({
                           }
                         >
                           Проставить
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -511,6 +519,7 @@ function DivisionGroup({
         <SetStatusDialog
           open
           onOpenChange={(next) => {
+            if (savingRef.current) return;
             if (!next) {
               setStatusFor(null);
               createStatus.reset();
@@ -520,19 +529,29 @@ function DivisionGroup({
           employeeName={statusFor.name}
           businessDate={businessDate}
           isSaving={createStatus.isPending}
+          canSubmit={canSubmitStatus}
+          permissionMessage="Нет подтверждённого права изменять статус этого сотрудника. Выбранный статус сохранён в форме."
           failure={createStatus.error?.message ?? null}
           onSubmit={async ({ statusCode, participations }) => {
-            await createStatus.mutateAsync({
-              employee_id: Number(statusFor.id),
-              status_type_code: statusCode,
-              date_start: businessDate,
-              // Полуинтервал бэка [начало, конец): статус на ОДИН день
-              // закрывается СЛЕДУЮЩИМ днём, иначе строка пуста и статуса нет
-              // ни одного дня.
-              date_end: addOneDay(businessDate),
-              participations,
-            });
-            setStatusFor(null);
+            if (savingRef.current || !canSubmitStatus) return;
+            savingRef.current = true;
+            try {
+              await createStatus.mutateAsync({
+                employee_id: Number(statusFor.id),
+                status_type_code: statusCode,
+                date_start: businessDate,
+                // Полуинтервал бэка [начало, конец): статус на ОДИН день
+                // закрывается СЛЕДУЮЩИМ днём, иначе строка пуста и статуса нет
+                // ни одного дня.
+                date_end: addOneDay(businessDate),
+                participations,
+              });
+              setStatusFor(null);
+            } catch {
+              // The mutation's error is displayed in the retained dialog.
+            } finally {
+              savingRef.current = false;
+            }
           }}
         />
       )}
@@ -698,7 +717,7 @@ export function DailyExpenseBoard({
   // без права страница била в закрытые ручки и печатала 403 как «Ежедневный
   // расход не ответил», то есть винила сервер в нехватке права. `useOpsPermissions`
   // работает и вне `/security-ops` (запрос уходит безусловно, `enabled: true`).
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, globalPermissions, roles, isLoading: permissionsLoading } = useOpsPermissions();
   const canRead = hasPermission("status.view");
   const gateAllowed = !permissionsLoading && canRead;
   // ЕДИНАЯ деловая дата борда (Plane №988): раньше `businessDate` ниже читался
@@ -712,7 +731,10 @@ export function DailyExpenseBoard({
     isOverridden: dateOverridden,
     defaultBlocked,
     defaultLaggards,
-  } = useBusinessDate(businessDateOverride);
+    dateError,
+    retryDate,
+    isRetryingDate,
+  } = useBusinessDate(businessDateOverride, gateAllowed);
   const strength = useStrengthReport(
     gateAllowed && !dateResolving,
     resolvedBusinessDate ?? undefined
@@ -739,6 +761,26 @@ export function DailyExpenseBoard({
     }
     return map;
   }, [divisionsQuery.data]);
+  // The traffic-light tree re-roots a scoped department. Its children are
+  // directorates, so tree depth alone cannot identify the summary recipient.
+  const summaryScopes = useMemo(() => {
+    const departments = [...metaByDivision.values()]
+      .filter((node) => node.division_type === "department")
+      .map((node) => ({ id: Number(node.id), name: node.name }));
+    // A scoped tree may start at a directorate. Its children are still
+    // divisions, never departments. Use the explicit server type for all actors.
+    if (globalPermissions?.has("*")) return undefined;
+    const relevant = roles.filter((role) => ["DEPARTMENT_EXPENSE_OFFICER", "FORCES_GATHERING_OFFICER"].includes(role.code));
+    if (relevant.length === 0) return departments;
+    if (relevant.some((role) => role.scope_division_id === null)) return undefined;
+    const scopes = new Map<number, { id: number; name: string }>();
+    for (const role of relevant) {
+      const id = role.scope_division_id as number;
+      const node = metaByDivision.get(String(id));
+      if (node?.division_type === "department") scopes.set(id, { id, name: node.name });
+    }
+    return [...scopes.values()];
+  }, [roles, metaByDivision, globalPermissions]);
   // Место управления в ОЧЕРЕДИ — позиция в списке подразделений, который
   // сервер отдаёт обходом дерева (Plane №296). Расход (`strength-report`)
   // сортирует свои строки ПО ИМЕНИ, и его контракт трогать нельзя — его
@@ -789,6 +831,13 @@ export function DailyExpenseBoard({
   // сужение non-null через замыкание `.map`, обращённое к полю объекта.
   const data = strength.data;
   const totals = data?.totals;
+  // Cached values keep the same forms mounted during a read retry. They
+  // never authorize writes until the date, figures and scope are current.
+  const dateReady = resolvedBusinessDate !== null && !dateError &&
+    (dateOverridden || !isRetryingDate);
+  const contextReady = dateReady && strength.isSuccess && !strength.isFetching &&
+    data?.business_date === resolvedBusinessDate &&
+    divisionsQuery.isSuccess && !divisionsQuery.isFetching;
 
   // Сводка сдачи дня — «Сдано N из M управлений» + кто не сдал, и state для
   // КАЖДОГО управления (бейдж/панель в `DivisionGroup`) — из ОДНОГО списочного
@@ -861,7 +910,7 @@ export function DailyExpenseBoard({
     });
   }, [data, orderByDivision]);
 
-  const listIsPending = dateValid && submissionsListQuery.isPending;
+  const listIsPending = dateValid && (submissionsListQuery.isPending || submissionsListQuery.isFetching);
   const listIsError = submissionsListQuery.isError;
 
   const submissionsByDivision = new Map<string, DaySubmission[]>();
@@ -876,7 +925,9 @@ export function DailyExpenseBoard({
     return {
       isPending: listIsPending,
       isError: listIsError,
-      submission: listIsPending || listIsError ? null : currentSubmission(divisionSubs),
+      // Preserve the draft's identity during a read retry. Separate loading
+      // and error flags block both display and writes until it succeeds.
+      submission: currentSubmission(divisionSubs),
       submissions: divisionSubs,
     };
   }
@@ -888,14 +939,20 @@ export function DailyExpenseBoard({
   // Считается по УПОРЯДОЧЕННЫМ строкам (Plane №296): перечисление «не сдали»
   // читается вместе со списком ниже, и две разные очереди в одном экране
   // заставляли бы искать управление дважды.
+  const hasDivisionTypes = [...metaByDivision.values()].some((row) => Boolean(row.division_type));
+  const submissionUnits = hasDivisionTypes
+    ? [...metaByDivision.values()].filter((row) => row.division_type === "directorate")
+    : orderedRows.map((row) => ({ id: String(row.division_id), name: row.name }));
   const submittedRows =
     listIsPending || listIsError
       ? []
-      : orderedRows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) !== null);
+      : submissionUnits.filter((row) => currentSubmission(submissionsByDivision.get(String(row.id)) ?? []) !== null);
   const notSubmittedRows =
     listIsPending || listIsError
       ? []
-      : orderedRows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) === null);
+      : submissionUnits
+          .filter((row) => currentSubmission(submissionsByDivision.get(String(row.id)) ?? []) === null)
+          .map((row) => ({ division_id: Number(row.id), name: row.name }));
 
   // Права ещё грузятся / права нет — честная строка вместо кожи борда, как у
   // соседних экранов той же ручки («Светофор сдачи закрыт правом „Статусы:
@@ -934,7 +991,7 @@ export function DailyExpenseBoard({
                 ? format(parseIsoDate(resolvedBusinessDate) ?? new Date(), "dd MMMM yyyy", {
                     locale: ru,
                   })
-                : "Загрузка даты…"}
+                : dateError ? "Дата недоступна" : "Загрузка даты…"}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
@@ -970,7 +1027,16 @@ export function DailyExpenseBoard({
         </p>
       )}
 
-      {strength.isPending && (
+      {dateError && (
+        <div role="alert" className="text-sm text-destructive-ink">
+          <p>Не удалось загрузить дату расхода.</p>
+          <Button variant="outline" className="mt-2" disabled={isRetryingDate} onClick={() => void retryDate()}>
+            {isRetryingDate ? "Загрузка даты…" : "Повторить загрузку даты"}
+          </Button>
+        </div>
+      )}
+
+      {strength.isPending && !dateError && (
         <div className="space-y-2">
           {Array.from({ length: SKELETON_ROWS }, (_, index) => (
             <div
@@ -984,8 +1050,13 @@ export function DailyExpenseBoard({
 
       {strength.isError && (
         <p className="text-sm text-muted-foreground">
-          Ежедневный расход не ответил — управления показать нечем.
+          {data
+            ? "Не удалось обновить расход. Показаны последние загруженные данные; изменения недоступны."
+            : "Ежедневный расход не ответил — управления показать нечем."}
         </p>
+      )}
+      {data && !contextReady && !dateError && !strength.isError && !divisionsQuery.isError && (
+        <p role="status" className="text-sm text-muted-foreground">Обновляем дату, расход и доступные подразделения. Изменения временно недоступны.</p>
       )}
 
       {/* Сводная строка департамента: знаменатели РАСХОДА, те же плитки, что
@@ -1051,7 +1122,7 @@ export function DailyExpenseBoard({
           {!listIsPending && !listIsError && (
             <>
               <p className="font-medium">
-                Сдано {submittedRows.length} из {data.rows.length} управлений на{" "}
+                Сдано {submittedRows.length} из {submissionUnits.length} {hasDivisionTypes ? "управлений" : "подразделений"} на{" "}
                 {formatIsoDate(data.business_date)}
               </p>
               {notSubmittedRows.length > 0 && (
@@ -1072,8 +1143,10 @@ export function DailyExpenseBoard({
           департамент целиком), и читателю естественно сравнить их одним
           взглядом. «Руководство» и построчный список ниже — другая история
           («кто сейчас на месте»), поэтому отделены. */}
-      {data && (
+      {data && divisionsQuery.data && (
         <SummaryVersions
+          contextReady={contextReady}
+          scopeCandidates={summaryScopes}
           businessDate={data.business_date}
           boardDivisionIds={data.rows.map((row) => row.division_id)}
           // Подписи подразделений берутся из УЖЕ загруженного списка борда:
@@ -1081,6 +1154,12 @@ export function DailyExpenseBoard({
           // имена (Plane №297).
           labelOfDivision={labelOfDivision}
         />
+      )}
+      {data && divisionsQuery.isPending && (
+        <p className="text-muted-foreground text-sm">Загрузка структуры для свода…</p>
+      )}
+      {data && divisionsQuery.isError && (
+        <p role="alert" className="text-destructive-ink text-sm">Не удалось загрузить структуру для свода. Повторите обновление.</p>
       )}
 
       {/* «Руководство департамента» — ПЕРВЫМ среди рядовых управлений,
@@ -1114,6 +1193,7 @@ export function DailyExpenseBoard({
                 open={openIds.has(row.division_id)}
                 onToggle={() => toggle(row.division_id)}
                 submissionsSummary={summaryFor(row.division_id)}
+                contextReady={contextReady}
               />
             );
           })}
@@ -1124,7 +1204,7 @@ export function DailyExpenseBoard({
           вкладок паспорта объекта. Расхождение видно глазом (соседний вид
           «Сбор сил» на этом же экране красит пилюли статусов), и молчать о
           нём значило бы оставить читателю догадку «почему тут серо». */}
-      {data && <p className="text-xs text-muted-foreground">{PAINT_GAP_LINE}</p>}
+      {data && <p className="text-xs text-muted-foreground">{STATUS_DATE_HINT}</p>}
     </section>
   );
 }

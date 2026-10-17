@@ -297,17 +297,22 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
         (b.cells.find((c) => c.code === 'ASSIGNED')?.value ?? 0) -
         (a.cells.find((c) => c.code === 'ASSIGNED')?.value ?? 0),
     )
-    expect(
-      byAssigned[0].safeLabel,
-      'порядок сервера уже совпал с сортировкой по назначенным — проба вакуумна',
-    ).not.toBe(serverFirst)
+    const assignedValues = rows.map(row => row.cells.find(cell => cell.code === 'ASSIGNED')?.value)
+    expect(assignedValues.every(value => value !== null && value !== undefined)).toBe(true)
+    expect(new Set(assignedValues).size, 'все значения одинаковы — сортировка не проверяется').toBeGreaterThan(1)
+    const byAssignedAscending = [...byAssigned].sort(
+      (a, b) => (a.cells.find(cell => cell.code === 'ASSIGNED')!.value as number) -
+        (b.cells.find(cell => cell.code === 'ASSIGNED')!.value as number),
+    )
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}?object=${encodeURIComponent(target.rowId)}`)
     const table = page.locator('[data-slot="card"]', { hasText: 'Мероприятия на объекте' }).first()
     await expect(table).toBeVisible({ timeout: 15_000 })
     const firstRow = table.locator('tbody tr').first()
+    const rowLabels = table.locator('tbody tr td:first-child')
     await expect(firstRow).toContainText(serverFirst)
+    await expect(rowLabels).toHaveText(rows.map(row => row.safeLabel))
 
     // Такт сортировки пиним по `aria-sort` самой колонки, а НЕ выводим из
     // порядка строк: строчная проверка между щелчками успевает совпасть на
@@ -320,16 +325,18 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
     await header.click()
     await expect(column).toHaveAttribute('aria-sort', 'descending')
     await expect(firstRow).toContainText(byAssigned[0].safeLabel)
+    await expect(rowLabels).toHaveText(byAssigned.map(row => row.safeLabel))
 
     await header.click()
     await expect(column).toHaveAttribute('aria-sort', 'ascending')
-    await expect(firstRow).not.toContainText(byAssigned[0].safeLabel)
+    await expect(rowLabels).toHaveText(byAssignedAscending.map(row => row.safeLabel))
 
     await header.click()
     // Третий щелчок возвращает порядок сервера — иначе «как отдал сервер»
     // становится недостижимым состоянием.
     await expect(column).toHaveAttribute('aria-sort', 'none')
     await expect(firstRow).toContainText(serverFirst)
+    await expect(rowLabels).toHaveText(rows.map(row => row.safeLabel))
 
     // Поиск сужает уже полученные строки, а не перезапрашивает снимок.
     await page.getByRole('textbox', { name: 'Поиск по названию' }).fill(rows[1].safeLabel)

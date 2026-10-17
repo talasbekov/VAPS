@@ -12,7 +12,7 @@ class DivisionViewSetTest(APITestCase):
         # Предмет пробы create — валидный CRUD, а не обход
         # RBAC обычным staff-user. Поэтому manager-право явное.
         self.client, self.user = client_for(
-            "testuser", "DIVISION_TEST_MANAGER", ["orgstructure.manage"]
+            "testuser", "DIVISION_TEST_MANAGER", ["orgstructure.manage", "orgstructure.view"]
         )
         # `parent` is the real FK name; `code` is unique; enum values are lowercase.
         self.company = Division.objects.create(

@@ -9,12 +9,14 @@
 ничего не делает).
 """
 import datetime as dt
+from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, connections
+from django.db.backends.postgresql.base import DatabaseWrapper
+from psycopg2 import sql
 from django.db.migrations.executor import MigrationExecutor
 
-pytestmark = pytest.mark.django_db
 
 BEFORE = ("operations", "0093_notification_dedupe_key")
 AFTER = ("operations", "0094_evaluation_withdrawn_at")
@@ -29,11 +31,27 @@ def migrate_to(target):
 
 
 @pytest.fixture
-def at_0093():
-    executor = migrate_to(BEFORE)
-    yield executor.loader.project_state([BEFORE]).apps
-    # Возврат вперёд обязателен: следующая проба прогона ждёт актуальную схему.
-    migrate_to(AFTER)
+def at_0093(django_db_setup, django_db_blocker):
+    # Start from an empty disposable DB. New migrations may deliberately be
+    # irreversible; rolling the suite's current DB backwards cannot test 0094.
+    with django_db_blocker.unblock():
+        original = connections['default']
+        name = 'test_evaluation_backfill_' + uuid4().hex[:16]
+        with original.cursor() as cursor:
+            cursor.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(name)))
+        config = original.settings_dict.copy()
+        config['NAME'] = name
+        temporary = DatabaseWrapper(config, alias='default')
+        connections['default'] = temporary
+        try:
+            executor = migrate_to(BEFORE)
+            yield executor.loader.project_state([BEFORE]).apps
+        finally:
+            temporary.close()
+            connections['default'] = original
+            with original.cursor() as cursor:
+                cursor.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
+
 
 
 def _evaluation(model, code, superseded):

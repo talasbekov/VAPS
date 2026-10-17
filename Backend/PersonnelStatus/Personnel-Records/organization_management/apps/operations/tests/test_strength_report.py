@@ -350,6 +350,10 @@ class TestStrengthReportService:
         assert result.rows[0].columns["SICK"] == 1
         # Колонка, на которую больше не ссылается ни один тип, из расхода
         # ИСЧЕЗАЕТ: набор колонок выводится из каталога, а не задан списком.
+        # New duty variants can still reference ON_DUTY after DUTY is moved.
+        StatusType.objects.filter(report_column_code="ON_DUTY").update(report_column_code="SICK")
+        result = StrengthReportService.compute(TODAY)
+        assert result.rows[0].columns["SICK"] == 1
         assert "ON_DUTY" not in result.rows[0].columns
 
     def test_same_named_divisions_are_told_apart_by_path(self, seeded_catalog):

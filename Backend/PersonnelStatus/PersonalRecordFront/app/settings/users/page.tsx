@@ -42,7 +42,8 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
 import {
   useAccessAccounts,
-  useAccessRoles,
+  useAccessAccount,
+  useAccessRoleOptions,
   useAccessUserRoles,
   useAssignAccessRole,
   useCreateAccessAccount,
@@ -50,11 +51,12 @@ import {
   useRevokeAccessRole,
   useSetAccessAccountActive,
 } from "@/hooks/use-access-permissions";
-import { WHOLE_SERVICE_SCOPE_LABEL } from "@/entities/access";
+import { WHOLE_SERVICE_SCOPE_LABEL, accessScopeLabel } from "@/entities/access";
 import type { AccessAccount, AccessUserRole } from "@/entities/access";
 import type { Division } from "@/lib/api";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import { OpsApiError } from "@/lib/ops-errors";
+import { AccountEmployeeLink } from "./account-employee-link";
 
 // Право берётся из ОБЩЕЙ карты (Plane №350): пункт меню и гейт этого
 // экрана обязаны решать одно и то же, иначе спрятанный пункт и открытый
@@ -77,16 +79,21 @@ function AccessUsersScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasGlobalPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   const search = searchParams.get("search") ?? "";
   const selectedId = searchParams.get("user");
-  const canManage = hasPermission(ACCESS_ADMIN_PERMISSION);
+  const canManage = hasGlobalPermission(ACCESS_ADMIN_PERMISSION);
 
-  const accountsQuery = useAccessAccounts(search);
+  const offsetParam = Number(searchParams.get("offset") ?? 0);
+  const offset = Number.isSafeInteger(offsetParam) && offsetParam >= 0 ? offsetParam : 0;
+  const accountsQuery = useAccessAccounts(search, { enabled: canManage, offset });
+  const selectedNumber = selectedId !== null && /^\d+$/.test(selectedId) && Number.isSafeInteger(Number(selectedId)) && Number(selectedId) > 0 ? Number(selectedId) : null;
+  const selectedQuery = useAccessAccount(selectedNumber, { enabled: canManage });
 
   function updateParam(key: string, value: string): void {
     const next = new URLSearchParams(searchParams);
+    if (key === "search") next.delete("offset");
     if (value === "") next.delete(key);
     else next.set(key, value);
     const qs = next.toString();
@@ -108,13 +115,15 @@ function AccessUsersScreen() {
     reason: "created" | "reset";
   } | null>(null);
 
-  if (!permissionsLoading && !canManage) {
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Загрузка прав доступа…</p></DashboardLayout>;
+  }
+  if (!canManage) {
     return <OpsAccessDenied what="учётных записей" />;
   }
 
   const accounts = accountsQuery.data?.results ?? [];
-  const selected =
-    accounts.find((account) => String(account.id) === selectedId) ?? null;
+  const selected = !selectedQuery.isError && selectedQuery.data?.id === selectedNumber ? selectedQuery.data : null;
 
   return (
     <DashboardLayout>
@@ -142,8 +151,8 @@ function AccessUsersScreen() {
           </Button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Card>
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Card className="min-w-0">
             <CardHeader className="pb-2">
               <CardTitle className="text-[14px]">
                 Учётные записи
@@ -199,10 +208,21 @@ function AccessUsersScreen() {
                   </Table>
                 </div>
               )}
+              {accountsQuery.data && !accountsQuery.isError && accountsQuery.data.count > 50 && (
+                <nav aria-label="Страницы учётных записей" className="flex flex-wrap items-center gap-2 border-t p-3">
+                  <Button variant="outline" size="sm" disabled={offset === 0 || accountsQuery.isFetching} onClick={() => updateParam("offset", String(Math.max(0, offset - 50)))}>Предыдущая страница</Button>
+                  <span className="text-xs text-muted-foreground">Страница {Math.floor(offset / 50) + 1} из {Math.ceil(accountsQuery.data.count / 50)}</span>
+                  <Button variant="outline" size="sm" disabled={!accountsQuery.data.next || accountsQuery.isFetching} onClick={() => updateParam("offset", String(offset + 50))}>Следующая страница</Button>
+                </nav>
+              )}
             </CardContent>
           </Card>
 
-          {selected === null ? (
+          {selectedNumber !== null && selectedQuery.isError ? (
+            <LoadFailure what="карточку пользователя" onRetry={() => void selectedQuery.refetch()} isRetrying={selectedQuery.isFetching} />
+          ) : selectedNumber !== null && selectedQuery.isLoading ? (
+            <Card><CardContent className="p-9" role="status">Загрузка карточки пользователя…</CardContent></Card>
+          ) : selected === null ? (
             <Card>
               <CardContent className="p-9 text-center text-[13px] text-muted-foreground">
                 Выберите человека слева, чтобы увидеть и раздать его роли.
@@ -328,12 +348,13 @@ function AccountRow({
  * одного списка, а иерархию видно по вложенности подписи. */
 function flattenDivisions(
   root: Division | undefined,
-  depth = 0
+  parentPath = ""
 ): Array<{ id: number; label: string }> {
   if (root === undefined) return [];
-  const self = [{ id: root.id, label: `${"— ".repeat(depth)}${root.name}` }];
+  const label = parentPath ? `${parentPath} › ${root.name}` : root.name;
+  const self = root.id === 0 ? [] : [{ id: root.id, label }];
   return self.concat(
-    (root.children ?? []).flatMap((child) => flattenDivisions(child, depth + 1))
+    (root.children ?? []).flatMap((child) => flattenDivisions(child, root.id === 0 ? "" : label))
   );
 }
 
@@ -344,8 +365,10 @@ function AccountDetails({
   account: AccessAccount;
   onTemporaryPassword: (password: string) => void;
 }) {
-  const userRolesQuery = useAccessUserRoles(account.id);
-  const rolesQuery = useAccessRoles("");
+  const { hasGlobalPermission } = useOpsPermissions();
+  const canManage = hasGlobalPermission(ACCESS_ADMIN_PERMISSION);
+  const userRolesQuery = useAccessUserRoles(account.id, { enabled: canManage });
+  const rolesQuery = useAccessRoleOptions({ enabled: canManage });
   const divisionsQuery = useDivisionsTree();
   const assign = useAssignAccessRole();
   const revoke = useRevokeAccessRole();
@@ -365,6 +388,13 @@ function AccountDetails({
   });
 
   const divisions = flattenDivisions(divisionsQuery.data);
+  const roleOptions = rolesQuery.isSuccess ? rolesQuery.data.results : [];
+  const rolesReady = rolesQuery.isSuccess && !rolesQuery.isFetching;
+  const selectedRole = roleOptions.find((role) => role.code === roleCode);
+  const globalRole = selectedRole?.permissions.includes("*") === true;
+  const scopesReady = globalRole || (divisionsQuery.isSuccess && !divisionsQuery.isFetching);
+  const scopeExists = scope === WHOLE_SERVICE_VALUE || divisions.some(division => String(division.id) === scope);
+  useEffect(() => { if (globalRole) setScope(WHOLE_SERVICE_VALUE); }, [globalRole]);
   // Показываются ДЕЙСТВУЮЩИЕ назначения: снятие оставляет строку в базе
   // (история выдач), но в списке ролей человека ей не место — там отвечают на
   // вопрос «что у него есть сейчас».
@@ -373,17 +403,18 @@ function AccountDetails({
   );
 
   return (
-    <Card>
+    <Card className="min-w-0 break-words">
       <CardHeader className="pb-2">
         <CardTitle className="text-[14px]">
           {account.full_name ?? account.username}
         </CardTitle>
-        <p className="font-mono text-[12px] text-muted-foreground">
+        <p className="break-all font-mono text-[12px] text-muted-foreground">
           {account.username}
           {account.email !== "" && ` · ${account.email}`}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <AccountEmployeeLink account={account} />
         <div className="border-t pt-3">
           <h3 className="mb-2 text-[13px] font-semibold">Учётная запись</h3>
           <p className="mb-2 text-[12px] text-muted-foreground">
@@ -428,7 +459,7 @@ function AccountDetails({
           )}
           {resetPassword.error !== null && (
             <p className="mt-2 text-[12px] text-destructive">
-              Не удалось сбросить пароль. Прежний пароль продолжает работать.
+              Не удалось получить новый пароль. Повторите сброс и передайте пользователю пароль из успешного ответа.
             </p>
           )}
         </div>
@@ -451,7 +482,7 @@ function AccountDetails({
             />
           ) : granted.length === 0 ? (
             <p className="text-[12.5px] text-muted-foreground">
-              Ролей нет: человек входит в систему, но не открывает ничего.
+              Постоянных назначений ролей нет. Временное исполнение обязанностей может давать отдельный доступ.
             </p>
           ) : (
             <ul aria-label="Роли человека" className="space-y-1.5">
@@ -466,7 +497,7 @@ function AccountDetails({
                     </span>
                     <span className="text-[11px] text-muted-foreground">
                       {row.role_name ?? ""} ·{" "}
-                      {row.scope_division_name ?? WHOLE_SERVICE_SCOPE_LABEL}
+                      {accessScopeLabel(row)}
                     </span>
                   </span>
                   <Button
@@ -497,23 +528,36 @@ function AccountDetails({
               <Label htmlFor="assign-role">Роль</Label>
               <select
                 id="assign-role"
+                disabled={!rolesReady}
                 className="h-[34px] w-full rounded-md border bg-background px-2 text-[12.5px]"
                 value={roleCode}
                 onChange={(event) => setRoleCode(event.target.value)}
               >
                 <option value="">— выберите роль —</option>
-                {(rolesQuery.data?.results ?? []).map((role) => (
+                {roleOptions.map((role) => (
                   <option key={role.code} value={role.code}>
                     {role.code} · {role.name}
                     {role.is_active ? "" : " (отключена)"}
                   </option>
                 ))}
               </select>
+              {rolesQuery.isLoading ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Загрузка справочника ролей…
+                </p>
+              ) : rolesQuery.isError ? (
+                <LoadFailure
+                  what="справочник ролей"
+                  onRetry={() => void rolesQuery.refetch()}
+                  isRetrying={rolesQuery.isFetching}
+                />
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label htmlFor="assign-scope">Область</Label>
               <select
                 id="assign-scope"
+                disabled={globalRole || !scopesReady}
                 className="h-[34px] w-full rounded-md border bg-background px-2 text-[12.5px]"
                 value={scope}
                 onChange={(event) => setScope(event.target.value)}
@@ -527,16 +571,21 @@ function AccountDetails({
                   </option>
                 ))}
               </select>
+              {!globalRole && divisionsQuery.isPending && <p role="status" className="text-sm text-muted-foreground">Загрузка областей назначения…</p>}
+              {!globalRole && divisionsQuery.isError && <LoadFailure what="области назначения" onRetry={() => void divisionsQuery.refetch()} isRetrying={divisionsQuery.isFetching} />}
               <p className="text-[11.5px] text-muted-foreground">
                 Одна роль в разных областях — это разные назначения: они живут
                 рядом и снимаются порознь.
               </p>
             </div>
+            {selectedRole?.permissions.length === 0 && (
+              <p role="status" className="text-sm text-amber-700">У роли нет ни одного права — она не откроет пользователю модули системы.</p>
+            )}
             <Button
               type="button"
               size="sm"
               className="h-8"
-              disabled={assign.isPending || roleCode === ""}
+              disabled={assign.isPending || !rolesReady || selectedRole === undefined || !scopesReady || !scopeExists}
               onClick={() =>
                 assign.mutate({
                   user_id: String(account.id),
@@ -550,7 +599,7 @@ function AccountDetails({
             </Button>
             {assign.error !== null && (
               <p className="text-[12px] text-destructive">
-                Не удалось выдать роль. Попробуйте ещё раз.
+                {assign.error.message || "Не удалось выдать роль."}
               </p>
             )}
           </div>
@@ -636,7 +685,7 @@ function ConfirmRevocationDialog({
         </DialogHeader>
         <p className="text-[13px] leading-[1.55]">
           Роль <span className="font-mono">{row?.role_code}</span> в области «
-          {row?.scope_division_name ?? WHOLE_SERVICE_SCOPE_LABEL}» перестанет
+          {row ? accessScopeLabel(row) : ""}» перестанет
           действовать у пользователя{" "}
           <span className="font-mono">{row?.user_login ?? row?.user_id}</span>.
           Запись о выдаче останется в истории.
@@ -731,7 +780,7 @@ function CreateAccountDialog({
   });
 
   function close(next: boolean): void {
-    if (next) return;
+    if (next || create.isPending) return;
     setUsername("");
     setLastName("");
     setFirstName("");
@@ -873,7 +922,7 @@ function CreateAccountDialog({
           )}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => close(false)}>
+          <Button type="button" variant="outline" disabled={create.isPending} onClick={() => close(false)}>
             Отмена
           </Button>
           <Button
@@ -940,7 +989,7 @@ function TemporaryPasswordDialog({
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onInteractOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Временный пароль</DialogTitle>
         </DialogHeader>

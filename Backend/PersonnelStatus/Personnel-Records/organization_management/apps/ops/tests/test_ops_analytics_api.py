@@ -327,7 +327,8 @@ def linked_world(registries):
 
 def test_load_sums_plan_and_fact_separately(linked_world):
     api, _ = client_for(
-        "analytics-load", "ANALYTICS_LOAD", perms=("analytics.view",),
+        "analytics-load", "ANALYTICS_LOAD",
+        perms=("analytics.view", "analytics.personal_detail"),
     )
     division, (first, second) = linked_world
     now = Clock.now()
@@ -365,7 +366,8 @@ def test_load_sums_plan_and_fact_separately(linked_world):
 
 def test_load_without_policy_is_unknown_not_zero(linked_world):
     api, _ = client_for(
-        "analytics-load-2", "ANALYTICS_LOAD2", perms=("analytics.view",),
+        "analytics-load-2", "ANALYTICS_LOAD2",
+        perms=("analytics.view", "analytics.personal_detail"),
     )
     _, (first, _) = linked_world
     _shift("Иванов Д.", -1, "PLANNED", employee_id=str(first.pk))

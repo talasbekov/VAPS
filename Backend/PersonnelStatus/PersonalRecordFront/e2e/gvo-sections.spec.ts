@@ -6,13 +6,14 @@
  * доходят до экрана, а не сохраняются в никуда. Поэтому каждый шаг ассертит
  * РАЗОБРАННОЕ значение в карточке, а не факт закрытия модалки.
  *
- * Мероприятие берётся первым из реестра, а не по зашитому id: id стенда живут
- * в БД и меняются с пересидом.
+ * Каждая проба создаёт собственное мероприятие с уникальным маркером через
+ * настоящий API. Чужие сводки и порядок страниц реестра не являются фикстурой.
  *
- * Без SMOKE_LIVE=1 скипается, как и смоук-обход рядом: нужен поднятый стек
- * Django :8100 + Next :3106.
+ * Без SMOKE_LIVE=1 скипается. Мутирующие фикстуры дополнительно требуют
+ * изолированный Night: API :18346, frontend :3347, собственную ночную БД.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+import { test, resetOwnGvoSummary } from './gvo-owned-fixture'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -50,52 +51,6 @@ async function apiGet<T>(path: string, token: string): Promise<T> {
   return (await res.json()) as T
 }
 
-async function registryEvents(): Promise<EventRow[]> {
-  const token = await apiToken()
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=200`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return ((await res.json()) as { results: EventRow[] }).results
-}
-
-/**
- * Сброс сводки ОМ к черновику ЧЕРЕЗ API — предусловие пробы, а не проверка.
- *
- * Прерванный прогон (упавший на любом шаге) оставляет патч, и следующий
- * стартует не с «Черновика»: проба была бы красной по чужой причине. Сбрасывать
- * надо ВСЮ сводку, а не только правимые ниже разделы: остаток любого из них
- * держит статус «Заполнена». Сервер это и делает сам по запросу без раздела —
- * перечислять их здесь больше не нужно (Plane №774).
- */
-async function resetSummary(omCode: string): Promise<void> {
-  const token = await apiToken()
-  // ОДИН запрос без раздела, а не цикл по восьми (Plane №774). С №765 ручка
-  // `/reset/` принимает тело БЕЗ `section` и возвращает исходной ВСЮ сводку;
-  // список разделов в помощнике был вторым ответом на тот же вопрос и
-  // расходился бы с сервером МОЛЧА: появись девятый раздел — предусловие
-  // перестало бы его сбрасывать, а проба осталась бы зелёной по неверной
-  // причине (то же семейство, что №689).
-  const reset = await fetch(
-    `${API}/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/reset/`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({}),
-    },
-  )
-  // Ответ ПРОВЕРЯЕТСЯ, а прежний цикл его не смотрел вовсе. Предусловие,
-  // которое молча не выполнилось, — самый дорогой вид зелени: проба проверяет
-  // не то состояние, о котором говорит её название.
-  if (!reset.ok) {
-    throw new Error(
-      `предусловие не выполнено: сброс сводки ${omCode} ответил ${reset.status} ${await reset.text()}`,
-    )
-  }
-}
-
 async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
@@ -114,11 +69,26 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
 test.describe(LIVE ? 'сводные данные ГВО' : 'сводные данные ГВО (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('разделы сохраняются разобранными и видны в реестре', async ({ page }) => {
+  test('разделы сохраняются разобранными и видны в реестре', async ({ page, request, ownForeign }) => {
+    const token = await apiToken()
+    const profile = await fetch(`${API}/api/ops/personnel/me/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const unlinked = profile.status === 404
+    if (unlinked) {
+      expect(((await profile.json()) as { error_code: string }).error_code).toBe('EMPLOYEE_NOT_LINKED')
+    } else {
+      expect(profile.status).toBe(200)
+    }
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text())
+      // У служебного администратора персонального профиля может не быть:
+      // 404 EMPLOYEE_NOT_LINKED выше проверен как штатный ответ этой ручки.
+      const expectedProfile404 = unlinked &&
+        m.location().url.endsWith('/api/ops/personnel/me/') &&
+        /Failed to load resource.*status of 404/.test(m.text())
+      if (m.type() === 'error' && !expectedProfile404) errors.push(m.text())
     })
 
     await signIn(page)
@@ -130,34 +100,14 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       'true',
     )
 
-    // Мероприятие берётся не «первое в реестре», а первое С ОБЪЕКТОМ
-    // ПОСЕЩЕНИЯ: с «Реестр ОМ-35.1» раздел «Объекты посещения» читает таблицу
-    // объектов, и у ОМ без объекта окно правки честно пусто — проба на таком
-    // мероприятии молча проверяла бы пустоту.
-    // Тип НЕ внутренний: вкладка показывает визиты иностранных ОЛ («ОМ-35.5»),
-    // и внутреннего мероприятия в ней нет.
-    const registry = await registryEvents()
-    // ЗАКРЫТОЕ мероприятие сюда не годится, и это правило сервера, а не
-    // придирка: у закрытого объекты посещения не меняются вовсе («Мероприятие
-    // закрыто — объекты посещения не меняются», 422). Проба ПРАВИТ день и
-    // примечание, то есть ей нужен живой ОМ.
-    //
-    // Отбор держался на порядке реестра и сломался, как только на стенде
-    // появилась закрытая фикстура с двумя объектами посещения: она встала
-    // первой, окно после «Сохранить» честно осталось открытым с отказом, а
-    // проба читала это как «экран не закрыл окно».
-    const target = registry.find(
-      (row) =>
-        (row.visitObjects ?? []).length > 0 &&
-        row.kind !== 'INTERNAL' &&
-        row.stage !== 'CLOSED',
-    )
+    // Авторитетный собственный FOREIGN уже содержит объект и находится на RECON.
+    const target = ownForeign
     expect(
       target,
       'на стенде нет НЕЗАКРЫТОГО ОМ с иностранным ОЛ и объектом посещения — проба вакуумна',
     ).toBeTruthy()
     const omCode = (target as EventRow).code
-    await resetSummary(omCode)
+    await resetOwnGvoSummary(request, ownForeign)
     await page.reload()
 
     // Ждём ЖИВУЮ таблицу вкладки: она собирается из двух запросов (реестр и
@@ -208,20 +158,40 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await form.getByRole('button', { name: '＋ Группа' }).click()
     await form.getByRole('textbox', { name: 'Название группы' }).last().fill('ГВО «Черногория»')
     const pickedMembers: string[] = []
+    const pickedMemberIds: string[] = []
+    let personnelRows: { id: string; fullName?: string; name: string }[] = []
     for (const role of ['старший ГВО', 'прикреплённый']) {
+      const firstPage = pickedMemberIds.length === 0
+        ? page.waitForResponse((response) => new URL(response.url()).pathname === '/api/ops/personnel/' && response.request().method() === 'GET')
+        : null
       await form.getByRole('button', { name: '＋ Сотрудник из списка' }).last().click()
       const memberDialog = page.getByRole('dialog')
+      if (firstPage !== null) {
+        const response = await firstPage
+        expect(response.status()).toBe(200)
+        personnelRows = ((await response.json()) as { results: typeof personnelRows }).results
+      }
+      await expect(memberDialog.locator('[data-slot="personnel-picker"] li button[disabled]')).toHaveCount(pickedMemberIds.length)
       const row = memberDialog
         .locator('[data-slot="personnel-picker"] li button:not([disabled])')
         .first()
       await expect(row).toBeVisible({ timeout: 15_000 })
       pickedMembers.push((await row.locator('span.font-medium').innerText()).trim())
+      const rowIndex = await row.evaluate((button) => {
+        const item = button.closest('li')!
+        return Array.from(item.parentElement!.children).indexOf(item)
+      })
+      const pickedEmployee = personnelRows[rowIndex]
+      expect(pickedEmployee, 'строка выбора соответствует живой странице кадров').toBeTruthy()
+      expect(pickedMembers.at(-1)).toBe(pickedEmployee.fullName || pickedEmployee.name)
+      pickedMemberIds.push(String(pickedEmployee.id))
       await row.click()
       await memberDialog.getByRole('textbox', { name: 'Роль в группе' }).fill(role)
       await memberDialog.getByRole('button', { name: 'Добавить в состав' }).click()
       await expect(memberDialog).toBeHidden()
     }
-    expect(pickedMembers[0]).not.toEqual(pickedMembers[1])
+    // В большой базе тёзки законны: различаться обязаны кадровые ID.
+    expect(new Set(pickedMemberIds).size).toBe(2)
 
     // Текстового поля «Транспорт» в форме больше НЕТ (Plane №952): машины
     // выделяются из реестра (`gvo-catalog-refs.spec.ts`), и проба это стережёт.
@@ -231,6 +201,12 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // после последнего ответа.
     await form.getByRole('button', { name: 'Сохранить' }).click()
     await expect(form).toBeHidden({ timeout: 20_000 })
+    const saved = await apiGet<{ summary: { groups: { name: string; members: { employeeId: string }[] }[] } }>(
+      `/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/`, token,
+    )
+    const savedMembers = saved.summary.groups.find((group) => group.name === 'ГВО «Черногория»')?.members
+    expect(savedMembers).toHaveLength(2)
+    expect(savedMembers!.map((member) => String(member.employeeId)).sort()).toEqual([...pickedMemberIds].sort())
 
     await expect(main.getByText(pickedPersonName).first()).toBeVisible({
       timeout: 10_000,
@@ -347,14 +323,14 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
   })
 
   test('сводка ГВО на карточке ОМ — только ссылкой на страницу визита', async ({
-    page,
+    page, ownForeign,
   }) => {
     // `[ГВО-03]` (Plane №441): на этапах сводка НЕ разворачивается — в шапке
     // бюллетеня стоит ссылка «Карточка визита →», кнопки «Информация по
     // ГВО» и панели на месте больше нет. Прежде (Plane «Реестр ОМ-35.4»)
     // панель раскрывалась на карточке; канон визита увёл её на свою страницу
     // (`[ГВО-01]`, №436).
-    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    const target = ownForeign
     expect(
       target,
       'в реестре нет ОМ с иностранным ОЛ — ссылку не на чем проверить',
@@ -380,14 +356,14 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
   })
 
   test('«уточняется» — флаг поля, не значение; визит хранит его и версию (Plane №435)', async ({
-    page,
+    page, ownForeign, ownInternal,
   }) => {
     /**
      * `[ГВО-06]`/`[МД-05]`: пустое поле остаётся пустым, слово «уточняется»
      * ставится чекбоксом и хранится списком у визита; правка сводки растит
      * версию визита. У внутреннего ОМ визита нет.
      */
-    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    const target = ownForeign
     expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
     const token = await apiToken()
     const before = await apiGet<{ visit: { version: number } | null; unspecified: string[] }>(
@@ -415,18 +391,16 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     expect(after.visit!.version).toBeGreaterThan(before.visit!.version)
 
     // Внутреннему ОМ сводка не пишется вовсе.
-    const internal = (await registryEvents()).find((r) => r.kind === 'INTERNAL')
-    if (internal !== undefined) {
-      const refused = await fetch(
-        `${API}/api/ops/gvo-summaries/${encodeURIComponent(internal.code)}/`,
-        {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ section: 'head', values: { country: 'X' } }),
-        },
-      )
-      expect(refused.status).toBe(422)
-    }
+    const internal = ownInternal
+    const refused = await fetch(
+      `${API}/api/ops/gvo-summaries/${encodeURIComponent(internal.code)}/`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ section: 'head', values: { country: 'X' } }),
+      },
+    )
+    expect(refused.status).toBe(422)
     // Уборка: снять флаг, чтобы соседние пробы читали чистую сводку.
     await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`, {
       method: 'PATCH',
@@ -436,7 +410,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
   })
 
   test('флаги «уточняется» у Прибытия и Убытия РАЗНЫЕ, а Ответственный вообще получил флаг', async ({
-    page,
+    page, ownForeign,
   }) => {
     /**
      * ОДНА СХЕМА КЛЮЧЕЙ (Plane №686/№687). Флаги «уточняется» хранятся одним
@@ -451,7 +425,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
      * `field.path`: первый же `expect` увидит в списке голое `date`, а
      * галочка у убытия окажется отмеченной заодно с прибытием.
      */
-    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    const target = ownForeign
     expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
     const token = await apiToken()
 
@@ -528,65 +502,29 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
   // страницы, и терять черновик переключением стало нечем.
 
   test('у внутреннего мероприятия ссылки «Карточка визита →» нет', async ({
-    page,
+    page, ownInternal, ownForeign,
   }) => {
-    // Задача заказчика «Реестр ОМ-35.5»: сводка ГВО — про выездную охрану
-    // иностранного ОЛ. У внутреннего ОМ её нет, и ссылка обещала бы пустоту
-    // (с №441 в шапке бюллетеня ссылка, а не кнопка-разворот).
-    //
-    // Мероприятие заводится ПРОБОЙ и снимается в конце: искать внутреннее ОМ в
-    // реестре значит зависеть от того, что кто-то его там оставил, — молчаливый
-    // скип вместо проверки.
-    const token = await apiToken()
-    const created = (await (
-      await fetch(`${API}/api/ops/security-events/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: `Внутреннее ОМ (e2e) ${Date.now()}`,
-          businessDate: '2026-09-01',
-          kind: 'INTERNAL',
-        }),
-      })
-    ).json()) as { id: string; code: string }
+    // Обе стороны контроля созданы этой пробой; shared events не изменяются.
+    const created = ownInternal
+    const foreign = ownForeign
     expect(created.code, 'фикстура внутреннего ОМ не завелась').toBeTruthy()
 
-    try {
-      await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${created.id}`)
-      // Ждём ЖИВУЮ карточку, а не таймаут: иначе «кнопки нет» сойдётся и на
-      // незагруженной странице.
-      await expect(
-        page.getByText(created.code, { exact: true }).first(),
-      ).toBeVisible({ timeout: 20_000 })
-      await expect(
-        page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
-      ).toHaveCount(0)
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${created.id}`)
+    // Отсутствие ссылки проверяется только после загрузки собственной карточки.
+    await expect(
+      page.getByText(created.code, { exact: true }).first(),
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
+    ).toHaveCount(0)
 
-      // Контроль: у мероприятия НЕ внутреннего типа ссылка на месте — иначе
-      // проба выше зеленела бы и от того, что ссылку сняли совсем. Тип берём
-      // из ответа сервера: на стенде внутренних ОМ больше половины, и «второе
-      // в списке» оказалось бы таким же внутренним.
-      const foreign = (await registryEvents()).find(
-        (r) => r.id !== created.id && r.kind !== 'INTERNAL',
-      )
-      expect(
-        foreign,
-        'в реестре нет ОМ с иностранным ОЛ (или без типа) для контроля',
-      ).toBeTruthy()
-      await page.goto(`${APP}/security-ops/events/${foreign!.id}`)
-      await expect(
-        page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
-      ).toBeVisible({ timeout: 20_000 })
-    } finally {
-      await fetch(`${API}/api/ops/security-events/${created.id}/`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    }
+    // Положительный контроль не позволяет пройти при удалении ссылки у всех ОМ.
+    expect(foreign, 'нет собственного FOREIGN для контроля').toBeTruthy()
+    await page.goto(`${APP}/security-ops/events/${foreign.id}`)
+    await expect(
+      page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
+    ).toBeVisible({ timeout: 20_000 })
   })
 
   // Гейт раздела показывается персоной, у которой права НЕТ: под админом
@@ -623,15 +561,14 @@ test.describe(
   () => {
     test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-    test('панель показывает сводку СВОЕГО ОМ, а не соседнего', async ({ page }) => {
+    test('панель показывает сводку СВОЕГО ОМ, а не соседнего', async ({ page, ownForeign, ownInternal }) => {
       // Раньше это стерегла ссылка «К мероприятию →» на отдельном экране
       // сводки: своей записи у сводки нет, и ссылка обязана была вести на ТОТ
       // ЖЕ id. Экран снят («ОМ-35.8»), но вопрос остался: панель в карточке
       // обязана показывать сводку ЭТОГО мероприятия. Ассерт на адрес его не
       // ловит — форма адреса совпала бы и с чужой записью под ней.
-      const rows = await registryEvents()
-      const target = rows.find((r) => r.kind !== 'INTERNAL')
-      const other = rows.find((r) => r.id !== target?.id)
+      const target = ownForeign
+      const other = ownInternal
       expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
       expect(other, 'на стенде одно ОМ — подмену не с чем спутать').toBeDefined()
 
@@ -648,11 +585,8 @@ test.describe(
       await expect(main.getByText(other!.code, { exact: true })).toHaveCount(0)
     })
 
-    test('сводка больше не оговаривает отсутствие связи с реестром лиц (Plane №951)', async ({ page }) => {
-      const rows = await registryEvents()
-      // Страница визита есть только у ОМ с иностранным ОЛ (`[ГВО-01]`):
-      // «первое в реестре» упиралось бы во внутреннее.
-      const target = rows.find((r) => r.kind !== 'INTERNAL')
+    test('сводка больше не оговаривает отсутствие связи с реестром лиц (Plane №951)', async ({ page, ownForeign }) => {
+      const target = ownForeign
       expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
 
       await signIn(page)
@@ -670,9 +604,9 @@ test.describe(
         await apiToken(),
       )
       const linked = summary.summary.persons.find((p) => p.personId)
-      if (linked) {
-        await expect(page.getByText(`· ${linked.code}`).first()).toBeVisible()
-      }
+      expect(linked, 'own FOREIGN must retain its real catalog person link').toBeDefined()
+      expect(linked!.code).toBeTruthy()
+      await expect(page.getByText(`· ${linked!.code}`).first()).toBeVisible()
     })
   },
 )
@@ -720,11 +654,8 @@ test.describe(
   () => {
     test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-    test('фон и текст плашки различимы в тёмной теме', async ({ page }) => {
-      const rows = await registryEvents()
-      // Страница визита есть только у ОМ с иностранным ОЛ (`[ГВО-01]`):
-      // «первое в реестре» упиралось бы во внутреннее.
-      const target = rows.find((r) => r.kind !== 'INTERNAL')
+    test('фон и текст плашки различимы в тёмной теме', async ({ page, ownForeign }) => {
+      const target = ownForeign
       expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
 
       await signIn(page)
@@ -742,6 +673,7 @@ test.describe(
       // getComputedStyle отдаёт значения и у скрытого узла, само по себе это
       // не страховка от вакуумной пробы.
       await expect(abbrBox).toBeVisible()
+      await expect(abbrBox).toHaveText(ownForeign.countryAbbreviation!)
 
       const [bg, fg] = await abbrBox.evaluate((el) => {
         const style = getComputedStyle(el)

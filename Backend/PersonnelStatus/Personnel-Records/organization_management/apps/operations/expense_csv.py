@@ -1,10 +1,8 @@
 """Рендерер .csv расхода (порт apps/documents/generators/expense_csv.py из
 Backend/VAPS).
 
-CSV — МАШИНОЧИТАЕМАЯ форма: только числа, без поимённого состава. Состав —
-прерогатива документных форм (.xlsx/.docx), а таблица, в ячейке которой лежит
-двадцать строк с фамилиями, не открывается ни одним потребителем CSV так, как
-он ожидает.
+CSV сохраняет таблицу чисел и добавляет отдельную таблицу полного состава.
+В каждой строке состава один сотрудник, статус, период и место убытия.
 
 Диалект донора сохранён дословно: разделитель `;`, кодировка utf-8-sig (BOM —
 иначе Excel в ru-локали открывает кириллицу мусором по двойному клику),
@@ -23,7 +21,14 @@ from organization_management.apps.operations.expense_layout import (
     document_title,
     event_cell,
     header_row,
+    PERSONNEL_HEAD,
+    personnel_values,
 )
+
+
+def _text(value):
+    # Personnel fields are text even when Excel recognizes a formula prefix.
+    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
 
 
 def generate_expense_csv(data):
@@ -56,5 +61,12 @@ def generate_expense_csv(data):
     record.append(totals.attached)
     record.append(event_cell(totals.event))
     writer.writerow(record)
+
+    if any(row.personnel for row in data.rows):
+        writer.writerow([])
+        writer.writerow(["Подразделение", *PERSONNEL_HEAD])
+        for row in data.rows:
+            for person in row.personnel:
+                writer.writerow([_text(value) for value in (row.name, *personnel_values(person))])
 
     return buffer.getvalue().encode("utf-8-sig")

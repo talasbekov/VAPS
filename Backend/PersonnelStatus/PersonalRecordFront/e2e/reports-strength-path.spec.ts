@@ -75,13 +75,19 @@ test.describe(LIVE ? 'строевая записка' : 'строевая за�
     )
     await page.getByRole('button', { name: 'Показать расход' }).click()
     await load
-    const table = page.getByRole('table')
+    const table = page.getByRole('table').filter({
+      has: page.getByRole('columnheader', { name: 'В списке', exact: true }),
+    })
     await expect(table).toBeVisible({ timeout: 60_000 })
 
-    // Ячейки с этим именем — их ровно столько же, сколько строк у двойника,
-    // и текст у каждой СВОЙ.
-    const cells = table.getByRole('cell').filter({ hasText: twinName })
+    // Собственное имя первой ячейки, без подписи пути: hasText захватывал
+    // также дочерние подразделения, у которых это имя стоит среди предков.
+    const cells = table.locator(`td:first-child:text-is(${JSON.stringify(twinName)})`)
     await expect(cells).toHaveCount(twinRows.length)
+    const displayedPaths = await cells.evaluateAll(rows =>
+      rows.map(cell => cell.querySelector('span')?.textContent?.trim() ?? ''),
+    )
+    expect(displayedPaths.sort()).toEqual([...paths].sort())
     const texts = (await cells.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
     expect(
       new Set(texts).size,

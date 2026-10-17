@@ -32,7 +32,7 @@ PACKAGE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 # operations (ядро) и ops (адресное пространство /api/ops/* — объекты,
 # паспорта, мероприятия). Скан обязан видеть оба, иначе код, поднимаемый
 # только в ops, значился бы «обещанием, которое не исполнится».
-SCAN_ROOTS = [PACKAGE_ROOT, PACKAGE_ROOT.parent / "ops"]
+SCAN_ROOTS = [PACKAGE_ROOT, PACKAGE_ROOT.parent / "ops", PACKAGE_ROOT.parent / "dictionaries"]
 
 
 def _raised_codes():

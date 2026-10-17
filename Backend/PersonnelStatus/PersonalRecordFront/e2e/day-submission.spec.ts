@@ -6,7 +6,7 @@
  * (`DaySubmission.division_id`) — одна кнопка на весь департамент технически
  * невозможна без бэк-этапа (ручка принимает ровно один `division_id`).
  *
- * Борд сверху несёт СВОДКУ «Сдано N из M управлений на <дата>» + кто не
+ * Борд сверху несёт СВОДКУ «Сдано N из M подразделений на <дата>» + кто не
  * сдал — числа из ЖИВЫХ ответов, без своего счёта. Само действие — кнопка/
  * бейдж в шапке КАЖДОГО управления, доступная кнопка ищется ВНУТРИ группы
  * конкретного управления (`role="group"` по имени из расхода).
@@ -36,7 +36,7 @@
  * 🔴 Service worker MSW блокируется: без этого `page.route` не перехватывает
  * запросы приложения.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -82,7 +82,7 @@ async function get<T>(token: string, path: string): Promise<T> {
  * в `StrengthReportViewSet`) — это её собственное умолчание, и №988 его не
  * трогал, он лишь научил БОРД запрашивать явную дату. Проба звала
  * `strength-report` тем же способом, что и до №988, и подпись сводки
- * («Сдано N из M управлений на <дата>») сравнивала вчерашнее умолчание с
+ * («Сдано N из M подразделений на <дата>») сравнивала вчерашнее умолчание с
  * сегодняшним экраном — обе пробы стабильно красные, и это маскировало
  * реальные регрессии сдачи/409 под собой.
  */
@@ -220,6 +220,38 @@ function fakeSubmission(divisionId: string, businessDate: string) {
   }
 }
 
+async function addSubmissionToBoardList(
+  route: Route,
+  targetDivisionId: string,
+  businessDate: string,
+): Promise<void> {
+  const response = await route.fetch()
+  if (!response.ok()) {
+    await route.fulfill({ response })
+    return
+  }
+  const body = await response.json() as {
+    count: number
+    results: DaySubmissionRow[]
+    [field: string]: unknown
+  }
+  if (body === null || !Array.isArray(body.results) || typeof body.count !== 'number') {
+    await route.fulfill({ response })
+    return
+  }
+  const alreadySubmitted = body.results.some(row =>
+    row.division_id === targetDivisionId && row.business_date === businessDate && row.is_current,
+  )
+  await route.fulfill({
+    response,
+    json: alreadySubmitted ? body : {
+      ...body,
+      count: body.count + 1,
+      results: [...body.results, fakeSubmission(targetDivisionId, businessDate)],
+    },
+  })
+}
+
 /**
  * Перехват сдачи ОДНОГО целевого управления:
  * - POST → тело складывается в `captured`, ответ — правдоподобный фейк.
@@ -251,18 +283,12 @@ async function interceptSubmit(
       }
       const requestUrl = new URL(request.url())
       const isBoardListQuery =
+        request.method() === 'GET' &&
+        requestUrl.pathname === '/api/ops/daily/daily-submissions/' &&
         requestUrl.searchParams.get('business_date') === businessDate &&
         requestUrl.searchParams.get('division_id') === null
       if (submitted && isBoardListQuery) {
-        await route.fulfill({
-          status: 200,
-          json: {
-            count: 1,
-            next: null,
-            previous: null,
-            results: [fakeSubmission(targetDivisionId, businessDate)],
-          },
-        })
+        await addSubmissionToBoardList(route, targetDivisionId, businessDate)
         return
       }
       await route.continue()
@@ -311,18 +337,12 @@ async function interceptSubmitConflict(
       }
       const requestUrl = new URL(request.url())
       const isBoardListQuery =
+        request.method() === 'GET' &&
+        requestUrl.pathname === '/api/ops/daily/daily-submissions/' &&
         requestUrl.searchParams.get('business_date') === businessDate &&
         requestUrl.searchParams.get('division_id') === null
       if (conflicted && isBoardListQuery) {
-        await route.fulfill({
-          status: 200,
-          json: {
-            count: 1,
-            next: null,
-            previous: null,
-            results: [fakeSubmission(targetDivisionId, businessDate)],
-          },
-        })
+        await addSubmissionToBoardList(route, targetDivisionId, businessDate)
         return
       }
       await route.continue()
@@ -364,19 +384,21 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     // (`DailyExpenseBoard.tsx`, пересечение submissions × data.rows) — счёт
     // без этого фильтра завышал ожидание пробы и падал на живом «0 из 51»,
     // хотя борд вёл себя верно.
-    const reportDivisionIds = new Set(report.rows.map((row) => String(row.division_id)))
+    const structure = await get<{ results: { id: string; name: string; division_type: string }[] }>(token, '/api/ops/daily/divisions/')
+    const directorates = structure.results.filter(row => row.division_type === 'directorate')
+    const reportDivisionIds = new Set(directorates.map(row => String(row.id)))
     const submittedIdsBefore = new Set(
       existing.results
         .filter((row) => row.is_current && reportDivisionIds.has(row.division_id))
         .map((row) => row.division_id),
     )
-    const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
+    const target = report.rows.find((row) => reportDivisionIds.has(String(row.division_id)) && !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем проверить кнопку').toBeDefined()
     const targetDivisionId = String(target!.division_id)
-    // Пары «id → имя», а не просто имена: одноимённых управлений на стенде
+    // Пары «id → имя», а не просто имена: одноимённых подразделений на стенде
     // трое, и вычитать сданное ПО ИМЕНИ (как было) значило вычесть все три
     // строки разом (Plane №250).
-    const notSubmittedBefore = report.rows
+    const notSubmittedBefore = directorates.map(row => ({ division_id: Number(row.id), name: row.name }))
       .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
       .map((row) => ({ id: String(row.division_id), name: row.name }))
     const rowLabels = await divisionRowLabels(token)
@@ -406,7 +428,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const summary = board.getByRole('group', { name: 'Сводка сдачи дня' })
     const summaryHeadline = summary.locator('p').first()
     await expect(summaryHeadline).toHaveText(
-      `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+      `Сдано ${submittedIdsBefore.size} из ${directorates.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
     // Блок «Не сдали» — СПИСОК, а не абзац (Plane №328): проверяется счётчик
     // и поимённый состав, а не одна склеенная строка. Порядок здесь не
@@ -444,7 +466,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     // Сводка ОБЯЗАНА смениться: N выросло ровно на единицу, целевое
     // управление ушло из списка несдавших — точный текст, не хардкод.
     await expect(summaryHeadline).toHaveText(
-      `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+      `Сдано ${submittedIdsBefore.size + 1} из ${directorates.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
     // ТОТ ЖЕ порядок очереди, что и до сдачи (Plane №296): сдача убирает из
     // перечисления одну строку, а не переставляет остальные.
@@ -486,13 +508,15 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     // (`DailyExpenseBoard.tsx`, пересечение submissions × data.rows) — счёт
     // без этого фильтра завышал ожидание пробы и падал на живом «0 из 51»,
     // хотя борд вёл себя верно.
-    const reportDivisionIds = new Set(report.rows.map((row) => String(row.division_id)))
+    const structure = await get<{ results: { id: string; name: string; division_type: string }[] }>(token, '/api/ops/daily/divisions/')
+    const directorates = structure.results.filter(row => row.division_type === 'directorate')
+    const reportDivisionIds = new Set(directorates.map(row => String(row.id)))
     const submittedIdsBefore = new Set(
       existing.results
         .filter((row) => row.is_current && reportDivisionIds.has(row.division_id))
         .map((row) => row.division_id),
     )
-    const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
+    const target = report.rows.find((row) => reportDivisionIds.has(String(row.division_id)) && !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем поймать 409').toBeDefined()
     const targetDivisionId = String(target!.division_id)
 
@@ -506,7 +530,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const summary = board.getByRole('group', { name: 'Сводка сдачи дня' })
     const summaryHeadline = summary.locator('p').first()
     await expect(summaryHeadline).toHaveText(
-      `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+      `Сдано ${submittedIdsBefore.size} из ${directorates.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
 
     const label =
@@ -530,7 +554,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     // рассылает события вовсе, борд ничего не перечитывал, и рядом с текстом
     // «день уже сдан» продолжала стоять живая кнопка «Сдать день».
     await expect(summaryHeadline).toHaveText(
-      `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+      `Сдано ${submittedIdsBefore.size + 1} из ${directorates.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
     await expect(group.getByRole('button', { name: 'Сдать день' })).toHaveCount(0)
     await expect(group.getByText('День не сдан', { exact: true })).toHaveCount(0)

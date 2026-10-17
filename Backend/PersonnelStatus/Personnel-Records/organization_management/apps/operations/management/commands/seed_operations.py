@@ -21,10 +21,20 @@ from organization_management.apps.operations.services import (
 )
 
 PERMISSIONS = [
+    ("duty.dispatch", "Расстановка выделенных на дежурство сотрудников"),
     ("*", "Все права"),
     ("admin.roles", "Управление ролями"),
     ("status.manage", "Управление статусами"),
+    # Plane №1223 (`[РАСХ-РШ-07]`, решение заказчика 12.09.2026): оперативный
+    # дежурный правит статусы ТОЛЬКО «Руководству Службы» — сотрудникам,
+    # прикреплённым к корню организации напрямую. Своё право, а не
+    # `status.manage` с областью «корень»: область гранта — ПОДДЕРЕВО, и корень
+    # накрыл бы всю Службу. Ручки статусов принимают этот код как второй и
+    # добавляют к области ровно корень (`PermissionService.status_write_division_ids`).
+    ("status.manage_root", "Статусы руководству Службы"),
     ("status.view", "Просмотр статусов"),
+    ("status.workspace", "Рабочее место статусов сотрудников"),
+    ("digital_twin.read", "Чтение обезличенных данных Цифровым двойником"),
     # Решение согласующего по расстановке. С 28.08.2026 эти два кода —
     # РАБОЧИЕ: они охраняют возврат и подпись, разведённые с ведением
     # мероприятия (решение заказчика, Plane №267). Прежде они не охраняли
@@ -32,6 +42,7 @@ PERMISSIONS = [
     ("assignment.return", "Возврат расстановки"),
     ("assignment.approve", "Утверждение расстановки"),
     ("daily_report.generate", "Генерация суточного отчёта"),
+    ("service_summary.view", "Просмотр свода по Службе"),
     ("daily_report.mark_update", "Отметки в суточном отчёте"),
     ("daily_report.correct", "Корректировка суточного отчёта"),
     ("daily_report.override_block", "Обход блокировки расхода на завтра"),
@@ -60,6 +71,7 @@ PERMISSIONS = [
     # чтения реестра ОМ (Plane №267): рядовой сотрудник видит их, а реестр
     # мероприятий нет.
     ("catalog.view", "Просмотр каталогов раздела ОМ"),
+    ("legal.manage", "Управление нормативными документами ОМ"),
     # Перевод ОМ на произвольный этап в обход условий — право ОТДЕЛЬНОЕ от
     # event.manage: ведущий мероприятие проходит цепочку по правилам, а
     # обход правил — админ-полномочие. Выдано только ADMIN (через «*»);
@@ -137,7 +149,13 @@ PERMISSIONS = [
     ("feedback.triage", "Разбор обращений обратной связи"),
     ("feedback.internal_note", "Внутренние заметки по обращениям"),
     ("dictionary.view", "Просмотр справочников раздела ОМ"),
-    ("dictionary.manage", "Управление справочниками раздела ОМ"),
+    # Правка значений справочников переехала на `dictionary_value.manage`
+    # (UC-REF-001); это право сейчас открывает только регистр охраняемых лиц.
+    ("dictionary.manage", "Управление справочниками ОМ без значений (охраняемые лица)"),
+    # Значения справочников — отдельное право (UC-REF-001, BR13): все четыре
+    # операции над значениями любого справочника раздела и кадровых. Не
+    # выводится из `dictionary.manage`, выдаётся ролям явно.
+    ("dictionary_value.manage", "Изменение справочных значений"),
     ("settings.view", "Просмотр настроек раздела ОМ"),
     ("settings.manage", "Управление настройками раздела ОМ"),
     ("audit.view", "Просмотр аудита"),
@@ -181,7 +199,7 @@ ROLES = [
     ("DUTY_OFFICER", "Оперативный дежурный"),
     # ── Охранные мероприятия ────────────────────────────────────────────
     ("EVENT_OFFICER", "Офицер ОМ"),
-    ("OPS_STAFF", "Штаб сбора сил"),
+    ("OPS_STAFF", "Штаб второго департамента"),
     ("PATROL_LEAD", "Старший наряда"),
     ("GVO_LEAD", "Старший ГВО"),
     ("EVENT_APPROVER", "Утверждающий расстановку"),
@@ -199,6 +217,7 @@ ROLES = [
     ("AUDITOR", "Ревизор"),
     # ── Техническая ─────────────────────────────────────────────────────
     ("INTEGRATION_USER", "Интеграционная учётная запись"),
+    ("DIGITAL_TWIN_READER", "Цифровой двойник: чтение объектов и численности"),
     # ── Профили руководителей, названные заказчиком (Plane №348) ────────
     # Заказчик перечислил семь ролей ПО ВИДИМОСТИ МОДУЛЕЙ, и четыре из них в
     # каталоге не выражались ничем. Существующие роли под них не подходят и не
@@ -208,8 +227,8 @@ ROLES = [
     # Ключевое различие профилей — ВТОРОЙ ДЕПАРТАМЕНТ: он ведёт охранные
     # мероприятия, остальные — нет, поэтому `event.view` есть ровно у его
     # руководителей.
-    ("HEAD_DIRECTORATE_LINE", "Начальник управления (линейный департамент)"),
-    ("HEAD_DEPARTMENT_LINE", "Начальник департамента (линейный)"),
+    ("HEAD_DIRECTORATE_LINE", "Начальник управления (не второй департамент)"),
+    ("HEAD_DEPARTMENT_LINE", "Начальник департамента (не второй)"),
     ("HEAD_OPS_UNIT", "Начальник подразделения второго департамента"),
     ("FORCES_GATHERING_OFFICER", "Ответственный за сбор сил"),
     # Восьмая персона (Plane №382, решение заказчика 02.09.2026): «сотрудник
@@ -294,7 +313,10 @@ ROLE_PERMISSIONS = {
     ],
     # Сводит департаменты в расход организации; снимает блокировку опоздавшим.
     "DUTY_OFFICER": [
-        "status.view", "daily_report.generate", "daily_report.override_block",
+        "duty.dispatch",
+        "service_summary.view",
+        "status.view", "status.manage_root",
+        "daily_report.generate", "daily_report.override_block",
         "analytics.view", "report.generate", "duty.view", "object.view",
         "feedback.create", *OPS_READ,
     ],
@@ -370,7 +392,8 @@ ROLE_PERMISSIONS = {
     ],
 
     "REFERENCE_ADMIN": [
-        "dictionary.view", "dictionary.manage",
+        "dictionary.view", "dictionary.manage", "dictionary_value.manage",
+        "legal.manage",
         "settings.view", "settings.manage",
     ],
     # Раздаёт роли и области. Расход и мероприятия НЕ ведёт: иначе раздающий
@@ -385,6 +408,7 @@ ROLE_PERMISSIONS = {
     ],
 
     "INTEGRATION_USER": ["status.manage"],
+    "DIGITAL_TWIN_READER": ["digital_twin.read"],
 
     # ── Профили заказчика (Plane №348) ──────────────────────────────────
     # Ниже раскладки читаются как список ДОСТУПНЫХ модулей меню: заказчик
@@ -396,6 +420,11 @@ ROLE_PERMISSIONS = {
     # ГОН; нет `analytics.view` — нет Аналитики службы; нет `report.generate` —
     # нет Отчётов по ОМ.
     "HEAD_DIRECTORATE_LINE": [
+        # Сдача дня своего управления (Plane №1202, 12.09.2026): по канону
+        # расхода (RAW/README §19–20) начальник управления сам ставит статусы
+        # и сдаёт день; до этого право держала только техническая
+        # `DIRECTORATE_HEAD`, и персона заказчика получала 403 на «Сдать день».
+        "daily_report.mark_update", "daily_report.correct",
         "status.view", "status.manage", "orgstructure.manage",
         "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
@@ -414,6 +443,9 @@ ROLE_PERMISSIONS = {
     # (департамент против управления) — она живёт в назначении, а не в роли.
     # Сбора сил, Аналитики службы и Ежедневного отчёта здесь нет.
     "HEAD_OPS_UNIT": [
+        # Сдача дня — та же причина, что у `HEAD_DIRECTORATE_LINE` (№1202):
+        # начальник управления второго департамента тоже сдаёт свой день.
+        "daily_report.mark_update", "daily_report.correct",
         "status.view", "status.manage", "orgstructure.manage",
         "object.view", "analytics.operations",
         "report.generate", "feedback.view", "feedback.create", *OPS_READ,
@@ -528,6 +560,13 @@ ROLE_PERMISSIONS = {
         "feedback.view", "feedback.create", *SECTION_READ,
     ],
 }
+
+
+# Screen access and the data reads needed by the service summary are distinct.
+# Explicitly adding another role remains supported; no actor-name prohibition.
+for _role_code, _permission_codes in ROLE_PERMISSIONS.items():
+    if "status.view" in _permission_codes and _role_code not in {"DUTY_OFFICER", "INTEGRATION_USER"}:
+        _permission_codes.append("status.workspace")
 
 
 class Command(BaseCommand):
@@ -770,6 +809,24 @@ class Command(BaseCommand):
             OpsPolicySectionVersion.objects.get_or_create(
                 section_code=section, defaults={"version": version}
             )
+        # Passport readers require an explicit, versioned consumer policy.
+        # Seeding the editable settings alone leaves a fresh stand unusable.
+        # Only initialize the missing singleton; a configured policy belongs
+        # to the operator and must survive repeated reference seeding.
+        from organization_management.apps.operations.models_object import OpsPassportFreshnessPolicy
+
+        OpsPassportFreshnessPolicy.objects.get_or_create(
+            singleton_key=1,
+            defaults={
+                "version": OpsPolicySectionVersion.objects.get(section_code="PASSPORT_FRESHNESS").version,
+                "verification_interval_days": int(OpsPolicySetting.objects.get(
+                    setting_code="passport.verification_interval_days",
+                ).value),
+                "due_soon_percent": int(OpsPolicySetting.objects.get(
+                    setting_code="passport.due_soon_percent",
+                ).value),
+            },
+        )
         DICTIONARY_ENTRIES = [
             ("JOURNAL_ENTRY_TYPES", "INSTRUCTION", "Инструктаж", None),
             ("JOURNAL_ENTRY_TYPES", "ORDER", "Распоряжение", None),
@@ -828,6 +885,12 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS("Seeded ops settings and dictionaries")
         )
+        from organization_management.apps.operations.duty_kinds import DEFAULT_SERVICE_DUTY_KINDS, SERVICE_DUTY_KINDS
+        for code, label in DEFAULT_SERVICE_DUTY_KINDS:
+            OpsDictionaryEntry.objects.get_or_create(
+                dictionary_code=SERVICE_DUTY_KINDS, code=code,
+                defaults={"label": label, "label_kk": "", "description": "", "is_active": True},
+            )
 
         # Эти каталоги и singleton-настройки нужны пустому рабочему контуру:
         # строки фактов они не создают. Исторически они находились рядом с

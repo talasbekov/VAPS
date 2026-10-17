@@ -55,9 +55,10 @@ test.describe(LIVE ? 'статусы: язык календаря' : 'стату
     const staffedRow = page
       .locator('table tbody tr')
       .filter({ hasNot: page.getByText('ВАКАНТ') })
+      .filter({ has: page.getByRole('button', { name: /^Действия:/ }) })
       .first()
     // Через помощника (Plane №820): строка доводится до окна ДО открытия меню.
-    await clickRowMenuItem(page, staffedRow, 'Запланировать статус')
+    await clickRowMenuItem(page, staffedRow, 'Изменить статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })

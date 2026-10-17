@@ -18,6 +18,7 @@
 import datetime as dt
 
 import pytest
+from .test_ops_forces_gathering import notify_after_split
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import clock
@@ -142,7 +143,7 @@ def test_late_submission_is_allowed_and_recorded(manager):  # noqa: F811
     department = department_with_directorate()
     split(manager, base, department, dueAt="2027-05-20T18:30")
     allocation_id = allocation_of(manager, base)["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     make_assignment_status_type()
     employee = make_employee("Сериков")
     added = manager.post(
@@ -175,7 +176,7 @@ def test_the_late_mark_survives_the_next_split(manager):  # noqa: F811
     department = department_with_directorate()
     split(manager, base, department, dueAt="2027-05-20T18:30")
     allocation_id = allocation_of(manager, base)["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     make_assignment_status_type()
     employee = make_employee("Сериков")
     manager.post(
@@ -206,7 +207,7 @@ def test_a_returned_allocation_is_not_overdue(manager):  # noqa: F811
     department = department_with_directorate()
     split(manager, base, department, dueAt="2027-05-20T18:30")
     allocation_id = allocation_of(manager, base)["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     make_assignment_status_type()
     employee = make_employee("Сериков")
     manager.post(
@@ -239,7 +240,7 @@ def test_a_timely_submission_is_not_marked_late(manager):  # noqa: F811
     department = department_with_directorate()
     split(manager, base, department, dueAt="2027-05-20T18:30")
     allocation_id = allocation_of(manager, base)["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     make_assignment_status_type()
     employee = make_employee("Сериков")
     manager.post(
@@ -273,7 +274,7 @@ def test_a_declined_allocation_is_not_overdue(manager):  # noqa: F811
     department = department_with_directorate()
     split(manager, base, department, dueAt="2027-05-20T18:30")
     allocation_id = allocation_of(manager, base)["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
 
     # Контроль ДО ответа: та же строка в тот же момент ПРОСРОЧЕНА. Без него
     # проба не отличала бы «отказ освобождает» от «просрочка здесь не

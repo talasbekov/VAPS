@@ -132,6 +132,7 @@ test.describe(
       await page.goto(`${APP}/statuses/`)
       const banner = page.locator('[data-slot="forces-request-banner"]')
       await expect(banner).toBeVisible({ timeout: 20_000 })
+      await banner.locator('summary').click()
       await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 20_000 })
       const employeeRowsBefore = await page.locator('table tbody tr').count()
 
@@ -230,8 +231,8 @@ test.describe(
       await page.goto(`${APP}/statuses/`)
 
       const missing = page.locator('[data-slot="forces-request-missing"]')
-      // Выбор из двух: до нажатия активного нет — жмём первый чип сами.
-      await page.getByRole('button', { name: 'ОМ-СИНТ-1', exact: false }).click()
+      // Выбор из двух: первый запрос не подставляется автоматически.
+      await page.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }).selectOption(rows[0].allocationId)
 
       await expect(missing, 'отказ обязан быть назван словами').toBeVisible({
         timeout: 20_000,
@@ -243,12 +244,14 @@ test.describe(
       // 🔴 ГЛАВНОЕ: второй запрос по-прежнему доступен нажатием, а не только
       // перезагрузкой страницы.
       await expect(
-        missing.getByRole('button', { name: 'ОМ-СИНТ-2', exact: false }),
+        missing.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }),
         'переключатель запросов обязан пережить отказ выбранного',
       ).toBeVisible()
       await expect(
-        missing.getByRole('button', { name: 'ОМ-СИНТ-1', exact: false }),
-      ).toHaveAttribute('aria-pressed', 'true')
+        missing.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }),
+      ).toHaveValue(rows[0].allocationId)
+      await missing.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }).selectOption(rows[1].allocationId)
+      await expect(missing.getByRole('combobox', { name: 'Запрос для подбора сотрудников' })).toHaveValue(rows[1].allocationId)
     })
     /**
      * Подпись адресата — по слову сервера (Plane №941, слово заказчика
@@ -330,12 +333,8 @@ test.describe(
     }
 
     /**
-     * Счётчик кнопки и «Выбрано» в таблице расходятся ОБЪЯСНИМО (Plane №547).
-     *
-     * Таблица считает выбранные СТРОКИ, а выделить можно только сотрудников:
-     * вакансия — пустая штатная единица, выделять по ней некого. Числа
-     * расходились молча («Выбрано: 10» против «Выделить на ОМ-…: 7»), и
-     * разницу человеку не объяснял никто.
+     * Выбор страницы включает сотрудников, которым можно менять статус.
+     * Вакансия остаётся видна, но не попадает в выбор для статусов и ОМ.
      *
      * 🔴 ВАКАНСИЯ ДЕЛАЕТСЯ ИЗ НАСТОЯЩЕГО ОТВЕТА, а не выдумывается целиком:
      * проба берёт живой ответ ручки состава и убирает сотрудника из ПЕРВОЙ
@@ -344,10 +343,8 @@ test.describe(
      * сегодня на стенде пустая штатная единица. Стенд НЕ ТРОГАЕТСЯ — подмена
      * живёт в браузере.
      *
-     * Красная до правки: строки про вакансии в баннере не было вовсе, а
-     * разбор ключа стоял своей копией и вакансии просто выбрасывал.
      */
-    test('вакансии в выборе названы, а не выброшены молча', async ({ page }) => {
+    test('выбор страницы исключает вакансии и совпадает со счётчиком выделяемых сотрудников', async ({ page }) => {
       const row = {
         eventId: '900003',
         code: 'ОМ-СИНТ-3',
@@ -401,6 +398,11 @@ test.describe(
           await route.abort()
           return
         }
+        if (!response.ok()) {
+          whyNoVacancy = `запрос состава ответил ${response.status()}: ${(await response.text()).slice(0, 400)}`
+          await route.fulfill({ response })
+          return
+        }
         let body: { staff_units?: Record<string, unknown>[] }
         try {
           body = (await response.json()) as { staff_units?: Record<string, unknown>[] }
@@ -430,8 +432,13 @@ test.describe(
           employee: null,
           employees: [],
         }
-        if (typeof vacancy.id === 'string') vacancy.id = `${vacancy.id}-vacancy`
-        else if (typeof vacancy.id === 'number') vacancy.id = -Math.abs(vacancy.id)
+        // Реальные ID штатных единиц положительные. Отрицательный клон
+        // создавал ключ `-ID-vacant`, где второй кусок — число вместо
+        // `vacant`: баннер считал такую фиктивную вакансию сотрудником.
+        // Положительный ID без дефисов сохраняет настоящий формат ключа.
+        const vacancyId = Number.MAX_SAFE_INTEGER
+        expect(units.some(unit => String(unit.id) === String(vacancyId)), 'ID клона совпадает с настоящей строкой').toBe(false)
+        vacancy.id = typeof vacancy.id === 'string' ? String(vacancyId) : vacancyId
         body.staff_units = [vacancy, ...units]
         vacancyMade = true
         await route.fulfill({ response, json: body })
@@ -457,11 +464,18 @@ test.describe(
       expect(whyNoVacancy, whyNoVacancy || 'причины нет').toBe('')
 
       await expect(banner).toBeVisible({ timeout: 20_000 })
+      await banner.locator('summary').click()
 
       // Галочки — компоненты shadcn: это `button[role=checkbox]`, а не
       // `input[type=checkbox]`. Первая редакция искала input и не находила
       // ничего — проба падала на пустой локатор, а не на предмете.
-      const boxes = page.locator('table').getByRole('checkbox')
+      const table = page.locator('table').filter({
+        has: page.getByRole('columnheader', { name: 'ФИО', exact: true }),
+      })
+      await expect(table).toHaveCount(1)
+      // Общий checkbox заголовка не является строкой сотрудника.
+      const rows = table.locator('tbody tr').filter({ has: page.getByRole('checkbox') })
+      const boxes = rows.getByRole('checkbox')
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       expect(
         vacancyMade,
@@ -470,21 +484,23 @@ test.describe(
         whyNoVacancy || 'вакансию сделать не удалось по неизвестной причине',
       ).toBe(true)
 
-      // Отмечаем ВСЕ строки страницы: среди них и вакансия, и сотрудники.
+      // Общий флажок выбирает доступных сотрудников этой страницы.
       const total = await boxes.count()
-      for (let index = 0; index < total; index += 1) {
-        await boxes.nth(index).check({ force: true })
-      }
-
-      await expect(
-        banner.getByText('из них вакансий', { exact: false }),
-        'расхождение «Выбрано» и счётчика кнопки обязано быть названо словами',
-      ).toBeVisible({ timeout: 15_000 })
-      // И счётчик кнопки обязан быть МЕНЬШЕ числа выбранных строк — иначе
-      // объяснение объясняло бы несуществующее расхождение.
+      await expect(rows).toHaveCount(total)
+      const vacancies = await rows.filter({ has: page.getByRole('cell', { name: 'ВАКАНТ', exact: true }) }).count()
+      expect(vacancies, 'среди строк страницы нет собственной вакансии').toBeGreaterThan(0)
+      expect(total - vacancies, 'среди строк страницы нет сотрудников для сравнения счётчиков').toBeGreaterThan(0)
+      await table.getByRole('checkbox', { name: 'Выбрать сотрудников на этой странице', exact: true }).check()
+      const vacancyRows = rows.filter({ has: page.getByRole('cell', { name: 'ВАКАНТ', exact: true }) })
+      for (const box of await vacancyRows.getByRole('checkbox').all()) await expect(box).toBeDisabled()
+      await expect(table.locator('tbody [role="checkbox"][aria-checked="true"]')).toHaveCount(total - vacancies)
+      await expect(banner.getByText('из них вакансий', { exact: false })).toHaveCount(0)
       const label = await banner.getByRole('button', { name: SELECT_ACTION }).innerText()
-      const counted = Number(label.replace(/\D+/g, '').slice(-2))
+      const match = label.match(/:\s*(\d+)\s*$/)
+      expect(match, 'в подписи кнопки нет числа выделяемых сотрудников').not.toBeNull()
+      const counted = Number(match![1])
       expect(Number.isFinite(counted)).toBe(true)
+      expect(counted).toBe(total - vacancies)
     })
     /**
      * Отчёт о выделении НЕ переезжает на соседний запрос (Plane №546).
@@ -541,7 +557,7 @@ test.describe(
 
       await signIn(page)
       await page.goto(`${APP}/statuses/`)
-      await page.getByRole('button', { name: 'ОМ-СИНТ-О1', exact: false }).click()
+      await page.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }).selectOption(rows[0].allocationId)
       const banner = page.locator('[data-slot="forces-request-banner"]')
       await expect(banner).toBeVisible({ timeout: 20_000 })
 
@@ -556,7 +572,7 @@ test.describe(
         timeout: 15_000,
       })
 
-      await page.getByRole('button', { name: 'ОМ-СИНТ-О2', exact: false }).click()
+      await page.getByRole('combobox', { name: 'Запрос для подбора сотрудников' }).selectOption(rows[1].allocationId)
 
       await expect(
         report,
@@ -648,6 +664,7 @@ test.describe(
       const banner = page.locator('[data-slot="forces-request-banner"]')
       await expect(banner).toBeVisible({ timeout: 20_000 })
       const boxes = page.locator('table').getByRole('checkbox')
+      await banner.locator('summary').click()
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
       await banner.getByRole('button', { name: SELECT_ACTION }).click()
@@ -761,17 +778,9 @@ test.describe(
         return Math.floor((box as { height: number }).height)
       }
 
-      // Чипы: оба, а не первый. Одинаковый класс не гарантирует одинаковой
-      // высоты — у второго чипа код длиннее и он мог бы перенестись.
-      for (const row of rows) {
-        const chip = page.getByRole('button', { name: new RegExp(`^${row.code} `) })
-        expect(
-          await tapHeight(chip),
-          `чип «${row.code}» меньше 44 px: промах отправит людей не на то ОМ`,
-        ).toBeGreaterThanOrEqual(44)
-      }
-
-      await page.getByRole('button', { name: new RegExp(`^${rows[0].code} `) }).click()
+      const requestSelector = page.getByRole('combobox', { name: 'Запрос для подбора сотрудников' })
+      expect(await tapHeight(requestSelector), 'селектор запроса меньше 44 px').toBeGreaterThanOrEqual(44)
+      await requestSelector.selectOption(rows[0].allocationId)
       const banner = page.locator('[data-slot="forces-request-banner"]')
       await expect(banner).toBeVisible({ timeout: 20_000 })
 
@@ -926,6 +935,7 @@ test.describe(
       await expect(page.locator('[data-slot="forces-request-banner"]')).toBeVisible({
         timeout: 20_000,
       })
+      await page.locator('[data-slot="forces-request-banner"] summary').click()
 
       const size = await page.evaluate(() => ({
         scroll: document.documentElement.scrollWidth,

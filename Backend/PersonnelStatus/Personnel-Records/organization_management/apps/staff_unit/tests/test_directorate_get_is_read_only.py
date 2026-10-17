@@ -174,6 +174,11 @@ def test_completed_status_does_not_shadow_the_active_one(actor, scene):
         end_date=today - timedelta(days=360),
         created_by=actor,
     )
+    # The host clock can give consecutive inserts identical timestamps.
+    # Separate fixture timestamps explicitly so the old -created_at selector
+    # still chooses the completed record on every platform.
+    active_created = scene["active"].statuses.get(state=_STATE.ACTIVE).created_at
+    EmployeeStatus.objects.filter(pk=late.pk).update(created_at=active_created + timedelta(seconds=1))
     # Гвард против вакуума: если бы запись осталась активной, проба проверяла
     # бы не фильтр по состоянию, а выбор из одного варианта.
     late.refresh_from_db()

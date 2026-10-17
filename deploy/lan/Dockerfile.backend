@@ -1,0 +1,6 @@
+FROM smart-josparlau/lan-backend-base:1172-c41c79a22af9
+COPY deploy/lan/settings.py /app/organization_management/config/settings/lan.py
+COPY deploy/lan/redoc.html /app/lan-templates/drf_spectacular/redoc.html
+COPY deploy/lan/wheelhouse/ /tmp/lan-wheelhouse/
+RUN pip install --no-index --no-deps /tmp/lan-wheelhouse/*.whl && pip check && rm -rf /tmp/lan-wheelhouse
+ENV DJANGO_SETTINGS_MODULE=organization_management.config.settings.lan

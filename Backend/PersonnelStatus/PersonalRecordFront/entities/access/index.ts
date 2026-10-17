@@ -76,6 +76,8 @@ export interface AccessAccount {
   email: string;
   is_active: boolean;
   last_login: string | null;
+  employee_id?: number | null;
+  employee_name?: string | null;
 }
 
 export function accessAccountPath(id: number): string {
@@ -151,6 +153,12 @@ export interface AssignAccessRoleRequest {
  * подразделений НЕТ — её подписывает клиент, и это единственное место, где
  * такая подпись живёт. */
 export const WHOLE_SERVICE_SCOPE_LABEL = "Вся служба";
+
+/** Missing directory names must never turn a scoped assignment into a global label. */
+export function accessScopeLabel(scope: Pick<AccessUserRole, 'scope_division_id' | 'scope_division_name'>): string {
+  if (scope.scope_division_id === null) return WHOLE_SERVICE_SCOPE_LABEL;
+  return scope.scope_division_name?.trim() || `Подразделение #${scope.scope_division_id}`;
+}
 
 export interface AccessPermission {
   code: string;

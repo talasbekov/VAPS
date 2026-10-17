@@ -172,7 +172,7 @@ export function VisitObjectPicker({
       </label>
       <select
         id={id}
-        className="h-8 rounded-md border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-8 w-full min-w-0 max-w-full rounded-md border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
         value={scope.shown}
         onChange={(e) => scope.setShown(e.target.value)}
       >

@@ -179,7 +179,7 @@ def test_a_cell_with_members_shows_the_count_and_the_names(data):
 
     lines = cell.value.split("\n")
     assert lines[0] == "1"
-    assert lines[1] == "капитан Иванов Иван — 04.08.2026–10.08.2026"
+    assert lines[1] == "капитан Иванов Иван — 04.08.2026–09.08.2026"
 
 
 def test_a_member_without_a_rank_has_no_leading_space(data):
@@ -189,11 +189,8 @@ def test_a_member_without_a_rank_has_no_leading_space(data):
     assert cell.value.split("\n")[1].startswith("Петров Пётр —")
 
 
-def test_a_long_list_is_truncated_with_an_honest_tail(catalog):
-    """Молча обрезанный список выглядел бы как полный.
-
-    Читатель документа считал бы, что видит всех.
-    """
+def test_a_long_list_shows_every_employee(catalog):
+    """A large subdivision still exports every employee."""
     roster = [member(index, full_name=f"Сотрудник {index}") for index in range(30)]
     rows = [fact(index, "DUTY") for index in range(30)]
     sheet = sheet_of(document(catalog, roster, rows))
@@ -201,8 +198,8 @@ def test_a_long_list_is_truncated_with_an_honest_tail(catalog):
 
     lines = cell.value.split("\n")
     assert lines[0] == "30"
-    assert len(lines) == CELL_MAX_MEMBERS + 2  # число + имена + хвост
-    assert lines[-1] == f"… ещё {30 - CELL_MAX_MEMBERS}"
+    assert len(lines) == 31
+    assert all(any(f"Сотрудник {index} —" in line for line in lines) for index in range(30))
 
 
 def test_attached_is_shown_as_a_surplus(data):

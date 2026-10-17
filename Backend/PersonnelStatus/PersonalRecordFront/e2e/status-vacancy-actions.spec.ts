@@ -47,6 +47,9 @@ test.describe(LIVE ? 'статусы: действия у вакансии' : '�
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 
+    if (process.env.VACANCY_DIVISION_NAME) {
+      await page.getByPlaceholder('Поиск по ФИО, подразделению, должности...').fill(process.env.VACANCY_DIVISION_NAME)
+    }
     const vacancyRow = page.locator('table tbody tr', { hasText: 'ВАКАНТ' }).first()
     await expect(
       vacancyRow,
@@ -60,7 +63,7 @@ test.describe(LIVE ? 'статусы: действия у вакансии' : '�
 
     // (1) НИ ОДНОГО работающего пункта: все четыре адресованы человеку.
     for (const label of [
-      'Запланировать статус',
+      'Изменить статус',
       'Запланированные статусы',
       'Откомандировать сотрудника',
       'Просмотр профиля',
@@ -86,12 +89,13 @@ test.describe(LIVE ? 'статусы: действия у вакансии' : '�
     const staffedRow = page
       .locator('table tbody tr')
       .filter({ hasNot: page.getByText('ВАКАНТ') })
+      .filter({ has: page.getByRole('button', { name: /^Действия:/ }) })
       .first()
     await expect(staffedRow).toBeVisible({ timeout: 25_000 })
     await staffedRow.getByRole('button', { name: /^Действия:/ }).click()
 
     const menu = page.getByRole('menu')
-    await expect(menu.getByRole('menuitem', { name: 'Запланировать статус' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: 'Изменить статус' })).toBeVisible()
     await expect(menu.getByText('Должность вакантна — действий нет')).toHaveCount(0)
   })
 })

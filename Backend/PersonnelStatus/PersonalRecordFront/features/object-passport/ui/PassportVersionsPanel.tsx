@@ -4,12 +4,15 @@
 // показывает форма выше; секторы в запрос не кладутся, снимок делает сервер
 // (иначе можно было бы опубликовать не то, что видно). Опубликованные версии
 // только читаются: версия неизменяема после публикации.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LoadFailure } from "@/components/load-failure";
+import { PassportVersionSnapshot } from "./PassportVersionSnapshot";
 import { usePublishPassportVersion } from "@/hooks/use-object-passport";
 import type { PassportVersion } from "@/entities/security-object";
 import { formatIsoDateTime, formatIsoDate } from "@/shared/lib/date";
@@ -21,21 +24,48 @@ interface PassportVersionsPanelProps {
   objectId: string;
   versions: PassportVersion[];
   hasPosts: boolean;
+  /** object.manage: сервер требует тот же код у POST публикации. */
+  canPublish: boolean;
+  isCurrentResult?: () => boolean;
+  backToRegistry?: string;
+  objectName?: string;
+  isActive?: boolean;
+  readFailure?: { onRetry: () => void; isRetrying: boolean };
 }
 
 export function PassportVersionsPanel({
   objectId,
   versions,
   hasPosts,
+  canPublish,
+  isCurrentResult,
+  backToRegistry = "",
+  objectName = "Паспорт объекта",
+  isActive = true,
+  readFailure,
 }: PassportVersionsPanelProps) {
-  const mutation = usePublishPassportVersion(objectId);
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [note, setNote] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const preview = isActive ? versions.find(version => version.id === previewId) : undefined;
+  const previewTrigger = useRef<HTMLAnchorElement | null>(null);
+  const previewContent = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (previewId !== null && preview === undefined) setPreviewId(null);
+  }, [previewId, preview]);
+  function versionHref(versionId: string) {
+    return `/security-ops/objects/${objectId}/passports/${versionId}${backToRegistry === "" ? "" : `?back=${encodeURIComponent(backToRegistry)}`}`;
+  }
+  const mutation = usePublishPassportVersion(objectId, () => {
+    setEffectiveFrom("");
+    setNote("");
+  }, isCurrentResult);
 
   return (
     <Card>
       <CardContent className="p-4">
-        <h2 className="mb-2.5 text-sm font-semibold">Версии паспорта</h2>
+        <h2 ref={heading} tabIndex={-1} className="mb-2.5 text-sm font-semibold">Версии паспорта</h2>
 
         {versions.length === 0 ? (
           <p className="mb-3 text-xs text-muted-foreground">
@@ -49,7 +79,12 @@ export function PassportVersionsPanel({
               .map((version) => (
                 <li key={version.id} className="rounded-md border p-2.5 text-xs">
                   <Link
-                    href={`/security-ops/objects/${objectId}/passports/${version.id}`}
+                    href={versionHref(version.id)}
+                    aria-haspopup="dialog"
+                    onClick={(event) => {
+                      if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                      event.preventDefault(); previewTrigger.current = event.currentTarget; setPreviewId(version.id);
+                    }}
                     className="font-semibold text-primary-ink"
                   >
                     Версия {version.versionNumber}
@@ -64,7 +99,13 @@ export function PassportVersionsPanel({
           </ul>
         )}
 
-        <div className="flex flex-wrap items-end gap-2">
+        {!canPublish && (
+          <p className="mb-3 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            История доступна для просмотра. Публикация доступна только для чтения.
+          </p>
+        )}
+
+        <fieldset disabled={!canPublish || mutation.isPending} className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
             <Label htmlFor="passport-version-effective-from">Действует с *</Label>
             <Input
@@ -90,7 +131,7 @@ export function PassportVersionsPanel({
           >
             {mutation.isPending ? "Публикация…" : "Опубликовать версию"}
           </Button>
-        </div>
+        </fieldset>
 
         {!hasPosts && (
           <p className="mt-2 text-xs text-muted-foreground">
@@ -104,6 +145,36 @@ export function PassportVersionsPanel({
           </p>
         )}
       </CardContent>
+      <Dialog open={preview !== undefined} onOpenChange={(open) => { if (!open) setPreviewId(null); }}>
+        <DialogContent ref={previewContent} className="sm:max-w-3xl"
+          onOpenAutoFocus={(event) => { event.preventDefault(); previewContent.current?.focus({ preventScroll: true }); }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault(); requestAnimationFrame(() => {
+              const trigger = previewTrigger.current;
+              if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+              else if (heading.current?.getClientRects().length) heading.current.focus();
+              else document.querySelector<HTMLElement>('[aria-label="Разделы паспорта"] [role="tab"][aria-selected="true"]')?.focus();
+            });
+          }}>
+          {preview !== undefined && <>
+            <DialogHeader>
+              <DialogTitle>{objectName} · версия {preview.versionNumber}</DialogTitle>
+              <DialogDescription>Действует с {formatIsoDate(preview.effectiveFrom)} · опубликовано {formatIsoDateTime(preview.publishedAt)} · {preview.publishedBy}</DialogDescription>
+            </DialogHeader>
+            {readFailure !== undefined && <LoadFailure what="опубликованную версию паспорта"
+              description="Показан последний загруженный снимок. Черновики сохранены."
+              onRetry={readFailure.onRetry} isRetrying={readFailure.isRetrying} />}
+            <PassportVersionSnapshot version={preview} />
+            <DialogFooter>
+              <Link href={versionHref(preview.id)} target="_blank" rel="noopener noreferrer"
+                className="flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold text-primary-ink hover:bg-muted">
+                Открыть в новой вкладке
+              </Link>
+              <Button type="button" className="min-h-11" onClick={() => setPreviewId(null)}>Закрыть просмотр</Button>
+            </DialogFooter>
+          </>}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -97,6 +97,7 @@ def test_catalog_sees_a_permission_that_widens_instead_of_closing():
             "placement_unassign",
             "placement_post_remove",
             "placement_post_comment",
+            "placement_map_update",
             "placement_move",
         }
     # И основной гейт этих же ручек остался на месте — обход его не заменяет.
@@ -271,7 +272,7 @@ def test_creating_a_dictionary_entry_is_listed_under_manage_not_view():
     `methods` действия `entries` — строка уедет под `dictionary.view`.
     """
     path = "/api/ops/dictionaries/<code>/entries/"
-    manage = {(row["method"], row["path"]) for row in catalog()["dictionary.manage"]}
+    manage = {(row["method"], row["path"]) for row in catalog()["dictionary_value.manage"]}
     view = {(row["method"], row["path"]) for row in catalog()["dictionary.view"]}
     assert ("POST", path) in manage
     assert ("POST", path) not in view
@@ -341,6 +342,9 @@ def test_every_seeded_permission_has_at_least_one_catalog_row():
         # до неё не достаёт. Переезд — отдельная работа, здесь названо, чтобы
         # отсутствие не читалось как дефект.
         "orgstructure.manage": "старый RBAC штатного расписания вне DRF-вьюсетов",
+        # Screen navigation is separate from status.view on data APIs; its
+        # real purpose is shown explicitly on the permissions settings screen.
+        "status.workspace": "доступ к кадровому экрану /statuses, не гейт API",
     }
 
     seeded = {code for code, _label in seed_operations.PERMISSIONS}

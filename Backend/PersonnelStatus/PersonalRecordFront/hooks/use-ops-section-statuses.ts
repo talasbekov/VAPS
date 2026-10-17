@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  PERSONNEL_STATUS_SOURCE,
   apiClient,
   type OpsEmployeeStatusRow,
   type OpsStatusParticipation,
@@ -156,6 +157,11 @@ export function useOpsSectionStatuses(enabled = true) {
   const statusByEmployee = new Map<number, OpsSectionStatus>();
   for (const row of statuses.data ?? []) {
     if (row.state !== "ACTIVE") continue;
+    // Проекция КАДРОВОГО статуса (Plane №1209) в колонке раздела не
+    // печатается: та же строка уже стоит слева, в «Статус (кадровый)», и
+    // два каталога показываются как два (№314), а не один дважды. Участия
+    // выше это не касается — у проекции их не бывает.
+    if (row.source === PERSONNEL_STATUS_SOURCE) continue;
     const known = statusByEmployee.get(row.employee_id);
     // Строк может быть несколько (человек и на дежурстве, и привлечён);
     // берётся первая действующая, остальные видны участиями ниже.

@@ -666,12 +666,22 @@ export function todayLocalIso(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** Окно первичной сдачи — {сегодня, сегодня+1}. Считает браузер, а РЕШАЕТ
- * сервер: истина при 422 — details.allowed из ответа. */
-export function submitWindow(today: string): [string, string] {
-  const tomorrow = new Date(`${today}T00:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return [today, tomorrow.toISOString().slice(0, 10)];
+/** Горизонт первичной сдачи вперёд, дней. Тот же предел, что у сервера
+ * (`expense_period.MAX_PERIOD_DAYS`, Plane №989): здесь стояло окно
+ * {сегодня, завтра}, и клиент отказывал в сдаче за послезавтра словами
+ * «только за сегодня или завтра», хотя сервер её давно принимал (решение
+ * заказчика 12.09.2026, Plane №1197: «можно будет за несколько дней сдать»).
+ * Считает браузер, а РЕШАЕТ сервер: истина при 422 — details.allowed. */
+export const SUBMIT_HORIZON_DAYS = 62;
+
+/** Окно первичной сдачи — сегодня и `SUBMIT_HORIZON_DAYS` дней вперёд. */
+export function submitWindow(today: string): string[] {
+  const start = new Date(`${today}T00:00:00Z`);
+  return Array.from({ length: SUBMIT_HORIZON_DAYS + 1 }, (_, offset) => {
+    const day = new Date(start);
+    day.setUTCDate(day.getUTCDate() + offset);
+    return day.toISOString().slice(0, 10);
+  });
 }
 
 export function isWithinSubmitWindow(businessDate: string, today: string): boolean {
@@ -728,7 +738,7 @@ export function describeSubmitFailure(
   if (error.status === 422 && error.errorCode === "BUSINESS_DATE_OUT_OF_WINDOW") {
     return {
       kind: "out-of-window",
-      message: "Сдать можно только за сегодня или завтра.",
+      message: "Сервер не принял дату сдачи: она вне разрешённого окна.",
       allowed: parseAllowed(error.details),
     };
   }

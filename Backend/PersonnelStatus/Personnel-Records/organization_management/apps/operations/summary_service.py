@@ -297,6 +297,70 @@ def summary_laggards(division_id, business_date):
     return _laggards_of(required, current.snapshot["sources"])
 
 
+def _duty_officer_recipients():
+    """Кому сообщать об отправленном своде (Plane №1222): все активные
+    назначения роли `DUTY_OFFICER` (получатель — `str(User.pk)`, как во всей
+    ленте) плюс получатель по умолчанию из настроек контроля сдачи — тот же,
+    кому уходят напоминания об отставании. Дубли по строке получателя
+    схлопываются здесь, а не ключом БД: один человек — одно письмо."""
+    from organization_management.apps.operations.models import UserRole
+
+    recipients = []
+    for user_id in (
+        UserRole.objects.filter(role_code_id="DUTY_OFFICER", is_active=True)
+        .order_by("user_id")
+        .values_list("user_id", flat=True)
+    ):
+        user_id = (user_id or "").strip()
+        if user_id and user_id not in recipients:
+            recipients.append(user_id)
+    default = (
+        SubmissionControlSettingsSelector.get().default_notify_recipient or ""
+    ).strip()
+    if default and default not in recipients:
+        recipients.append(default)
+    return recipients
+
+
+def _notify_duty_officers(current, *, division_id, laggards):
+    """Уведомление «свод отправлен» каждому дежурному (`[ДОП-20-09]`).
+
+    Некому сообщить — не отказ отправки: факт доставки уже записан в строку
+    свода и аудит, получателей администратор заводит отдельно. Ключ «одна
+    строка на версию свода в день»: пересобранный свод — новая версия и новое
+    письмо; повторную отправку той же версии сервер отвергает раньше (409).
+    Отказ `notify()` (вернул None) не роняет отправку по той же причине —
+    письмо вторично к факту, и его отсутствие видно по ленте, а не по
+    сломанному своду.
+    """
+    from organization_management.apps.divisions.models import Division
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.notify_service import notify
+
+    recipients = _duty_officer_recipients()
+    if not recipients:
+        return
+    name = Division.objects.filter(pk=division_id).values_list("name", flat=True).first() or ""
+    payload = {
+        "division_id": division_id,
+        "division_name": name,
+        "submission_id": current.pk,
+        "version": current.version,
+        "sent_by": current.sent_by,
+        "incomplete": bool(laggards),
+        "incomplete_reason": current.incomplete_reason,
+        "laggard_division_ids": list(laggards),
+    }
+    for recipient in recipients:
+        notify(
+            recipient,
+            OpsNotification.Kind.SUMMARY_SENT,
+            current.business_date,
+            payload=payload,
+            dedupe_key=f"summary:{division_id}:v{current.version}",
+        )
+
+
 @transaction.atomic
 def send_summary(*, division_id, business_date, actor, reason=""):
     """Отправить действующую сводку оперативному дежурному (Plane №990,
@@ -356,6 +420,7 @@ def send_summary(*, division_id, business_date, actor, reason=""):
     current.sent_by = actor
     current.incomplete_reason = reason if laggards else ""
     current.save(update_fields=["sent_at", "sent_by", "incomplete_reason"])
+    _notify_duty_officers(current, division_id=division_id, laggards=laggards)
 
     audit_service.record(
         actor=actor,

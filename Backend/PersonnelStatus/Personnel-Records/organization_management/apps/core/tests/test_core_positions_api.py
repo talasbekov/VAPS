@@ -138,17 +138,16 @@ def test_sort_order_is_null_even_when_level_is_filled(positions):
     assert row["sort_order"] is None
 
 
-def test_is_active_is_null_for_every_row(positions):
-    """`is_active` в старом справочнике должностей отсутствует.
-
-    Вернуть True «по умолчанию» нельзя: строка выглядела бы подтверждённо
-    действующей, хотя признака в базе нет вовсе.
-    """
+def test_is_active_matches_each_dictionary_value(positions):
+    """The lifecycle flag comes from the real dictionary field."""
+    inactive = Position.objects.order_by('pk').first()
+    inactive.is_active = False
+    inactive.save(update_fields=['is_active'])
     api, _ = reader()
     listed = rows(api.get(URL))
-
+    expected = dict(Position.objects.values_list('code', 'is_active'))
     assert listed
-    assert all(row["is_active"] is None for row in listed)
+    assert all(row['is_active'] is expected[row['code']] for row in listed)
 
 
 def test_seeded_positions_are_listed_too(positions):

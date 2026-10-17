@@ -791,6 +791,9 @@ export interface LoadMetric {
 export interface LoadAnalyticsView {
   units: LoadMetric[];
   employees: LoadMetric[];
+  /** Aggregates remain available when individual detail is outside the grant. */
+  personalDetailSuppressed?: boolean;
+  personalDetailReason?: string | null;
   /** Смены окна без связи §22.9 (employeeId === null). */
   unlinkedShiftsCount: number;
   policy: LoadPolicyView | null;

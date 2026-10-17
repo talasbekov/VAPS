@@ -14,6 +14,8 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { useContext } from "react";
+import { OpsProtectedPortalContext, OpsProtectedInteractionContext } from "@/lib/ops-permission-suspension";
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -22,6 +24,8 @@ interface MobileMenuProps {
 }
 
 export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
+  const protectedContainer = useContext(OpsProtectedPortalContext);
+  const interactionBlocked = useContext(OpsProtectedInteractionContext);
   return (
     <DialogPrimitive.Root
       open={isOpen}
@@ -29,7 +33,7 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
         if (!open) onClose();
       }}
     >
-      <DialogPrimitive.Portal>
+      <DialogPrimitive.Portal container={protectedContainer}>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 lg:hidden" />
         {/* Панель — колонка: шапка h-16 плюс сайдбар h-screen внутри 100vh
             уводили дно списка за экран, и последние пункты были недостижимы.
@@ -37,6 +41,8 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
             Фон именно сайдбара, а не карточки: внутрь кладётся <Sidebar>, чей
             текст набран text-sidebar-foreground. */}
         <DialogPrimitive.Content
+          onEscapeKeyDown={event => { if (interactionBlocked()) event.preventDefault(); }}
+          onInteractOutside={event => { if (interactionBlocked()) event.preventDefault(); }}
           aria-label="Меню навигации"
           className="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] flex-col bg-sidebar shadow-lg outline-none lg:hidden"
         >

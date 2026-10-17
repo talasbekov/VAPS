@@ -178,6 +178,19 @@ class TestPermissionService:
 class TestMyPermissionsApi:
     URL = "/api/operations/my-permissions/"
 
+    @pytest.mark.parametrize("scoped", [False, True])
+    def test_reference_admin_has_exact_permissions_and_scope_cannot_make_global_legal_writes(self, scoped):
+        from django.core.management import call_command
+        call_command("seed_operations", reference_only=True)
+        api, user = self._client("reference-admin-contract")
+        division = Division.objects.create(name="Reference scope") if scoped else None
+        RoleAdminService.assign_role(str(user.pk), "REFERENCE_ADMIN", division.pk if division else None, actor="test")
+        response = api.get(self.URL)
+        assert response.status_code == 200
+        expected = ["dictionary.manage", "dictionary.view", "dictionary_value.manage", "legal.manage", "settings.manage", "settings.view"]
+        assert response.json()["permissions"] == expected
+        assert response.json()["global_permissions"] == ([] if scoped else expected)
+
     # Проектная аутентификация — SimpleJWT; force_authenticate ставит
     # пользователя в обход выпуска токена (идентичность не предмет тестов).
     def _client(self, username="ops-user"):
@@ -205,6 +218,10 @@ class TestMyPermissionsApi:
         # роль учётке, работающей под ролью раздела.
         assert response.json() == {
             "permissions": ["personnel.view", "status.view"],
+            "global_permissions": ["personnel.view", "status.view"],
+            # Global reading does not grant personnel status writes.
+            "status_manage_division_ids": [],
+            "duty_register_scope": {"read": [], "write": [], "plan": [], "dispatch": []},
             "roles": [
                 {
                     "code": "VIEWER",
@@ -228,7 +245,11 @@ class TestMyPermissionsApi:
         # Пин правлен вместе с соседним (Plane №325): ролей раздела у
         # суперпользователя без назначения тоже нет — пусто, а не отсутствие
         # поля. Читателю нужен предсказуемый список, а не «иногда ключа нет».
-        assert response.json() == {"permissions": [], "roles": []}
+        assert response.json() == {
+            "permissions": [], "global_permissions": [], "roles": [],
+            "status_manage_division_ids": [],
+            "duty_register_scope": {"read": [], "write": [], "plan": [], "dispatch": []},
+        }
 
     def test_division_id_must_be_int(self):
         api_client, _user = self._client()

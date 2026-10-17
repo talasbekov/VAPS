@@ -1,7 +1,7 @@
 "use client";
 
 // Транспорт уведомлений раздела ОМ — нативный порт транспорта Smart Josparlau
-// (/ws/notifications/): React-free синглтон (состояние в замыкании + Set
+// (/ws/operations/notifications/): React-free синглтон (состояние в замыкании + Set
 // слушателей), статусы idle/connecting/online/reconnecting, экспоненциальный
 // backoff с полным джиттером, идемпотентные start/stop, дедуп по кольцу id.
 //
@@ -16,6 +16,7 @@
 // провод, другой конец. При появлении реального бэкенда ОМ меняется только
 // фабрика.
 import { isOpsMockMode } from "@/lib/ops-env";
+import { getAccessToken, resetAccessToken } from "@/lib/access-token";
 
 /** Конверт кадра — как у донорского consumer'а: {type, payload}. */
 export interface OpsNotificationFrame {
@@ -40,7 +41,19 @@ export interface OpsSocket {
   onerror: ((event: unknown) => void) | null;
 }
 
-export type OpsSocketFactory = () => OpsSocket;
+/** Фабрика может быть асинхронной (живой сокет ждёт токен) и вернуть `null`,
+ * если подключаться пока не с чем (токена нет) — канал уйдёт в backoff. */
+export type OpsSocketFactory = () =>
+  | OpsSocket
+  | null
+  | Promise<OpsSocket | null>;
+
+/** Коды закрытия потребителя раздела (`operations/ws_consumers.py`).
+ * 4403 — не пустили (отправляется ДО accept, браузер видит 1006);
+ * 4503 — сокет выключен администратором: не переподключаться, лента идёт по
+ * REST. */
+export const CLOSE_UNAUTHENTICATED = 4403;
+export const CLOSE_WS_DISABLED = 4503;
 
 export type OpsMessageListener = (rows: OpsNotificationFrame[]) => void;
 
@@ -164,13 +177,23 @@ function createMockSocket(): OpsSocket {
   return mock;
 }
 
-/** В api-режиме — настоящий WebSocket same-origin (появится вместе с реальным
- * бэкендом ОМ); в мок-режиме — наблюдатель стора. */
-const defaultSocketFactory: OpsSocketFactory = () => {
+/** В api-режиме — настоящий WebSocket same-origin к потребителю раздела
+ * (`/ws/operations/notifications/`, nginx проксирует `/ws/` на бэкенд);
+ * в мок-режиме — наблюдатель стора.
+ *
+ * Токен едет в строке запроса: браузерный `WebSocket` не умеет заголовков, а
+ * потребитель проверяет его той же `JWTAuthentication`, что и REST
+ * (`operations/ws_auth.py`). Прокси пишет в access-log только путь без
+ * аргументов (`log_format contour_path`), поэтому токен в журнал не попадает.
+ * Старый `/ws/notifications/` сюда не подходит: он пускает только по
+ * Django-сессии, которой у портала (вход по JWT) нет, — отсюда и вечный 403. */
+const defaultSocketFactory: OpsSocketFactory = async () => {
   if (isOpsMockMode()) return createMockSocket();
+  const token = await getAccessToken();
+  if (token === null) return null;
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(
-    `${scheme}//${location.host}/ws/notifications/`
+    `${scheme}//${location.host}/ws/operations/notifications/?token=${encodeURIComponent(token)}`
   ) as unknown as OpsSocket;
 };
 
@@ -228,15 +251,37 @@ function emit(rows: OpsNotificationFrame[]): void {
 
 // --- разбор кадра ---
 
+/** Кадр живого сервера (`operations/notify_service.py`): `id` — число,
+ * момент — `created_at`, код вида — `kind`. Мок-сокет шлёт донорскую форму
+ * (`createdAt`/`code`); принимаются обе, чтобы один разборщик обслуживал оба
+ * конца провода. */
 function asFrame(value: unknown): OpsNotificationFrame | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
-  if (typeof row.id !== "string") return null;
-  if (typeof row.createdAt !== "string") return null;
+  const id =
+    typeof row.id === "string"
+      ? row.id
+      : typeof row.id === "number"
+        ? String(row.id)
+        : null;
+  if (id === null) return null;
+  const createdAt =
+    typeof row.createdAt === "string"
+      ? row.createdAt
+      : typeof row.created_at === "string"
+        ? row.created_at
+        : null;
+  if (createdAt === null) return null;
+  const code =
+    typeof row.code === "string"
+      ? row.code
+      : typeof row.kind === "string"
+        ? row.kind
+        : "UNKNOWN";
   return {
-    id: row.id,
-    createdAt: row.createdAt,
-    code: typeof row.code === "string" ? row.code : "UNKNOWN",
+    id,
+    createdAt,
+    code,
     deepLink: typeof row.deepLink === "string" ? row.deepLink : null,
   };
 }
@@ -300,27 +345,57 @@ function connect(): void {
   closeSocket();
   setStatus("connecting");
   const myEpoch = epoch;
-  const fresh = socketFactory();
-  socket = fresh;
-  fresh.onopen = () => {
-    if (epoch !== myEpoch) return;
-    attempt = 0;
-    setStatus("online");
-  };
-  fresh.onmessage = (event) => {
-    if (epoch !== myEpoch) return;
-    handleFrame(event);
-  };
-  fresh.onclose = () => {
-    if (epoch !== myEpoch) return;
-    setStatus("reconnecting");
-    scheduleReconnect();
-  };
-  fresh.onerror = () => {
-    if (epoch !== myEpoch) return;
-    setStatus("reconnecting");
-    scheduleReconnect();
-  };
+  void (async () => {
+    let fresh: OpsSocket | null;
+    try {
+      fresh = await socketFactory();
+    } catch {
+      fresh = null;
+    }
+    if (epoch !== myEpoch) {
+      // stop() успел отработать, пока ждали токен: сокет никому не нужен.
+      fresh?.close();
+      return;
+    }
+    if (fresh === null) {
+      // Токена пока нет (сессия ещё грузится или истекла) — обычный backoff.
+      setStatus("reconnecting");
+      scheduleReconnect();
+      return;
+    }
+    socket = fresh;
+    fresh.onopen = () => {
+      if (epoch !== myEpoch) return;
+      attempt = 0;
+      setStatus("online");
+    };
+    fresh.onmessage = (event) => {
+      if (epoch !== myEpoch) return;
+      handleFrame(event);
+    };
+    fresh.onclose = (event) => {
+      if (epoch !== myEpoch) return;
+      const code = (event as { code?: unknown } | null)?.code;
+      if (code === CLOSE_WS_DISABLED) {
+        // Решение администратора, не авария: лента живёт по REST, а
+        // переподключение в выключенный сокет — шум в журнале.
+        socket = null;
+        setStatus("idle");
+        return;
+      }
+      // Отказ рукопожатия (4403 → в браузере 1006) чаще всего значит
+      // просроченный или сменившийся токен: следующая попытка обязана
+      // спросить сессию заново, а не переиспользовать кэш.
+      resetAccessToken();
+      setStatus("reconnecting");
+      scheduleReconnect();
+    };
+    fresh.onerror = () => {
+      if (epoch !== myEpoch) return;
+      setStatus("reconnecting");
+      scheduleReconnect();
+    };
+  })();
 }
 
 /** Идемпотентен: layout монтирует под StrictMode, эффект отработает дважды. */

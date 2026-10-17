@@ -34,6 +34,8 @@ STATUS_TYPES = "/api/operations/status-types/"
 def catalogue():
     """Три типа, один выключенный: активных должно быть меньше, чем всего,
     иначе проба не отличит «посчитал активные» от «посчитал все»."""
+    # This fixture tests exactly three rows independently of migration seeds.
+    StatusType.objects.all().delete()
     for code, active in (("DUTY", True), ("VACATION", True), ("OLD", False)):
         StatusType.objects.create(
             code=code, name=code, priority=10, report_column_code="OTHER",

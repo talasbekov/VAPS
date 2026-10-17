@@ -1,10 +1,13 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // История отчётов (§22.25). Экран не решает, что можно делать со строкой:
 // доступность каждого действия и причина отказа приходят с сервера — здесь
 // нет ни одной ветки «если работа упала, выключить кнопку».
 import { RightGate } from "@/shared/ui/right-gate";
 import { Suspense, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -59,7 +62,8 @@ export default function ReportHistoryPage() {
 }
 
 function ReportHistoryScreen() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const queryClient = useQueryClient();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
   // Фильтры — в URL: ссылка на отфильтрованную историю переживает
   // перезагрузку и пересылается другому человеку.
   const router = useRouter();
@@ -74,7 +78,7 @@ function ReportHistoryScreen() {
   const [errorShown, setErrorShown] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content));
+  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobsQuery.readKey);
   const rerun = useRerunReportJob((result) => {
     // Два исхода §22.25 названы разными словами: «отдан прежний файл» и
     // «запущена новая работа» — разные события.
@@ -83,7 +87,7 @@ function ReportHistoryScreen() {
         ? "Готовый артефакт с теми же параметрами уже есть — новая работа не запускалась."
         : "Запущена новая работа с теми же параметрами."
     );
-  });
+  }, jobsQuery.readKey);
 
   const artifactsByJob = useMemo(() => {
     const map = new Map<string, ReportArtifactSummary>();
@@ -109,7 +113,13 @@ function ReportHistoryScreen() {
 
   const data = jobsQuery.data;
 
-  if (!permissionsLoading && !hasPermission("report.generate")) {
+  if (permissionsError) {
+    return <DashboardLayout><LoadFailure what="права доступа к отчётам" onRetry={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })} /></DashboardLayout>;
+  }
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Проверяем доступ к отчётам…</p></DashboardLayout>;
+  }
+  if (!hasPermission("report.generate")) {
     return <OpsAccessDenied what="истории отчётов" />;
   }
 
@@ -189,6 +199,10 @@ function ReportHistoryScreen() {
         )}
 
         <section className="rounded-xl border bg-card p-4">
+          {jobsQuery.isError && data !== undefined && <>
+            <LoadFailure what="историю отчётов" onRetry={() => void jobsQuery.refetch()} isRetrying={jobsQuery.isFetching} />
+            <p role="status" className="mb-3 text-sm text-muted-foreground">Показаны ранее загруженные данные. Действия доступны после успешного обновления.</p>
+          </>}
           {jobsQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка истории…</p>
           ) : data === undefined ? (
@@ -291,11 +305,13 @@ function ReportHistoryScreen() {
                                 className="rounded-md border px-2.5 py-1 text-xs disabled:opacity-50"
                                 disabled={
                                   !action.available ||
+                                  jobsQuery.canAct === false ||
                                   download.isPending ||
                                   rerun.isPending
                                 }
                                 aria-describedby={describedBy}
                                 onClick={() => {
+                                  if (jobsQuery.canAct === false) return;
                                   setNotice(null);
                                   if (action.code === "OPEN_PARAMETERS") {
                                     setExpanded((current) =>
@@ -381,21 +397,7 @@ function ReportHistoryScreen() {
         </section>
 
         {data !== undefined && (
-          <section className="rounded-xl border border-dashed bg-muted/30 p-4">
-            <h2 className="mb-2 text-sm font-semibold">
-              Колонок §22.25, которых здесь нет
-            </h2>
-            <ul className="flex flex-col gap-2">
-              {data.unavailableColumns.map((column) => (
-                <li key={column.code} className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {column.label}
-                  </span>{" "}
-                  — {column.reason}
-                </li>
-              ))}
-            </ul>
-          </section>
+          <CapabilityNotes title="Состав истории отчётов" items={data.unavailableColumns} />
         )}
       </div>
     </DashboardLayout>

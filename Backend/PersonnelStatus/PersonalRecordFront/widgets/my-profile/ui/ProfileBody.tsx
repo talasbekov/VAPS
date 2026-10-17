@@ -17,9 +17,14 @@
 // Всё остальное присоединяется к найденной записи по её ИДЕНТИФИКАТОРУ:
 // статусы — серверным фильтром, назначения в ОМ и смены дежурств — по
 // `employeeId` в уже загруженных коллекциях. По имени не соединяется ничего.
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { matchesAssignmentPeriod, profileBusinessDate, type AssignmentKind, type AssignmentPeriod } from "../model/assignment-filters";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { LoadFailure } from "@/components/load-failure";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmployeePortrait } from "@/components/employee-portrait";
+import { photoSrc } from "@/entities/employee/model/photo-src";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 // Арифметика дат берётся у расхода, а не пишется здесь второй раз: там же
 // живёт правило «полуинтервал бэка ↔ включительный день на экране», и второй
@@ -183,7 +188,8 @@ function dayTitle(iso: string): string {
 }
 
 /** Подпись дня для озвучивания: точки цветом ничего не говорят без текста. */
-function dayAriaLabel(iso: string, count: number): string {
+function dayAriaLabel(iso: string, count: number, incomplete: boolean): string {
+  if (incomplete) return `${dayTitle(iso)} — показано ${count} ${periodWord(count)}, календарь неполный`;
   if (count === 0) return `${dayTitle(iso)} — ничего не назначено`;
   return `${dayTitle(iso)} — ${count} ${periodWord(count)}`;
 }
@@ -203,8 +209,23 @@ export function ProfileBody({
   readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<ProfileTab>("events");
-  const directories = useCoreDirectories();
-  const statuses = useEmployeeStatuses(employee.id);
+  const filterOwner = `${employee.id}:${readOnly}`;
+  const [storedFilters, setStoredFilters] = useState<{ owner: string; kind: AssignmentKind; period: AssignmentPeriod }>({ owner: filterOwner, kind: "all", period: "all" });
+  const assignmentFilters = storedFilters.owner === filterOwner ? storedFilters : { owner: filterOwner, kind: "all" as const, period: "all" as const };
+  useEffect(() => {
+    setStoredFilters(current => current.owner === filterOwner ? current : { owner: filterOwner, kind: "all", period: "all" });
+  }, [filterOwner]);
+  const queryClient = useQueryClient();
+  const permissionsFetching = useIsFetching({ queryKey: ["ops-me"], exact: true }) > 0;
+  const access = useOpsPermissions();
+  const canReadEvaluations = access.hasPermission("rating.view_aggregate");
+  // Свой профиль уже несёт три разрешённые подписи вместе с кадровой записью.
+  // Общие справочники остаются нужны только при чтении чужого профиля.
+  const directories = useCoreDirectories(readOnly);
+  const canReadStatuses = !access.isLoading && !access.error && access.hasPermission("status.view");
+  const statusesDenied = !access.isLoading && !access.error && !canReadStatuses;
+  const statuses = useEmployeeStatuses(employee.id, canReadStatuses);
+  const shownStatuses = canReadStatuses && !statuses.readAccessBlocked ? statuses.data ?? [] : [];
   // СВОИ назначения своей ручкой, а не реестр целиком (Plane №403): реестр
   // открыт держателю `event.view`, и рядовому сотруднику вкладка отвечала
   // «реестр недоступен» — назначения не показывались никогда.
@@ -214,7 +235,9 @@ export function ProfileBody({
   // мероприятию, и оба считаются по полному списку: реестр отдаёт по десять
   // строк, и при одиннадцати оценённых ОМ старшие получали «не оценивалось»,
   // а «из N мероприятий» было занижено — молча, без признака обрезки.
-  const evaluations = useAllEvaluationsOf(String(employee.id));
+  const evaluations = useAllEvaluationsOf(String(employee.id), {
+    enabled: canReadEvaluations,
+  });
   /**
    * Мероприятия, по которым человека ОЦЕНИВАЛИ. Множество кодов, а не карта
    * «код → балл» (Plane №658).
@@ -233,7 +256,7 @@ export function ProfileBody({
    */
   const evaluatedEvents = useMemo(() => {
     const codes = new Set<string>();
-    for (const row of evaluations.data?.results ?? []) {
+    for (const row of canReadEvaluations ? evaluations.data?.results ?? [] : []) {
       // 🔴 СВЕРКА ИДЁТ ПО КАДРОВОМУ ID (Plane №655). `employeeId` строки
       // реестра — КОД УЧАСТНИКА рейтинга (`employee-<id>`), и сравнение его с
       // кадровым id не совпадало НИКОГДА: чип рейтинга в шапке не
@@ -244,7 +267,7 @@ export function ProfileBody({
       codes.add(row.eventNumber);
     }
     return codes;
-  }, [evaluations.data, employee.id]);
+  }, [evaluations.data, employee.id, canReadEvaluations]);
   /**
    * Средний балл — АГРЕГАТ, взятый как есть, а не пересчитанный на клиенте.
    * Сервер считает его сам (§19.19: среднее учтённых оценок периода
@@ -257,6 +280,7 @@ export function ProfileBody({
    * исправления), и счёт строк завышал бы N.
    */
   const rating = useMemo(() => {
+    if (!canReadEvaluations) return null;
     const mine = (evaluations.data?.results ?? []).filter(
       // По кадровому id, а не по коду участника (Plane №655) — см. выше.
       (row) => String(row.personnelId) === String(employee.id)
@@ -264,7 +288,7 @@ export function ProfileBody({
     const aggregate = mine.find((row) => row.aggregateRating !== null)?.aggregateRating;
     if (aggregate === undefined || aggregate === null) return null;
     return { average: aggregate, events: evaluatedEvents.size };
-  }, [evaluations.data, employee.id, evaluatedEvents]);
+  }, [evaluations.data, employee.id, evaluatedEvents, canReadEvaluations]);
   // СВОИ смены, а не реестр целиком: реестр открыт только держателю
   // `duty.view`, и рядовому сотруднику он отвечал 403 — смены в календаре не
   // показывались никогда, а ошибка гасилась молча (Plane №381).
@@ -285,11 +309,11 @@ export function ProfileBody({
    * сказано словами в `shiftsNote` рядом: молчаливый ноль читался бы как факт
    * о человеке.
    */
-  const shownShifts = readOnly ? [] : (shifts.data?.results ?? []);
+  const shownShifts = readOnly || shifts.readAccessBlocked ? [] : (shifts.data?.results ?? []);
 
   const myAssignments = useMemo(
-    () => (events.data?.results ?? []).map(toMyAssignment),
-    [events.data]
+    () => (events.readAccessBlocked ? [] : events.data?.results ?? []).map(toMyAssignment),
+    [events.data, events.readAccessBlocked]
   );
 
   // 🔴 ТО ЖЕ САМОЕ ДЛЯ НАЗНАЧЕНИЙ (доводка №596 по ревью №825). Сервер с
@@ -299,33 +323,34 @@ export function ProfileBody({
   // «Действующих назначений нет.» — ровно тот молчаливый ноль, который двумя
   // строками ниже объявлен недопустимым для смен. Задача была сделана на
   // одной стороне: причина есть в ответе, до человека не доходит.
-  const assignmentsNote = readOnly
+  const assignmentsNote = readOnly || events.readAccessBlocked
     ? null
     : (events.data?.unlinkedReason ?? null);
 
   // Почему смен не видно, если их не видно. Молчаливый ноль читается как
   // «дежурств нет», а это разные вещи.
   const shiftsNote = readOnly
-    ? "смены дежурств другого сотрудника здесь не показываются."
-    : shifts.isError
-      ? "запрос к службе дежурств не прошёл, попробуйте обновить страницу."
+    ? "Смены дежурств не показаны: смены другого сотрудника здесь не показываются."
+    : shifts.readAccessBlocked
+      ? null
       : (shifts.data?.unlinkedReason ?? null);
 
   return (
     <>
       <HeroCard
         employee={employee}
-        rankLabel={directories.rankLabel(employee.rank_code)}
-        positionLabel={directories.positionLabel(employee.position_code)}
-        divisionLabel={directories.divisionLabel(employee.division)}
-        statuses={statuses.data ?? []}
-        statusesLoading={statuses.isPending}
+        rankLabel={employee.rank_label ?? directories.rankLabel(employee.rank_code)}
+        positionLabel={employee.position_label ?? directories.positionLabel(employee.position_code)}
+        divisionLabel={employee.division_label ?? directories.divisionLabel(employee.division)}
+        statuses={shownStatuses}
+        statusesLoading={access.isLoading || (canReadStatuses && statuses.isPending)}
+        statusesDenied={statusesDenied}
         // Отказ запроса — НЕ факт о человеке (Plane №659). Без этого признака
         // `statuses.data ?? []` при 403 или обрыве давал пустой список, а
         // пустой список — законное «В строю»: сотрудник в отпуске был
         // неотличим от сотрудника в строю, и ошибка связи печаталась зелёным
         // чипом как утверждение.
-        statusesFailed={statuses.isError}
+        statusesFailed={Boolean(access.error) || (canReadStatuses && statuses.isError)}
         rating={rating}
       />
 
@@ -357,25 +382,43 @@ export function ProfileBody({
           loading={events.isPending}
           failed={events.isError}
           readOnly={readOnly}
+          available={events.data !== undefined && !events.readAccessBlocked}
+          retrying={events.isFetching}
+          onRetry={() => { void events.refetch(); }}
+          shifts={shownShifts}
+          shiftsNote={shiftsNote}
+          shiftsLoading={!readOnly && shifts.isPending}
+          shiftsFailed={!readOnly && shifts.isError}
+          shiftsAvailable={!readOnly && shifts.data !== undefined && !shifts.readAccessBlocked}
+          shiftsRetrying={shifts.isFetching}
+          onRetryShifts={() => { void shifts.refetch(); }}
+          filters={assignmentFilters}
+          onFiltersChange={(next) => setStoredFilters({ owner: filterOwner, ...next })}
         />
       )}
       {tab === "calendar" && (
+        <>
+        {statusesDenied && <p role="status" className="text-sm text-muted-foreground">В календаре показаны назначения и дежурства. Статусы недоступны по вашим правам.</p>}
         <CalendarTab
-          statuses={statuses.data ?? []}
+          statuses={shownStatuses}
           shifts={shownShifts}
           assignments={myAssignments}
-          shiftsNote={shiftsNote}
-          loading={statuses.isPending || (!readOnly && shifts.isPending)}
+          sources={[
+            { name: "назначения", pending: events.isPending, failed: events.isError, cached: events.data !== undefined && !events.readAccessBlocked, blocked: events.readAccessBlocked, note: assignmentsNote, retrying: events.isFetching, onRetry: () => { void events.refetch(); } },
+            { name: "статусы", pending: access.isLoading || (canReadStatuses && statuses.isPending), failed: Boolean(access.error) || (canReadStatuses && statuses.isError), cached: canReadStatuses && statuses.data !== undefined && !statuses.readAccessBlocked, blocked: statuses.readAccessBlocked, note: null, description: access.error ? "Не удалось подтвердить право просмотра статусов. Повторите проверку доступа." : undefined, retrying: access.error ? permissionsFetching : statuses.isFetching, onRetry: () => { if (access.error) void queryClient.refetchQueries({ queryKey: ["ops-me"], exact: true }); else void statuses.refetch(); } },
+            { name: "смены дежурств", pending: !readOnly && shifts.isPending, failed: !readOnly && shifts.isError, cached: !readOnly && shifts.data !== undefined && !shifts.readAccessBlocked, blocked: !readOnly && shifts.readAccessBlocked, note: shiftsNote, retrying: shifts.isFetching, onRetry: () => { void shifts.refetch(); } },
+          ]}
           readOnly={readOnly}
         />
+        </>
       )}
       {tab === "history" && (
         <HistoryTab
           assignments={myAssignments}
           evaluatedEvents={evaluatedEvents}
           rating={rating}
-          scoresDenied={evaluations.isError}
-          scoresLoading={evaluations.isPending}
+          scoresDenied={(!access.isLoading && !canReadEvaluations) || evaluations.isError}
+          scoresLoading={access.isLoading || (canReadEvaluations && evaluations.isPending)}
           loading={events.isPending}
           failed={events.isError}
           readOnly={readOnly}
@@ -436,6 +479,7 @@ function HeroCard({
   statuses,
   statusesLoading,
   statusesFailed,
+  statusesDenied = false,
   rating,
 }: {
   employee: CoreEmployee;
@@ -448,12 +492,12 @@ function HeroCard({
    *  строю», ни любого другого: пустой ответ и отсутствие ответа это разные
    *  вещи (`[ПРФ-02]`, Plane №659). */
   statusesFailed: boolean;
+  statusesDenied?: boolean;
   /** Средний балл по закрытым ОМ и число оценённых мероприятий; null —
    * оценок нет, и блока рейтинга нет (`[ПРФ-02]`, `[ПРФ-01]`). */
   rating: { average: number; events: number } | null;
 }) {
   const statusTypes = useOpsStatusTypes();
-  const initials = `${employee.last_name.slice(0, 1)}${employee.first_name.slice(0, 1)}`;
   // Статус СЛОВАМИ (`[ПРФ-02]`, Plane №434): действующий — с «до …», без
   // действующего — ближайший запланированный «с …», иначе «В строю».
   // «Действующих статусов нет» читалось как пустота, а это и есть строй.
@@ -469,15 +513,21 @@ function HeroCard({
   return (
     <Card className="bg-gradient-to-br from-card via-card to-primary/10">
       <CardContent className="flex flex-wrap items-center gap-6 p-6 lg:flex-nowrap">
-        <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl bg-primary text-3xl font-extrabold text-primary-foreground shadow-lg shadow-primary/25">
-          {initials}
-        </span>
+        <EmployeePortrait
+          name={employee.full_name}
+          photoUrl={photoSrc(null, employee.photo_file_path, '')}
+          className="h-[88px] w-[88px] shadow-lg shadow-primary/15"
+        />
         <div className="min-w-[16rem] flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-xl font-bold tracking-tight">{employee.full_name}</h2>
             {statusesLoading ? (
               <span className="text-xs text-muted-foreground">
                 статус загружается…
+              </span>
+            ) : statusesDenied ? (
+              <span data-testid="profile-status" role="status" className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                Статусы недоступны по вашим правам
               </span>
             ) : statusesFailed ? (
               // Ни зелёного, ни утверждения: сказано ровно то, что известно.
@@ -576,6 +626,7 @@ interface MyAssignment {
   post: MyAssignmentPost | null;
   postLabel: string;
   employeeHasAccount: boolean;
+  canConfirmWithoutAccount: boolean;
   acknowledgedAt: string | null;
   /** Способ и автор отметки (`[ОЗН-05]`, Plane №722): «лично» — старший довёл
    * устно, и это ДРУГОЙ факт, чем «я прочитал в системе». Без них карточка
@@ -664,6 +715,7 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
       ? `${row.sector} · ${row.post}`
       : "пост не найден в расчёте",
     employeeHasAccount: row.employeeHasAccount,
+    canConfirmWithoutAccount: row.canConfirmWithoutAccount === true,
     acknowledgedAt: row.acknowledgedAt,
     acknowledgedVia: row.acknowledgedVia ?? "",
     acknowledgedBy: row.acknowledgedBy ?? "",
@@ -675,109 +727,97 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
 }
 
 function EventsTab({
-  assignments,
-  note,
-  loading,
-  failed,
-  readOnly = false,
+  assignments, note, loading, failed, readOnly = false, available, retrying, onRetry,
+  shifts, shiftsNote, shiftsLoading, shiftsFailed, shiftsAvailable, shiftsRetrying, onRetryShifts,
+  filters, onFiltersChange,
 }: {
   assignments: MyAssignment[];
-  /** Почему назначений не видно, если их не видно, — словами сервера. */
   note: string | null;
   loading: boolean;
   failed: boolean;
   readOnly?: boolean;
+  available: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+  shifts: DutyShift[];
+  shiftsNote: string | null;
+  shiftsLoading: boolean;
+  shiftsFailed: boolean;
+  shiftsAvailable: boolean;
+  shiftsRetrying: boolean;
+  onRetryShifts: () => void;
+  filters: { kind: AssignmentKind; period: AssignmentPeriod };
+  onFiltersChange: (next: { kind: AssignmentKind; period: AssignmentPeriod }) => void;
 }) {
-  if (loading) {
-    return <p className="text-sm text-muted-foreground">Загрузка назначений…</p>;
-  }
-  if (failed) {
-    return (
-      <Card>
-        <CardContent className="p-5 text-sm text-muted-foreground">
-          Назначения сейчас недоступны — запрос к серверу не прошёл.
-        </CardContent>
-      </Card>
-    );
-  }
-  // Предстоящее — всё, что НЕ закрыто: закрытое ОМ не предстоит, даже если его
-  // дата ещё не наступила. Прошедшее живёт в своём блоке ниже (`[ПРФ-06]`), и
-  // здесь его половины больше нет — комментарий про «границу по дате и стадии»
-  // описывал снятый уборкой №767 фильтр (уточнено ревью).
-  // Порядок `[ПРФ-04]`: требуют действия → подтверждённые → готовятся
-  // (расстановка ещё не согласована — кнопок нет).
+  const kindId = useId();
+  const periodId = useId();
+  const today = profileBusinessDate();
+  const kind = readOnly && filters.kind === "shifts" ? "all" : filters.kind;
   const rank = (item: MyAssignment) =>
     !isPreparing(item) && item.acknowledgedAt === null && item.declinedAt === null
-      ? 0
-      : item.acknowledgedAt !== null
-        ? 1
-        : isPreparing(item)
-          ? 3
-          : 2;
+      ? 0 : item.acknowledgedAt !== null ? 1 : isPreparing(item) ? 3 : 2;
   const upcoming = assignments
-    .filter((item) => item.event.stage !== "CLOSED")
+    .filter((item) => item.event.stage !== "CLOSED" &&
+      matchesAssignmentPeriod(item.event.businessDate, item.event.businessDateEnd, filters.period, today))
     .sort((a, b) => rank(a) - rank(b) || a.event.businessDate.localeCompare(b.event.businessDate));
-
+  const selectedShifts = shifts.filter((shift) => {
+    if (shift.stateCode === "COMPLETED" || shift.stateCode === "CANCELLED") return false;
+    if (shift.stateCode === "ACTIVE") return filters.period !== "upcoming";
+    return matchesAssignmentPeriod(shift.businessDate, null, filters.period, today);
+  }).sort((a, b) => Number(b.stateCode === "ACTIVE") - Number(a.stateCode === "ACTIVE") || a.businessDate.localeCompare(b.businessDate));
+  const selectClass = "min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return (
-    <div className="space-y-4">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-            <div>
-              <CardTitle>Предстоящие назначения</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {readOnly
-                  ? "ОМ и посты, на которые назначен сотрудник"
-                  : "ОМ и посты, на которые вы назначены"}
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
-              {countLabel(upcoming.length)}
-            </span>
-          </CardHeader>
-          <CardContent>
-            {/* Причина — ПЕРЕД списком и не вместо него: сервер отдаёт её и с
-                непустым списком (например, привязка есть, а часть нарядов
-                закрыта), и подменять ею пустое состояние значило бы снова
-                выбирать за человека, что ему важнее. Оформление то же, что у
-                баннера смен на «Календаре», — это одно и то же сообщение. */}
-            {note !== null && (
-              <p
-                data-slot="assignments-note"
-                className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
-              >
-                {note}
-              </p>
-            )}
-            {upcoming.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Действующих назначений нет.
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {upcoming.map((item) => (
-                  <AssignmentRow
-                    // 🔴 КЛЮЧ — ID НАЗНАЧЕНИЯ (Plane №594). Пара «мероприятие
-                    // + подпись поста» уникальной НЕ является: у двух строк
-                    // одного ОМ пост мог уйти из расчёта (обе подписи пусты),
-                    // а гард `DOUBLE_ASSIGNMENT` ловит только ДРУГОЙ пост.
-                    // `AssignmentRow` держит своё состояние (окно отказа и
-                    // причина), и React при совпавших ключах переиспользует
-                    // чужой экземпляр: окно отказа и уходящий на сервер
-                    // `assignmentId` относились бы к соседней строке.
-                    key={item.id}
-                    item={item}
-                    readOnly={readOnly}
-                  />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-      </div>
-
-    </div>
+    <section data-slot="profile-assignments" aria-label="Назначения сотрудника" className="min-w-0 space-y-4">
+      <Card><CardContent className="space-y-3 p-4">
+        <fieldset className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <legend className="sr-only">Фильтры назначений</legend>
+          <div className="min-w-0 space-y-1">
+            <Label htmlFor={kindId}>Тип назначений</Label>
+            <select id={kindId} value={kind} className={selectClass} onChange={(event) => onFiltersChange({ ...filters, kind: event.target.value as AssignmentKind })}>
+              <option value="all">Все назначения</option>
+              <option value="events">Охранные мероприятия</option>
+              <option value="shifts" disabled={readOnly}>Дежурства</option>
+            </select>
+          </div>
+          <div className="min-w-0 space-y-1">
+            <Label htmlFor={periodId}>Период назначений</Label>
+            <select id={periodId} value={filters.period} className={selectClass} onChange={(event) => onFiltersChange({ ...filters, period: event.target.value as AssignmentPeriod })}>
+              <option value="all">Все периоды</option>
+              <option value="current">Текущие</option>
+              <option value="upcoming">Предстоящие</option>
+            </select>
+          </div>
+        </fieldset>
+        <p className="text-xs text-muted-foreground">Текущие — на сегодня, {formatIsoDate(today)}, и продолжающиеся смены. Предстоящие — с более поздней датой начала.</p>
+      </CardContent></Card>
+      {kind !== "shifts" && <Card data-slot="profile-event-assignments">
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0"><CardTitle>Назначения на ОМ</CardTitle><p className="text-xs text-muted-foreground">{readOnly ? "ОМ и посты, на которые назначен сотрудник" : "ОМ и посты, на которые вы назначены"}</p></div>
+          {available && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(upcoming.length)}</span>}
+        </CardHeader>
+        <CardContent>
+          {note !== null && <p data-slot="assignments-note" className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{note}</p>}
+          {loading && <p role="status" className="text-sm text-muted-foreground">Загрузка назначений…</p>}
+          {failed && <LoadFailure what="назначения" description={available ? "Показаны ранее загруженные назначения. Повторите чтение для актуальных сведений." : "Назначения сейчас недоступны. Повторите проверку доступа."} onRetry={onRetry} isRetrying={retrying} />}
+          {available && (upcoming.length === 0 ? <p className="text-sm text-muted-foreground">{filters.period === "all" ? "Действующих назначений нет." : "Назначений на ОМ по выбранным условиям нет."}</p> : <ul className="divide-y">{upcoming.map(item => <AssignmentRow key={item.id} item={item} readOnly={readOnly} />)}</ul>)}
+        </CardContent>
+      </Card>}
+      {kind !== "events" && (readOnly ? <p role="status" className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">{shiftsNote}</p> : <Card data-slot="profile-duty-assignments">
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div className="min-w-0"><CardTitle>Дежурства</CardTitle><p className="text-xs text-muted-foreground">Назначенные смены дежурств</p></div>{shiftsAvailable && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(selectedShifts.length)}</span>}</CardHeader>
+        <CardContent className="space-y-3">
+          {shiftsNote !== null && <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{shiftsNote}</p>}
+          {shiftsLoading && <p role="status" className="text-sm text-muted-foreground">Загрузка смен дежурств…</p>}
+          {shiftsFailed && <LoadFailure what="смены дежурств" description={shiftsAvailable ? "Показаны ранее загруженные смены. Повторите чтение для актуальных сведений." : "Смены сейчас недоступны. Повторите проверку доступа."} onRetry={onRetryShifts} isRetrying={shiftsRetrying} />}
+          {shiftsAvailable && (selectedShifts.length === 0 ? <p className="text-sm text-muted-foreground">Дежурств по выбранным условиям нет.</p> : <ul className="divide-y">{selectedShifts.map(shift => <li key={shift.id} className="space-y-1 py-3 text-sm">
+            <p className="break-words font-semibold">{shift.target.safeLabel}</p>
+            <p>{formatIsoDate(shift.businessDate)} · {DUTY_STATE_LABEL[shift.stateCode]}</p>
+            {shift.passportBinding && <p className="text-muted-foreground">{[shift.passportBinding.sectorName, shift.passportBinding.postName].filter(Boolean).join(" · ")}</p>}
+            {shift.actualStart && <p className="text-muted-foreground">Заступил: {formatIsoDateTime(shift.actualStart)}</p>}
+            {shift.note && <p className="whitespace-pre-wrap break-words text-muted-foreground">{shift.note}</p>}
+          </li>)}</ul>)}
+        </CardContent>
+      </Card>)}
+    </section>
   );
 }
 
@@ -1106,7 +1146,6 @@ function AssignmentRow({
 }) {
   const acknowledge = useAcknowledgeMyAssignment();
   const decline = useDeclineMyAssignment();
-  const { roles } = useOpsPermissions();
   const [declineOpen, setDeclineOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [personalOpen, setPersonalOpen] = useState(false);
@@ -1150,14 +1189,9 @@ function AssignmentRow({
   // нужен, и сервер его не примет.
   const preparing = isPreparing(item);
   const answerable = item.event.stage !== "CLOSED" && !preparing;
-  const isUnitHead = roles.some((role) =>
-    ["DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"].includes(
-      role.code
-    )
-  );
   const canConfirmPersonally =
     readOnly &&
-    isUnitHead &&
+    item.canConfirmWithoutAccount &&
     item.employeeHasAccount === false &&
     answerable &&
     item.acknowledgedAt === null;
@@ -1340,6 +1374,11 @@ function AssignmentRow({
               {acknowledge.error.message}
             </p>
           )}
+          {!canConfirmPersonally && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Личное подтверждение больше недоступно. Обновите назначения сотрудника.
+            </p>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closePersonal}>
               Отмена
@@ -1347,11 +1386,13 @@ function AssignmentRow({
             <Button
               type="button"
               disabled={
+                !canConfirmPersonally ||
                 deliveryMethod.trim() === "" ||
                 accountAbsenceBasis.trim() === "" ||
                 acknowledge.isPending
               }
               onClick={() => {
+                if (!canConfirmPersonally) return;
                 void acknowledge
                   .mutateAsync({
                     eventId: item.event.id,
@@ -1449,22 +1490,30 @@ function AssignmentRow({
 /* Вкладка «Мой календарь»                                             */
 /* ------------------------------------------------------------------ */
 
+interface CalendarSourceState {
+  name: string;
+  pending: boolean;
+  failed: boolean;
+  cached: boolean;
+  blocked: boolean;
+  note: string | null;
+  description?: string;
+  retrying: boolean;
+  onRetry: () => void;
+}
+
 function CalendarTab({
   statuses,
   shifts,
   assignments,
-  shiftsNote,
-  loading,
+  sources,
   readOnly = false,
 }: {
   statuses: OpsEmployeeStatusRow[];
   shifts: DutyShift[];
   /** Назначения на посты — полоски «ОМ-11 · Пост 2» (`[ПРФ-05]`, Plane №449). */
   assignments: MyAssignment[];
-  /** Почему смен не видно, если их не видно: причина от сервера («учётка не
-   *  связана с кадровой») или сорванный запрос. null — смены пришли. */
-  shiftsNote: string | null;
-  loading: boolean;
+  sources: CalendarSourceState[];
   /** Чужой профиль (`[ПРФ-08]`, Plane №662): подписи от первого лица здесь
    *  врут — читает не владелец. Соседние вкладки переписаны ещё в №449,
    *  календарь и история остались с «моими». */
@@ -1641,9 +1690,7 @@ function CalendarTab({
       ? []
       : periods.filter((period) => coversDay(period, selectedIso));
 
-  if (loading) {
-    return <p className="text-sm text-muted-foreground">Загрузка календаря…</p>;
-  }
+  const incomplete = sources.some(source => source.pending || source.failed || source.blocked || !source.cached || source.note !== null);
 
   const todayIso = todayValue;
   const shiftMonth = (delta: number) => {
@@ -1675,6 +1722,16 @@ function CalendarTab({
   };
 
   return (
+    <div className="space-y-3">
+      {sources.map(source => source.failed ? (
+        <LoadFailure key={source.name} what={source.name} className="rounded-md border p-3"
+          description={source.description ?? (source.cached ? "Ранее загруженные записи сохранены. Календарь неполный до успешного обновления." : source.blocked ? "После отказа чтения прежние записи скрыты. Повторите проверку доступа." : "Календарь неполный. Недоступные записи не показаны.")}
+          onRetry={source.onRetry} isRetrying={source.retrying} />
+      ) : source.pending ? (
+        <p key={source.name} role="status" className="text-sm text-muted-foreground">Загружаем {source.name}… Календарь пока неполный.</p>
+      ) : source.note !== null ? (
+        <p key={source.name} role="status" className="rounded-md border p-3 text-sm text-muted-foreground">{source.note}</p>
+      ) : null)}
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1.35fr_1fr]">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
@@ -1685,8 +1742,8 @@ function CalendarTab({
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               {readOnly
-                ? "Дни с отметками статусов и смен сотрудника — выберите день, чтобы увидеть, что в нём"
-                : "Дни с отметками моих статусов и смен — выберите день, чтобы увидеть, что в нём"}
+                ? "Назначения, статусы и доступные смены сотрудника — выберите день для подробностей"
+                : "Мои назначения, статусы и смены — выберите день для подробностей"}
             </p>
           </div>
           <div className="flex gap-1">
@@ -1709,12 +1766,6 @@ function CalendarTab({
           </div>
         </CardHeader>
         <CardContent>
-          {shiftsNote !== null && (
-            <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-              Смены дежурств не показаны: {shiftsNote} Статусы ниже это не
-              затрагивает.
-            </p>
-          )}
           <div className="grid grid-cols-7 gap-1">
             {WEEKDAYS.map((day) => (
               <span
@@ -1734,7 +1785,7 @@ function CalendarTab({
                 // Кнопка, а не блок: день открывает свой состав, а значит это
                 // управляющий элемент — с клавиатуры и с озвучиванием тоже.
                 aria-pressed={cell.iso === selectedIso}
-                aria-label={dayAriaLabel(cell.iso, cell.count)}
+                aria-label={dayAriaLabel(cell.iso, cell.count, incomplete)}
                 onClick={() =>
                   setSelectedIso((current) =>
                     current === cell.iso ? null : cell.iso
@@ -1802,7 +1853,9 @@ function CalendarTab({
               {selectedIso === null ? "Ближайшие 30 дней" : dayTitle(selectedIso)}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {selectedIso === null
+              {incomplete
+                ? "Показаны доступные записи; календарь неполный."
+                : selectedIso === null
                 ? "Назначения, статусы и смены от сегодня вперёд; состояние каждой строки задаёт сервер"
                 : "Что назначено на этот день"}
             </p>
@@ -1820,7 +1873,9 @@ function CalendarTab({
         <CardContent>
           {(selectedIso === null ? upcoming : dayPeriods).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {selectedIso === null
+              {incomplete
+                ? "Нет записей среди доступных данных; календарь неполный."
+                : selectedIso === null
                 ? "В ближайшие 30 дней ни назначений, ни статусов, ни смен нет."
                 : "В этот день ничего не назначено."}
             </p>
@@ -1892,6 +1947,7 @@ function CalendarTab({
           </p>
         </CardContent>
       </Card>
+    </div>
     </div>
   );
 }

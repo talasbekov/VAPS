@@ -39,6 +39,12 @@ USER_ROLES_URL = "/api/operations/user-roles/"
 TEMP_DUTY_URL = "/api/operations/temporary-duty/"
 
 
+@pytest.fixture(autouse=True)
+def existing_target_user(db):
+    # Role assignment now validates that its target is an existing account.
+    User.objects.create_user(pk=int(TARGET_USER), username="rbac-target", password="x")
+
+
 def seed_role(code, perms):
     role, _ = Role.objects.get_or_create(code=code, defaults={"name": code})
     for perm in perms:
@@ -119,7 +125,8 @@ class TestReferenceReads:
         api, _user = admin_client
         seed_role("VIEWER", ["status.view"])
         roles = api.get(ROLES_URL).json()["results"]
-        assert [r["code"] for r in roles] == ["ADMIN", "VIEWER"]
+        # The read-only integration role is provisioned by additive migration0144.
+        assert [r["code"] for r in roles] == ["ADMIN", "DIGITAL_TWIN_READER", "VIEWER"]
         perms = [p["code"] for p in api.get(PERMISSIONS_URL).json()["results"]]
         # Права цепочки сбора сил заводит МИГРАЦИЯ 0047 (Plane №74), а не сид:
         # справочник прав живёт и на заполненных базах, где `seed_operations`
@@ -137,12 +144,19 @@ class TestReferenceReads:
         assert perms == [
             "*",
             "catalog.view",
+            "digital_twin.read",
+            # Миграция 0136 добавляет право расстановки и заполненным базам.
+            "duty.dispatch",
             "forces.allocate",
             "forces.command",
             "forces.select",
+            # Миграция 0137 добавляет право нормативных документов заполненным базам.
+            "legal.manage",
             "placement.manage",
+            "service_summary.view",
             "status.manage",
             "status.view",
+            "status.workspace",
         ]
 
 

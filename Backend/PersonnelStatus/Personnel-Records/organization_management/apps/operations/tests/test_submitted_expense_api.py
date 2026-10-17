@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import clock
+from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
@@ -244,6 +245,8 @@ def test_columns_is_the_order_and_matches_the_live_report(types, tree):
     расходом того же дня: два экрана одного раздела обязаны показывать
     колонки в одинаковой последовательности.
     """
+    # Keep this synthetic ordering catalogue independent of migration seeds.
+    StatusType.objects.exclude(report_column_code__in=["X", "VACATION", "DUTY", "STUDY", "IN_SERVICE"]).delete()
     root, _ = tree
     in_slot(root)
     submit(root)

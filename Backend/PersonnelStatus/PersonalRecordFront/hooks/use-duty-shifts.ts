@@ -5,6 +5,7 @@
 // на дату и кандидаты — тоже здесь.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
+import { isReadAccessBlocked, readWithAccessCheck } from "@/lib/query-read-access";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
@@ -36,14 +37,17 @@ import type {
  *  снимается лишний вес: раньше тянулись все смены организации, чтобы
  *  оставить на экране свои. */
 export function useMyDutyShifts(options: { enabled?: boolean } = {}) {
-  return useQuery<ListMyDutyShiftsResponse, OpsApiFailure>({
+  const client = useQueryClient();
+  const key = ["ops-duty-shifts", "mine"] as const;
+  const query = useQuery<ListMyDutyShiftsResponse, OpsApiFailure>({
     queryKey: ["ops-duty-shifts", "mine"],
-    queryFn: () =>
-      opsApiClient.get<ListMyDutyShiftsResponse>(DUTY_SHIFTS_MINE_PATH),
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(client, queryKey, signal, () =>
+      opsApiClient.get<ListMyDutyShiftsResponse>(DUTY_SHIFTS_MINE_PATH)),
     // Чужой профиль (Plane №449) «мои смены» не спрашивает: ручка отдаёт
     // только свои.
     enabled: options.enabled ?? true,
   });
+  return { ...query, readAccessBlocked: isReadAccessBlocked(client, key) };
 }
 
 export function useDutyShiftDetail(id: string) {

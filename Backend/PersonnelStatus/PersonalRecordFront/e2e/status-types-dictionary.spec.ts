@@ -65,15 +65,19 @@ test.describe(LIVE ? 'справочник типов статусов' : 'сп�
     // Расхождение воспроизводимо и заведено отдельной карточкой: это дефект
     // доступности, а не свойство этой пробы, и подгонять под него ассерт
     // «пусть роли не будет» нельзя — проба обязана проверять ЗАГОЛОВКИ.
-    const headers = await page.locator('th').allTextContents()
+    // Enabling the catalogue query after permissions resolve replaces the
+    // initial empty table with a loader. Retry each exact header assertion.
     for (const column of ['Приоритет', 'Колонка расхода', 'Жёсткая блокировка']) {
-      expect(headers, `колонки «${column}» на экране нет`).toContain(column)
+      await expect(
+        page.locator('th').filter({ hasText: new RegExp(`^${column}$`) }),
+        `колонки «${column}» на экране нет`,
+      ).toBeVisible()
     }
 
     // Каталог стенда непустой — иначе проверять нечего, и молчание таблицы
     // читалось бы как зелень.
     const rows = page.locator('tbody tr')
-    expect(await rows.count()).toBeGreaterThan(1)
+    await expect.poll(() => rows.count(), { message: 'непустой каталог должен загрузиться' }).toBeGreaterThan(1)
 
     // Экран без кнопок обязан сказать, где тип заводится.
     await expect(page.getByText('Справочник только для чтения')).toBeVisible()

@@ -1,10 +1,9 @@
-import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { ROUTES } from './portal-routes'
+import { runBackendCommand } from './backend-command'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -12,8 +11,6 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const ROLE_PASSWORD = process.env.ROLE_ACCOUNTS_PASSWORD ?? ''
 const DEPARTMENT_ID = 2
 const CHILD_DIVISION_ID = 3
-const execFileAsync = promisify(execFile)
-const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
 let probeBusinessDate: string | null = null
 
 const CHECKPOINTS = [
@@ -40,15 +37,15 @@ async function token(username = STAND_USERNAME, password = STAND_PASSWORD): Prom
 async function signIn(page: Page, username: string, password: string): Promise<void> {
   const csrf = await page.request.get(`${APP}/api/auth/csrf/`)
   const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken
-  await page.request.post(`${APP}/api/auth/callback/credentials/`, {
+  const response = await page.request.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken, username, password, json: 'true' },
   })
+  expect(response.status(), `вход ${username} не принят`).toBe(200)
 }
 
 async function shot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  fs.mkdirSync('smoke-results', { recursive: true })
   const body = await page.screenshot({
-    path: `smoke-results/1046-daily-${name}.png`,
+    path: process.env.SMOKE_RESULTS_DIR ? testInfo.outputPath(`1046-daily-${name}.png`) : `smoke-results/1046-daily-${name}.png`,
     fullPage: true,
   })
   await testInfo.attach(name, {
@@ -85,10 +82,9 @@ async function purgeDailyFixtures(businessDate: string): Promise<void> {
     'from organization_management.apps.operations.models_submission import OpsDailySubmission',
     `print(OpsDailySubmission.objects.filter(business_date=${JSON.stringify(businessDate)}, division_id__in=[${DEPARTMENT_ID}, ${CHILD_DIVISION_ID}]).delete()[0])`,
   ].join('; ')
-  await execFileAsync(
-    path.join(BACKEND_ROOT, '.venv/bin/python'),
-    ['manage.py', 'shell', '-c', script, '--settings=organization_management.config.settings.local_postgres'],
-    { cwd: BACKEND_ROOT, timeout: 30_000 },
+  await runBackendCommand(
+    ['shell', '-c', script, '--settings=organization_management.config.settings.local_postgres'],
+    { timeout: 30_000 },
   )
 }
 
@@ -150,19 +146,22 @@ test.describe(LIVE ? 'основная проходка ежедневного �
     await expect(summary.getByText('Свод собран — новая версия в списке ниже')).toBeVisible({ timeout: 15_000 })
     await summary.getByRole('button', { name: 'Отправить дежурному' }).click()
     const warning = summary.getByText(/Свод неполный — не сдали/)
-    if (await warning.isVisible()) {
-      const confirm = summary.getByRole('button', { name: 'Подтвердить отправку' })
-      await expect(confirm).toBeDisabled()
-      await summary.getByPlaceholder('Причина неполной отправки — обязательна').fill(
-        'частичная отправка основной проходки; дежурный предупреждён',
-      )
-      await confirm.click()
-    }
+    // Only one child submitted: the incomplete-send response must arrive before
+    // deciding whether the required reason form is shown.
+    await expect(warning).toBeVisible()
+    const confirm = summary.getByRole('button', { name: 'Подтвердить отправку' })
+    await expect(confirm).toBeDisabled()
+    await summary.getByPlaceholder('Причина неполной отправки — обязательна').fill(
+      'частичная отправка основной проходки; дежурный предупреждён',
+    )
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
     await expect(summary.getByText('Свод отправлен дежурному')).toBeVisible({ timeout: 15_000 })
     await shot(page, testInfo, '02-department-summary-sent')
 
     const rangeEnd = addDays(businessDate, 2)
-    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
+    // Plane №1223: «Свод по Службе» — рабочее место оперативного дежурного.
+    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary?dateFrom=${businessDate}&dateTo=${rangeEnd}`)
     const serviceSummary = page.getByRole('region', { name: 'Свод по Службе', exact: true })
     await expect(serviceSummary).toBeVisible({ timeout: 30_000 })

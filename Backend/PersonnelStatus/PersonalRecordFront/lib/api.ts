@@ -2,12 +2,15 @@
 // В dev используем полный URL бэкенда (NEXT_PUBLIC_API_URL)
 // В prod используем относительные пути (Next.js rewrites проксируют на backend)
 import { BACKEND_URL } from "@/shared/config/env";
+import { photoSrc } from "@/entities/employee/model/photo-src";
+import type { DutyPlacementInput } from "@/entities/duty-assignment";
 // Токен берётся из ОБЩЕГО кэша (`lib/access-token.ts`), а не спрашивается у
 // сессии заново на каждый запрос (Plane №343). Здесь стоял собственный
 // `getSession()` без памяти, и каждое обращение к бэку стоило лишний
 // round-trip: замерено 158 запросов `/api/auth/session` на 84 запроса данных.
 // Разбор и обоснование срока годности — в шапке `lib/access-token.ts`.
 import { getAccessToken } from "@/lib/access-token";
+import { captureOpsWriteAuthority } from "@/lib/ops-write-authority";
 const API_BASE_URL = BACKEND_URL;
 
 // Интерфейсы для API
@@ -63,7 +66,7 @@ export interface OrgUnit {
   id: string;
   divisionId?: number;
   name: string;
-  head: Employee;
+  head: Employee | null;
   employees: Employee[];
   color: string;
   type: "leadership" | "department" | "directorate" | "section";
@@ -102,6 +105,7 @@ export interface StaffUnitEmployee {
       state: "planned" | "active" | "completed" | "cancelled";
       start_date?: string;
       end_date?: string | null;
+      location?: string;
     } | null;
     rank?: number | null;
   } | null; // employee может быть null для вакантных должностей
@@ -115,7 +119,7 @@ export interface StaffUnitTreeResponse {
     name: string;
     level?: number;
     code?: string;
-  };
+  } | null;
   employees: Array<{
     position: {
       id: number;
@@ -147,6 +151,7 @@ export interface StaffUnitTreeResponse {
         state: "planned" | "active" | "completed" | "cancelled";
         start_date?: string;
         end_date?: string | null;
+        location?: string;
       } | null;
       rank?: number | null;
     } | null;
@@ -163,7 +168,11 @@ export interface StaffUnit {
     name: string;
     level?: number;
     code?: string;
-  };
+  } | null; // Импортированная штатная строка может не иметь подразделения.
+  department_id?: number | null;
+  department_name?: string;
+  directorate_id?: number | null;
+  directorate_name?: string;
   index: number;
   parent_id: number | null;
   vacancy: number | null; // vacancy может быть null
@@ -235,6 +244,8 @@ export interface DirectorateQuery {
   pageSize?: number;
   search?: string;
   divisionId?: number | string;
+  /** Управление вместе со всеми его отделами; divisionId остаётся точным фильтром. */
+  directorateId?: number | string;
   /** Код действующего статуса либо `none` — «статуса нет». */
   status?: string;
   /** Должности не ниже уровня (`level <= N`): так отбирается руководство. */
@@ -252,6 +263,9 @@ export interface Position {
   id: number;
   name: string;
   level: number;
+  /** UC-REF-001: неактивная должность закрыта для НОВОГО выбора. Поле
+   *  необязательное — ответы без него читаются как активные. */
+  is_active?: boolean;
 }
 
 export interface Rank {
@@ -260,6 +274,8 @@ export interface Rank {
   level: number;
   created_at?: string;
   updated_at?: string;
+  /** UC-REF-001: неактивное звание закрыто для НОВОГО выбора. */
+  is_active?: boolean;
 }
 
 export interface Division {
@@ -353,6 +369,11 @@ export interface CoreEmployee {
   personal_email: string | null;
   notes: string | null;
   employment_status: string | null;
+  /** Подписи отдает только `/api/operations/my-employee/`: это собственная
+   * запись пользователя, а не доступ к общим справочникам. */
+  rank_label?: string | null;
+  position_label?: string | null;
+  division_label?: string | null;
 }
 
 /**
@@ -403,6 +424,9 @@ export interface CoreDivision {
  * легаси-список получил фильтры `?employee=`/`?status_type=`/`?state=`, и
  * неизвестное значение теперь отбивается 400, а не тихой выдачей всего.
  */
+/** Факт раздела, порождённый кадровым статусом (Plane №1209). */
+export const PERSONNEL_STATUS_SOURCE = "PERSONNEL";
+
 export interface OpsEmployeeStatusRow {
   id: number;
   employee_id: number;
@@ -410,8 +434,16 @@ export interface OpsEmployeeStatusRow {
   date_start: string;
   date_end: string;
   state: "PLANNED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  /** Происхождение факта: `USER` — оператор раздела; `OM_AUTO` — проекция
+   *  мероприятий; `PERSONNEL` — проекция КАДРОВОГО статуса (Plane №1209):
+   *  то, что начальник управления поставил в «Статусах сотрудников». Такую
+   *  строку раздел не правит (сервер отвечает 422 `AUTO_STATUS_READONLY`), и
+   *  экраны, где рядом уже стоит кадровая строка, её не дублируют —
+   *  см. `PERSONNEL_STATUS_SOURCE`. */
   source: string;
   comment: string;
+  /** Место убытия из кадрового статуса, прикомандирования или участия в ОМ. */
+  destination?: string;
   document_basis: string;
   cancelled_at: string | null;
   cancelled_reason: string;
@@ -586,7 +618,8 @@ export interface OpsNotification {
     | "ACKNOWLEDGEMENT_DUE_SOON"
     | "FORCES_RESPONSE"
     | "ASSIGNMENT_DECLINED"
-    | "FORCES_REQUEST_SENT";
+    | "FORCES_REQUEST_SENT"
+    | "SUMMARY_SENT";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -594,6 +627,8 @@ export interface OpsNotification {
    *  заступающего — текст один и тот же payload, а звучать должен по-разному. */
   payload: {
     laggard_division_ids?: number[];
+    phase?: 'before_deadline' | 'overdue';
+    deadline_at?: string;
     eventId?: string;
     eventCode?: string;
     eventTitle?: string;
@@ -628,6 +663,16 @@ export interface OpsNotification {
     comment?: string;
     remarksOpen?: number;
     urgent?: boolean;
+    /** `SUMMARY_SENT` (Plane №1222, `[ДОП-20-09]`): ответственный отправил
+     *  свод департамента оперативному дежурному. Ключи — snake_case, как у
+     *  `laggard_division_ids`: их пишет `summary_service`, а не адаптер. */
+    division_id?: number;
+    division_name?: string;
+    submission_id?: number;
+    version?: number;
+    sent_by?: string;
+    incomplete?: boolean;
+    incomplete_reason?: string;
     documentVersion?: number;
     /** `ASSIGNMENT_DECLINED` (Plane №451, `[ПРФ-04]`): сотрудник ответил
      *  «Не могу заступить». Старшему нужно ИМЯ и ПРИЧИНА — по ним он решает,
@@ -797,6 +842,7 @@ class ApiClient {
     options: RequestInit = {},
     token?: string | null
   ): Promise<ApiResponse<T>> {
+    const checkAuthority = captureOpsWriteAuthority(endpoint, options.method);
     const url = `${this.baseUrl}${endpoint}`;
 
     const defaultHeaders: HeadersInit = {
@@ -824,6 +870,7 @@ class ApiClient {
     };
 
     try {
+      checkAuthority();
       const response = await fetch(url, config);
 
       if (!response.ok) {
@@ -931,7 +978,8 @@ class ApiClient {
    * Явная `page` сохраняет прежнее поведение «одна страница»: у метода могут
    * быть читатели, которым нужна именно страница.
    */
-  async getStaffUnits(page?: number, pageSize?: number): Promise<StaffUnit[]> {
+  async getStaffUnits(page?: number, pageSize?: number, signal?: AbortSignal): Promise<StaffUnit[]> {
+    signal?.throwIfAborted();
     const wantsEveryPage = page === undefined;
     const params = new URLSearchParams();
     if (page !== undefined) params.append("page", page.toString());
@@ -956,6 +1004,7 @@ class ApiClient {
 
     // Получаем токен из NextAuth сессии
     const token = await getAccessToken();
+    signal?.throwIfAborted();
 
     const headers: HeadersInit = {
       "Content-Type": "application/json",
@@ -967,13 +1016,14 @@ class ApiClient {
     }
 
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers, signal });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
+      signal?.throwIfAborted();
 
       // Хвост страниц. Ходим по `next` сервера, а не считаем адреса сами:
       // адрес знает сервер, и собранный вручную разошёлся бы с ним на первом
@@ -981,9 +1031,25 @@ class ApiClient {
       // не бизнес-ограничение: до него не доходит ни один реальный штат.
       if (wantsEveryPage && data && typeof data === "object" && "results" in data) {
         const envelope = data as { next?: string | null; results: unknown[] };
+        // DRF builds absolute links from the backend Host. Keep pagination on
+        // the same configured API route as page one (including Next rewrites),
+        // even when the portal is opened through localhost or another hostname.
+        const firstPage = new URL(url, "http://pagination.invalid");
+        const visited = new Set([firstPage.pathname + firstPage.search]);
         let nextUrl = envelope.next ?? null;
         for (let hop = 0; nextUrl !== null && hop < 200; hop += 1) {
-          const hopResponse = await fetch(nextUrl, { headers });
+          const nextPage = new URL(nextUrl, firstPage);
+          if (!/^https?:$/.test(nextPage.protocol) || nextPage.username ||
+              nextPage.password || nextPage.hash || nextPage.pathname !== firstPage.pathname) {
+            throw new Error("Некорректный адрес следующей страницы штатного расписания");
+          }
+          const routedPath = nextPage.pathname + nextPage.search;
+          if (visited.has(routedPath)) {
+            throw new Error("Повтор страницы штатного расписания: загрузка прервана");
+          }
+          visited.add(routedPath);
+          const routedUrl = this.baseUrl ? new URL(routedPath, firstPage).href : routedPath;
+          const hopResponse = await fetch(routedUrl, { headers, signal });
           if (!hopResponse.ok) {
             // Оборванный обход — это НЕ «получили сколько получили»: неполный
             // список молча соврёт о штатке ровно так же, как первая страница.
@@ -995,8 +1061,12 @@ class ApiClient {
             next?: string | null;
             results?: unknown[];
           };
+          signal?.throwIfAborted();
           envelope.results.push(...(hopData.results ?? []));
           nextUrl = hopData.next ?? null;
+        }
+        if (nextUrl !== null) {
+          throw new Error("Не удалось загрузить штатное расписание полностью: слишком много страниц");
         }
       }
 
@@ -1028,12 +1098,7 @@ class ApiClient {
         // Создаем StaffUnit из текущего узла дерева
         const staffUnit: StaffUnit = {
           id: tree.id,
-          division: {
-            id: tree.division.id,
-            name: tree.division.name,
-            level: tree.division.level,
-            code: tree.division.code,
-          },
+          division: tree.division ? { ...tree.division } : null,
           index: minIndex,
           parent_id: parentId,
           vacancy: vacancy,
@@ -1107,7 +1172,7 @@ class ApiClient {
 
           return {
             id: unit.id,
-            division: unit.division,
+            division: unit.division ?? null,
             index: unit.index,
             parent_id: unit.parent_id ?? null,
             vacancy: unit.vacancy ?? null,
@@ -1118,7 +1183,7 @@ class ApiClient {
 
       return [];
     } catch (error) {
-      console.error("API request failed:", error);
+      if (!signal?.aborted) console.error("API request failed:", error);
       throw error;
     }
   }
@@ -1163,6 +1228,7 @@ class ApiClient {
     if (params.pageSize !== undefined) query.set("page_size", String(params.pageSize));
     if (params.search) query.set("search", params.search);
     if (params.divisionId) query.set("division_id", String(params.divisionId));
+    if (params.directorateId) query.set("directorate_id", String(params.directorateId));
     if (params.status) query.set("status", params.status);
     if (params.positionLevelMax !== undefined)
       query.set("position_level_max", String(params.positionLevelMax));
@@ -1255,11 +1321,13 @@ class ApiClient {
     updated: { staff_units: number; employees: number; statuses: number };
     division: { id: number; name: string };
     errors?: unknown[];
+    rolled_back?: boolean;
   }> {
     const endpoint = `/api/staff_unit/staff-units/directorate/`;
 
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
 
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "PUT");
     const token = await getAccessToken();
 
     const headers: HeadersInit = {
@@ -1272,6 +1340,7 @@ class ApiClient {
     }
 
     try {
+      checkAuthority();
       const response = await fetch(url, {
         method: "PUT",
         headers,
@@ -1282,9 +1351,7 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
-        throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
-        );
+        throw new ApiHttpError(response.status, staffErrorMessage(errorText, response.status));
       }
 
       const result = await response.json();
@@ -1327,6 +1394,7 @@ class ApiClient {
     const endpoint = `/api/statuses/statuses/${statusId}/${action}/`;
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
 
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
     const token = await getAccessToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
@@ -1334,6 +1402,7 @@ class ApiClient {
     };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
+    checkAuthority();
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -1392,6 +1461,7 @@ class ApiClient {
 
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
 
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "PATCH");
     const token = await getAccessToken();
 
     const headers: HeadersInit = {
@@ -1404,6 +1474,7 @@ class ApiClient {
     }
 
     try {
+      checkAuthority();
       const response = await fetch(url, {
         method: "PATCH",
         headers,
@@ -1443,11 +1514,13 @@ class ApiClient {
     comment?: string;
     location?: string;
     related_division?: number;
+    duty_assignment?: DutyPlacementInput | null;
   }): Promise<any> {
     const endpoint = `/api/statuses/statuses/`;
 
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
 
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
     const token = await getAccessToken();
 
     const headers: HeadersInit = {
@@ -1460,6 +1533,7 @@ class ApiClient {
     }
 
     try {
+      checkAuthority();
       const response = await fetch(url, {
         method: "POST",
         headers,
@@ -1798,6 +1872,7 @@ class ApiClient {
 
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
 
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
     const token = await getAccessToken();
 
     const headers: HeadersInit = {
@@ -1810,6 +1885,7 @@ class ApiClient {
     }
 
     try {
+      checkAuthority();
       const response = await fetch(url, {
         method: "POST",
         headers,
@@ -2052,12 +2128,14 @@ class ApiClient {
     body: Record<string, unknown>
   ): Promise<T> {
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const checkAuthority = captureOpsWriteAuthority(endpoint, "POST");
     const token = await getAccessToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
       accept: "application/json",
     };
     if (token) headers["Authorization"] = `Bearer ${token}`;
+    checkAuthority();
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -2077,7 +2155,7 @@ class ApiClient {
    */
   async getEmployeeStatusTypes(
     selectableOnly = true
-  ): Promise<Array<{ code: string; label: string; color: string }>> {
+  ): Promise<Array<{ code: string; label: string; color: string; report_column_code?: string }>> {
     const query = selectableOnly ? "?selectable=1" : "";
     return this.getDomainJson(`/api/statuses/types/${query}`);
   }
@@ -2229,12 +2307,19 @@ class ApiClient {
     dateFrom: string;
     dateTo: string;
     divisionId?: number;
+    /** `PLAN` снимает серверный запрет на будущее (`expense_period.MODE_PLAN`):
+     * без него период, заходящий за сегодня, отвечает 400. Умолчание сервера —
+     * `FACT`, и здесь оно не подменяется: аналитика читает состоявшееся. */
+    mode?: "FACT" | "PLAN";
   }): Promise<StrengthReportPeriod> {
     const query = new URLSearchParams();
     query.append("date_from", params.dateFrom);
     query.append("date_to", params.dateTo);
     if (params.divisionId !== undefined) {
       query.append("division_id", String(params.divisionId));
+    }
+    if (params.mode !== undefined) {
+      query.append("mode", params.mode);
     }
     return this.getDomainJson<StrengthReportPeriod>(
       `/api/operations/strength-report/period/?${query.toString()}`
@@ -2427,29 +2512,7 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
         statusStartDate: headEmployee.employee?.current_status?.start_date,
         statusEndDate:
           headEmployee.employee?.current_status?.end_date || undefined,
-        avatar: (() => {
-          const photoUrl = headEmployee.employee?.photo_url;
-          const photo = headEmployee.employee?.photo;
-
-          // Если есть photo_url и это не null/пустая строка, используем его
-          if (photoUrl && photoUrl !== "null" && photoUrl.trim() !== "") {
-            return photoUrl;
-          }
-
-          // Если есть photo и это не null/пустая строка, добавляем MEDIA_URL
-          if (photo && photo !== "null" && photo.trim() !== "") {
-            const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL || "";
-            // Если photo уже начинается с http, используем как есть
-            if (photo.startsWith("http://") || photo.startsWith("https://")) {
-              return photo;
-            }
-            // Иначе добавляем MEDIA_URL
-            return mediaUrl ? `${mediaUrl}${photo}` : photo;
-          }
-
-          // Иначе используем заглушку
-          return "/placeholder.svg";
-        })(),
+        avatar: photoSrc(headEmployee.employee?.photo_url, headEmployee.employee?.photo),
       }
     : {
         id: staffUnit.id.toString(),
@@ -2488,29 +2551,7 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
       statusState: emp.employee!.current_status?.state,
       statusStartDate: emp.employee!.current_status?.start_date,
       statusEndDate: emp.employee!.current_status?.end_date || undefined,
-      avatar: (() => {
-        const photoUrl = (emp.employee as any)?.photo_url;
-        const photo = emp.employee!.photo;
-
-        // Если есть photo_url и это не null/пустая строка, используем его
-        if (photoUrl && photoUrl !== "null" && photoUrl.trim() !== "") {
-          return photoUrl;
-        }
-
-        // Если есть photo и это не null/пустая строка, добавляем MEDIA_URL
-        if (photo && photo !== "null" && photo.trim() !== "") {
-          const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL || "";
-          // Если photo уже начинается с http, используем как есть
-          if (photo.startsWith("http://") || photo.startsWith("https://")) {
-            return photo;
-          }
-          // Иначе добавляем MEDIA_URL
-          return mediaUrl ? `${mediaUrl}${photo}` : photo;
-        }
-
-        // Иначе используем заглушку
-        return "/placeholder.svg";
-      })(),
+      avatar: photoSrc((emp.employee as any)?.photo_url, emp.employee!.photo),
       };
     });
 
@@ -2521,8 +2562,8 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
 
   return {
     id: staffUnit.id.toString(),
-    divisionId: staffUnit.division.id,
-    name: staffUnit.division.name,
+    divisionId: staffUnit.division?.id,
+    name: staffUnit.division?.name ?? "Без подразделения",
     head,
     employees: otherEmployees,
     color: colors[type],
@@ -2551,11 +2592,12 @@ export function mergeStaffUnitsByDivision(staffUnits: StaffUnit[]): StaffUnit[] 
 
   // Представитель подразделения — строка с минимальным id: у неё же берутся
   // id узла и порядок сортировки, поэтому выбор обязан быть устойчивым.
-  const representative = new Map<number, StaffUnit>();
+  const representative = new Map<number | null, StaffUnit>();
   for (const unit of staffUnits) {
-    const current = representative.get(unit.division.id);
+    const divisionId = unit.division?.id ?? null;
+    const current = representative.get(divisionId);
     if (current === undefined || unit.id < current.id) {
-      representative.set(unit.division.id, unit);
+      representative.set(divisionId, unit);
     }
   }
 
@@ -2564,7 +2606,7 @@ export function mergeStaffUnitsByDivision(staffUnits: StaffUnit[]): StaffUnit[] 
     const seen = new Set<number>([unit.id]);
     let parent = unit.parent_id === null ? undefined : byId.get(unit.parent_id);
     while (parent !== undefined && !seen.has(parent.id)) {
-      if (parent.division.id !== unit.division.id) return parent.division.id;
+      if (parent.division && parent.division.id !== unit.division?.id) return parent.division.id;
       seen.add(parent.id);
       parent = parent.parent_id === null ? undefined : byId.get(parent.parent_id);
     }
@@ -2573,8 +2615,10 @@ export function mergeStaffUnitsByDivision(staffUnits: StaffUnit[]): StaffUnit[] 
 
   const merged: StaffUnit[] = [];
   for (const [divisionId, head] of representative) {
-    const rows = staffUnits.filter((unit) => unit.division.id === divisionId);
+    const rows = staffUnits.filter((unit) => (unit.division?.id ?? null) === divisionId);
     const parentId = (() => {
+      // Отсутствующее подразделение не наследуется от соседней штатной строки.
+      if (divisionId === null) return null;
       for (const row of rows) {
         const found = parentDivisionId(row);
         if (found !== null) return representative.get(found)?.id ?? null;
@@ -2641,6 +2685,21 @@ export function convertStaffUnitsResponseToOrgUnit(
 
   // Если есть несколько корневых элементов, создаем виртуальный корень
   if (rootUnits.length > 1) {
+    if (rootUnits.some(unit => unit.division === null)) {
+      // Нет общего подразделения: неизвестная принадлежность не превращает
+      // человека в начальника реального управления или его подчинённого.
+      return {
+        id: "unassigned-structure-root",
+        name: "Структура организации",
+        head: null,
+        employees: [],
+        color: "bg-card border-border",
+        type: "leadership",
+        children: rootUnits.map(root => convertStaffUnitToOrgUnit({
+          ...root, children: buildTree(root.id),
+        })),
+      };
+    }
     // Находим элемент с минимальным ID среди корневых
     const mainRoot = rootUnits.reduce((min, unit) =>
       unit.id < min.id ? unit : min

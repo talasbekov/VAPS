@@ -49,6 +49,8 @@ class OpsE2EFixtureDateCursor(TimeStampedModel):
     `unique=True` недостаточно, он разрешил бы несколько разных ключей.
     """
 
+    admin_readonly = True
+
     singleton_key = models.PositiveSmallIntegerField(
         default=1, unique=True, editable=False
     )
@@ -620,6 +622,8 @@ class OpsPlacementDocumentVersion(TimeStampedModel):
     подписывают; подпись (`signature`) — та же строка, что `approval_snapshot`,
     чтобы «расстановка изменилась после отправки» считалось по одному правилу.
     """
+
+    admin_readonly = True
 
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Черновик"

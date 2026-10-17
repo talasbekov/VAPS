@@ -111,6 +111,9 @@ class TestRoster:
             "full_name": "Иванов Иван Иванович",
             "rank": "капитан",
             "position_level": None,
+            "position_name": "",
+            "position_code": "",
+            "division_type": division.division_type,
         }
 
     def test_missing_rank_is_an_empty_string(self, division):
@@ -171,6 +174,7 @@ class TestFacts:
                 "date_start": str(TODAY),
                 "date_end": str(TODAY + timedelta(days=2)),
                 "source": "USER",
+                "destination": "",
                 # Пин правлен ОСОЗНАННО вместе с версией 8 (Plane №751): вид
                 # участия заморожен в снимке, потому что после слияния №486
                 # разбивка «На ОМ (гр./нар.)» выводится только из него. У
@@ -324,6 +328,7 @@ class TestDivisionId:
             "rows",
             "catalog",
             "division_title",
+            "division_type",
             "staff_total",
             "vacancies",
             "attached",

@@ -1,6 +1,7 @@
 import { getAccessToken } from "@/lib/api";
 import { apiClient, type OpsNotification as OpsNotificationRow } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
+import { formatIsoDate } from "@/shared/lib/date";
 import {
   DIRECTORATES_DATIVE,
   EMPLOYEES,
@@ -269,11 +270,37 @@ export function describeOpsNotification(row: OpsNotificationRow): {
       link: p.eventId ? `/security-ops/events/${p.eventId}/` : null,
     };
   }
-  if (row.kind === "SUBMISSION_LAGGING") {
+  if (row.kind === "SUMMARY_SENT") {
+    // Ответственный отправил свод департамента оперативному дежурному
+    // (Plane №1222, `[ДОП-20-09]`). Ссылка — «Свод по Службе» на ту же
+    // деловую дату: там дежурный видит департамент в дереве и собирает свод
+    // Службы. Неполный свод назван неполным ЗДЕСЬ, а не только на экране:
+    // дежурный читает ленту раньше, чем откроет дерево.
+    const p = row.payload;
+    const version = p.version !== undefined ? ` · v${p.version}` : "";
+    const incomplete = p.incomplete
+      ? ` — неполный свод${p.incomplete_reason ? `: «${p.incomplete_reason}»` : ""}`
+      : "";
     return {
-      title: "Отставание по сдаче",
-      message: `Подразделений без сдачи: ${row.payload.laggard_division_ids?.length ?? 0}`,
-      link: null,
+      title: `Свод департамента отправлен: ${p.division_name ?? "департамент"}`,
+      message: `Расход на ${formatIsoDate(row.business_date)}${version} · отправил ${p.sent_by ?? "—"}${incomplete}`,
+      link: `/security-ops/service-summary?businessDate=${encodeURIComponent(row.business_date)}`,
+    };
+  }
+  if (row.kind === "SUBMISSION_LAGGING") {
+    const payload = row.payload as OpsNotificationRow["payload"] & {
+      phase?: "before_deadline" | "overdue";
+      deadline_at?: string;
+    };
+    // The ISO offset belongs to the submission deadline, not the browser's zone.
+    const deadlineTime = payload.deadline_at?.match(/T(\d{2}:\d{2})/)?.[1];
+    const deadline = deadlineTime ? ` · срок: ${deadlineTime}` : "";
+    return {
+      title: payload.phase === "before_deadline"
+        ? "Напоминание о сдаче расхода"
+        : payload.phase === "overdue" ? "Срок сдачи расхода истёк" : "Отставание по сдаче",
+      message: `Расход на ${formatIsoDate(row.business_date)}${deadline} · Подразделений без сдачи: ${payload.laggard_division_ids?.length ?? 0}`,
+      link: `/statuses?businessDate=${encodeURIComponent(row.business_date)}`,
     };
   }
   // 🔴 НЕЗНАКОМЫЙ ВИД НАЗЫВАЕТ СЕБЯ, А НЕ ЧУЖИМ ИМЕНЕМ. Раньше сюда падало

@@ -68,23 +68,23 @@ export function EmployeeProfile({
       {/* Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex min-w-0 basis-full items-start gap-4 sm:flex-1">
               {/* Заглушка тут была КАРТИНКОЙ (`/placeholder.svg`), и это
                   подменяло инициалы: для Radix любой непустой `src` — попытка
                   показать изображение, а `AvatarFallback` включается только
                   когда показывать нечего. Правило одно на все экраны — см.
                   `EmployeeAvatar`. */}
               <EmployeeAvatar name={employee.name} photo={employee.photo} size="lg" />
-              <div>
-                <h2 className="text-2xl font-bold">{employee.name}</h2>
+              <div className="min-w-0">
+                <h2 className="break-words text-2xl font-bold">{employee.name}</h2>
                 {/* Шапка прототипа: «звание · должность». */}
                 <p className="text-muted-foreground">
                   {employee.rank === ""
                     ? employee.position
                     : `${employee.rank} · ${employee.position}`}
                 </p>
-                <div className="flex items-center space-x-2 mt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   {getStatusBadge(employee.status, employee.statusCode)}
                   {employee.personnelNumber !== "" && (
                     <Badge variant="outline">
@@ -94,7 +94,7 @@ export function EmployeeProfile({
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Переход в кадровую форму доступен системному администратору
                   с правом управления штаткой; сама карточка остаётся чтением. */}
               {canEditPersonnel && (

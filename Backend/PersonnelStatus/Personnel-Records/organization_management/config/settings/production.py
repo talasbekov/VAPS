@@ -40,7 +40,14 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [(REDIS_HOST, int(REDIS_PORT))],
+            # Redis 8 reads time out after 5s by default, racing Channels'
+            # 5s blocking receive. Let the blocking command finish normally.
+            "hosts": [{
+                "host": REDIS_HOST,
+                "port": int(REDIS_PORT),
+                "socket_timeout": None,
+                "socket_connect_timeout": 5,
+            }],
         },
     },
 }

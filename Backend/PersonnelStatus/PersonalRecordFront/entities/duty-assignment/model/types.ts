@@ -1,16 +1,3 @@
-// Наряд — расшифровка статуса «На дежурстве»: КУДА заступил сотрудник.
-//
-// Запись рождается ровно в одном месте — в модалке «Статусы сотрудника»
-// (features/employee-status-update) — и читается ровно в одном месте —
-// в разделе «Дежурные силы» карточки объекта. Второго источника у карточки
-// нет намеренно: сведения о заступивших, набираемые отдельно от статуса,
-// расходятся со статусом молча.
-//
-// Хранилище — клиентское (см. ./store.ts): у EmployeeStatus на бэкенде полей
-// наряда нет, а правка бэкенда в эту работу не входит. Формат записи специально
-// повторяет то, что отдал бы сервер, чтобы подмена хранилища на HTTP-клиент
-// была заменой ./store.ts, а не переписыванием потребителей.
-
 /**
  * Вид дежурства. Ось «постовое/групповое» задаёт, ЧЕМ уточняется объект:
  * постом из паспорта объекта или группой. Реестр видов бэкенда
@@ -18,6 +5,41 @@
  * (свой объект / охраняемый объект), поэтому реестр здесь свой.
  */
 export type DutyKindCode = "POST" | "GROUP";
+
+export interface DutyPlacementInput {
+  kind: DutyKindCode;
+  object_id: string;
+  post_id?: string;
+  group_id?: string;
+}
+
+export interface DutyPlacement {
+  kind: DutyKindCode;
+  object_id: string;
+  object_name: string;
+  post_id: string | null;
+  post_name: string | null;
+  sector_name: string | null;
+  group_id: string | null;
+  group_name: string | null;
+}
+
+export interface ServerDutyAssignment {
+  dispatch_assignment_id?: number;
+  start_at?: string;
+  end_at?: string;
+  time_zone?: string;
+  status_id: number | null;
+  employee_id: number;
+  employee_name: string;
+  rank_name: string;
+  position_name: string;
+  department_name: string;
+  placement: DutyPlacement;
+  start_date: string;
+  end_date: string;
+  assigned_at: string;
+}
 
 export interface DutyKindDefinition {
   code: DutyKindCode;
@@ -34,9 +56,8 @@ export function getDutyKindLabel(code: DutyKindCode | ""): string {
 }
 
 /**
- * Группа для группового дежурства. Реестр фронтовый — у бэкенда групп нет:
- * «Трассы» боевых групп (/api/ops/combat-routes/) это другое ID-пространство
- * и другой процесс, склейка по имени дала бы ложные совпадения.
+ * Group identifiers are validated by the personnel-status backend.
+ * Combat routes belong to a separate workflow and identifier space.
  */
 export interface DutyGroupDefinition {
   id: string;
@@ -55,20 +76,16 @@ export const DUTY_GROUPS: readonly DutyGroupDefinition[] = [
  * с идентификаторами: карточка объекта показывает состав на выбранную дату, и
  * переименование поста задним числом не должно менять то, что было в наряде.
  *
- * Кадровые поля (ФИО, звание, должность, департамент) — тоже снимок: карточка
- * объекта не ходит в кадровый API, она показывает, кем человек заступал.
+ * Personnel labels come from the server current staff record.
  */
 export interface DutyAssignment {
-  /** Идентификатор строки таблицы сотрудников: `${staffUnitId}-${employeeId}`. */
+  shiftStart?: string;
+  shiftEnd?: string;
+  timeZone?: string;
+  /** Stable status identifier used as the roster row key. */
   employeeKey: string;
   employeeName: string;
-  /**
-   * Звание. Пустая строка — источник его не отдал: сводка штатки
-   * (/api/staff_unit/staff-units/directorate/) кладёт у сотрудника только
-   * id/ФИО/текущий статус, а карточки сотрудника у этого бэкенда нет.
-   * Карточка объекта в таком случае звание не печатает, а не пишет «—»:
-   * прочерк читался бы как «звания нет».
-   */
+  /** Empty when no rank is assigned in the server personnel record. */
   rankName: string;
   positionName: string;
   departmentName: string;
@@ -88,14 +105,6 @@ export interface DutyAssignment {
   endDate: string;
   /** Когда наряд оформили — для разбора расхождений. */
   assignedAt: string;
-}
-
-/** Действует ли наряд на дату (YYYY-MM-DD), границы включены. */
-export function isAssignmentActiveOn(
-  assignment: DutyAssignment,
-  date: string
-): boolean {
-  return assignment.startDate <= date && date <= assignment.endDate;
 }
 
 /** Пост или группа — то, подо что группируются люди в карточке объекта. */

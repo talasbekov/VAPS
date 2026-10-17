@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import { PageHeader } from "@/components/page-header";
 import { StatsCards } from "@/components/dashboard/stats-cards";
-import OrgBoard from "@/features/organization-structure/ui/OrgBoard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import OrgBoard, { type OrgBoardLoadState } from "@/features/organization-structure/ui/OrgBoard";
 import { Badge } from "@/components/ui/badge";
-import { Building2 } from "lucide-react";
 import {
   absenceStatsFailure,
   useAbsenceStatistics,
@@ -30,26 +28,28 @@ export default function DashboardPage() {
 
 
 
-  // Часы «последнее обновление» рендерятся ТОЛЬКО после маунта: new Date()
-  // прямо в JSX давал hydration mismatch — сервер и клиент попадали на
-  // разные секунды.
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-  }, []);
+  const [structureState, setStructureState] = useState<OrgBoardLoadState>({
+    isLoading: true, isError: false, updatedAt: 0,
+  });
 
   const {
     data: absenceStats,
     isLoading: isLoadingStats,
     error: statsError,
     refetch: refetchStats,
-  } = useAbsenceStatistics();
+    isFetching: isFetchingStats,
+    dataUpdatedAt: statsUpdatedAt,
+  } = useAbsenceStatistics(!opsPermissionsLoading && allowed);
+  const hasLoadError = Boolean(statsError) || structureState.isError;
+  const isUpdating = isFetchingStats || structureState.isLoading;
+  const updatedAt = statsUpdatedAt && structureState.updatedAt
+    ? Math.min(statsUpdatedAt, structureState.updatedAt) : 0;
+  const loadLabel = hasLoadError ? "Часть данных не загружена"
+    : isUpdating ? "Загрузка данных…" : "Данные обзора загружены";
 
   // Отказ рисуется ПОСЛЕ всех хуков (правило хуков React): ранний возврат
-  // выше по функции пропускал бы `useState`/`useEffect` при смене прав, и
-  // React падал бы на «rendered fewer hooks than expected». Запросы при этом
-  // всё равно уходят и получают свои 403 — так же ведут себя все экраны
-  // раздела с `OpsAccessDenied`.
+  // выше по функции пропускал бы `useState` при смене прав, и
+  // React падал бы на «rendered fewer hooks than expected».
   if (!opsPermissionsLoading && !allowed) {
     return <OpsAccessDenied what="обзора организации" />;
   }
@@ -65,13 +65,14 @@ export default function DashboardPage() {
           description="Обзор состояния организации"
           actions={
             <Badge variant="outline" className="text-sm">
-              Последнее обновление: {now ? now.toLocaleString("ru-RU") : "…"}
+              Последнее обновление: {updatedAt ? new Date(updatedAt).toLocaleString("ru-RU") : "ещё не завершено"}
             </Badge>
           }
         />
 
         {/* Stats Cards */}
         <StatsCards
+          compact
           stats={
             absenceStats
               ? {
@@ -81,7 +82,7 @@ export default function DashboardPage() {
                 }
               : null
           }
-          isLoading={isLoadingStats}
+          isLoading={opsPermissionsLoading || isLoadingStats}
           isError={statsError !== null && statsError !== undefined}
           // ПРИЧИНА, а не только факт отказа (Plane №340): «учётка не
           // привязана к сотруднику» — штатное состояние служебной учётки, и
@@ -94,19 +95,11 @@ export default function DashboardPage() {
         <div className="w-full">
           {/* Organization Tree - Main Content */}
           <div className="lg:col-span-2">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  Структура организации
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
                 <div className="min-h-[350px]">
-                  <OrgBoard />
+                  {!opsPermissionsLoading && allowed
+                    ? <OrgBoard onLoadStateChange={setStructureState} />
+                    : <p role="status">Загрузка прав доступа…</p>}
                 </div>
-              </CardContent>
-            </Card>
           </div>
 
           {/* 🔴 ПРАВОЙ КОЛОНКИ «ОБЗОР СТАТУСОВ» БОЛЬШЕ НЕТ (Plane №838,
@@ -128,22 +121,18 @@ export default function DashboardPage() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-foreground">
-              Системные уведомления:
+              Состояние обзора:
             </span>
-            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-              Синхронизация: {now ? now.toLocaleTimeString("ru-RU") : "…"}
-            </Badge>
-            <Badge variant="outline" className="bg-green-50 text-green-700">
-              Система работает стабильно
+            <Badge role="status" variant="outline" className={hasLoadError
+              ? "text-destructive-ink" : isUpdating ? "text-muted-foreground" : "text-green-700 dark:text-green-400"}>
+              {loadLabel}
             </Badge>
           </div>
           <div className="text-sm text-muted-foreground">
-            Последняя проверка: {now ? now.toLocaleTimeString("ru-RU") : "…"}
+            {updatedAt ? `Данные получены: ${new Date(updatedAt).toLocaleTimeString("ru-RU")}` : "Ожидание данных сервера"}
           </div>
         </div>
 
-        {/* System Status Footer */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2"></div>
       </div>
     </DashboardLayout>
   );

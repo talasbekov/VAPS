@@ -2,7 +2,7 @@
 
 ЗАЧЕМ. Заказчик просил у модуля «Справочники» все три действия — «Добавлять,
 удалять, редактировать» — и подтвердил, что кадровые справочники правятся под
-ТЕМ ЖЕ правом, что и справочники раздела ОМ (`dictionary.manage`).
+ТЕМ ЖЕ правом, что и справочники раздела ОМ (`dictionary_value.manage`).
 
 До этого ручки должностей и званий были закрыты наглухо: `http_method_names =
 ['get', 'head', 'options']` с подписью «Только GET для API».
@@ -29,7 +29,7 @@ RANKS = "/api/dictionaries/ranks/"
 def manager_api():
     api, _ = client_for(
         "dict-manager", "DICT_MANAGER",
-        perms=("dictionary.view", "dictionary.manage"),
+        perms=("dictionary.view", "dictionary_value.manage"),
     )
     return api
 
@@ -83,8 +83,10 @@ def test_a_position_used_by_staffing_is_not_deleted(manager_api):
 
     resp = manager_api.delete(f"{POSITIONS}{position.pk}/")
 
-    assert resp.status_code == 400, resp.content
-    assert "1" in str(resp.json()), resp.json()
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["result"] == "deactivated"
+    assert Position.objects.get(pk=position.pk).is_active is False
+    assert StaffUnit.objects.filter(position_id=position.pk).count() == 1
     assert Position.objects.filter(pk=position.pk).exists(), (
         "должность, на которую ссылается штатка, всё-таки удалена"
     )
@@ -117,5 +119,7 @@ def test_a_rank_is_created_and_protected_by_its_employees(manager_api):
     )
     resp = manager_api.delete(f"{RANKS}{rank.pk}/")
 
-    assert resp.status_code == 400, resp.content
-    assert Rank.objects.filter(pk=rank.pk).exists()
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["result"] == "deactivated"
+    assert Rank.objects.get(pk=rank.pk).is_active is False
+    assert Employee.objects.filter(rank_id=rank.pk).count() == 1

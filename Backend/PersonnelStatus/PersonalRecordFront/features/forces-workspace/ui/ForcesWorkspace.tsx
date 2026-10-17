@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Button } from '@/components/ui/button'
@@ -9,10 +10,11 @@ import { ForceCollectionsTable } from '@/features/force-collections'
 import { DailyExpenseBoard } from '@/features/daily-expense'
 import { ResponsibleDailyExpense, DailyRetry } from '@/features/daily-expense/ui/ResponsibleDailyExpense'
 import { useResponsibleDaily } from '@/features/daily-expense/model/directorate-summary'
+import { SUMMARY_ACTION_ANCHOR } from '@/features/daily-expense/ui/SummaryActionBar'
 import { useDepartmentRequests } from '@/hooks/use-department-requests'
 import { useOpsPermissions } from '@/hooks/use-ops-permissions'
 import { formatIsoDate, formatIsoDateTime } from '@/shared/lib/date'
-import { activeRequests, requestTotals, resolveWorkspaceView, workspaceHref, type WorkspaceRole } from '../model/workspace'
+import { activeRequests, requestTotals, resolveWorkspaceView, responsibleDepartmentScope, workspaceHref, type WorkspaceRole } from '../model/workspace'
 import styles from './workspace.module.css'
 
 function Retry({ label, retry }: { label: string; retry: () => unknown }) {
@@ -52,7 +54,7 @@ function DailyActionQueue({ query }: { query: URLSearchParams }) {
   if (!data || submissions.isPending) return <p role="status" className={styles.pending}>Загрузка очереди расхода…</p>
   const missing = data.sources.filter(row => !row.submission)
   if (missing.length === 0 && data.total.submission?.sent_at) return <p className={styles.pending}>Ежедневный свод отправлен. Нет ожидающих сдач.</p>
-  return <div className={styles.queueRow}><span className={styles.badge}>Расход</span><div><strong>{missing.length ? `Ожидаем сдачу: ${missing.map(row => row.division.name).join(', ')}` : data.total.submission ? 'Отправить собранный свод' : 'Собрать свод департамента'}</strong><p>{businessDate ? formatIsoDate(businessDate) : ''} · сдали {data.sources.length - missing.length} из {data.sources.length}</p></div><div /><Link className={styles.action} href={workspaceHref(query, 'daily')}>Открыть свод</Link></div>
+  return <div className={styles.queueRow}><span className={styles.badge}>Расход</span><div><strong>{missing.length ? `Ожидаем сдачу: ${missing.map(row => row.division.name).join(', ')}` : data.total.submission ? 'Отправить собранный свод' : 'Собрать свод департамента'}</strong><p>{businessDate ? formatIsoDate(businessDate) : ''} · сдали {data.sources.length - missing.length} из {data.sources.length}</p></div><div /><Link className={styles.action} href={`${workspaceHref(query, 'daily')}#${SUMMARY_ACTION_ANCHOR}`}>Открыть свод</Link></div>
 }
 
 function ResponsibleDesk({ query }: { query: URLSearchParams }) {
@@ -94,13 +96,33 @@ export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
   const router = useRouter()
   const access = useOpsPermissions()
   const query = new URLSearchParams(searchParams)
-  const view = resolveWorkspaceView(role, query)
-  const scopedRole = access.roles.find(item => item.code === (role === 'responsible' ? 'FORCES_GATHERING_OFFICER' : 'OPS_STAFF'))
+  const view = resolveWorkspaceView(role, query, access.hasPermission('status.view'))
+  // The department workflow requires one assigned department. Global wildcard
+  // authority and multiple/global responsible grants keep the generic picker.
+  // Aggregate '*' may be scoped, so only globalPermissions can bypass scope.
+  const singleDepartmentDaily = role !== 'headquarters' &&
+    !access.globalPermissions?.has('*') && responsibleDepartmentScope(access.roles) !== null
+  const scopedRole = access.roles.find(item => item.code === (role === 'expense' ? 'DEPARTMENT_EXPENSE_OFFICER' : role === 'responsible' ? 'FORCES_GATHERING_OFFICER' : 'OPS_STAFF'))
   const title = view === 'desk' ? 'Рабочий стол' : view === 'daily' ? 'Ежедневный расход' : role === 'headquarters' ? 'Распределения' : 'Сбор сил на ОМ'
   return <DashboardLayout><div className={styles.workspace}>
-    <div className={styles.titleRow}><div><p className={styles.eyebrow}>{role === 'responsible' ? 'Мои задачи' : 'Штаб · сбор и распределение сил'}</p><h1>{title}</h1><p>{scopedRole?.name}</p></div><span className={styles.scope}>{scopedRole?.scope_division_name ?? (role === 'headquarters' ? 'Штаб' : 'Мой департамент')}</span></div>
+    {/* «Назад» на рабочий стол (Plane №1199): оба модуля ответственного
+        открываются ВНУТРИ рабочего стола, и путь обратно должен быть на самом
+        экране, а не только в меню. Штабу (`headquarters`) рабочего стола
+        нет — ему кнопка не рисуется. Параметры адреса (дата, диапазон)
+        сохраняются: `workspaceHref` снимает только `request/collection/
+        campaign/tab`. */}
+    {role === 'responsible' && view !== 'desk' && (
+      <Link href={workspaceHref(query, 'desk')} className={styles.back} data-slot="workspace-back">
+        <ArrowLeft aria-hidden size={16} />Назад на рабочий стол
+      </Link>
+    )}
+    <div className={styles.titleRow}><div><p className={styles.eyebrow}>{role !== 'headquarters' ? 'Мои задачи' : 'Штаб · сбор и распределение сил'}</p><h1>{title}</h1><p>{scopedRole?.name}</p></div><span className={styles.scope}>{scopedRole?.scope_division_name ?? (role === 'headquarters' ? 'Штаб' : 'Мой департамент')}</span></div>
+    {role === 'expense' && <nav aria-label="Разделы модуля" className="flex flex-wrap gap-3 text-sm">
+      {access.hasPermission('status.view') && <Link href={workspaceHref(query, 'daily')} aria-current={view === 'daily' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Расход департамента</Link>}
+      {access.hasPermission('forces.allocate') && <Link href={workspaceHref(query, 'forces')} aria-current={view === 'forces' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Сбор сил на ОМ</Link>}
+    </nav>}
     {view === 'desk' ? <ResponsibleDesk query={query} />
-      : view === 'daily' ? access.hasPermission('status.view') ? role === 'responsible' ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {
+      : view === 'daily' ? access.hasPermission('status.view') ? singleDepartmentDaily ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {
         const next = new URLSearchParams(query); next.set('businessDate', date)
         router.replace(workspaceHref(next, 'daily'), { scroll: false })
       }} /> : <DailyExpenseBoard businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {

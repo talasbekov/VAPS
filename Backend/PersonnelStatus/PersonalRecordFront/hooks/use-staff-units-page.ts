@@ -53,6 +53,7 @@ export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
       params.pageSize ?? 50,
       params.search ?? "",
       params.divisionId ?? "",
+      params.directorateId ?? "",
       params.status ?? "",
       params.positionLevelMax ?? "",
       (params.employeeIds ?? []).join(","),
@@ -61,6 +62,44 @@ export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
     ],
     queryFn: async () => await apiClient.getStaffUnitsByDirectorate(params),
     placeholderData: keepPreviousData,
+    retry: retryUnlessClientError,
+  });
+}
+
+/** The API accepts at most 200 employee IDs; a person may have several slots. */
+export async function loadStaffUnitsSelection(
+  employeeIds: readonly number[],
+  readPage: (params: DirectorateQuery) => Promise<StaffUnitsPage>,
+  signal?: AbortSignal,
+): Promise<StaffUnit[]> {
+  const ids = [...new Set(employeeIds)];
+  const units = new Map<number, StaffUnit>();
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const batch = ids.slice(offset, offset + 200);
+    const seen = new Set<number>();
+    for (let page = 1; ; page++) {
+      signal?.throwIfAborted();
+      if (page > 200) throw new Error("Проверка страниц выбранных сотрудников не завершена.");
+      const response = await readPage({ employeeIds: batch, page, pageSize: 200 });
+      signal?.throwIfAborted();
+      let added = 0;
+      for (const unit of response.staff_units) {
+        if (!seen.has(unit.id)) { seen.add(unit.id); added++; }
+        units.set(unit.id, unit);
+      }
+      if (!response.has_next) break;
+      if (!added) throw new Error("Некорректный повтор страниц выбранных сотрудников.");
+    }
+  }
+  return [...units.values()];
+}
+
+export function useStaffUnitsSelection(employeeIds: readonly number[], enabled = true) {
+  const ids = [...new Set(employeeIds)].sort((a, b) => a - b);
+  return useQuery<StaffUnit[]>({
+    queryKey: ["staff-units-page", "selection", ids],
+    enabled: enabled && ids.length > 0,
+    queryFn: ({ signal }) => loadStaffUnitsSelection(ids, params => apiClient.getStaffUnitsByDirectorate(params), signal),
     retry: retryUnlessClientError,
   });
 }

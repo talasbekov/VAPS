@@ -5,9 +5,11 @@
 // только эта модалка: засев с сервера, сборка запроса и наряд.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller } from "react-hook-form";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
-import { employeeIdOfKey } from "../model/row-key";
-import { useRanks } from "@/hooks/use-ranks";
+import { employeeIdOfKey, staffUnitOfEmployeeKey } from "../model/row-key";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { canManageStatusInDivision } from "@/entities/status/access";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -36,18 +39,15 @@ import { CalendarIcon, AlertTriangle, Clock, Save, X } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
+import { parseIsoDate } from "@/shared/lib/date";
+import { opsExclusiveEndDate, statusServerDates, statusStartForSave, type StatusActionMode } from "../model/status-action-date";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
-  getEmployeeStatusPaint,
 } from "@/lib/status";
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
-import {
-  removeDutyAssignment,
-  upsertDutyAssignment,
-} from "@/entities/duty-assignment";
-import { useDutyAssignment } from "@/hooks/use-duty-assignments";
+import { invalidateDutyViews, useDutyAssignment } from "@/hooks/use-duty-assignments";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { DutyAssignmentFields } from "./DutyAssignmentFields";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
@@ -65,9 +65,10 @@ import {
   EMPTY_DUTY_DRAFT,
   EMPTY_EDIT_STATUS_FORM,
   IN_SERVICE_LABEL,
-  ON_DUTY_LABEL,
+  isInServiceStatus,
+  usesDutyAssignment,
   editStatusFormSchema,
-  type EditStatusFormValues,
+  type EditStatusFormInput,
 } from "../model/edit-status-schema";
 
 interface EditStatusDialogProps {
@@ -77,9 +78,9 @@ interface EditStatusDialogProps {
   employeeName?: string;
   currentStatus?: string;
   onSuccess?: () => void;
-  initialStartDate?: Date; // Начальная дата для планирования
-  /** Снимок кадровых данных для наряда: карточка объекта показывает,
-   * кем человек заступал, и в кадровый API за этим не ходит. */
+  initialStartDate?: Date; // Дата выбранного дня на экранах расхода.
+  mode?: StatusActionMode;
+  /** Optional caller context retained for existing integrations. */
   employeePosition?: string;
   employeeDepartment?: string;
 }
@@ -92,9 +93,26 @@ export function EditStatusDialog({
   currentStatus,
   onSuccess,
   initialStartDate,
+  mode = "change",
   employeePosition,
   employeeDepartment,
 }: EditStatusDialogProps) {
+  const queryClient = useQueryClient();
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [dutyPlacementReady, setDutyPlacementReady] = useState(false);
+  const serverDateQuery = useQuery({
+    queryKey: ["daily-expense-board", "default-business-date"],
+    queryFn: () => apiClient.getTomorrowBlockState({}),
+    enabled: open,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const serverDates = useMemo(() => {
+    if (!serverDateQuery.data) return null;
+    try { return statusServerDates(serverDateQuery.data.business_date); }
+    catch { return null; }
+  }, [serverDateQuery.data]);
   // Подписи статусов — из справочника (Plane №366).
   const naming = useStatusNaming();
   const {
@@ -105,7 +123,7 @@ export function EditStatusDialog({
     setValue,
     setError,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, dirtyFields },
   } = useZodForm(editStatusFormSchema, EMPTY_EDIT_STATUS_FORM);
 
   // Используем React Query для загрузки данных
@@ -114,26 +132,27 @@ export function EditStatusDialog({
   // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
   // не диалога.
   const wantedEmployeeId = employeeIdOfKey(employeeId);
-  const { data } = useStaffUnitsPage(
+  const employeeQuery = useStaffUnitsPage(
     { employeeIds: wantedEmployeeId === null ? [] : [wantedEmployeeId], pageSize: 1 },
     open && wantedEmployeeId !== null
   );
-  const staffUnits = data?.staff_units || [];
+  const staffUnits = employeeQuery.data?.staff_units || [];
 
-  // Звания — только при открытом диалоге (Plane №329): таблица статусов
-  // монтирует диалог рядом с собой, а не по клику, и справочник запрашивался
-  // при открытии ЭКРАНА. У ролевых учёток раздела права `dictionary.view` нет,
-  // и экран отдавал 403 в консоль ещё до первого клика. Тот же приём, что у
-  // состава строкой выше (№234).
-  const { data: ranks } = useRanks(open);
-  const existingDuty = useDutyAssignment(employeeId);
+  const access = useOpsPermissions();
+  const hasOpsPermission = access.hasPermission;
+  const employeeDivision = staffUnitOfEmployeeKey(employeeId, staffUnits)?.division?.id;
+  const canSaveStatus = !access.isLoading && !access.error && !employeeQuery.isError &&
+    canManageStatusInDivision(access, employeeDivision);
 
   // Ветки формы зависят только от статуса: у «В строю» дат нет, у «На
   // дежурстве» появляется наряд.
   const status = watch("status");
+  const statusCode = watch("statusCode");
 
-  const isInService = status === IN_SERVICE_LABEL;
-  const isOnDuty = status === ON_DUTY_LABEL;
+  const isInService = isInServiceStatus(statusCode);
+  const hasDutyAssignment = usesDutyAssignment(statusCode);
+  const dutyQuery = useDutyAssignment(wantedEmployeeId, serverDates?.today ?? "", open && mode === "change" && hasDutyAssignment);
+  const dutySeededForRef = useRef<string | null>(null);
 
 
   // Находим текущий статус сотрудника при открытии диалога.
@@ -145,20 +164,16 @@ export function EditStatusDialog({
   const seededForRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (open && employeeId && staffUnits.length > 0) {
+    if (open && employeeId && staffUnits.length > 0 && serverDates &&
+        !serverDateQuery.isFetching && !serverDateQuery.isError) {
       if (seededForRef.current === employeeId) return;
 
       // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
-      const [unitIdStr, employeeIdStr] = employeeId.split("-");
-      const unitId = parseInt(unitIdStr, 10);
-      const employeeIdNum =
-        employeeIdStr && !employeeIdStr.startsWith("vacant")
-          ? parseInt(employeeIdStr, 10)
-          : null;
+      const employeeIdNum = wantedEmployeeId;
 
       if (!employeeIdNum) return;
 
-      const staffUnit = staffUnits.find((unit) => unit.id === unitId);
+      const staffUnit = staffUnitOfEmployeeKey(employeeId, staffUnits);
       if (!staffUnit) return;
 
       // Штатка с этим сотрудником пришла — форма засеяна, второй раз
@@ -190,50 +205,48 @@ export function EditStatusDialog({
         // человека с ОМ-статусом, показывало ПУСТОЕ поле — то есть предлагало
         // проставить статус тому, у кого он есть.
         setValue("status", naming.labelOf(current.status_type, ""));
-        // Если передан initialStartDate (для планирования), используем его
-        if (initialStartDate) {
-          setValue("startDate", initialStartDate);
-        } else if (current.start_date) {
-          setValue("startDate", new Date(current.start_date));
-        }
-        if (current.end_date) {
-          setValue("endDate", new Date(current.end_date));
-        }
-      } else if (initialStartDate) {
-        // Если нет текущего статуса, но есть начальная дата для планирования
-        setValue("startDate", initialStartDate);
+        setValue("statusCode", current.status_type);
+        setValue("location", current.location ?? "");
       }
+      const start = initialStartDate ?? parseIsoDate(mode === "schedule" ? serverDates.tomorrow : serverDates.today)!;
+      setValue("startDate", start);
+      // A new plan does not inherit the current status's elapsed period.
+      const end = mode === "change" && emp?.current_status?.end_date
+        ? parseIsoDate(emp.current_status.end_date) : null;
+      setValue("endDate", end && end >= start ? end : undefined);
     }
-  }, [open, employeeId, staffUnits, initialStartDate, setValue]);
+  }, [open, employeeId, wantedEmployeeId, staffUnits, initialStartDate, mode, serverDates,
+    serverDateQuery.isFetching, serverDateQuery.isError, setValue]);
 
-  // Действующий наряд подставляется в форму при открытии: модалка правит
-  // статус, а не заводит его заново — потерять при повторном входе объект и
-  // пост значило бы показать пустую форму там, где наряд есть.
+  // Wait for server defaults, then seed once. A late response or refetch must
+  // never overwrite a placement the user has already edited.
   useEffect(() => {
-    if (!open) return;
+    if (!open || mode !== "change" || !hasDutyAssignment || !employeeId || !serverDates || serverDateQuery.isFetching || !dutyQuery.allowed || !dutyQuery.isSuccess || dutyQuery.isFetching || dutySeededForRef.current === employeeId) return;
+    dutySeededForRef.current = employeeId;
+    if (dirtyFields.duty) return;
+    const placement = dutyQuery.assignment?.placement;
     setValue(
       "duty",
-      existingDuty
+      placement
         ? {
-            dutyKind: existingDuty.dutyKind,
-            objectId: existingDuty.objectId,
-            objectName: existingDuty.objectName,
-            postId: existingDuty.postId ?? "",
-            postName: existingDuty.postName ?? "",
-            groupId: existingDuty.groupId ?? "",
-            groupName: existingDuty.groupName ?? "",
+            dutyKind: placement.kind,
+            objectId: placement.object_id,
+            objectName: placement.object_name,
+            postId: placement.post_id ?? "",
+            postName: placement.post_name ?? "",
+            groupId: placement.group_id ?? "",
+            groupName: placement.group_name ?? "",
           }
         : EMPTY_DUTY_DRAFT
     );
-    // existingDuty намеренно вне зависимостей: подстановка нужна на открытии,
-    // дальше форму ведёт пользователь.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, employeeId, setValue]);
+  }, [open, mode, hasDutyAssignment, employeeId, serverDates, serverDateQuery.isFetching, dutyQuery.allowed, dutyQuery.isSuccess, dutyQuery.isFetching, dutyQuery.assignment, dirtyFields.duty, setValue]);
 
   // Сброс формы при закрытии
   useEffect(() => {
     if (!open) {
       seededForRef.current = null;
+      dutySeededForRef.current = null;
+      setDutyPlacementReady(false);
       reset(EMPTY_EDIT_STATUS_FORM);
     }
   }, [open, reset]);
@@ -254,6 +267,8 @@ export function EditStatusDialog({
     types: catalogTypes,
     isLoading: statusTypesLoading,
     error: statusTypesError,
+    isFetching: statusTypesFetching,
+    retry: retryStatusTypes,
   } = useEmployeeStatusTypes(false);
   // 🔴 «ПРИВЛЕЧЁН НА МЕРОПРИЯТИЕ» В СПИСКЕ НЕ ПРЕДЛАГАЕТСЯ (Plane №486,
   // задача заказчика: «Убери статусы Привлечен на мероприятия(обе)»).
@@ -283,10 +298,11 @@ export function EditStatusDialog({
   const statusTypes = catalogTypes
     .filter((item) => !MANUAL_HIDDEN_STATUS_CODES.has(item.code))
     .map((item) => ({
-      value: item.label,
+      value: item.code,
       label: item.label,
       color: item.color || getEmployeeStatusColor(item.code as never),
     }));
+  const catalogReady = !statusTypesLoading && !statusTypesError && !statusTypesFetching && statusTypes.length > 0;
   // Обратный перевод «подпись → код» — из того же ответа: статический словарь
   // знает лишь тринадцать старых подписей и на заведённом в админке типе
   // вернул бы undefined, а форма отказала бы «Неверный тип статуса».
@@ -303,7 +319,10 @@ export function EditStatusDialog({
   // что человек, привлечённый группой, у одного экрана занят, а у другого
   // свободен — так уже было (№274, Ш-5).
   const selectedCode =
-    codeByLabel.get(status) ?? EMPLOYEE_STATUS_CODE_BY_LABEL[status] ?? "";
+    statusCode || codeByLabel.get(status) || EMPLOYEE_STATUS_CODE_BY_LABEL[status] || "";
+  const isOnDuty = hasDutyAssignment || catalogTypes.some(
+    (item) => item.code === selectedCode && item.report_column_code === "ON_DUTY"
+  );
   // 🔴 «УЧАСТИЕ В ОМ» СНОВА СТАВИТСЯ РУКАМИ (Plane №737, решение заказчика
   // 04.09.2026, отменившее запрет №427).
   //
@@ -359,24 +378,41 @@ export function EditStatusDialog({
     );
   }, [isEventParticipation]);
 
-  /** Кадровый снимок для наряда: звание из справочника, должность и
-   * подразделение — от вызывающей таблицы, с запасным поиском по штатке. */
-  const employeeSnapshot = useMemo(() => {
-    const emp = findEmployeeInStaffUnits(staffUnits, employeeId);
-    const rankName =
-      ranks?.find((rank) => rank.id === emp?.employee?.rank)?.name ?? "";
-    return {
-      rankName,
-      positionName: employeePosition || emp?.positionName || "",
-      departmentName: employeeDepartment || emp?.divisionName || "",
-    };
-  }, [staffUnits, employeeId, ranks, employeePosition, employeeDepartment]);
-
-  const submit = async (values: EditStatusFormValues) => {
+  const saveStatus = async (values: EditStatusFormInput) => {
     if (!employeeId) return;
+    if (!canSaveStatus) {
+      setError("root", { message: "Нет подтверждённого права изменять статус этого сотрудника. Черновик сохранён в форме." });
+      return;
+    }
+    if (!catalogReady) {
+      setError("root", { message: "Дождитесь загрузки типов статусов или повторите её. Черновик сохранён в форме." });
+      return;
+    }
+    if (usesDutyAssignment(values.statusCode) && !hasOpsPermission("object.view")) {
+      setError("root", { message: "Для назначения на объект нужен доступ к объектам." });
+      return;
+    }
+    if (usesDutyAssignment(values.statusCode) && !dutyPlacementReady) {
+      setError("root", { message: "Выберите объект и актуальный пост или группу." });
+      return;
+    }
+    if (!serverDates || serverDateQuery.isError || serverDateQuery.isFetching) {
+      setError("root", { message: "Дождитесь загрузки даты сервера." });
+      return;
+    }
+    let startDateValue: string;
+    try {
+      startDateValue = statusStartForSave({ mode, today: serverDates.today,
+        initialStartDate, chosenStartDate: values.startDate, inService: isInServiceStatus(values.statusCode) });
+    } catch (error) {
+      setError("startDate", { message: error instanceof Error ? error.message : "Укажите дату начала." });
+      return;
+    }
 
-    // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
-    const [, employeeIdStr] = employeeId.split("-");
+    // Парсим ID - формат: unitId-employeeId, unitId-vacant-index либо голый
+    // employeeId (экраны свода, Plane №1233) — как в `employeeIdOfKey`.
+    const idParts = employeeId.split("-");
+    const employeeIdStr = idParts.length > 1 ? idParts[1] : idParts[0];
     const employeeIdNum =
       employeeIdStr && !employeeIdStr.startsWith("vacant")
         ? parseInt(employeeIdStr, 10)
@@ -392,7 +428,7 @@ export function EditStatusDialog({
 
     // Преобразуем статус в формат API
     const apiStatusType =
-      codeByLabel.get(values.status) ??
+      values.statusCode || codeByLabel.get(values.status) ||
       EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
     if (!apiStatusType) {
       setError("root", { message: "Неверный тип статуса" });
@@ -413,9 +449,6 @@ export function EditStatusDialog({
     // «На дежурстве» значило бы, что привлечения не видит НИКТО, кроме того,
     // кто его поставил.
     //
-    // Повторять приём блока наряда (тот держит объект и пост в localStorage)
-    // здесь нельзя по тому же правилу: заглушка на клиенте вместо серверного
-    // факта — долг, а не выполнение.
     if (isEventParticipation) {
       if (participations.length === 0) {
         // Без строки нельзя передать даже обязательный вид участия; пустое
@@ -443,13 +476,14 @@ export function EditStatusDialog({
         await createOpsStatus.mutateAsync({
           employee_id: employeeIdNum,
           status_type_code: apiStatusType,
-          date_start: formatDate(values.startDate),
-          date_end: formatDate(values.endDate),
+          date_start: startDateValue,
+          // Both status forms show the last included day. The operations
+          // API alone stores the following, exclusive calendar day.
+          date_end: opsExclusiveEndDate(values.endDate),
           participations: participationsToPayload(participations),
         });
-        // Наряд снимается, как и при любом другом статусе: человек ушёл на
-        // мероприятие и в «Дежурных силах» объекта его быть не должно.
-        removeDutyAssignment(employeeId);
+        // The server owns the status lifecycle and the object roster.
+        void invalidateDutyViews(queryClient);
         onOpenChange(false);
         if (onSuccess) onSuccess();
       } catch (error) {
@@ -462,26 +496,12 @@ export function EditStatusDialog({
       }
       return;
     }
-    const valueIsInService = values.status === IN_SERVICE_LABEL;
-    const valueIsOnDuty = values.status === ON_DUTY_LABEL;
+    const valueIsInService = isInServiceStatus(values.statusCode);
+    const valueHasDutyAssignment = usesDutyAssignment(values.statusCode);
 
-    // Определяем related_division:
-    // - Для прикомандированных: используем текущее подразделение директората (куда прикомандирован)
-    // - Для обычных сотрудников: используем подразделение директората (их текущее подразделение)
-    // Приоритет: data.division.id (подразделение директората) > подразделение штатной единицы
-    const relatedDivision = data?.division?.id || (() => {
-      // Fallback: пытаемся найти через штатную единицу
-      const [unitIdStr] = employeeId.split("-");
-      const unitId = parseInt(unitIdStr, 10);
-      const staffUnit = staffUnits.find((unit) => unit.id === unitId);
-      return staffUnit?.division?.id;
-    })();
-
-    // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
-    // бессрочный статус начинается сегодня и не кончается.
-    const startDateValue = valueIsInService
-      ? formatDate(new Date())
-      : formatDate(values.startDate!);
+    // Записываем фактическое подразделение штатной единицы. Корень области
+    // чтения может быть департаментом и не описывает подразделение сотрудника.
+    const relatedDivision = staffUnitOfEmployeeKey(employeeId, staffUnits)?.division?.id;
 
     try {
       await apiClient.createEmployeeStatus({
@@ -493,35 +513,17 @@ export function EditStatusDialog({
             ? undefined
             : formatDate(values.endDate),
         comment: values.comment || undefined,
+        location: valueHasDutyAssignment ? undefined : values.location ?? "",
         related_division: relatedDivision,
+        duty_assignment: valueHasDutyAssignment ? {
+          kind: values.duty.dutyKind as "POST" | "GROUP",
+          object_id: values.duty.objectId,
+          ...(values.duty.dutyKind === "POST" ? { post_id: values.duty.postId } : { group_id: values.duty.groupId }),
+        } : undefined,
       });
 
-      // Наряд — расшифровка статуса, поэтому пишется тем же действием.
-      // ЛЮБОЙ статус, кроме «На дежурстве», наряд снимает: иначе сотрудник
-      // остался бы в «Дежурных силах» объекта после ухода в отпуск.
-      if (valueIsOnDuty) {
-        upsertDutyAssignment({
-          employeeKey: employeeId,
-          employeeName: employeeName || "",
-          rankName: employeeSnapshot.rankName,
-          positionName: employeeSnapshot.positionName,
-          departmentName: employeeSnapshot.departmentName,
-          dutyKind: values.duty.dutyKind as "POST" | "GROUP",
-          objectId: values.duty.objectId,
-          objectName: values.duty.objectName,
-          postId: values.duty.dutyKind === "POST" ? values.duty.postId : null,
-          postName:
-            values.duty.dutyKind === "POST" ? values.duty.postName : null,
-          groupId: values.duty.dutyKind === "GROUP" ? values.duty.groupId : null,
-          groupName:
-            values.duty.dutyKind === "GROUP" ? values.duty.groupName : null,
-          startDate: startDateValue,
-          endDate: formatDate(values.endDate!),
-          assignedAt: new Date().toISOString(),
-        });
-      } else {
-        removeDutyAssignment(employeeId);
-      }
+      // Placement was saved atomically with the status, including future plans.
+      void invalidateDutyViews(queryClient);
 
       // Закрываем диалог
       onOpenChange(false);
@@ -543,22 +545,54 @@ export function EditStatusDialog({
     }
   };
 
+  const submit = async (values: EditStatusFormInput) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    try { await saveStatus(values); }
+    finally { savingRef.current = false; setIsSaving(false); }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] w-full">
+    <Dialog open={open} onOpenChange={(next) => { if (!savingRef.current) onOpenChange(next); }}>
+      <DialogContent className="sm:max-w-[800px] w-full"
+        onEscapeKeyDown={(event) => { if (savingRef.current) event.preventDefault(); }}
+        onPointerDownOutside={(event) => { if (savingRef.current) event.preventDefault(); }}>
         <DialogHeader>
           <DialogTitle>Статусы сотрудника</DialogTitle>
           <DialogDescription>
-            {employeeName
-              ? `Сотрудник: ${employeeName}${
-                  initialStartDate ? " (планирование на будущее)" : ""
-                }`
-              : initialStartDate
-              ? "Запланируйте статус на будущую дату"
-              : "Выберите новый статус для сотрудника"}
+            {employeeName ? `Сотрудник: ${employeeName}` : "Выберите новый статус для сотрудника"}
           </DialogDescription>
         </DialogHeader>
 
+        {mode === "schedule" ? (
+          <p className="text-sm font-medium">Планирование на будущую дату</p>
+        ) : initialStartDate ? (
+          <p className="text-sm">Статус на выбранную дату: {format(initialStartDate, "yyyy-MM-dd")}.</p>
+        ) : serverDates ? (
+          <div className="text-sm space-y-1">
+            <p>Изменение статуса на сегодня: {serverDates.today}.</p>
+            <p className="text-muted-foreground">Дата сдачи дня не меняет дату начала статуса.</p>
+          </div>
+        ) : null}
+        {!serverDates || serverDateQuery.isError ? (
+          <Alert>
+            <AlertDescription>
+              {serverDateQuery.isError ? "Не удалось загрузить дату сервера." : "Загрузка даты сервера…"}
+              {serverDateQuery.isError && <Button type="button" variant="outline" size="sm" onClick={() => void serverDateQuery.refetch()}>Повторить</Button>}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {!canSaveStatus && <Alert><AlertDescription>
+          <p>{access.isLoading || employeeQuery.isLoading
+            ? "Проверяем права на изменение статуса сотрудника…"
+            : "Нет подтверждённого права изменять статус этого сотрудника. Черновик сохранён в форме."}</p>
+          {(access.error || employeeQuery.isError) && <Button type="button" variant="outline" onClick={() => {
+            void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
+            void employeeQuery.refetch();
+          }}>Повторить проверку прав</Button>}
+        </AlertDescription></Alert>}
         <form
           onSubmit={(e) =>
             void handleSubmit(submit, (invalid) => focusFirstError(invalid))(e)
@@ -566,6 +600,7 @@ export function EditStatusDialog({
           className="space-y-6"
           noValidate
         >
+          <fieldset disabled={isSaving || !serverDates || serverDateQuery.isFetching || serverDateQuery.isError} className="space-y-6 min-w-0">
           {/* Status Selection */}
           <Field name="status" label="Новый статус" required error={errors.status}>
             {(field) => (
@@ -573,9 +608,17 @@ export function EditStatusDialog({
                 control={control}
                 name="status"
                 render={({ field: input }) => (
-                  <Select value={input.value} onValueChange={input.onChange}>
+                  <Select value={statusCode} onValueChange={(next) => {
+                    // Radix's hidden native select can emit an empty change while
+                    // asynchronous options are absent. No empty option is offered;
+                    // keep the draft code until the user chooses an actual type.
+                    if (!next) return;
+                    input.onChange(naming.labelOf(next, ""));
+                    setValue("statusCode", next);
+                  }}>
                     <SelectTrigger
                       {...field}
+                      className="w-full"
                       ref={input.ref}
                       onBlur={input.onBlur}
                     >
@@ -587,7 +630,7 @@ export function EditStatusDialog({
                         }
                       />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[min(20rem,var(--radix-select-content-available-height))]">
                       {/* Пустой список читается как поломка: человек не
                           отличит «справочник пуст» от «не загрузилось».
                           Три состояния названы словами (Plane №354). */}
@@ -599,46 +642,31 @@ export function EditStatusDialog({
                           {statusTypesLoading
                             ? "Загружаем справочник статусов…"
                             : statusTypesError
-                              ? "Справочник статусов не загрузился. Обновите страницу."
+                              ? "Справочник статусов не загрузился. Повторите загрузку ниже."
                               : "Справочник типов статусов пуст — заведите тип в разделе «Система → Справочники»."}
                         </div>
                       )}
-                      {statusTypes.map((statusType) => {
-                        // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
-                        // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
-                        // в соседнем диалоге): inline-стиль Radix-пункта классами не
-                        // задать, но и знать про классы ему незачем.
-                        const colors = getEmployeeStatusPaint(
-                          statusType.value
-                        ).hex;
-
-                        return (
-                          <SelectItem
-                            key={statusType.value}
-                            value={statusType.value}
-                            style={{
-                              backgroundColor: colors.bg,
-                              color: colors.text,
-                              // Переопределяем стили для hover и focus
-                              ["--status-bg" as any]: colors.bg,
-                              ["--status-text" as any]: colors.text,
-                            }}
-                            className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
-                          >
-                            <div className="flex items-center w-full">
-                              <span className="font-medium">
-                                {statusType.label}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        );
-                      })}
+                      {statusTypes.map((statusType) => (
+                        <SelectItem key={statusType.value} value={statusType.value}>
+                          {statusType.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
               />
             )}
           </Field>
+
+          {statusTypesError && (
+            <div className="space-y-2 text-sm">
+              <p role="alert">Типы статусов не загрузились. Черновик сохранён.</p>
+              <Button type="button" variant="outline" className="h-auto min-h-9 whitespace-normal" disabled={statusTypesFetching || isSaving} onClick={() => void retryStatusTypes()}>
+                Повторить загрузку типов статусов
+              </Button>
+            </div>
+          )}
+          {statusTypesFetching && <p role="status" className="text-sm text-muted-foreground">Загружаем типы статусов…</p>}
 
           {/* Привлечение на ОМ: мероприятие из заявок СВОЕГО управления, вид
               участия (физнаряд либо группа) и роль в группе (Plane №737).
@@ -660,7 +688,25 @@ export function EditStatusDialog({
             </div>
           )}
           {/* Наряд: только у «На дежурстве» */}
-          {isOnDuty && (
+          {["DUTY_COMBAT", "DUTY_DAILY", "DUTY_OPERATIONAL"].includes(statusCode ?? "") && (
+            <p className="text-sm text-muted-foreground">
+              Сотрудник появится в разделе «Боевое дежурство по Службе» на даты статуса.
+              Сотрудник появится в «Расстановке дежурств» на даты статуса.
+              Объект, пост или группу и смену назначает дежурный принимающего департамента.
+            </p>
+          )}
+          {hasDutyAssignment && !hasOpsPermission("object.view") ? (
+            <p role="alert" className="text-sm text-muted-foreground">Для назначения на объект нужен доступ к объектам.</p>
+          ) : hasDutyAssignment && (
+            <>
+            <p className="text-sm text-muted-foreground">
+              После сохранения сотрудник появится в карточке выбранного объекта,
+              в разделе «Дежурные силы», на даты назначения. Пост или группу выбираете здесь.
+            </p>
+            {dutyQuery.isError && <div role="alert" className="text-sm">
+              Не удалось загрузить текущее назначение.
+              <Button type="button" size="sm" variant="outline" disabled={dutyQuery.isFetching} onClick={() => void dutyQuery.refetch()}>Повторить загрузку назначения</Button>
+            </div>}
             <Controller
               control={control}
               name="duty"
@@ -668,16 +714,18 @@ export function EditStatusDialog({
                 <DutyAssignmentFields
                   value={input.value}
                   onChange={input.onChange}
+                  onReadyChange={setDutyPlacementReady}
                   errors={errors.duty}
                 />
               )}
             />
+            </>
           )}
 
           {/* Период. У «В строю» дат нет — он бессрочный и стоит по умолчанию. */}
-          {isInService ? (
+          {isInService && mode === "change" ? (
             <p className="text-sm text-muted-foreground">
-              «{IN_SERVICE_LABEL}» — бессрочный статус, даты не указываются.
+              «{naming.labelOf(statusCode, status || IN_SERVICE_LABEL)}» — бессрочный статус, даты не указываются.
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -715,6 +763,10 @@ export function EditStatusDialog({
                             mode="single"
                             selected={input.value}
                             onSelect={input.onChange}
+                            defaultMonth={input.value}
+                            disabled={(date) => !serverDates || (mode === "schedule"
+                              ? date < (parseIsoDate(serverDates.tomorrow) as Date)
+                              : !initialStartDate && date > (parseIsoDate(serverDates.today) as Date))}
                             initialFocus
                           />
                         </PopoverContent>
@@ -724,7 +776,7 @@ export function EditStatusDialog({
                 )}
               </Field>
 
-              <Field
+              {!isInService && <Field
                 name="endDate"
                 label="Дата окончания"
                 required
@@ -765,8 +817,16 @@ export function EditStatusDialog({
                     )}
                   />
                 )}
-              </Field>
+              </Field>}
             </div>
+          )}
+
+          {!isInService && <p className="text-xs text-muted-foreground">Дата окончания включается в период статуса.</p>}
+
+          {!isInService && !hasDutyAssignment && (
+            <Field name="location" label={isOnDuty ? "Место дежурства" : "Место убытия"} error={errors.location}>
+              {(field) => <Input {...field} {...register("location")} />}
+            </Field>
           )}
 
           {/* Comment */}
@@ -787,12 +847,14 @@ export function EditStatusDialog({
               <AlertDescription>{errors.root.message}</AlertDescription>
             </Alert>
           )}
+          </fieldset>
 
           {/* Submit Button */}
           <div className="flex justify-end space-x-3">
             <Button
               type="button"
               variant="outline"
+              disabled={isSaving}
               onClick={() => onOpenChange(false)}
             >
               <X className="h-4 w-4 mr-2" />
@@ -800,62 +862,19 @@ export function EditStatusDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSaving || !canSaveStatus || !catalogReady || !serverDates || serverDateQuery.isError || serverDateQuery.isFetching || (hasDutyAssignment && (!hasOpsPermission("object.view") || !dutyPlacementReady))}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {isSubmitting ? (
+              {isSaving ? (
                 <Clock className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              {isSubmitting ? "Обновление..." : "Сохранить"}
+              {isSaving ? "Обновление..." : "Сохранить"}
             </Button>
           </div>
         </form>
       </DialogContent>
     </Dialog>
   );
-}
-
-/**
- * Поиск сотрудника в штатке по ключу строки таблицы (`unitId-employeeId`).
- * Форматов ответа два (unit.employee и unit.employees[]) — модалка уже
- * разбирает оба выше, здесь та же логика для кадрового снимка наряда.
- */
-function findEmployeeInStaffUnits(
-  staffUnits: any[],
-  employeeKey: string | null
-): { employee: any; positionName: string; divisionName: string } | null {
-  if (!employeeKey) return null;
-  const [unitIdStr, employeeIdStr] = employeeKey.split("-");
-  const unitId = parseInt(unitIdStr, 10);
-  const employeeId =
-    employeeIdStr && !employeeIdStr.startsWith("vacant")
-      ? parseInt(employeeIdStr, 10)
-      : null;
-  if (!employeeId) return null;
-
-  const unit = staffUnits.find((item) => item.id === unitId);
-  if (!unit) return null;
-
-  if (unit.employee && unit.employee.id === employeeId) {
-    return {
-      employee: unit.employee,
-      positionName: unit.position?.name || "",
-      divisionName: unit.division?.name || "",
-    };
-  }
-  if (Array.isArray(unit.employees)) {
-    const entry = unit.employees.find(
-      (item: any) => item.employee?.id === employeeId
-    );
-    if (entry) {
-      return {
-        employee: entry.employee,
-        positionName: entry.position?.name || "",
-        divisionName: unit.division?.name || "",
-      };
-    }
-  }
-  return null;
 }

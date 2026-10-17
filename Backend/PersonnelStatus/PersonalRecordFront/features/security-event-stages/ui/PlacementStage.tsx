@@ -27,12 +27,14 @@
 // старший сектора (шаг «Р-4»), статус дня и подразделение у людей (шаги
 // «Р-1»/«Р-2»), модалка рейтинга (шаг «Р-5»), смена поста (шаг «Р-7»).
 import { useEffect, useMemo, useState } from "react";
+import { usePlacementPostSelection } from "./usePlacementPostSelection";
 import {
   useVisitObjectScope,
   UNASSIGNED_VISIT,
   VisitObjectPicker,
 } from "./useVisitObjectScope";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import { Card, CardContent } from "@/components/ui/card";
@@ -81,6 +83,7 @@ import type {
   SecurityEvent,
 } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
+import { PlacementMap } from "@/features/offline-map/ui/PlacementMap";
 
 const SORT_OPTIONS = [
   "Рекомендуемые",
@@ -232,14 +235,14 @@ function readDragPayload(e: React.DragEvent): DragPayload | null {
   }
 }
 
-export function PlacementStage({ event }: { event: SecurityEvent }) {
+export function PlacementStage({ event, showMap = true, readOnly = false }: { event: SecurityEvent; showMap?: boolean; readOnly?: boolean }) {
   // Шаг всегда открывается ДОСКОЙ подбора (задача заказчика Plane №110: «убери
   // с этапа Расстановка эти боксы они не нужны»). Двух подготовительных форм —
   // строк потребности и выделения сил по группам — здесь больше нет: стадии
   // `DEMAND` и `FORCES` проходит сервер расчётом рекогносцировки, и человек их
   // не видит вовсе. Состав мероприятия при этом собирается как собирался — на
   // экране «Сбор сил на ОМ», пока ОМ уже стоит на расстановке.
-  return <PlacementBoard event={event} />;
+  return <PlacementBoard event={event} showMap={showMap} readOnly={readOnly} />;
 }
 
 // 🔴 `CANDIDATE_PAGE_SIZE` СНЯТА (Plane №652): страницами листался кадровый
@@ -345,7 +348,9 @@ function ReturnedRemarksPanel({
   );
 }
 
-function PlacementBoard({ event }: { event: SecurityEvent }) {
+function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; showMap: boolean; readOnly: boolean }) {
+  const placementParams = useSearchParams();
+  const mapOpened = showMap && placementParams.get('map') === '1';
   // Расстановку заказчик закрепил за старшим объекта/мероприятия (Plane №74).
   // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
   // и отвечает словами, если нет.
@@ -373,7 +378,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const canSeeRatings = hasPermission("rating.view_aggregate");
   const ratings = useOperationalRatings({ enabled: canSeeRatings });
 
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [postQuery, setPostQuery] = useState("");
+  const [shortageOnly, setShortageOnly] = useState(false);
   const [query, setQuery] = useState("");
   // 🔴 `search`, `page` И ЗАПРОС К КАДРОВОЙ БАЗЕ СНЯТЫ (Plane №652). `[РАС-04]`
   // выключил `usePersonnelPage` (`enabled: false`) — с тех пор запрос не
@@ -443,7 +449,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, allPosts);
   const identityResolved = me.isSuccess && me.data?.employee !== null;
   const placementRights = placementRightsOf({
-    editable: placementEditable(event, scope.visit),
+    editable: !readOnly && placementEditable(event, scope.visit),
     canEditPlacement: scope.visit === null
       ? access.can(PLACEMENT_MANAGE)
       : scope.visit.canManagePlacement === true,
@@ -452,11 +458,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     visit: scope.visit,
   });
   const canManagePlacement = placementRights.edit;
+  const canChangePosts = canManagePlacement && (scope.visit?.stage ?? event.stage) === "PLACEMENT";
   const canSetSectorSenior = placementRights.setSectorSenior;
   const canCompletePlacement = placementRights.complete;
   const placementManageReason = canManagePlacement
     ? ""
-    : access.reason(PLACEMENT_MANAGE);
+    : readOnly
+      ? "Расстановка открыта для просмотра — изменения недоступны"
+      : !placementEditable(event, scope.visit)
+        ? "Документ расстановки отправлен или этап закрыт — изменения недоступны"
+        : access.reason(PLACEMENT_MANAGE) || "Изменение расстановки этого объекта недоступно для вашей учётной записи";
   const placementLeadReason = canCompletePlacement
     ? ""
     : placementRights.isDeputy
@@ -493,6 +504,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       ? (returnedFrom.approvalComment ?? "")
       : "";
   const posts = scope.rows;
+  const { selected, selectPost: setSelectedPostId, isSelecting: postSelectionPending } = usePlacementPostSelection(
+    posts, event.visitObjects.length > 0 ? scope.shown : undefined,
+  );
+  useEffect(() => { setComment(null); }, [event.id, selected?.id]);
+  const resetPostFilters = () => { setPostQuery(""); setShortageOnly(false); };
+  useEffect(() => { setPostQuery(""); setShortageOnly(false); }, [scope.shown]);
   // Замечания согласования ПОКАЗАННОГО объекта (`[РАС-07]`, Plane №397):
   // согласуют объект, и замечания живут у него (№386/№411). У ОМ без
   // объектов замечаний быть не может — согласование без объекта отбивается.
@@ -515,7 +532,6 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     node.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
     node.focus({ preventScroll: true });
   };
-  const selected = posts.find((p) => p.id === selectedPostId) ?? posts[0] ?? null;
   const assignmentsOf = (postId: string): PlacementAssignment[] =>
     event.placementAssignments.filter((a) => a.postId === postId);
 
@@ -644,6 +660,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     }
     return list;
   }, [posts]);
+
+  const postTerm = postQuery.trim().toLocaleLowerCase();
+  const filteredSectors = sectors.map(sector => ({
+    ...sector,
+    shownPosts: sector.posts.filter(post =>
+      (!postTerm || `${post.post} ${post.sector} ${post.task}`.toLocaleLowerCase().includes(postTerm)) &&
+      (!shortageOnly || assignmentsOf(post.id).length < post.need)),
+  })).filter(sector => sector.shownPosts.length > 0);
+  const shownPostIds = new Set(filteredSectors.flatMap(sector => sector.shownPosts.map(post => post.id)));
+  const postFiltersActive = postTerm !== "" || shortageOnly;
 
   const assignedIds = new Set(event.placementAssignments.map((a) => a.employeeId));
   // «свободен / на посту K» (`[РАС-04]`): пост занятого — словами, а не
@@ -820,6 +846,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // ── Перетаскивание и окно «Роль и секция…» (`[РАС-03]`, Plane №445) ──────
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlacementAssignment | null>(null);
+  useEffect(() => {
+    setEditing(null);
+    setAutoPlan(null);
+    setPostToRemove(null);
+    setAutoFillMessage(null);
+  }, [scope.shown, canManagePlacement]);
   /** Перенос, чьё назначение ждёт ответа в окне обоснования (Plane №744).
    * Человек уже снят с `fromPostId` — здесь лежит всё, чем его вернуть, И
    * куда его вести, если обоснование дадут. */
@@ -862,6 +894,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * назначение заново ПО ОЧЕРЕДИ, с ролью и секцией (Plane №242: всё, что не
    * передано, теряется молча). */
   async function placePayload(postId: string, payload: DragPayload): Promise<void> {
+    if (!canManagePlacement) return;
     const { assignmentId, fromPostId } = payload;
     if (assignmentId === undefined) {
       assign.mutate({ postId, employeeId: payload.employeeId });
@@ -910,6 +943,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * отличие от прежней пары, где повторять пришлось бы только вторую половину.
    */
   async function movePerson(pending: PendingMove): Promise<void> {
+    if (!canManagePlacement) return;
     await move.mutateAsync({
       assignmentId: pending.assignmentId,
       postId: pending.toPostId,
@@ -923,7 +957,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     sectionCode: string;
     postId: string;
   }): Promise<void> {
-    if (editing === null) return;
+    if (editing === null || !canManagePlacement) return;
     const changed =
       next.roleCode !== (editing.roleCode ?? "") ||
       next.sectionCode !== (editing.sectionCode ?? "") ||
@@ -951,6 +985,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
   /** Автоподбор сначала показывает проверяемый план, затем применяет его. */
   function autoFill(): void {
+    if (!canManagePlacement) return;
     const taken = new Set(assignedIds);
     const plan: AutoPlacementPlanRow[] = [];
     for (const post of posts) {
@@ -974,7 +1009,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   }
 
   async function confirmAutoFill(): Promise<void> {
-    if (autoPlan === null || autoPlan.length === 0) return;
+    if (!canManagePlacement || autoPlan === null || autoPlan.length === 0) return;
     const planned = autoPlan;
     const outcome = await reconcileAutoPlan(planned, async (row) => {
       await assign.mutateAsync({
@@ -1066,7 +1101,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           onPickPost={focusPost}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2">
+        <div role="group" aria-label="Сводка расстановки" className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2">
           <div className="flex flex-wrap gap-4 text-xs">
             <Kpi label="постов" value={posts.length} />
             <Kpi label="требуется" value={totalNeed} />
@@ -1142,6 +1177,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         )}
 
         <VisitObjectPicker event={event} scope={scope} allRows={allPosts} />
+        <div data-slot="placement-workspace" className={mapOpened ? "grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_340px]" : "space-y-3"}>
+        {showMap && <PlacementMap event={event} visitId={scope.visit?.id ?? null} selectedPostId={selected?.id ?? null} selectionPending={postSelectionPending} canEdit={canManagePlacement && (scope.visit ? ['PLACEMENT', 'APPROVAL'].includes(scope.visit.stage) : event.stage === 'PLACEMENT')} />}
 
         {posts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -1152,12 +1189,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 : `У объекта «${scope.visit.objectName}» постов нет — расчёт формируется на этапе рекогносцировки.`}
           </p>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]">
+          <div className={mapOpened ? "grid min-w-0 content-start gap-3 xl:max-h-[900px] xl:overflow-y-auto xl:pr-1" : "grid gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]"}>
             {/* Имя ОБЛАСТИ, а не только видимая подпись: подпись теперь
                 называет объект («Посты объекта «Мейрам»»), и указывать на
                 дерево текстом стало нельзя — проба ловила его по строке
                 «Объекты и посты» (Plane №410). */}
-            <aside className="rounded-md border" aria-label="Дерево постов">
+            {!mapOpened && <aside className="rounded-md border" aria-label="Дерево постов">
               <div className="border-b px-3 py-2">
                 <p className="text-xs font-semibold">
                   {scope.visit === null
@@ -1168,8 +1205,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   {posts.length} постов · назначено {assignedCount} из {totalNeed}
                 </p>
               </div>
+              <div className="space-y-2 border-b p-2">
+                <Input aria-label="Поиск постов" placeholder="Пост или сектор" className="h-9 text-xs" value={postQuery} onChange={event => setPostQuery(event.target.value)} />
+                <Button type="button" variant={shortageOnly ? "secondary" : "outline"} size="sm" className="w-full justify-start text-xs" aria-pressed={shortageOnly} onClick={() => setShortageOnly(value => !value)}>
+                  Только недобор
+                </Button>
+                {postFiltersActive && <p role="status" className="text-xs text-muted-foreground">Показано {shownPostIds.size} из {posts.length} постов</p>}
+              </div>
               <div className="max-h-[420px] overflow-y-auto p-2">
-                {sectors.map((sector) => {
+                {filteredSectors.length === 0 && <div className="space-y-2 p-2 text-center">
+                  <p role="status" className="text-xs text-muted-foreground">{shortageOnly && !postTerm ? "Постов с недобором нет." : "Посты не найдены."}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={resetPostFilters} aria-label="Сбросить фильтры постов">Сбросить фильтры</Button>
+                </div>}
+                {filteredSectors.map((sector) => {
                   // Счётчик сектора — как в прототипе: сколько людей уже стоит
                   // из скольких нужно. Без него сектор молчал о своей
                   // готовности, и её приходилось складывать глазами по постам.
@@ -1219,7 +1267,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         : sectorSeniors.join(", ")}
                     </p>
                     <ul className="flex flex-col gap-1">
-                      {sector.posts.map((post) => {
+                      {sector.shownPosts.map((post) => {
                         const placed = assignmentsOf(post.id);
                         const count = placed.length;
                         const full = count >= post.need;
@@ -1300,7 +1348,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 занятый пост выглядел «почти удаляемым». Сервер
                                 правило всё равно проверяет: кнопка — подсказка,
                                 а не защита. */}
-                            {canManagePlacement && count === 0 && (
+                            {canChangePosts && count === 0 && (
                               <button
                                 type="button"
                                 aria-label={`Снять пост ${post.post}`}
@@ -1320,13 +1368,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   );
                 })}
               </div>
-            </aside>
+            </aside>}
 
             {selected !== null && (
-              <section className="rounded-md border p-3">
+              <section id="placement-selected-post" tabIndex={-1} aria-label="Выбранный пост" className="min-w-0 rounded-md border p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+                {mapOpened && canManagePlacement && <Button type="button" size="sm" variant="outline" className="mb-3 w-full" onClick={() => {
+                  const target = document.getElementById('placement-candidate-search') || document.getElementById('placement-candidates');
+                  target?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+                  target?.focus({ preventScroll: true });
+                }}>Подобрать сотрудника</Button>}
+                {postFiltersActive && !shownPostIds.has(selected.id) && <div className="mb-3 space-y-1 rounded-md bg-muted p-2 text-xs">
+                  <p>Выбранный пост скрыт фильтрами списка.</p>
+                  <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={resetPostFilters}>Показать выбранный пост</Button>
+                </div>}
                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm font-semibold">{selected.post}</p>
+                    <h3 className="text-sm font-semibold">{selected.post}</h3>
                     <p className="text-xs text-muted-foreground">
                       {selected.sector}
                       {shiftOfPost(selected) === ""
@@ -1641,7 +1698,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       >
                         <span className="font-semibold">+ Назначить</span>
                         <span className="text-muted-foreground">
-                          выберите сотрудника справа или перетащите его сюда
+                          выберите сотрудника в списке кандидатов или перетащите его сюда
                         </span>
                       </li>
                     )
@@ -1656,6 +1713,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     id="post-comment"
                     className="h-8 text-xs"
                     placeholder="—"
+                    readOnly={!canChangePosts}
                     value={comment ?? selected.comment}
                     onChange={(e) => setComment(e.target.value)}
                   />
@@ -1663,21 +1721,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={comment === null || updatePostComment.isPending}
-                    onClick={() =>
+                    disabled={!canChangePosts || comment === null || updatePostComment.isPending}
+                    onClick={() => {
+                      if (!canChangePosts) return;
                       updatePostComment.mutate({
                         postId: selected.id,
                         comment: comment ?? "",
-                      })
-                    }
+                      });
+                    }}
                   >
                     Сохранить
                   </Button>
                 </div>
+                {canManagePlacement && !canChangePosts && <p className="text-xs text-muted-foreground">Комментарий и снятие постов доступны на этапе «Расстановка». В черновике согласования можно менять назначения, роли и точки карты.</p>}
               </section>
             )}
 
-            <aside className="rounded-md border">
+            <aside id="placement-candidates" aria-label="Кандидаты на пост" tabIndex={-1} className="rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
               <div className="border-b px-3 py-2">
                 <p className="text-xs font-semibold">Выделено на объект штабом</p>
                 {/* Откуда пул — словами. Форм потребности и выделения сил на
@@ -1832,6 +1892,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   // поиска незачем.
                   placeholder="Поиск по ФИО"
                   aria-label="Поиск кандидатов"
+                  id="placement-candidate-search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -1901,6 +1962,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   отданные этому объекту. Постороннего на пост сервер не
                   поставит.
                 </p>
+                {activeFilters.length > 0 && <Button type="button" variant="outline" size="sm" className="w-full text-xs" aria-label="Сбросить фильтры кандидатов" onClick={() => { setQuery(""); setBand("Все"); setUnitFilter(""); }}>
+                  Сбросить фильтры
+                </Button>}
                 {/* `aria-busy` вместо подмены списка спиннером (правило скилла
                     «стабильный скелет с aria-busy; не мигать»): прежняя
                     страница остаётся на экране, пока едет новая — за это
@@ -2031,6 +2095,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             </aside>
           </div>
         )}
+        </div>
 
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
@@ -2080,7 +2145,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 Отмена
               </Button>
               <Button
-                disabled={assign.isPending || (autoPlan?.length ?? 0) === 0}
+                disabled={!canManagePlacement || assign.isPending || (autoPlan?.length ?? 0) === 0}
                 onClick={() => void confirmAutoFill()}
               >
                 {assign.isPending ? "Распределение…" : "Подтвердить распределение"}
@@ -2117,9 +2182,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   должен увидеть здесь же. */}
               <Button
                 variant="destructive"
-                disabled={removePost.isPending}
+                disabled={!canChangePosts || removePost.isPending}
                 onClick={async () => {
-                  if (postToRemove === null) return;
+                  if (postToRemove === null || !canChangePosts) return;
                   await removePost.mutateAsync({ postId: postToRemove.id });
                   setPostToRemove(null);
                 }}
@@ -2131,7 +2196,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         </Dialog>
 
         <AssignmentEditDialog
-          assignment={editing}
+          assignment={canManagePlacement ? editing : null}
           posts={posts}
           roles={placementRoles.data ?? []}
           sections={placementSections.data ?? []}
@@ -2151,8 +2216,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         />
 
         <ConflictDialog
-          conflict={assign.conflict}
-          onOverride={(reason) => assign.confirmOverride(reason)}
+          conflict={canManagePlacement ? assign.conflict : null}
+          onOverride={(reason) => { if (canManagePlacement) assign.confirmOverride(reason); }}
           onCancel={() => assign.dismissConflict()}
         />
         {/* Перенос спрашивает обоснование СВОИМ окном (Plane №762): у него своя
@@ -2161,13 +2226,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             «Обосновать» приходилось учить отличать перенос от назначения из
             пула, а «Отмена» — возвращать человека на прежний пост. */}
         <ConflictDialog
-          conflict={move.conflict}
-          onOverride={(reason) => move.confirmOverride(reason)}
+          conflict={canManagePlacement ? move.conflict : null}
+          onOverride={(reason) => { if (canManagePlacement) move.confirmOverride(reason); }}
           onCancel={() => move.dismissConflict()}
         />
         <ConflictDialog
-          conflict={complete.conflict}
-          onOverride={(reason) => complete.confirmOverride(reason)}
+          conflict={canCompletePlacement ? complete.conflict : null}
+          onOverride={(reason) => { if (canCompletePlacement) complete.confirmOverride(reason); }}
           onCancel={() => complete.dismissConflict()}
         />
         </AccessHints>

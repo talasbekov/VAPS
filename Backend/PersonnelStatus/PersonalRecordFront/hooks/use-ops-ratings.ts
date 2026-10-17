@@ -194,7 +194,7 @@ export function useEvaluationRegistry(filters: RegistryFilters, options: { enabl
  */
 const MAX_EVALUATION_PAGES = 50;
 
-export function useAllEvaluationsOf(employeeId: string) {
+export function useAllEvaluationsOf(employeeId: string, options: { enabled?: boolean } = {}) {
   return useQuery<EvaluationRegistryResponse, OpsApiFailure>({
     queryKey: ["ops-ratings", "registry", "all-of", employeeId],
     queryFn: async () => {
@@ -215,7 +215,7 @@ export function useAllEvaluationsOf(employeeId: string) {
       // потому что для читателя она и есть одна.
       return { ...first, results, page: 1, pageCount: 1 };
     },
-    enabled: employeeId !== "",
+    enabled: employeeId !== "" && (options.enabled ?? true),
   });
 }
 

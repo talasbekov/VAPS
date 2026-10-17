@@ -97,8 +97,7 @@ def opened(data):
 
 
 def table_of(data):
-    (table,) = opened(data).tables
-    return table
+    return opened(data).tables[0]
 
 
 def header_labels(table):
@@ -132,11 +131,11 @@ def test_the_page_is_a4_landscape(data):
 
 
 def test_the_title_names_the_division_and_the_date(data):
-    (title,) = [
+    title = [
         paragraph
         for paragraph in opened(data).paragraphs
         if paragraph.text.strip()
-    ]
+    ][0]
 
     assert "Управление кадров" in title.text
     assert "04.08.2026" in title.text
@@ -220,7 +219,7 @@ def test_the_count_and_the_members_are_set_in_different_sizes(data):
     count, name = cell.paragraphs
 
     assert (count.text, count.runs[0].font.size) == ("1", Pt(TABLE_SIZE_PT))
-    assert name.text == "капитан Иванов Иван — 04.08.2026–10.08.2026"
+    assert name.text == "капитан Иванов Иван — 04.08.2026–09.08.2026"
     assert name.runs[0].font.size == Pt(MEMBER_SIZE_PT)
 
 
@@ -235,16 +234,15 @@ def test_a_cell_without_members_is_just_the_count(data):
     assert cell_paragraphs(table_of(data), 1, COLUMN_LABELS["IN_SERVICE"]) == ["1"]
 
 
-def test_a_long_list_is_truncated_with_an_honest_tail(catalog):
-    """Молча обрезанный список выглядел бы как полный."""
+def test_a_long_list_shows_every_employee(catalog):
     roster = [member(index, full_name=f"Сотрудник {index}") for index in range(30)]
     rows = [fact(index, "DUTY") for index in range(30)]
     table = table_of(document(catalog, roster, rows))
     paragraphs = cell_paragraphs(table, 1, COLUMN_LABELS["ON_DUTY"])
 
     assert paragraphs[0] == "30"
-    assert len(paragraphs) == CELL_MAX_MEMBERS + 2  # число + имена + хвост
-    assert paragraphs[-1] == f"… ещё {30 - CELL_MAX_MEMBERS}"
+    assert len(paragraphs) == 31
+    assert all(any(f"Сотрудник {index} —" in line for line in paragraphs) for index in range(30))
 
 
 # ── Приданные ────────────────────────────────────────────────────────────

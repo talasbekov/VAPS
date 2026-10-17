@@ -10,6 +10,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import type { LegalDocument, ListLegalDocumentsResponse } from '@/entities/legal-document'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -35,15 +36,30 @@ test.describe(LIVE ? 'законы об ОМ' : 'законы об ОМ (ски�
     })
 
     await signIn(page)
+    const catalogResponse = page.waitForResponse(response =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/ops/legal-documents/')
     await page.goto(`${APP}/security-ops/laws/`)
+    const response = await catalogResponse
+    expect(response.status()).toBe(200)
+    const { results: documents } = await response.json() as ListLegalDocumentsResponse
     await expect(page.getByRole('heading', { name: 'Законы об ОМ' })).toBeVisible()
 
     const cards = page.locator('main article')
-    await expect(cards).toHaveCount(8)
+    async function expectCards(rows: LegalDocument[]) {
+      await expect(cards).toHaveCount(rows.length)
+      await expect.poll(async () => (await cards.getByRole('heading', { level: 2 }).allTextContents()).sort())
+        .toEqual(rows.map(row => row.title).sort())
+    }
+    expect(documents.length).toBeGreaterThan(0)
+    await expectCards(documents)
 
-    // Фильтр по виду: приказов ровно два, законы при этом уходят
+    // Новые загруженные документы допустимы; фильтр обязан дать точный поднабор.
+    const orders = documents.filter(row => row.kind === 'ORDER')
+    expect(orders.length).toBeGreaterThan(0)
+    expect(orders.length).toBeLessThan(documents.length)
     await page.getByRole('button', { name: 'Приказ', exact: true }).click()
-    await expect(cards).toHaveCount(2)
+    await expectCards(orders)
     await expect(page.getByRole('heading', { name: 'О нормах расстановки постов' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'О государственной охране' })).toBeHidden()
 
@@ -51,15 +67,19 @@ test.describe(LIVE ? 'законы об ОМ' : 'законы об ОМ (ски�
     // ассертится ОТДЕЛЬНО: обе выборки едут в один URL, и без ожидания
     // подтверждённого сброса вида поиск лёг бы поверх ещё не снятого фильтра.
     await page.getByRole('button', { name: 'Все', exact: true }).click()
-    await expect(cards).toHaveCount(8)
+    await expectCards(documents)
+    const matches = documents.filter(row =>
+      [row.title, row.code, row.description].some(value => value.toLowerCase().includes('журнала штаба')))
+    expect(matches.length).toBeGreaterThan(0)
+    expect(matches.length).toBeLessThan(documents.length)
     await page.getByRole('textbox', { name: 'Поиск по нормативной базе' }).fill('журнала штаба')
-    await expect(cards).toHaveCount(1)
+    await expectCards(matches)
     await expect(page.getByRole('heading', { name: 'Регламент работы штаба при ОМ' })).toBeVisible()
 
     // Выборка живёт в URL и переживает перезагрузку
     expect(page.url()).toContain('search=')
     await page.reload()
-    await expect(cards).toHaveCount(1)
+    await expectCards(matches)
     await expect(page.getByRole('heading', { name: 'Регламент работы штаба при ОМ' })).toBeVisible()
 
     // Пустая выборка названа, а не показана пустотой
@@ -67,12 +87,17 @@ test.describe(LIVE ? 'законы об ОМ' : 'законы об ОМ (ски�
     await expect(page.getByText('Документы не найдены')).toBeVisible()
 
     // Статус «На пересмотре» отличается от «Действует» — плашка не декоративная
-    await page.getByRole('textbox', { name: 'Поиск по нормативной базе' }).fill('Инструктаж')
-    const card = page.locator('main article').first()
+    const withoutFile = documents.find(row => row.status === 'UNDER_REVIEW' && !row.file && !row.fileUrl)
+    expect(withoutFile, 'контрольный документ на пересмотре без вложения').toBeDefined()
+    await page.getByRole('textbox', { name: 'Поиск по нормативной базе' }).fill(withoutFile!.code)
+    const card = cards.filter({ has: page.getByRole('heading', { name: withoutFile!.title, exact: true }) })
+    await expect(card).toHaveCount(1)
     await expect(card).toContainText('На пересмотре')
     // Файла у документа нет — кнопки скачивания быть не должно
     await expect(card).toContainText('Файл документа в системе не хранится')
-    await expect(card.getByRole('button', { name: 'Скачать PDF' })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: /^Скачать/ })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Версии файла', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('link', { name: 'Открыть', exact: true })).toHaveCount(0)
 
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })

@@ -28,7 +28,7 @@ import { assertStep } from './fixture-step'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-const SHOTS = path.join(__dirname, '..', '..', '..', '..', 'docs', 'audit', 'om-2026-09-03')
+const SHOTS = process.env.UX_RESULTS_DIR ?? path.join(__dirname, '..', '..', '..', '..', 'docs', 'audit', 'om-2026-09-03')
 
 interface EventRow {
   id: string

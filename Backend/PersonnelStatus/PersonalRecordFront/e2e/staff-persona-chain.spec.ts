@@ -22,6 +22,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { prepareDemandEvent } from './prepare-events'
+import { uniqueBusinessDate } from './business-date'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -69,7 +70,7 @@ test.describe(LIVE ? 'штаб сбора сил: отдельная персо�
     const admin = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const staff = await tokenFor('acc_ops_staff', MATRIX_PASSWORD)
     // Будущей датой: статус привлечения ещё не начался, свободных людей больше.
-    const { id } = await prepareDemandEvent(admin, '2027-07-01')
+    const { id, total } = await prepareDemandEvent(admin, uniqueBusinessDate())
     const base = `/api/ops/security-events/${id}`
 
     const divisions = await call(admin, 'GET', '/api/core/divisions/?page_size=200')
@@ -81,7 +82,7 @@ test.describe(LIVE ? 'штаб сбора сил: отдельная персо�
 
     // Штаб: деление потребности по департаментам — `forces.command`.
     const split = await call(staff, 'POST', `${base}/forces/allocation/`, {
-      rows: [{ departmentId: String(department.id), need: 1 }],
+      rows: [{ departmentId: String(department.id), need: total }],
     })
     expect(split.status, `деление потребности Штабом: ${JSON.stringify(split.json)}`).toBe(200)
     const allocationId = split.json.forceAllocation[0].id as string
@@ -92,19 +93,25 @@ test.describe(LIVE ? 'штаб сбора сил: отдельная персо�
     expect(collections.json.results.map((row: any) => row.eventId)).toContain(id)
 
     // Департамент и управление (админом по API): оповестить, выделить, отправить.
-    await call(admin, 'POST', `${base}/forces/allocation/${allocationId}/notify/`)
-    const people = await call(admin, 'GET', `/api/ops/personnel/?division_id=${directorate.id}&page_size=8`)
-    let added = false
+    const quotas = await call(admin, 'POST', `${base}/forces/allocation/${allocationId}/split/`, {
+      rows: [{ divisionId: String(directorate.id), need: total }],
+    })
+    expect(quotas.status, JSON.stringify(quotas.json)).toBe(200)
+    const notified = await call(admin, 'POST', `${base}/forces/allocation/${allocationId}/notify/`)
+    expect(notified.status, JSON.stringify(notified.json)).toBe(200)
+    const people = await call(admin, 'GET', `/api/ops/personnel/?division_id=${directorate.id}&page_size=${Math.max(total * 8, 40)}`)
+    expect(people.status).toBe(200)
+    const added = new Set<string>()
     for (const person of people.json.results) {
       const r = await call(admin, 'POST', `${base}/forces/allocation/${allocationId}/members/`, {
         employeeId: person.id,
       })
-      if (r.json.error_code === undefined) {
-        added = true
-        break
-      }
+      if (r.json.error_code === 'STATUS_OVERLAP_WARNING') continue
+      expect(r.status, JSON.stringify(r.json)).toBe(200)
+      added.add(String(person.id))
+      if (added.size === total) break
     }
-    expect(added, 'не нашлось ни одного свободного на дату ОМ').toBe(true)
+    expect(added.size, 'выделен полный состав заявки').toBe(total)
     const submitted = await call(admin, 'POST', `${base}/forces/allocation/${allocationId}/submit/`)
     expect(submitted.json.error_code).toBeUndefined()
 
@@ -129,19 +136,16 @@ test.describe(LIVE ? 'штаб сбора сил: отдельная персо�
     await page.goto(`${APP}/security-ops/profile`)
 
     const forcesLink = page.locator('aside').getByRole('link', {
-      name: 'Сбор сил на ОМ',
+      name: 'Распределения',
       exact: true,
     })
     await expect(forcesLink).toBeVisible({ timeout: 30_000 })
+    await expect(forcesLink).toHaveAttribute('href', '/employees/?view=forces')
     await forcesLink.click()
 
-    const collections = page.getByRole('button', { name: 'Сбор сил на ОМ', exact: true })
-    await expect(collections).toBeVisible({ timeout: 30_000 })
-    await collections.click()
-
-    const collectionsTab = page.getByRole('tab', { name: 'Сборы', exact: true })
-    await expect(collectionsTab).toBeVisible({ timeout: 20_000 })
-    await collectionsTab.click()
+    // Штаб приходит в отдельное рабочее место с обоими реестрами сразу;
+    // переключатель общего модуля и вкладка «Сборы» ему не рисуются.
+    await expect(page.getByRole('heading', { name: 'Распределения', exact: true })).toBeVisible()
 
     const section = page.locator('section[aria-labelledby="force-collections-heading"]')
     await expect(section.getByRole('heading', { name: 'Сборы сил' })).toBeVisible({

@@ -16,7 +16,7 @@
 // порядке добавления (сервер сортирует по имени только ВЫВОД), а первый
 // помечен словом — иначе правило есть, а увидеть его негде.
 import { Search, X } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import type { ProtectedPerson } from "@/entities/protected-person";
 
@@ -26,6 +26,7 @@ export function ProtectedPersonsPicker({
   options,
   loading,
   failed = false,
+  selectedLabels,
   selectId,
 }: {
   /** Выбранные лица В ПОРЯДКЕ ДОБАВЛЕНИЯ: первое — главное. */
@@ -37,6 +38,8 @@ export function ProtectedPersonsPicker({
    * «не ответил» — не то же самое, что «пуст», и подпись поля обязана
    * различать это, а не выбирать между двумя неправдами. */
   failed?: boolean;
+  /** Labels from the saved event, never additional catalogue options. */
+  selectedLabels?: ReadonlyMap<string, string>;
   /** Id для `<select>` — на него ведёт подпись поля и фокус после отказа. */
   selectId: string;
 }) {
@@ -58,17 +61,16 @@ export function ProtectedPersonsPicker({
                 </span>
               )}
               <span className="font-medium">
-                {/* Имя из справочника; если лицо из него скрыли — сам
-                    идентификатор. Пустая подпись была бы хуже: снять с
-                    мероприятия то, чего не видно, нельзя. */}
-                {byId.get(id)?.name ?? `лицо №${id}`}
+                {/* Saved event labels describe existing selections only;
+                    they never become options of the denied catalogue. */}
+                {byId.get(id)?.name ?? selectedLabels?.get(id) ?? `лицо №${id}`}
               </span>
               <button
                 type="button"
                 onClick={() => onChange(value.filter((item) => item !== id))}
                 // Имя называет ЛИЦО: таких кнопок в форме столько же, сколько
                 // выбрано, и на слух они были бы неразличимы.
-                aria-label={`Убрать ${byId.get(id)?.name ?? id} из списка охраняемых лиц`}
+                aria-label={`Убрать ${byId.get(id)?.name ?? selectedLabels?.get(id) ?? id} из списка охраняемых лиц`}
                 className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X className="h-3 w-3" aria-hidden="true" />
@@ -86,6 +88,7 @@ export function ProtectedPersonsPicker({
         inputId={selectId}
         options={free}
         loading={loading}
+        disabled={failed}
         /* 🔴 ПОЛЕ ГОВОРИЛО НЕПРАВДУ ДВАЖДЫ ПОДРЯД (Plane №788). Пока запрос
            переспрашивает (react-query повторяет трижды с задержкой), подпись
            держит «Загрузка справочника…» — человек читает «идёт загрузка» и
@@ -119,18 +122,35 @@ function PersonsCombobox({
   inputId,
   options,
   loading,
+  disabled = false,
   emptyLabel,
   onPick,
 }: {
   inputId: string;
   options: ProtectedPerson[];
   loading: boolean;
+  disabled?: boolean;
   emptyLabel: string;
   onPick: (id: string) => void;
 }) {
   const listId = useId();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPendingBlur = () => {
+    if (blurTimer.current !== null) {
+      clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+  };
+  useEffect(() => {
+    return () => {
+      if (blurTimer.current !== null) {
+        clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
+    };
+  }, []);
   const needle = search.trim().toLowerCase();
   const matches = options.filter(
     (person) =>
@@ -139,6 +159,7 @@ function PersonsCombobox({
       person.callsign.toLowerCase().includes(needle) ||
       person.code.toLowerCase().includes(needle)
   );
+  const listVisible = open && !disabled && !loading && options.length > 0;
   return (
     <div className="relative" data-slot="persons-combobox">
       <Search
@@ -148,25 +169,35 @@ function PersonsCombobox({
       <Input
         id={inputId}
         role="combobox"
-        aria-expanded={open}
+        aria-expanded={listVisible}
         aria-controls={listId}
         aria-autocomplete="list"
         autoComplete="off"
         className="h-10 rounded-lg pl-8"
         placeholder={emptyLabel}
-        disabled={loading || options.length === 0}
+        disabled={disabled || loading || options.length === 0}
         value={search}
         onChange={(e) => {
+          cancelPendingBlur();
           setSearch(e.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onFocus={() => {
+          cancelPendingBlur();
+          setOpen(true);
+        }}
+        onBlur={() => {
+          cancelPendingBlur();
+          blurTimer.current = setTimeout(() => {
+            blurTimer.current = null;
+            setOpen(false);
+          }, 150);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
       />
-      {open && options.length > 0 && (
+      {listVisible && (
         <ul
           id={listId}
           role="listbox"
@@ -181,6 +212,7 @@ function PersonsCombobox({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
+                  cancelPendingBlur();
                   onPick(person.id);
                   setSearch("");
                   setOpen(false);

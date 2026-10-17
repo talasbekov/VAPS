@@ -27,6 +27,8 @@
 //   него показано то, что бэк действительно записывает: обходы мягкого
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
+import { useSession } from "next-auth/react";
+import { approvalDecisionReason } from "../approval-decision";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -157,18 +159,9 @@ export interface ApprovalRightsInput {
  */
 export function approvalRightsOf(input: ApprovalRightsInput): ApprovalRights {
   const { loading, canManage, canApprove, myId, visit } = input;
-  // Пока права не пришли, кнопки НЕ выключаются с ложной причиной: серверный
-  // отказ всё равно стоит за ними, а мигание «нельзя → можно» вводит в
-  // заблуждение сильнее, чем секунда доступной кнопки.
-  //
-  // 🔴 «ИДЁТ ЗАГРУЗКА», А НЕ «ДАННЫХ НЕТ» (Plane №573). Здесь стояло
-  // `permissions === undefined` — это истинно и ПОСЛЕ отказа: после 403 или
-  // 500 значение остаётся `undefined` навсегда. Задуманное окно в секунду
-  // превращалось в вечность: «Согласовать», «Вернуть» и «Отправить» стояли
-  // включёнными постоянно, человек жал и получал голый отказ сервера.
-  // Отказ — не загрузка: когда прав нет, кнопки обязаны быть выключены с
-  // причиной, а не приглашать к действию, которое не состоится.
-  const manage = loading || canManage;
+  // Loading is not authority, including when older grants remain in memory.
+  if (loading) return { manageRoute: false, send: false, answerRemarks: false, approve: false, returnBack: false };
+  const manage = canManage;
   // 🔴 СТАРШИЙ БЕРЁТСЯ ТОЛЬКО У ОБЪЕКТА (Plane №575). Здесь стоял запасной
   // путь на `event.chiefEmployeeId`, когда объект не показан, — а сервер
   // (`_object_lead_override`) принимает ИСКЛЮЧИТЕЛЬНО `visit.chief_employee_id`
@@ -192,7 +185,7 @@ export function approvalRightsOf(input: ApprovalRightsInput): ApprovalRights {
     manageRoute: manage,
     send: manage || isChief,
     answerRemarks: manage || isChief || isDeputy,
-    approve: loading || canApprove,
+    approve: canApprove,
     // 🔴 ТЕМ ЖЕ ПРАВОМ, ЧТО И «СОГЛАСОВАТЬ» (Plane №574). «Вернуть» и
     // «Подтвердить возврат» зовут решение согласующего
     // (`approval/route/<id>/decide/`), а его сервер гейтит `assignment.approve`
@@ -201,7 +194,7 @@ export function approvalRightsOf(input: ApprovalRightsInput): ApprovalRights {
     // расходились в обе стороны: у кого есть `return` и нет `approve` — кнопка
     // включена и отбивается сервером; у кого есть `approve` и нет `return` —
     // спрятана зря.
-    returnBack: loading || canApprove,
+    returnBack: canApprove,
   };
 }
 
@@ -217,7 +210,7 @@ function useApprovalRights(visit: VisitObject | null | undefined): ApprovalRight
     loading: isLoading,
     canManage: hasPermission("event.manage"),
     canApprove: hasPermission("assignment.approve"),
-    myId: me.data?.employee ? String(me.data.employee.id) : null,
+    myId: me.isSuccess && me.data?.employee?.is_active === true ? String(me.data.employee.id) : null,
     visit,
   });
 }
@@ -744,6 +737,17 @@ function ApprovalRoute({
   view: ApprovalView;
   rights: ApprovalRights;
 }) {
+  const { data: session, status: sessionStatus } = useSession();
+  const { permissions, isLoading: permissionsLoading } = useOpsPermissions();
+  const username = session?.user?.userData?.username ?? session?.user?.name ?? null;
+  const decisionReason = (index: number) => approvalDecisionReason({
+    route: view.route,
+    index,
+    username: sessionStatus === "authenticated" && !session?.error ? username : null,
+    loading: sessionStatus === "loading" || permissionsLoading,
+    canApprove: permissions !== undefined && rights.approve,
+    canBypassIdentity: permissions?.has("*") === true,
+  });
   const [returnFor, setReturnFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   // Замечания модалки возврата (`[ВОЗ-01]`, Plane №431): список, каждое с
@@ -1059,7 +1063,7 @@ function ApprovalRoute({
       ) : (
         /* Семь граф не сжимаются до читаемости — скроллится таблица, а не
            страница (тот же приём, что в расчёте постов). */
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[900px] table-fixed border-collapse text-left">
             <thead>
               <tr className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1133,12 +1137,12 @@ function ApprovalRoute({
                             кнопок решения нет, как и в эталоне. */}
                         {approver.status === "PENDING" && (
                           <>
-                            <RightGate reason={reasonUnless(rights.approve, "approve")}>
+                            <RightGate reason={decisionReason(index)}>
                               {(describedBy) => (
                                 <Button
                                   type="button"
                                   size="sm"
-                                  disabled={decide.isPending || !rights.approve}
+                                  disabled={decide.isPending || decisionReason(index) !== null}
                                   aria-describedby={describedBy}
                                   onClick={() =>
                                     decide.mutate({
@@ -1153,13 +1157,13 @@ function ApprovalRoute({
                                 </Button>
                               )}
                             </RightGate>
-                            <RightGate reason={reasonUnless(rights.returnBack, "returnBack")}>
+                            <RightGate reason={decisionReason(index)}>
                               {(describedBy) => (
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="outline"
-                                  disabled={!rights.returnBack}
+                                  disabled={decide.isPending || decisionReason(index) !== null}
                                   aria-describedby={describedBy}
                                   onClick={() =>
                                     setReturnFor((prev) =>
@@ -1297,14 +1301,14 @@ function ApprovalRoute({
             <Button type="button" variant="outline" onClick={closeReturnDialog}>
               Отмена
             </Button>
-            <RightGate reason={reasonUnless(rights.returnBack, "returnBack")}>
+            <RightGate reason={decisionReason(route.findIndex((row) => row.id === returnFor))}>
               {(describedBy) => (
                 <Button
                   type="button"
                   // Пустую причину отбивает СЕРВЕР (400 с полем) — кнопка не
                   // выключается: так проба и человек видят одну и ту же причину
                   // отказа, а не молчаливую серую кнопку.
-                  disabled={decide.isPending || !rights.returnBack}
+                  disabled={decide.isPending || decisionReason(route.findIndex((row) => row.id === returnFor)) !== null}
                   aria-describedby={describedBy}
                   onClick={() =>
                     returnFor !== null &&

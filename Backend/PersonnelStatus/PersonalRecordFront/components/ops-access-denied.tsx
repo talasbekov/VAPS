@@ -11,12 +11,15 @@
 // Права раздела — плоские коды с бэка (`useOpsPermissions`), НЕ resource/action
 // хоста из lib/auth.tsx: две системы прав сосуществуют, и путать их нельзя.
 //
-// Гвард ставится ПОСЛЕ хуков страницы (правило хуков React), поэтому запросы
-// всё равно уходят и получают свои 403 — это ожидаемо и совпадает с поведением
-// пяти ранее закрытых страниц. Чинится здесь ровно то, что видит человек.
-import type { ReactElement } from "react";
+// Гвард ставится ПОСЛЕ хуков страницы (правило хуков React). Защищённые
+// запросы нужно отдельно отключать через enabled, пока права загружаются
+// или нужного права нет: один экран отказа не предотвращает запросы с 403.
+import { useState, type ReactElement, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent } from "@/components/ui/card";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { isPermissionsCheckFailure, OpsPermissionsUnavailable } from "@/components/ops-permissions-unavailable";
 
 interface OpsAccessDeniedProps {
   /**
@@ -26,9 +29,29 @@ interface OpsAccessDeniedProps {
    * опознаёт закрытый экран (e2e/smoke-buttons.spec.ts, `gated`).
    */
   what: string;
+  actions?: ReactNode;
 }
 
-export function OpsAccessDenied({ what }: OpsAccessDeniedProps): ReactElement {
+export function OpsAccessDenied({ what, actions }: OpsAccessDeniedProps): ReactElement {
+  const { error, isLoading } = useOpsPermissions();
+  const queryClient = useQueryClient();
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  // A failed permission refresh revokes cached authority, but does not prove
+  // that access was denied. Keep recovery available on every page gate.
+  if (isPermissionsCheckFailure(error)) {
+    return (
+      <OpsPermissionsUnavailable
+        isRetrying={isRetrying || isLoading}
+        onRetry={() => {
+          setIsRetrying(true);
+          void queryClient.refetchQueries({ queryKey: ["ops-me"] })
+            .finally(() => setIsRetrying(false));
+        }}
+      />
+    );
+  }
+
   return (
     <DashboardLayout>
       <Card>
@@ -42,6 +65,7 @@ export function OpsAccessDenied({ what }: OpsAccessDeniedProps): ReactElement {
           <p className="mt-1.5 text-sm text-muted-foreground">
             Недостаточно прав для просмотра {what}.
           </p>
+          {actions && <div className="mt-4">{actions}</div>}
         </CardContent>
       </Card>
     </DashboardLayout>

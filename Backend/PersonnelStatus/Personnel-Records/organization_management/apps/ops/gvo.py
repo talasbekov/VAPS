@@ -236,7 +236,7 @@ def create_person(
         field_errors["category"] = ["Категория — «Наши» или «Иностранные»."]
     if field_errors:
         raise ValidationError(field_errors)
-    person = OpsProtectedPerson.objects.create(
+    person = OpsProtectedPerson(
         name=name,
         category=category,
         callsign=str(callsign or "").strip(),
@@ -247,6 +247,8 @@ def create_person(
         position=str(position or "").strip(),
         facts=parse_facts(facts),
     )
+    person.full_clean()
+    person.save()
     audit_service.record(
         actor=actor,
         action=audit_service.PROTECTED_PERSON_CREATED,
@@ -255,6 +257,45 @@ def create_person(
         new_value={"code": person.display_code, "name": person.name},
     )
     return person_view(person, actor_id=getattr(actor, "pk", actor))
+
+
+PERSON_EDIT_FIELDS = {"name", "category", "callsign", "bio", "country", "position", "facts"}
+
+
+def update_person(person_id, data, *, actor=None):
+    """Maintain the catalog without changing its identity or historical links."""
+    from django.db import transaction
+
+    if not isinstance(data, dict):
+        raise ValidationError({"non_field_errors": ["Ожидается объект с полями лица."]})
+    with transaction.atomic():
+        person = OpsProtectedPerson.objects.select_for_update().filter(pk=person_id, is_active=True).first()
+        if person is None:
+            return None
+        errors = {key: ["Поле недоступно для редактирования."] for key in set(data) - PERSON_EDIT_FIELDS}
+        before = {key: getattr(person, key) for key in PERSON_EDIT_FIELDS}
+        for key in PERSON_EDIT_FIELDS & set(data):
+            value = data[key]
+            if key == "facts":
+                value = parse_facts(value)
+            elif not isinstance(value, str):
+                errors[key] = ["Введите текст."]
+                continue
+            else:
+                value = value.strip()
+            setattr(person, key, value)
+        if not person.name:
+            errors["name"] = ["Обязательное поле."]
+        if errors:
+            raise ValidationError(errors)
+        person.full_clean()
+        person.save()
+        audit_service.record(
+            actor=actor, action=audit_service.PROTECTED_PERSON_UPDATED,
+            entity_type=audit_service.ENTITY_PROTECTED_PERSON, entity_id=person.pk,
+            old_value=before, new_value={key: getattr(person, key) for key in PERSON_EDIT_FIELDS},
+        )
+        return person_view(person, actor_id=getattr(actor, "pk", actor))
 
 
 def set_person_photo(person_id, upload, *, actor=None):
@@ -866,21 +907,6 @@ def reset_patch(om_code, body, actor=None):
 
 
 def list_legal_documents():
-    from organization_management.apps.operations.models_legal import (
-        OpsLegalDocument,
-    )
+    from organization_management.apps.ops.legal_documents import list_documents
 
-    return [
-        {
-            "id": str(d.id),
-            "kind": d.kind,
-            "code": d.code,
-            "title": d.title,
-            "description": d.description,
-            "revision": d.revision,
-            "status": d.status,
-            "pages": d.pages,
-            "fileUrl": d.file_url,
-        }
-        for d in OpsLegalDocument.objects.filter(is_active=True)
-    ]
+    return list_documents()

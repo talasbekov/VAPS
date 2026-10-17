@@ -2,6 +2,9 @@
 Сериализаторы для API управления статусами сотрудников
 """
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
+from organization_management.apps.operations.api.permissions import effective_permissions, require_permission
+from organization_management.apps.statuses.duty_assignments import assignment_for_update, assignment_location
 from organization_management.apps.statuses.models import (
     EmployeeStatus,
     StatusChangeHistory,
@@ -99,10 +102,44 @@ class StatusDocumentSerializer(serializers.ModelSerializer):
         return None
 
 
-class EmployeeStatusSerializer(serializers.ModelSerializer):
+class DutyAssignmentValidationMixin:
+    def to_internal_value(self, data):
+        # Supplied labels/location are not authority for a structured placement.
+        # Discard even overlong client location before ordinary field validation.
+        if hasattr(data, "get") and data.get("duty_assignment") is not None:
+            data = data.copy()
+            data.pop("location", None)
+        return super().to_internal_value(data)
+
+    def validate_duty_assignment(self, value):
+        request = self.context.get("request")
+        if value is not None and request is not None:
+            require_permission(request, "object.view")
+        return value
+
+    def validate_assignment(self, attrs):
+        try:
+            attrs["duty_assignment"] = assignment_for_update(attrs, self.instance)
+            if attrs["duty_assignment"] is not None:
+                attrs["location"] = assignment_location(attrs["duty_assignment"])
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+
+class EmployeeStatusSerializer(DutyAssignmentValidationMixin, serializers.ModelSerializer):
     """
     Основной сериализатор для статуса сотрудника
     """
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        # Ordinary status routes and mutation responses share this serializer.
+        # The permission helper caches on the request, including many=True reads.
+        grants = effective_permissions(request) if request is not None else set()
+        if "*" not in grants and "object.view" not in grants:
+            data["duty_assignment"] = None
+        return data
 
     def validate_status_type(self, value):
         validate_status_type_code(value)
@@ -132,7 +169,7 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
             'id', 'employee', 'employee_data', 'status_type', 'status_type_display',
             'state', 'state_display', 'start_date', 'end_date', 'actual_end_date',
             'effective_end_date', 'comment', 'early_termination_reason',
-            'related_division', 'related_division_data', 'location',
+            'related_division', 'related_division_data', 'location', 'duty_assignment',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
             'is_notified', 'auto_applied', 'is_active', 'is_planned'
         ]
@@ -148,6 +185,7 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """Валидация данных с помощью метода clean модели"""
+        self.validate_assignment(attrs)
         instance = self.instance or EmployeeStatus()
 
         # Копируем атрибуты из attrs
@@ -181,7 +219,7 @@ class EmployeeStatusDetailSerializer(EmployeeStatusSerializer):
         fields = EmployeeStatusSerializer.Meta.fields + ['change_history', 'documents']
 
 
-class EmployeeStatusCreateSerializer(serializers.ModelSerializer):
+class EmployeeStatusCreateSerializer(DutyAssignmentValidationMixin, serializers.ModelSerializer):
     """Сериализатор для создания статуса"""
 
     def validate_status_type(self, value):
@@ -193,11 +231,12 @@ class EmployeeStatusCreateSerializer(serializers.ModelSerializer):
         model = EmployeeStatus
         fields = [
             'employee', 'status_type', 'start_date', 'end_date',
-            'comment', 'location', 'related_division'
+            'comment', 'location', 'related_division', 'duty_assignment'
         ]
 
     def validate(self, attrs):
         """Валидация данных"""
+        self.validate_assignment(attrs)
         # Базовая валидация без создания экземпляра модели
         # Проверка дат
         if attrs.get('end_date') and attrs.get('start_date'):
@@ -303,12 +342,11 @@ class BulkStatusPlanSerializer(serializers.Serializer):
 class StatusTypeCatalogSerializer(serializers.Serializer):
     """Строка каталога типов статусов (Plane №354).
 
-    Ровно три поля: код для сохранения, подпись для человека и цвет. Приоритет,
-    колонка расхода и флаги справочника раздела сюда НЕ едут — окну статусов
-    они не нужны, а лишние поля в ответе читаются как обещание, что клиент
-    имеет право на них опираться.
+    Код для сохранения, подпись, цвет и категория расхода. Категория позволяет
+    форме показать место дежурства для всех видов ON_DUTY, включая пользовательские.
     """
 
     code = serializers.CharField(read_only=True)
     label = serializers.CharField(read_only=True)
     color = serializers.CharField(read_only=True, allow_blank=True)
+    report_column_code = serializers.CharField(read_only=True)

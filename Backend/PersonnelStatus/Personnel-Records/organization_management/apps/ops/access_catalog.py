@@ -33,7 +33,7 @@ import textwrap
 from django.urls import URLPattern, URLResolver, get_resolver
 
 #: Имена функций, которыми право проверяют построчно.
-_INLINE_GUARDS = frozenset({"require_permission", "require_scoped_permission"})
+_INLINE_GUARDS = frozenset({"require_permission", "require_scoped_permission", "require_global_permission"})
 
 #: Именованная группа регекса → читаемый плейсхолдер: администратору нужен
 #: адрес ручки, а не выражение, по которому он матчится.

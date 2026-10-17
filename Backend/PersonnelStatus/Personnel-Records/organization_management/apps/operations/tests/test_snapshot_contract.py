@@ -57,12 +57,14 @@ KEYS_BY_VERSION = {
     7: BASE | {"catalog", "division_title", "staff_total", "vacancies", "attached"},
     # participations добавлены ВНУТРЬ строки фактов, не наверх
     8: BASE | {"catalog", "division_title", "staff_total", "vacancies", "attached"},
+    9: BASE | {"catalog", "division_title", "division_type", "staff_total", "vacancies", "attached"},
 }
 
 # Поля ВНУТРИ вложенных структур — их номер версии тоже отражает.
 ROSTER_KEYS_BY_VERSION = {
     1: frozenset({"employee_id", "full_name", "rank"}),
     2: frozenset({"employee_id", "full_name", "rank", "position_level"}),
+    9: frozenset({"employee_id", "full_name", "rank", "position_level", "position_name", "position_code", "division_type"}),
 }
 CATALOG_KEYS_BY_VERSION = {
     3: frozenset({"code", "priority", "report_column_code", "counts_in_staff"}),
@@ -82,6 +84,8 @@ ROW_KEYS_BY_VERSION = {
         {"employee_id", "status_type_code", "status_id", "date_start",
          "date_end", "source", "participations"}
     ),
+    9: frozenset({"employee_id", "status_type_code", "status_id", "date_start",
+                  "date_end", "source", "participations", "destination"}),
 }
 
 

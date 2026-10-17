@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from 'next/link';
 import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,16 @@ import { RefreshCw } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee, StaffUnitStatistics } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
+import { useDivisionsTree } from "@/hooks/use-divisions-tree";
 import { useStatusNaming } from "@/entities/status";
 import styles from "./org-board.module.css";
+import { PHOTO_PLACEHOLDER, photoSrc } from "@/entities/employee/model/photo-src";
 
-const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
+const OrgScene3D = dynamic(() => import("./OrgScene3D"), {
+  ssr: false,
+  loading: () => <p role="status" className="p-6 text-muted-foreground">Загрузка 3D-сцены…</p>,
+});
+
 
 
 
@@ -68,11 +75,12 @@ const buildOrgStructure = (
 
   // Люди по подразделению. Ключ — идентификатор: имена подразделений
   // повторяются («Первый отдел» встречается девять раз).
-  const peopleOf = new Map<number, StaffUnitEmployee[]>();
+  const peopleOf = new Map<number | null, StaffUnitEmployee[]>();
   normalizedUnits.forEach((unit) => {
-    const list = peopleOf.get(unit.division.id) ?? [];
+    const divisionId = unit.division?.id ?? null;
+    const list = peopleOf.get(divisionId) ?? [];
     list.push(...unit.employees);
-    peopleOf.set(unit.division.id, list);
+    peopleOf.set(divisionId, list);
   });
 
   const byRank = (a: StaffUnitEmployee, b: StaffUnitEmployee) =>
@@ -80,13 +88,13 @@ const buildOrgStructure = (
 
   /** Синтетическая «единица» под разметку: доска знает подразделение и людей. */
   const asUnit = (
-    id: number,
+    id: number | null,
     name: string,
     employees: StaffUnitEmployee[],
     index: number
   ): StaffUnit => ({
-    id,
-    division: { id, name },
+    id: id ?? 0, // Только React-ключ группы; в API этот ID не передаётся.
+    division: id === null ? null : { id, name },
     index,
     parent_id: null,
     vacancy: null,
@@ -207,17 +215,18 @@ const buildOrgStructure = (
       // существует. Раньше это поле было обязательным, и чтение `.id` у null
       // роняло весь дашборд — поймано обходом ролевых учёток, а не типами:
       // тип обещал объект.
-      ...(stats.scope_division === null ? [] : [stats.scope_division.id]),
+      ...(stats.scope_division ? [stats.scope_division.id] : []),
     ]);
-    const strays = new Map<number, { name: string; people: StaffUnitEmployee[] }>();
+    const strays = new Map<number | null, { name: string; people: StaffUnitEmployee[] }>();
     normalizedUnits.forEach((unit) => {
-      if (classified.has(unit.division.id)) return;
-      const row = strays.get(unit.division.id) ?? {
-        name: unit.division.name,
+      const divisionId = unit.division?.id ?? null;
+      if (divisionId !== null && classified.has(divisionId)) return;
+      const row = strays.get(divisionId) ?? {
+        name: unit.division?.name ?? "Без подразделения",
         people: [],
       };
       row.people.push(...unit.employees);
-      strays.set(unit.division.id, row);
+      strays.set(divisionId, row);
     });
     strays.forEach((row, id) => {
       const unit = asUnit(id, row.name, row.people, 999);
@@ -283,8 +292,17 @@ const formatDate = (dateString?: string) => {
   }
 };
 
-export default function OrgBoard() {
-  const { hasPermission } = useOpsPermissions();
+export interface OrgBoardLoadState {
+  isLoading: boolean;
+  isError: boolean;
+  updatedAt: number;
+}
+
+export default function OrgBoard({ onLoadStateChange }: {
+  onLoadStateChange?: (state: OrgBoardLoadState) => void;
+}) {
+  const { hasPermission, hasGlobalPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
+  const [view, setView] = useState<"3d" | "table">("3d");
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
   const naming = useStatusNaming();
@@ -304,21 +322,34 @@ export default function OrgBoard() {
     isLoading: loading,
     error: queryError,
     refetch,
+    isFetching,
+    dataUpdatedAt,
   } = useStaffUnits();
 
   // Иерархия подразделений: ручка штатки её не несёт вовсе (`parent_id` пуст
   // у всех строк), и без этого запроса доска не знает, какой отдел чьим
   // управлением ведётся.
-  const { data: stats } = useStaffUnitStatistics();
-
-  const error = queryError
-    ? queryError instanceof Error
-      ? queryError.message
-      : "Произошла ошибка"
-    : null;
+  const statistics = useStaffUnitStatistics();
+  const divisionTree = useDivisionsTree();
+  const treeEnabled = !permissionsLoading && !permissionsError && (hasPermission('orgstructure.view') || hasGlobalPermission('admin.roles'));
+  const treeLoading = treeEnabled && divisionTree.isPending;
+  const stats = statistics.data;
+  const hasError = Boolean(queryError || statistics.error || (treeEnabled && divisionTree.error));
+  const updatedAt = dataUpdatedAt && statistics.dataUpdatedAt
+    && (!treeEnabled || divisionTree.dataUpdatedAt)
+    ? Math.min(dataUpdatedAt, statistics.dataUpdatedAt, treeEnabled ? divisionTree.dataUpdatedAt : Infinity) : 0;
+  useEffect(() => {
+    onLoadStateChange?.({
+      isLoading: isFetching || statistics.isFetching || (treeEnabled && divisionTree.isFetching) || (!hasError && !updatedAt),
+      isError: hasError,
+      updatedAt,
+    });
+  }, [onLoadStateChange, isFetching, statistics.isFetching, treeEnabled, divisionTree.isFetching, hasError, updatedAt]);
 
   const fetchData = () => {
-    refetch();
+    void refetch();
+    void statistics.refetch();
+    if (treeEnabled) void divisionTree.refetch();
   };
 
   const orgStructure = useMemo(
@@ -349,7 +380,7 @@ export default function OrgBoard() {
     return cols > 0 ? cols : 1; // Минимум 1 колонка
   }, [orgStructure]);
 
-  if (loading) {
+  if (!hasError && (loading || statistics.isPending || treeLoading)) {
     return (
       <div className="flex items-center justify-center min-h-[350px]">
         <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
@@ -357,10 +388,15 @@ export default function OrgBoard() {
     );
   }
 
-  if (error) {
+  if (hasError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[350px] text-red-500">
-        <p className="mb-4">Ошибка загрузки данных: {error}</p>
+        <p role="alert" className="mb-4">
+          {queryError ? "Не удалось загрузить штатное расписание."
+            : statistics.error ? "Не удалось загрузить статистику личного состава."
+            : "Не удалось загрузить иерархию подразделений."}
+          {" "}Проверьте соединение и повторите загрузку.
+        </p>
         <Button onClick={fetchData} variant="outline">
           <RefreshCw className="h-4 w-4 mr-2" />
           Попробовать снова
@@ -369,17 +405,25 @@ export default function OrgBoard() {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Структура организации</h2>
+  const toolbarActions = (
+        <div role="group" aria-label="Вид структуры" className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant={view === "3d" ? "default" : "outline"} aria-pressed={view === "3d"} onClick={() => setView("3d")}>3D-сцена</Button>
+          <Button size="sm" variant={view === "table" ? "default" : "outline"} aria-pressed={view === "table"} onClick={() => setView("table")}>Таблица</Button>
         <Button onClick={fetchData} variant="outline" size="sm">
           <RefreshCw className="h-4 w-4 mr-2" />
           Обновить
         </Button>
-      </div>
-
-      {orgStructure.managements.length === 0 && staffUnits.length > 0 ? (
+        </div>
+  );
+  return (
+    <div className="space-y-4">
+      {view === "table" && <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Структура организации</h2>
+        {toolbarActions}
+      </div>}
+      {view === "3d" && stats ? (
+        <OrgScene3D stats={stats} staffUnits={staffUnits} divisionTree={treeEnabled ? divisionTree.data : undefined} toolbarActions={toolbarActions} onFallback={() => setView("table")} />
+      ) : orgStructure.managements.length === 0 && staffUnits.length > 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
           <p className="mb-2">
             Данные загружены, но структура не может быть построена.
@@ -389,7 +433,7 @@ export default function OrgBoard() {
           </p>
         </div>
       ) : (
-        <div className={`flex justify-center overflow-x-auto ${styles.board}`}>
+        <div className={`flex overflow-x-auto ${styles.board}`}>
           <table className={`${styles.tableAuto} mt-5 w-full`}>
             <thead>
               {/* Первый уровень: заголовки департаментов */}
@@ -409,7 +453,7 @@ export default function OrgBoard() {
                   <b>
                     {(() => {
                       const scopeName =
-                        orgStructure.departmentHead?.division.name ?? "";
+                        orgStructure.departmentHead?.division?.name ?? "";
                       const headEmp =
                         orgStructure.departmentHead?.employees.find(
                           (e) =>
@@ -481,23 +525,21 @@ export default function OrgBoard() {
                       colSpan={divisionsCount}
                       className="border-2 border-border bg-muted px-4 py-2 text-foreground"
                     >
-                      {management.unit.division.name}
-                      {hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${management.unit.division.id}`}>Сотрудники подразделения →</Link>}
+                      {management.unit.division?.name ?? "Без подразделения"}
+                      {management.unit.division && hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${management.unit.division.id}`}>Сотрудники подразделения →</Link>}
                       {managementHead && (
                         <div className="flex flex-col items-center justify-center text-center mt-2">
                           <img
-                            src={
-                              managementHead.photo_url
-                                ? managementHead.photo_url
-                                : managementHead.photo
-                                ? `${MEDIA_URL}${managementHead.photo}`
-                                : "/placeholder.svg"
-                            }
+                            src={photoSrc(managementHead.photo_url, managementHead.photo)}
+                            loading="lazy"
+                            decoding="async"
+                            width={64}
+                            height={64}
                             alt={`${managementHead.last_name} ${managementHead.first_name}`}
                             className="w-16 h-16 rounded-full object-cover object-top mb-2"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src =
-                                "/placeholder.svg";
+                                PHOTO_PLACEHOLDER;
                             }}
                           />
                           <div className="text-blue-600 dark:text-blue-400 mt-2">
@@ -524,8 +566,8 @@ export default function OrgBoard() {
                         key={division.unit.id}
                         className="border border-border px-4 py-2"
                       >
-                        {division.unit.division.name}
-                        {hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${division.unit.division.id}`}>Сотрудники подразделения →</Link>}
+                        {division.unit.division?.name ?? "Без подразделения"}
+                        {division.unit.division && hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${division.unit.division.id}`}>Сотрудники подразделения →</Link>}
                       </th>
                     ))
                   ) : (
@@ -561,22 +603,18 @@ export default function OrgBoard() {
                           {employeeData ? (
                             <div className="flex flex-col items-center justify-between text-center cursor-pointer">
                               <img
-                                src={
-                                  employeeData.employee
-                                    ? employeeData.employee.photo_url
-                                      ? employeeData.employee.photo_url
-                                      : employeeData.employee.photo
-                                      ? `${MEDIA_URL}${employeeData.employee.photo}`
-                                      : "/placeholder.svg"
-                                    : "/placeholder.svg"
-                                }
+                                src={photoSrc(employeeData.employee?.photo_url, employeeData.employee?.photo)}
+                                loading="lazy"
+                                decoding="async"
+                                width={64}
+                                height={64}
                                 alt={`${
                                   employeeData.employee?.last_name || ""
                                 } ${employeeData.employee?.first_name || ""}`}
                                 className="w-16 h-16 rounded-full object-cover object-top mb-2"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src =
-                                    "/placeholder.svg";
+                                    PHOTO_PLACEHOLDER;
                                 }}
                               />
                               <span className="ml-3">
@@ -642,22 +680,18 @@ export default function OrgBoard() {
                             {employeeData ? (
                               <div className="flex flex-col items-center justify-between text-center cursor-pointer">
                                 <img
-                                  src={
-                                    employeeData.employee
-                                      ? employeeData.employee.photo_url
-                                        ? employeeData.employee.photo_url
-                                        : employeeData.employee.photo
-                                        ? `${MEDIA_URL}${employeeData.employee.photo}`
-                                        : "/placeholder.svg"
-                                      : "/placeholder.svg"
-                                  }
+                                  src={photoSrc(employeeData.employee?.photo_url, employeeData.employee?.photo)}
+                                  loading="lazy"
+                                  decoding="async"
+                                  width={64}
+                                  height={64}
                                   alt={`${
                                     employeeData.employee?.last_name || ""
                                   } ${employeeData.employee?.first_name || ""}`}
                                   className="w-16 h-16 rounded-full object-cover object-top mb-2"
                                   onError={(e) => {
                                     (e.target as HTMLImageElement).src =
-                                      "/placeholder.svg";
+                                      PHOTO_PLACEHOLDER;
                                   }}
                                 />
                                 <span className="ml-3">

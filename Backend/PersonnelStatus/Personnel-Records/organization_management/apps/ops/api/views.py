@@ -35,6 +35,7 @@ from organization_management.apps.ops.api.serializers import (
     SecurityObjectSerializer,
 )
 from organization_management.apps.ops import documents_summary
+from organization_management.apps.ops import map_locations
 from organization_management.apps.ops import gvo as gvo_service
 from organization_management.apps.ops import vehicles as vehicles_service
 from organization_management.apps.ops import passport as passport_service
@@ -49,6 +50,7 @@ from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.ops.event_actor_policy import can_manage_recon
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
+    require_global_permission,
     require_permission,
     require_scoped_permission,
     resolve_actor_id,
@@ -405,6 +407,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # расчёта: её делают те же, кто расставляет людей (Plane №259).
         "placement_post_remove": _PLACEMENT_PERMISSION,
         "placement_post_comment": _PLACEMENT_PERMISSION,
+        "placement_map": _READ_EVENT_PERMISSION,
+        "placement_map_update": _PLACEMENT_PERMISSION,
         "placement_sector_senior": _PLACEMENT_PERMISSION,
         # Завершение этапа — не расстановка людей, а переход мероприятия
         # дальше по цепочке: его делает ведущий ОМ.
@@ -494,6 +498,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         self._attach_recon_capabilities(event, row, perms=perms)
         self._attach_placement_capabilities(event, row, perms=perms)
+        authorities = mine.confirmation_authorities(
+            [assignment.get("employeeId") for assignment in row["placementAssignments"]],
+            resolve_actor_id(self.request),
+        )
+        for assignment in row["placementAssignments"]:
+            assignment["canConfirmWithoutAccount"] = (
+                authorities.get(str(assignment.get("employeeId"))) == "unit_head"
+            )
         return Response(row, status=status)
 
     def _attach_recon_capabilities(self, event, row, *, perms=None):
@@ -1457,7 +1469,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event
             for event in OpsSecurityEvent.objects.exclude(
                 stage=OpsSecurityEvent.Stage.CLOSED
-            ).order_by("business_date", "code")
+            ).prefetch_related("visit_objects").order_by("business_date", "code")
             if event_service.force_demand_total(event) > 0
         ]
         read_context = registry_reads.RegistryReadContext()
@@ -2106,6 +2118,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "placement_unassign": _PLACEMENT_COMMAND_PERMISSION,
         "placement_post_remove": _PLACEMENT_COMMAND_PERMISSION,
         "placement_post_comment": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_map_update": _PLACEMENT_COMMAND_PERMISSION,
         "placement_move": _PLACEMENT_COMMAND_PERMISSION,
     }
 
@@ -2115,6 +2128,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "placement_unassign",
             "placement_post_remove",
             "placement_post_comment",
+            "placement_map_update",
             # Перенос (Plane №762) — то же действие, что «снять и назначить»,
             # которым замещающий пользовался до сих пор; закрыть его для него
             # значило бы отнять уже разрешённое, оформив это как починку.
@@ -2129,6 +2143,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "placement_move",
             "placement_post_remove",
             "placement_post_comment",
+            "placement_map_update",
             "placement_sector_senior",
             "placement_complete",
         }
@@ -2222,6 +2237,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # замещающий одного объекта уводил бы людей на чужой — одним запросом
         # то, чего двумя ему не давали (снятие проверялось по посту-истоку,
         # назначение — по посту-приёмнику).
+        if self.action == "placement_map_update" and (request.data or {}).get("targetType") == "object":
+            visits = self._placement_target_visits(event)
+            allowed = len(visits) == 1 and visits[0].deputies.filter(employee_id=employee.pk, can_edit_placement=True).exists()
+            self._acting_as_deputy = allowed
+            self._deputy_employee = employee if allowed else None
+            return allowed
         targets = (
             self._deputy_move_posts(event)
             if self.action == "placement_move"
@@ -2293,6 +2314,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             self._object_lead_employee = employee
             return True
 
+        if self.action == "placement_map_update" and (request.data or {}).get("targetType") == "object":
+            visits = self._placement_target_visits(event)
+            allowed = len(visits) == 1 and visits[0].chief_employee_id is not None and int(visits[0].chief_employee_id) == int(employee.pk)
+            self._acting_as_object_lead = allowed
+            self._object_lead_employee = employee if allowed else None
+            return allowed
         if self.action == "placement_complete":
             try:
                 visit = event_service.pick_visit_object(
@@ -2580,9 +2607,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             # поэтому обычное обновление профиля не пишет ничего: платит только
             # ПЕРВЫЙ заход.
             mine.mark_viewed(target)
+        authority = mine.confirmation_authorities([target], resolve_actor_id(request)).get(str(target))
+        rows = mine.assignments_of(target)
+        for row in rows:
+            row["canConfirmWithoutAccount"] = authority == "unit_head"
         return Response(
             {
-                "results": mine.assignments_of(target),
+                "results": rows,
                 "employeeId": target,
                 "unlinkedReason": None,
             }
@@ -2689,6 +2720,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def _placement_target_visits(self, event):
         """Объекты, которых касается текущая мутация расстановки."""
+        if self.action == "placement_map_update" and (self.request.data or {}).get("targetType") == "object":
+            try:
+                return [event_service.pick_visit_object(event, self.request.data.get("targetId"), no_objects="Нет объектов посещения.", ambiguous="Выберите объект.")]
+            except DomainError:
+                return []
         if self.action == "placement_complete":
             try:
                 return [
@@ -2742,6 +2778,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         ОБЪЕКТУ поста, а не по факту «что-то делаю в этом ОМ».
         """
         posts = {str(p.get("id")): p for p in (event.recon_sector_posts or [])}
+        if self.action == "placement_map_update":
+            data = self.request.data or {}
+            if data.get("targetType") == "post":
+                return posts.get(str(data.get("targetId")))
+            if data.get("targetType") != "object":
+                return None
+            visits = self._placement_target_visits(event)
+            if visits:
+                return next(iter(event_service.visit_object_posts(event, visits[0])), None)
+            return None
         if self.action in {"placement_assign", "journal"}:
             return posts.get(str((self.request.data or {}).get("postId")))
         # У снятия поста адресат назван прямо в пути — искать его по
@@ -2842,6 +2888,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 deputy=self._deputy_actor(),
             )
         )
+
+    @action(detail=True, methods=["get"], url_path="placement/map")
+    def placement_map(self, request, pk=None):
+        return Response(map_locations.read(event_service.read_event(pk)))
+
+    @placement_map.mapping.patch
+    def placement_map_update(self, request, pk=None):
+        self._require_placement_lead(pk)
+        return Response(map_locations.update(pk, request.data, actor=request.user, deputy=self._deputy_actor()))
 
     @action(
         detail=True,
@@ -3297,6 +3352,7 @@ class AccessCatalogViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {"list": "admin.roles"}
 
     def list(self, request):
+        require_global_permission(request, "admin.roles")
         from organization_management.apps.operations.models import Permission
         from organization_management.apps.ops.access_catalog import catalog
 
@@ -3384,6 +3440,8 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
+            personnel_full_name,
+            unit_path_of,
         )
 
         employees = (
@@ -3416,14 +3474,20 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # отдавать строки, про которые непонятно, почему они нашлись.
         search = (request.query_params.get("search") or "").strip()
         if search != "":
-            employees = employees.filter(
-                Q(last_name__icontains=search)
-                | Q(first_name__icontains=search)
-                | Q(middle_name__icontains=search)
-                | Q(personnel_number__icontains=search)
-                | Q(rank__name__icontains=search)
-                | Q(staff_unit__division__name__icontains=search)
-            ).distinct()
+            # Каждое слово запроса обязано найтись в какой-то из видимых
+            # колонок (Plane №1247, проходка №1142): «Оралбаев Арман» раньше
+            # искался ОДНОЙ строкой по каждому полю и не находил никого —
+            # среди четырнадцати «Оралбаев А.» выбрать нужного было нечем.
+            for token in search.split():
+                employees = employees.filter(
+                    Q(last_name__icontains=token)
+                    | Q(first_name__icontains=token)
+                    | Q(middle_name__icontains=token)
+                    | Q(personnel_number__icontains=token)
+                    | Q(rank__name__icontains=token)
+                    | Q(staff_unit__division__name__icontains=token)
+                )
+            employees = employees.distinct()
 
         # ── Рейтинг (Plane №67, шаг РЙ-4) ───────────────────────────────
         # Заказчик: «Научи отдавать рейтинг». До этой правки доска подбора
@@ -3577,6 +3641,7 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         results = []
+        unit_paths = {}
         for employee in rows:
             # обратный OneToOne без строки бросает RelatedObjectDoesNotExist
             try:
@@ -3593,6 +3658,13 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 {
                     "id": str(employee.pk),
                     "name": personnel_display_name(employee),
+                    # Полное имя и путь подразделения (Plane №1247): по
+                    # инициалам и одному отделу однофамильцы неразличимы.
+                    "fullName": personnel_full_name(employee),
+                    "unitPath": unit_path_of(
+                        staff_unit.division if staff_unit is not None else None,
+                        cache=unit_paths,
+                    ),
                     "rankLabel": employee.rank.name if employee.rank else "",
                     # Позывной (`[МД-10]`, Plane №456): пустая строка — «не
                     # вписан», и это единственное, чем «нет позывного»
@@ -3643,6 +3715,8 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
+            personnel_full_name,
+            unit_path_of,
         )
 
         employee = getattr(request.user, "employee", None)
@@ -3667,6 +3741,10 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             {
                 "id": str(employee.pk),
                 "name": personnel_display_name(employee),
+                "fullName": personnel_full_name(employee),
+                "unitPath": unit_path_of(
+                    staff_unit.division if staff_unit is not None else None
+                ),
                 "rankLabel": employee.rank.name if employee.rank else "",
                 "callsign": employee.callsign or "",
                 "unit": unit,
@@ -3748,17 +3826,17 @@ class DutyMonthlyPlanViewSet(RequirePermissionMixin, viewsets.ViewSet):
             or Clock.today_local().isoformat()[:7]
         )
         return Response(
-            duty_service.monthly_plan_response(month, _duty_rights(request))
+            duty_service.monthly_plan_response(month, _duty_rights(request), scope_actor=resolve_actor_id(request))
         )
 
     @action(detail=False, methods=["post"], url_path="draft")
     def draft(self, request):
-        record = duty_service.create_draft((request.data or {}).get("month"))
+        record = duty_service.create_draft((request.data or {}).get("month"), scope_actor=resolve_actor_id(request))
         return Response(duty_service.serialize_plan(record), status=201)
 
     @action(detail=False, methods=["post"], url_path="check")
     def check(self, request):
-        record = duty_service.check_plan((request.data or {}).get("month"))
+        record = duty_service.check_plan((request.data or {}).get("month"), scope_actor=resolve_actor_id(request))
         return Response(duty_service.serialize_plan(record))
 
     @action(detail=False, methods=["post"], url_path="approve")
@@ -3766,12 +3844,13 @@ class DutyMonthlyPlanViewSet(RequirePermissionMixin, viewsets.ViewSet):
         record = duty_service.approve_plan(
             (request.data or {}).get("month"),
             actor=resolve_actor_id(request),
+            scope_actor=resolve_actor_id(request),
         )
         return Response(duty_service.serialize_plan(record))
 
     @action(detail=False, methods=["post"], url_path="reopen")
     def reopen(self, request):
-        record = duty_service.reopen_plan((request.data or {}).get("month"))
+        record = duty_service.reopen_plan((request.data or {}).get("month"), scope_actor=resolve_actor_id(request))
         return Response(duty_service.serialize_plan(record))
 
 
@@ -3811,11 +3890,7 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return resolve_actor_id(request) is not None
 
     def list(self, request):
-        from organization_management.apps.operations.models_duty import (
-            OpsDutyShift,
-        )
-
-        shifts = list(OpsDutyShift.objects.all())
+        shifts = list(duty_service.visible_shifts(resolve_actor_id(request)))
         return Response(
             {
                 "results": [duty_service.serialize_shift(s) for s in shifts],
@@ -3873,7 +3948,7 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
     def retrieve(self, request, pk=None):
-        return Response(duty_service.shift_detail(pk))
+        return Response(duty_service.shift_detail(pk, scope_actor=resolve_actor_id(request)))
 
     def create(self, request):
         data = request.data or {}
@@ -3888,6 +3963,7 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
             override=data.get("override"),
             override_reason=data.get("override_reason"),
             actor=resolve_actor_id(request),
+            scope_actor=resolve_actor_id(request),
         )
         return Response(duty_service.serialize_shift(shift), status=201)
 
@@ -3897,25 +3973,26 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
             pk,
             reason=(request.data or {}).get("reason"),
             actor=resolve_actor_id(request),
+            scope_actor=resolve_actor_id(request),
         )
         return Response(duty_service.serialize_shift(shift))
 
     @action(detail=True, methods=["post"], url_path="acknowledge")
     def acknowledge(self, request, pk=None):
         return Response(
-            duty_service.serialize_shift(duty_service.acknowledge_shift(pk))
+            duty_service.serialize_shift(duty_service.acknowledge_shift(pk, scope_actor=resolve_actor_id(request)))
         )
 
     @action(detail=True, methods=["post"], url_path="clock-in")
     def clock_in(self, request, pk=None):
         return Response(
-            duty_service.serialize_shift(duty_service.clock_in_shift(pk))
+            duty_service.serialize_shift(duty_service.clock_in_shift(pk, scope_actor=resolve_actor_id(request)))
         )
 
     @action(detail=True, methods=["post"], url_path="clock-out")
     def clock_out(self, request, pk=None):
         return Response(
-            duty_service.serialize_shift(duty_service.clock_out_shift(pk))
+            duty_service.serialize_shift(duty_service.clock_out_shift(pk, scope_actor=resolve_actor_id(request)))
         )
 
 
@@ -3930,7 +4007,7 @@ class DutyPlanObjectsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             {
                 "businessDate": date.isoformat(),
-                "results": duty_service.plan_objects(date),
+                "results": duty_service.plan_objects(date, scope_actor=resolve_actor_id(request)),
             }
         )
 
@@ -3945,7 +4022,7 @@ class DutyCandidatesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             {
                 "businessDate": date.isoformat(),
-                "results": duty_service.duty_candidates(date),
+                "results": duty_service.duty_candidates(date, scope_actor=resolve_actor_id(request)),
             }
         )
 
@@ -4071,11 +4148,32 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsCombatDutyShift,
         )
 
+        shifts = OpsCombatDutyShift.objects.all()
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _READ_DUTY_PERMISSION
+        )
+        if allowed is not None:
+            from organization_management.apps.divisions.models import Division
+
+            owners = set(Division.objects.filter(
+                pk__in=allowed, is_active=True
+            ).values_list("pk", flat=True))
+            # A requirement without a roster is shared planning information.
+            # Submitted names belong only to their frozen, valid unit identity;
+            # legacy names and malformed IDs cannot establish scope.
+            shifts = [
+                shift for shift in shifts
+                if shift.submission is None or (
+                    isinstance(shift.submission, dict)
+                    and type(shift.submission.get("submittedByDivisionId")) is int
+                    and shift.submission["submittedByDivisionId"] in owners
+                )
+            ]
         return Response(
             {
                 "results": [
                     combat_service.serialize_combat_shift(s)
-                    for s in OpsCombatDutyShift.objects.all()
+                    for s in shifts
                 ]
             }
         )
@@ -4095,7 +4193,7 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._response(shift, status=201)
 
     def _actor_unit(self, request):
-        """Подразделение подающего — из живой кадровой записи актора."""
+        """Имя и ID подразделения подающего — из кадровой записи актора."""
         from organization_management.apps.employees.models import Employee
 
         user = getattr(request, "user", None)
@@ -4107,27 +4205,27 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
             else None
         )
         if employee is None:
-            return ""
+            return "", None
         try:
             staff_unit = employee.staff_unit
         except Employee.staff_unit.RelatedObjectDoesNotExist:
-            return ""
-        return (
-            staff_unit.division.name
-            if staff_unit is not None and staff_unit.division
-            else ""
-        )
+            return "", None
+        if staff_unit is None or staff_unit.division is None:
+            return "", None
+        return staff_unit.division.name, staff_unit.division_id
 
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, pk=None):
         data = request.data or {}
+        unit_name, division_id = self._actor_unit(request)
         return self._response(
             combat_service.submit_roster(
                 pk,
                 group_leader=data.get("groupLeaderEmployeeName"),
                 members=data.get("memberEmployeeNames"),
                 reserve=data.get("reserveEmployeeNames"),
-                submitted_by_unit=self._actor_unit(request),
+                submitted_by_unit=unit_name,
+                submitted_by_division_id=division_id,
             )
         )
 
@@ -4283,10 +4381,13 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "list": "dictionary.view",
         "entries": "dictionary.view",
-        "create_entry": "dictionary.manage",
-        "set_active": "dictionary.manage",
+        # Значения — отдельное право (UC-REF-001, BR13): `dictionary.manage`
+        # мутаций значений больше не даёт.
+        "create_entry": "dictionary_value.manage",
+        "set_active": "dictionary_value.manage",
         # Правка и удаление значения — одно действие на два метода.
-        "delete_entry": "dictionary.manage",
+        "delete_entry": "dictionary_value.manage",
+        "supersede_entry": "dictionary_value.manage",
     }
     # PATCH объявлен явно: у ViewSet умолчание не включает его, и правка
     # значения отбивалась 405 при заведённом маршруте (Plane №274).
@@ -4340,12 +4441,18 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @entries.mapping.post
     def create_entry(self, request, code=None):
         data = request.data or {}
+        from organization_management.apps.dictionaries.review import require_similarity_confirmation
+        require_similarity_confirmation(
+            dict_service.list_entries(code, actor_id=resolve_actor_id(request)),
+            (data.get("label"), data.get("labelKk")), data.get("confirmSimilar"),
+        )
         entry = dict_service.create_entry(
             code,
             code=data.get("code"),
             label=data.get("label"),
             description=data.get("description"),
             group_code=data.get("groupCode"),
+            label_kk=data.get("labelKk", ""),
             owner_division_id=data.get("ownerDivisionId"),
             actor=resolve_actor_id(request),
         )
@@ -4384,10 +4491,14 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
         Имя действия оставлено прежним (`delete_entry`): по нему завязана
         карта прав и записи в схеме, а оба метода всё равно требуют одного
-        права `dictionary.manage`.
+        права `dictionary_value.manage`.
 
         Код значения правка НЕ принимает — на него ссылаются по коду, и смена
         оборвала бы ссылки молча (см. сервис).
+
+        DELETE удаляет значение без связей и деактивирует значение со связями
+        (UC-REF-001): 204 на удаление, 200 `{"result": "deactivated", ...}` на
+        деактивацию.
         """
         if request.method.upper() == "PATCH":
             data = request.data or {}
@@ -4400,16 +4511,60 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
             }
             if "ownerDivisionId" in data:
                 update_kwargs["owner_division_id"] = data.get("ownerDivisionId")
+            if "labelKk" in data:
+                update_kwargs["label_kk"] = data.get("labelKk")
             entry = dict_service.update_entry(**update_kwargs)
             rows = dict_service.list_entries(
                 entry.dictionary_code, actor_id=resolve_actor_id(request)
             )
             return Response(next(row for row in rows if row["id"] == str(entry.pk)))
 
-        dict_service.delete_entry(
+        result, entry = dict_service.remove_entry(
             entry_id, actor=resolve_actor_id(request)
         )
-        return Response(status=204)
+        if result == "deleted":
+            return Response(status=204)
+        rows = dict_service.list_entries(
+            entry.dictionary_code, actor_id=resolve_actor_id(request)
+        )
+        return Response({
+            "result": "deactivated",
+            "entry": next(row for row in rows if row["id"] == str(entry.pk)),
+        })
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"entries/(?P<entry_id>[^/]+)/supersede",
+    )
+    def supersede_entry(self, request, entry_id=None):
+        """Запись-преемник взамен прежней (UC-REF-001, «Редактирование»)."""
+        data = request.data or {}
+        # Неназванное поле НАСЛЕДУЕТСЯ прежней записью (см. сервис): ключ,
+        # которого в теле нет, не передаётся вовсе, а не превращается в None.
+        optional = {
+            name: data.get(key)
+            for key, name in (
+                ("labelKk", "label_kk"),
+                ("description", "description"),
+                ("groupCode", "group_code"),
+                ("ownerDivisionId", "owner_division_id"),
+            )
+            if key in data
+        }
+        entry = dict_service.supersede_entry(
+            entry_id,
+            code=data.get("code"),
+            label=data.get("label"),
+            actor=resolve_actor_id(request),
+            **optional,
+        )
+        rows = dict_service.list_entries(
+            entry.dictionary_code, actor_id=resolve_actor_id(request)
+        )
+        return Response(
+            next(row for row in rows if row["id"] == str(entry.pk)), status=201
+        )
 
 
 class OpsAuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -4779,6 +4934,7 @@ class ServiceAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "from": params.get("from") or "",
                     "to": params.get("to") or "",
                 },
+                actor=resolve_actor_id(request),
             )
         )
 
@@ -4847,6 +5003,7 @@ class ServiceAnalyticsDrilldownViewSet(RequirePermissionMixin, viewsets.ViewSet)
                     "to": params.get("to") or "",
                     "cursor": params.get("cursor") or None,
                 },
+                actor=resolve_actor_id(request),
             )
         )
 
@@ -4888,7 +5045,7 @@ class ServiceAnalyticsAttentionViewSet(RequirePermissionMixin, viewsets.ViewSet)
                 "presetCode": params.get("preset") or None,
                 "from": params.get("from") or "",
                 "to": params.get("to") or "",
-            })
+            }, actor=resolve_actor_id(request))
         )
 
 
@@ -4897,9 +5054,10 @@ class LoadAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     полями, состояние красится только по плану, пороги из LOAD_POLICY."""
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
+    permission_bypass_map = {"list": analytics_service.PERSONAL_DETAIL_PERMISSION}
 
     def list(self, request):
-        return Response(analytics_service.load_analytics())
+        return Response(analytics_service.load_analytics(effective_permissions(request), actor=resolve_actor_id(request)))
 
 
 class OperationsAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -4918,7 +5076,7 @@ class OperationsAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "eventId": params.get("event_id"),
                 "directionId": params.get("direction_id"),
                 "postId": params.get("post_id"),
-            })
+            }, actor=resolve_actor_id(request))
         )
 
 
@@ -5212,6 +5370,7 @@ class OpsDailyDivisionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     # сервиса: коды прав раздела перечислены здесь, и второе
                     # их определение в `daily.py` разошлось бы с этим.
                     submit_permission_code=_DAILY_SUBMIT_PERMISSION,
+                    correct_permission_code=_DAILY_AMEND_PERMISSION,
                     business_date=_parse_date_param(request, "business_date"),
                 )
             }
@@ -5569,7 +5728,7 @@ class OpsFeedbackRequestsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/protected-persons/ — справочник охраняемых лиц.
 
-    Только чтение с фронта; правка — Django Admin (Admin = справочники).
+    Чтение каталога и ведение справочника уполномоченным пользователем.
 
     ПРАВО — `catalog.view`, а НЕ `event.view` (решение заказчика 28.08.2026,
     Plane №267): рядовой сотрудник видит охраняемых лиц и нормативную базу, но
@@ -5585,8 +5744,9 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # заполняет сводку или заводит бюллетень, — им лицо и нужно; своё
         # право под справочник заводить не стали: одну кнопку одного экрана
         # защищали бы иначе, чем всё вокруг неё.
-        "create": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
-        "photo": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "create": ("dictionary.manage", "gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "partial_update": "dictionary.manage",
+        "photo": ("dictionary.manage", "gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
     }
 
     def permission_override(self, request):
@@ -5626,6 +5786,15 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Проверьте поля лица.",
             )
         return Response(row, status=201)
+
+    def partial_update(self, request, pk=None):
+        try:
+            row = gvo_service.update_person(pk, request.data, actor=resolve_actor_id(request) or request.user)
+        except ValidationError as exc:
+            raise DomainError("VALIDATION_ERROR", 400, detail=exc.message_dict, message="Проверьте поля лица.")
+        if row is None:
+            raise NotFound("Охраняемое лицо не найдено.")
+        return Response(row)
 
     @action(detail=True, methods=["get", "post"], url_path="photo")
     def photo(self, request, pk=None):
@@ -5767,19 +5936,7 @@ class OpsVehiclesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response({"results": vehicles_service.armor_classes()})
 
 
-class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """/api/ops/legal-documents/ — нормативная база ОМ (только чтение).
-
-    Файлы документов система не хранит: fileUrl честно null.
-
-    Право — `catalog.view`, как у охраняемых лиц: оба экрана заказчик назвал
-    доступными рядовому сотруднику (Plane №267).
-    """
-
-    permission_map = {"list": _CATALOG_PERMISSION}
-
-    def list(self, request):
-        return Response({"results": gvo_service.list_legal_documents()})
+from organization_management.apps.ops.api.views_legal_documents import OpsLegalDocumentsViewSet  # noqa: E402,F401
 
 
 class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):

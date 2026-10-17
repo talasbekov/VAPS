@@ -1,16 +1,18 @@
 "use client";
 
-// «Дежурные силы» — кто заступил на этот объект. Источник ровно один: статусы
-// «На дежурстве», оформленные в модалке «Статусы сотрудника». Собственного
-// списка заступивших у карточки нет намеренно — второй список расходился бы
-// со статусами молча, и объект показывал бы людей, ушедших в отпуск.
+// Server roster combines legacy status placements with valid dispatcher shifts.
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { useObjectDutyForces } from "@/hooks/use-duty-assignments";
 
 export const NO_DUTY_FORCES_TEXT = "На объекте нет заступивших сотрудников";
+
+function shiftTime(value: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) }).format(new Date(value));
+}
 
 /** Сегодня в местной зоне: toISOString() отдал бы UTC и в минусовых зонах
  * показывал бы состав вчерашнего дня. */
@@ -23,11 +25,13 @@ function today(): string {
 
 interface DutyForcesSectionProps {
   objectId: string;
+  initialDate?: string;
 }
 
-export function DutyForcesSection({ objectId }: DutyForcesSectionProps) {
-  const [date, setDate] = useState(today);
-  const departments = useObjectDutyForces(objectId, date);
+export function DutyForcesSection({ objectId, initialDate }: DutyForcesSectionProps) {
+  const [date, setDate] = useState(() => initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) && !Number.isNaN(Date.parse(initialDate)) ? initialDate : today());
+  const roster = useObjectDutyForces(objectId, date);
+  const { departments } = roster;
 
   return (
     <Card className="mb-4">
@@ -36,7 +40,7 @@ export function DutyForcesSection({ objectId }: DutyForcesSectionProps) {
           <div>
             <h2 className="text-sm font-semibold">Дежурные силы</h2>
             <p className="text-xs text-muted-foreground">
-              Состав на выбранную дату по статусам «На дежурстве».
+              Назначения на выбранную дату, включая смены дежурного департамента.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -53,7 +57,22 @@ export function DutyForcesSection({ objectId }: DutyForcesSectionProps) {
           </div>
         </div>
 
-        {departments.length === 0 ? (
+        {roster.permissionsLoading ? (
+          <p role="status" className="text-xs text-muted-foreground">Проверка доступа…</p>
+        ) : !roster.allowed ? (
+          <p className="text-xs text-muted-foreground">Для просмотра состава нужен доступ к статусам сотрудников.</p>
+        ) : !date ? (
+          <p className="text-xs text-muted-foreground">Укажите дату состава.</p>
+        ) : roster.isError ? (
+          <div role="alert" className="space-y-2 text-sm">
+            <p>Не удалось загрузить дежурные силы.</p>
+            <Button type="button" variant="outline" size="sm" disabled={roster.isFetching} onClick={() => void roster.refetch()}>
+              Повторить загрузку состава
+            </Button>
+          </div>
+        ) : roster.isLoading ? (
+          <p role="status" className="text-xs text-muted-foreground">Загрузка дежурных сил…</p>
+        ) : departments.length === 0 ? (
           <p className="text-xs text-muted-foreground">{NO_DUTY_FORCES_TEXT}</p>
         ) : (
           <ul className="flex flex-col gap-3">
@@ -86,8 +105,9 @@ export function DutyForcesSection({ objectId }: DutyForcesSectionProps) {
                             {assignment.positionName !== ""
                               ? ` · ${assignment.positionName}`
                               : ""}
-                            {" · с "}
-                            {assignment.startDate} по {assignment.endDate}
+                            {assignment.shiftStart && assignment.shiftEnd
+                              ? ` · ${shiftTime(assignment.shiftStart, assignment.timeZone)} — ${shiftTime(assignment.shiftEnd, assignment.timeZone)}`
+                              : ` · с ${assignment.startDate} по ${assignment.endDate}`}
                           </li>
                         ))}
                       </ul>

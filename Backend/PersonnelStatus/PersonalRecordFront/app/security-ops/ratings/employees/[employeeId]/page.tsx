@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 import { Suspense } from "react";
 
 // Карточка сотрудника при праве только на агрегат (§19.17): агрегат,
@@ -177,19 +179,7 @@ function RatingEmployeeDetailScreen() {
               )}
             </section>
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не показывается</h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Состав сведений" items={data.unavailableViews} />
           </>
         )}
       </div>

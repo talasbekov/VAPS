@@ -20,9 +20,6 @@ import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChief
 //   снял их с этого этапа явно («запрос сил не нужно делать на этом этапе»).
 //   Штаб получает РАСЧЁТ ПО ПОСТАМ, который сервер считает сам на завершении
 //   этапа, — см. `complete_recon`;
-// * фотографии к пунктам чек-листа и «Материалы рекогносцировки» — файлового
-//   хранилища у системы нет, приложить файл некуда. Названо строкой на экране,
-//   а не нарисовано пустой кнопкой;
 // * «Задача поста» в эталоне — выбор из кодов приказов; у нас это текст из
 //   паспорта объекта, справочника нарядов в данных нет.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +59,7 @@ import {
 } from "./useVisitObjectScope";
 import { RightGate } from "@/shared/ui/right-gate";
 import { Fact } from "./Fact";
+import { ReconMaterials } from "./ReconMaterials";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
 
@@ -251,6 +249,23 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         : sum,
     0
   );
+
+  /** Потребность в СПЕЦИАЛЬНЫХ ГРУППАХ показанного объекта — по видам,
+   *  отдельно от физнаряда (`[ОМ-РШ-08]`: группы идут сверх). Заказчик по
+   *  проходке №1142 (`[ОМ-РШ-15]`): «да, группы тоже нужны» — диалог
+   *  завершения раньше называл одно число и считал в нём только физнаряд. */
+  const groupNeedsOfVisit = useMemo(() => {
+    const byKind = new Map<string, number>();
+    for (const row of visibleRows) {
+      const kind = row.demandKindCode ?? "PHYSICAL_SQUAD";
+      if (kind === "PHYSICAL_SQUAD") continue;
+      byKind.set(kind, (byKind.get(kind) ?? 0) + (row.need || 0));
+    }
+    return byKind;
+  }, [visibleRows]);
+  const groupNeedTotal = [...groupNeedsOfVisit.values()].reduce((sum, n) => sum + n, 0);
+  const kindLabelOf = (code: string) =>
+    (participationCatalog.data ?? []).find((kind) => kind.code === code)?.label ?? code;
 
   /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
    * дописываются в хвост. */
@@ -477,6 +492,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </p>
             )}
           </div>
+          <ReconMaterials
+            eventId={event.id}
+            visitObjectId={activeVisitObject.id}
+            checklist={checklist}
+            canManage={false}
+          />
           <AssignChiefDialog
             event={event}
             visit={activeVisitObject}
@@ -674,7 +695,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                вооружение, форма одежды, примечание и мин. рейтинг — в
                раскрытии ✎: десять колонок с горизонтальным скроллом
                спецификация запрещает (`[РЕК-09]`). */
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[840px] table-fixed border-collapse text-left">
                 <thead>
                   <tr className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1022,6 +1043,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         </section>
         </fieldset>
 
+        <ReconMaterials
+          eventId={event.id}
+          visitObjectId={activeVisitObject?.id ?? null}
+          checklist={checklist}
+          canManage={canManageRecon}
+        />
+
         <FieldErrors errors={fieldErrors} />
         <StageError error={update.error} />
         <StageError error={importPosts.error} />
@@ -1046,6 +1074,11 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           <p className="text-sm">
             Потребность по объекту{activeVisitObject !== null ? ` «${activeVisitObject.objectName}»` : ""}:{" "}
             <b className="tabular-nums" data-slot="recon-need">{activeVisitObject !== null ? needOfVisit : needFromPosts}</b>{" "}
+            {groupNeedTotal > 0 && (
+              <span className="text-muted-foreground" data-slot="recon-need-groups">
+                · группы <b className="tabular-nums text-foreground">{groupNeedTotal}</b>{" "}
+              </span>
+            )}
             <span className="text-muted-foreground">
               →{" "}
               {needOfVisit !== needFromPosts && activeVisitObject !== null && (
@@ -1121,9 +1154,19 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                   мероприятию. Потребность показанного объекта названа ниже,
                   когда она отличается, — чтобы разница не выглядела опечаткой. */}
               <DialogTitle>
-                Завершить рекогносцировку объекта с потребностью {needOfVisit} сотрудников?
+                Завершить рекогносцировку объекта с потребностью: физнаряд {needOfVisit}
+                {groupNeedTotal > 0 ? `, группы ${groupNeedTotal}` : ""}?
               </DialogTitle>
               <DialogDescription>
+                {groupNeedTotal > 0 && (
+                  <span data-slot="recon-confirm-groups">
+                    Группы сверх физнаряда:{" "}
+                    {[...groupNeedsOfVisit.entries()]
+                      .map(([code, need]) => `${kindLabelOf(code)} — ${need}`)
+                      .join(", ")}
+                    .{" "}
+                  </span>
+                )}
                 Потребность объекта зафиксируется, и он перейдёт к расстановке.
                 {activeVisitObject !== null && needOfVisit !== needFromPosts && (
                   <>

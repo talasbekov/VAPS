@@ -496,4 +496,3 @@ def test_a_numeric_login_does_not_pull_another_accounts_rows_into_the_feed():
     found = {row.pk for row in OpsAuditLogSelector.list(actor_user_id=str(owner.pk))}
     assert own.pk in found
     assert alien.pk not in found, "лента владельца с цифровым логином показала чужие строки"
-

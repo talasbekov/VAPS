@@ -157,11 +157,8 @@ def test_the_period_of_a_member_is_the_acting_fact(catalog):
     assert (only.date_start, only.date_end) == (date(2026, 8, 1), date(2026, 8, 20))
 
 
-def test_equal_starts_are_broken_by_the_end_date(catalog):
-    """Без тай-брейка документ зависел бы от порядка строк снимка.
-
-    Дважды подряд он выходил бы разным, и сличить две копии стало бы нельзя.
-    """
+def test_equal_starts_follow_the_canonical_winning_row(catalog):
+    """Period follows the same winner as the daily expense, in frozen order."""
     rows = [
         fact(1, "VACATION", start=date(2026, 8, 1), end=date(2026, 8, 30)),
         fact(1, "VACATION", start=date(2026, 8, 1), end=date(2026, 8, 6)),
@@ -171,11 +168,9 @@ def test_equal_starts_are_broken_by_the_end_date(catalog):
         {"roster": [member(1)], "rows": list(reversed(rows))}, catalog
     )
 
-    assert direct.rows[0].cells["VACATION"].members[0].date_end == date(2026, 8, 6)
-    assert (
-        direct.rows[0].cells["VACATION"].members
-        == reversed_order.rows[0].cells["VACATION"].members
-    )
+    assert direct.rows[0].cells["VACATION"].members[0].date_end == date(2026, 8, 30)
+    assert reversed_order.rows[0].cells["VACATION"].members[0].date_end == date(2026, 8, 6)
+    assert direct.rows[0].personnel[0].date_end == date(2026, 8, 30)
 
 
 # ── Сходимость с числами ─────────────────────────────────────────────────

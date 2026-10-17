@@ -27,7 +27,7 @@
 //     своё число дней.
 // Все фильтры и поиск живут в URL — состояние экрана переживает перезагрузку
 // и делится ссылкой.
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -85,6 +85,8 @@ import type {
   SecurityObject,
 } from "@/entities/security-object";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
+import type { OpsApiFailure } from "@/lib/ops-errors";
 
 /**
  * KPI-полоса прототипа. Каждая плитка — не только число, но и фильтр: клик
@@ -294,7 +296,6 @@ function SecurityObjectsScreen() {
   // История открывается по кнопке строки и грузится только тогда: список
   // закрытых ОМ нужен по запросу, а не всем строкам реестра сразу.
   const [historyFor, setHistoryFor] = useState<SecurityObject | null>(null);
-  const historyQuery = useObjectEventHistory(historyFor?.id ?? null);
 
   const search = searchParams.get("search") ?? "";
   const rawTab = searchParams.get("tab") ?? "";
@@ -310,7 +311,14 @@ function SecurityObjectsScreen() {
   const view: ViewMode =
     rawView in VIEW_MODES ? (rawView as ViewMode) : DEFAULT_VIEW;
 
-  const query = useSecurityObjects();
+  const query = useSecurityObjects({
+    enabled: !permissionsLoading && hasPermission(MODULE_PERMISSION["/security-ops/objects"]),
+  });
+  const registryData = query.data;
+  const catalogAvailable = !permissionsLoading && hasPermission(MODULE_PERMISSION["/security-ops/objects"]) &&
+    query.data !== undefined && !query.readAccessBlocked;
+  const historyQuery = useObjectEventHistory(catalogAvailable ? historyFor?.id ?? null : null);
+  useEffect(() => { if (!catalogAvailable) setHistoryFor(null); }, [catalogAvailable]);
 
   const freshnessById = useMemo(() => {
     const map = new Map<string, PassportFreshness>();
@@ -422,7 +430,7 @@ function SecurityObjectsScreen() {
           description="Реестр охраняемых объектов, их паспортов, секторов, постов и истории публикаций"
         />
 
-        {query.data !== undefined && (
+        {registryData !== undefined && (
           <div
             role="group"
             aria-label="Раздел реестра"
@@ -430,7 +438,7 @@ function SecurityObjectsScreen() {
           >
             <TabButton
               label="Все объекты"
-              count={query.data.kpi.total}
+              count={registryData.kpi.total}
               active={tab === ALL_TABS}
               onClick={() => setParam("tab", ALL_TABS, ALL_TABS)}
             />
@@ -446,11 +454,11 @@ function SecurityObjectsScreen() {
           </div>
         )}
 
-        {query.data !== undefined && (
+        {registryData !== undefined && (
           <section aria-label="Показатели реестра">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               {KPI_TILES.map((tile) => {
-                const value = query.data.kpi[tile.kpi];
+                const value = registryData.kpi[tile.kpi];
                 const active =
                   tile.param !== null &&
                   (searchParams.get(tile.param.name) ?? ANY) === tile.param.value;
@@ -594,8 +602,10 @@ function SecurityObjectsScreen() {
           <ObjectsRegistry
             backSuffix={backSuffix}
             view={view}
-            isLoading={query.isLoading}
-            isError={query.isError}
+            isLoading={permissionsLoading || query.isLoading}
+            error={query.error}
+            isRetrying={query.isFetching}
+            onRetry={() => void query.refetch()}
             objects={filtered}
             freshnessById={freshnessById}
             onHistory={setHistoryFor}
@@ -603,7 +613,7 @@ function SecurityObjectsScreen() {
         </div>
 
       <EventHistoryDialog
-        open={historyFor !== null}
+        open={catalogAvailable && historyFor !== null}
         onClose={() => setHistoryFor(null)}
         subject={historyFor === null ? "" : `${historyFor.code} · ${historyFor.name}`}
         relatedLabel="Охраняемые лица, посещавшие объект в этом мероприятии"
@@ -612,6 +622,8 @@ function SecurityObjectsScreen() {
         relatedEmpty="Охраняемые лица у этого объекта не названы"
         isLoading={historyQuery.isLoading}
         isError={historyQuery.isError}
+        onRetry={() => { void historyQuery.refetch(); }}
+        isRetrying={historyQuery.isFetching}
         rows={(historyQuery.data?.results ?? []).map((row) => ({
           eventId: row.eventId,
           code: row.code,
@@ -695,7 +707,9 @@ function ObjectsRegistry({
   backSuffix,
   view,
   isLoading,
-  isError,
+  error,
+  isRetrying,
+  onRetry,
   objects,
   freshnessById,
   onHistory,
@@ -704,7 +718,9 @@ function ObjectsRegistry({
   backSuffix: string;
   view: ViewMode;
   isLoading: boolean;
-  isError: boolean;
+  error: OpsApiFailure | null;
+  isRetrying: boolean;
+  onRetry: () => void;
   objects: SecurityObject[];
   freshnessById: Map<string, PassportFreshness>;
   onHistory: (object: SecurityObject) => void;
@@ -718,11 +734,20 @@ function ObjectsRegistry({
       </Card>
     );
   }
-  if (isError) {
+  if (error !== null) {
+    const description = error.kind === "business_rule" &&
+      error.errorCode === "VALIDATION_ERROR" && Array.isArray(error.details.policy)
+      ? "Политика актуальности паспорта не настроена. Обратитесь к администратору."
+      : undefined;
     return (
       <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive-ink">
-          Не удалось загрузить реестр объектов. Попробуйте обновить страницу.
+        <CardContent className="p-9">
+          <LoadFailure
+            what="реестр объектов"
+            description={description}
+            onRetry={onRetry}
+            isRetrying={isRetrying}
+          />
         </CardContent>
       </Card>
     );

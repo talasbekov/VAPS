@@ -23,6 +23,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { LoadFailure } from "@/components/load-failure";
 import {
   useAnalyticsDrilldown,
   useAnalyticsPresets,
@@ -64,6 +65,7 @@ import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { dutyWorkspaceHref } from "@/features/duty-register/model/workspace";
 import { DIVISIONS, ruPlural } from "@/lib/ru-plural";
 import {
   Table,
@@ -110,40 +112,22 @@ const COMPLETENESS_LABEL: Record<string, string> = {
   UNKNOWN: "Полнота данных неизвестна",
 };
 
-/** Блоки прототипа, которым источника нет. Список статический намеренно: это
- * не данные сервера, а решение переноса — почему блок не нарисован. Причины,
- * которые знает сам сервер (недоступные показатели, закрытые блоки шапки,
- * неработающие детекторы), печатаются рядом из его ответов. */
+/** Practical reading notes; calculation-specific limitations come from the API. */
 const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
   {
-    title: "«Доступны для службы» и «Временно недоступны»",
+    title: "Готовность к службе",
     reason:
-      "Расход раскладывает личный состав по статусам, но не делит статусы на доступные и недоступные — такого признака в справочнике нет. Провести черту на экране значило бы завести вторую классификацию рядом с кадровой, и она разошлась бы с ней при первом же новом статусе.",
-  },
-  {
-    title: "Фильтры по подразделению, уровню детализации и статусу",
-    reason:
-      "Область видимости сужает выборку сам сервер, а уровней детализации у расхода нет: он отдаёт подразделения одним уровнем. Фильтр по статусу пересчитал бы показатели на клиенте — это уже вторая методика рядом с расходом.",
+      "Численность показана по кадровым статусам. Автоматическая оценка пригодности к службе не рассчитывается.",
   },
   {
     title: "Прогноз доступности на 7 дней",
     reason:
-      "Прогноза не считает никто: расход существует только за прошедшие дни и сегодня, а плановые статусы будущего в него не складываются. Нарисованный тренд был бы выдумкой с видом измерения.",
-  },
-  {
-    title: "Ночные часы, замены и «поверх отдыха» в блоке нагрузки",
-    reason:
-      "Их называет сам сервер аналитики нагрузки (ниже, в её собственном списке недоступного): границы дня и ночи в модели нет, отдельных read model отдыха и замен — тоже.",
-  },
-  {
-    title: "«Средняя нагрузка» и «Обновление» в таблице подразделений",
-    reason:
-      "Нагрузку считает аналитика §22.9 по своей политике из «Настроек» и в разрезе смен, а не подразделений расхода; дисциплину обновления показывает светофор выше. Оба числа уже есть на экране — в своих блоках и по своим методикам.",
+      "Прогноз не рассчитывается. Запланированные периоды доступны в «Статусах сотрудников».",
   },
   {
     title: "Экспорт дэшборда (PDF, XLSX, изображение)",
     reason:
-      "Сервер сам объявляет выгрузку из шапки недоступной (см. выше). Расход выгружается со своего экрана, где у файла есть подразделение, дата и формат.",
+      "Ежедневный расход выгружается со своего экрана. Выгрузка всего аналитического экрана пока недоступна.",
   },
 ];
 
@@ -294,8 +278,11 @@ function ServiceAnalyticsScreen() {
                 className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                 disabled={refreshing}
                 onClick={() => {
-                  void snapshotQuery.refetch();
-                  void attentionQuery.refetch();
+                  void presetsQuery.refetch();
+                  if (period !== null) {
+                    void snapshotQuery.refetch();
+                    void attentionQuery.refetch();
+                  }
                 }}
               >
                 {refreshing ? "Обновление…" : "Обновить"}
@@ -304,6 +291,7 @@ function ServiceAnalyticsScreen() {
           }
         />
 
+        {(presetsQuery.isError || presetsQuery.readAccessBlocked) && <LoadFailure what="периоды аналитики" onRetry={() => void presetsQuery.refetch()} isRetrying={presetsQuery.isFetching} />}
         <nav className="flex flex-wrap gap-2" aria-label="Разделы аналитики">
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
             Аналитика службы
@@ -468,13 +456,22 @@ function ServiceAnalyticsScreen() {
 
         {snapshot !== undefined && (
           <>
+            <section aria-label="Источники показателей" className="rounded-xl border bg-card p-4 text-sm">
+              <h2 id="duty-plan-metrics-title" className="mb-2 font-semibold">Показатели месячного плана дежурств</h2>
+              <p>Личный состав и статусы — из ежедневного расхода. Смены, конфликты и часы — по месячному плану дежурств.</p>
+              <p className="mt-1 text-muted-foreground">Наряды из статусов, отдельные почасовые назначения и ручные записи в эти показатели не входят. Их состав и отметки исполнения смотрите по ссылкам ниже.</p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+                <Link className="font-medium text-primary-ink underline" href={dutyWorkspaceHref('roster', new URLSearchParams({ date: snapshot.businessDate }))}>Открыть состав на сегодня</Link>
+                <Link className="font-medium text-primary-ink underline" href={dutyWorkspaceHref('records', new URLSearchParams({ from: snapshot.period.from, to: snapshot.period.to }))}>Журнал за выбранный период</Link>
+              </div>
+            </section>
             {/* Одна причина на ВСЕ карточки, а не частокол у каждой (№801;
                 ревью №825 по №912): `RightGate` внутри цикла без `AccessHints`
                 печатал бы одинаковую фразу N раз. */}
             <AccessHints
               reasons={[snapshot.drilldownAllowed ? null : snapshot.drilldownDeniedReason]}
             >
-            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <section aria-labelledby="duty-plan-metrics-title" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {snapshot.data.metrics.map((metric) => (
                 <MetricCard
                   key={metric.metricCode}
@@ -545,12 +542,14 @@ function ServiceAnalyticsScreen() {
                         type="button"
                         className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                         disabled={drilldownQuery.data.data.nextCursor === null}
-                        onClick={() =>
+                        onClick={() => {
+                          const nextCursor = drilldownQuery.data?.data.nextCursor;
+                          if (nextCursor == null || drilldownQuery.isError) return;
                           setOpened({
                             ...active,
-                            cursor: drilldownQuery.data.data.nextCursor,
-                          })
-                        }
+                            cursor: nextCursor,
+                          });
+                        }}
                       >
                         Следующая страница
                       </button>
@@ -609,9 +608,9 @@ function ServiceAnalyticsScreen() {
               )}
             </section>
 
-            <section className="rounded-xl border border-dashed bg-muted/30 p-4">
-              <h2 className="mb-2 text-sm font-semibold">Чего в этом снимке нет</h2>
-              <ul className="flex flex-col gap-2">
+            <details className="rounded-xl border border-dashed bg-muted/30 p-4">
+              <summary className="cursor-pointer text-sm font-semibold">Источники и ограничения расчёта</summary>
+              <ul className="mt-3 flex flex-col gap-2">
                 {[
                   ...snapshot.data.unavailableMetrics,
                   ...snapshot.unavailableHeaderBlocks,
@@ -635,7 +634,7 @@ function ServiceAnalyticsScreen() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </details>
           </>
         )}
       </div>
@@ -783,10 +782,13 @@ function LoadSection() {
           </span>
         )}
       </div>
+      {view.personalDetailSuppressed && <p className="mb-3 rounded-md border bg-muted/30 p-3 text-sm" role="status">
+        {view.personalDetailReason || 'Персональная нагрузка показана только в пределах отдельного права доступа к сотрудникам.'}
+      </p>}
       {view.units.length === 0 && view.employees.length === 0 ? (
         <p className="text-xs text-muted-foreground">Смен в окне расчёта нет.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className={`grid grid-cols-1 gap-3${view.employees.length ? ' lg:grid-cols-2' : ''}`}>
           <Table>
             <TableCaption className="mb-1 mt-0 text-left text-[11px] font-semibold text-muted-foreground">
               По подразделениям
@@ -816,7 +818,7 @@ function LoadSection() {
               ))}
             </TableBody>
           </Table>
-          <Table>
+          {view.employees.length > 0 && <Table>
             <TableCaption className="mb-1 mt-0 text-left text-[11px] font-semibold text-muted-foreground">
               По сотрудникам
             </TableCaption>
@@ -844,7 +846,7 @@ function LoadSection() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table>}
         </div>
       )}
       {view.unlinkedShiftsCount > 0 && (

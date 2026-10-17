@@ -1,17 +1,21 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Отчётный реестр службы (§22.18-22.25, §20.32): запуск отчёта, состояния
 // работы, метаданные артефакта и скачивание. Экран НИЧЕГО не формирует сам:
 // выборка строк, маскирование и сборка файла живут на сервере (§22.24), сюда
 // приходят метаданные; содержимое появляется в памяти вкладки ровно на время
 // сохранения файла.
 import { useMemo, useState } from "react";
-import { FileSpreadsheet, FileText, Info, ScrollText } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { FileSpreadsheet, FileText, ScrollText } from "lucide-react";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { ReportSectionCard } from "@/components/reports/report-section-card";
+import { ReportNavigation } from "@/components/reports/report-navigation";
 import {
   useCreateReportJob,
   useDownloadArtifact,
@@ -52,11 +56,12 @@ const JOB_STATE_CLASS: Record<ReportJobState, string> = {
 };
 
 export default function ServiceReportsPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const queryClient = useQueryClient();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
   const typesQuery = useReportTypes();
   const jobsQuery = useReportJobs();
-  const createJob = useCreateReportJob();
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content));
+  const createJob = useCreateReportJob([typesQuery.readKey, jobsQuery.readKey]);
+  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobsQuery.readKey);
 
   // Документы ОМ (Plane №159, шаг ПД-3). Список видов приходит С СЕРВЕРА:
   // свой список на экране разошёлся бы с реестром сборщиков и предложил бы
@@ -77,7 +82,7 @@ export default function ServiceReportsPage() {
   const renderDocument = useRenderEventDocument((file) => {
     saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
     setDocumentSaved(file.fileName);
-  });
+  }, documentKinds.readKey);
   const chosenKind =
     documentKinds.data?.results.find((row) => row.kind === documentKind) ?? null;
   const needsAsOf = chosenKind?.needsAsOf === true;
@@ -85,7 +90,7 @@ export default function ServiceReportsPage() {
   // выпусков нет, и список ни о чём не говорил бы.
   const bulletinIssues = useBulletinIssues(needsAsOf);
   const [issued, setIssued] = useState<string | null>(null);
-  const issueBulletin = useIssueBulletin((issue) => setIssued(issue.fileName));
+  const issueBulletin = useIssueBulletin((issue) => setIssued(issue.fileName), [documentKinds.readKey, bulletinIssues.readKey]);
   // Какую СТРОКУ скачиваем (Plane №627): `isPending` у мутации один на весь
   // список, и по нему гасить кнопки нельзя — гаснут все сразу, и какая строка
   // занята, не видно. Хук про свои переменные наружу не рассказывает, поэтому
@@ -94,7 +99,7 @@ export default function ServiceReportsPage() {
   const issueFile = useBulletinIssueFile((file) => {
     saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
     setDocumentSaved(file.fileName);
-  });
+  }, bulletinIssues.readKey);
   const busyIssueId = issueFile.isPending ? downloadingIssueId : null;
   // Кнопка выключается ровно тогда, когда собрать НЕЛЬЗЯ, и причина
   // называется словами рядом — выключенная кнопка без объяснения оставляет
@@ -110,7 +115,7 @@ export default function ServiceReportsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sensitive, setSensitive] = useState(false);
-  const [attempt, setAttempt] = useState(1);
+  const [attempts, setAttempts] = useState<Record<string, number>>({});
 
   const artifactsByJob = useMemo(() => {
     const map = new Map<string, ReportArtifactSummary>();
@@ -119,23 +124,35 @@ export default function ServiceReportsPage() {
     return map;
   }, [jobsQuery.data]);
 
-  function submit(): void {
-    if (reportType === null) return;
-    createJob.mutate({
+  async function submit(): Promise<void> {
+    if (reportType === null || typesQuery.canAct === false || jobsQuery.canAct === false || createJob.isPending || permissionsLoading || permissionsError || !hasPermission(MODULE_PERMISSION["/security-ops/service-reports"])) return;
+    const fingerprint = `${reportType.reportTypeCode}:${from}:${to}:${sensitive ? "S" : "N"}`;
+    const attempt = attempts[fingerprint] ?? 1;
+    try {
+      await createJob.mutateAsync({
       reportTypeCode: reportType.reportTypeCode,
       format: "CSV",
       from,
       to,
       sensitive,
-      // §22.21: ключ определяется ПАРАМЕТРАМИ запроса — повторный клик по той
-      // же форме не создаёт вторую работу; attempt растёт после запуска, и
-      // осознанный повтор тех же параметров остаётся возможным.
-      idempotencyKey: `${reportType.reportTypeCode}:${from}:${to}:${sensitive ? "S" : "N"}:${attempt}`,
-    });
-    setAttempt((value) => value + 1);
+      // Advance only the acknowledged parameter set. Switching to another
+      // report must preserve a pending retry after a lost response.
+      idempotencyKey: `${fingerprint}:${attempt}`,
+      });
+      setAttempts((value) => ({ ...value, [fingerprint]: attempt + 1 }));
+    } catch {
+      // A lost response may still have created the job. Retry with the same
+      // key until the server acknowledges it; the mutation displays its error.
+    }
   }
 
-  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/service-reports"])) {
+  if (permissionsError) {
+    return <DashboardLayout><LoadFailure what="права доступа к отчётам" onRetry={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })} /></DashboardLayout>;
+  }
+  if (permissionsLoading) {
+    return <DashboardLayout><p role="status">Проверяем доступ к отчётам…</p></DashboardLayout>;
+  }
+  if (!hasPermission(MODULE_PERMISSION["/security-ops/service-reports"])) {
     return <OpsAccessDenied what="служебных отчётов" />;
   }
 
@@ -143,10 +160,12 @@ export default function ServiceReportsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
-          title="Отчёты по ОМ"
-          description="Единый каталог документов ОМ: асинхронное формирование, история и выгрузка в PDF."
+          eyebrow="Отчёты"
+          title="Дежурства и документы ОМ"
+          description="Смены дежурств за период берутся из журнала смен. Документы ОМ формируются по данным выбранного мероприятия."
         />
+
+        <ReportNavigation current="service" />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
@@ -163,7 +182,7 @@ export default function ServiceReportsPage() {
         {typesQuery.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка…</p>
         )}
-        {typesQuery.isError && (
+        {(typesQuery.isError || typesQuery.readAccessBlocked) && (
           <LoadFailure
             what="типы отчётов"
             onRetry={() => void typesQuery.refetch()}
@@ -208,14 +227,16 @@ export default function ServiceReportsPage() {
                   disabled={!typesQuery.data.canExportSensitive}
                   onChange={(event) => setSensitive(event.target.checked)}
                 />
-                Включить скрытые поля (sensitive export)
+                Включить скрытые поля
               </label>
               <button
                 type="button"
                 className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 onClick={submit}
+                aria-busy={createJob.isPending}
                 disabled={
                   createJob.isPending ||
+                  typesQuery.canAct === false || jobsQuery.canAct === false ||
                   from === "" ||
                   to === "" ||
                   // Недоступность типа решил СЕРВЕР (§22.5) — экран её не
@@ -223,15 +244,13 @@ export default function ServiceReportsPage() {
                   reportType.unavailableReason !== null
                 }
               >
-                Сформировать отчёт
+                {createJob.isPending ? "Запускаем формирование…" : "Сформировать отчёт"}
               </button>
             </div>
 
             {!typesQuery.data.canExportSensitive && (
               <p className="mt-2 text-xs text-muted-foreground">
-                Sensitive export недоступен: нужно отдельное право выгрузки
-                скрытых полей (ops.report.export_sensitive) — право формировать
-                отчёт его не включает (§20.32).
+                Скрытые поля доступны только пользователям с отдельным правом выгрузки.
               </p>
             )}
             {reportType.unavailableReason !== null ? (
@@ -240,14 +259,12 @@ export default function ServiceReportsPage() {
               </p>
             ) : (
               <p className="mt-2 text-xs text-muted-foreground">
-                Период — не длиннее {reportType.maxPeriodDays} дней (значение
-                приходит из политики «Настроек», а не задано в форме). Артефакт
-                хранится {typesQuery.data.retentionPolicy.retentionDays} дней
-                (редакция политики {typesQuery.data.retentionPolicy.policyVersion}).
+                Период — до {reportType.maxPeriodDays} дней. Готовый файл
+                хранится {typesQuery.data.retentionPolicy.retentionDays} дней.
               </p>
             )}
             {createJob.error !== null && (
-              <p className="mt-2 text-xs text-destructive-ink">
+              <p role="alert" className="mt-2 text-xs text-destructive-ink">
                 {createJob.error.message}
               </p>
             )}
@@ -264,9 +281,11 @@ export default function ServiceReportsPage() {
           aria-label="Выгрузка документов ОМ"
           icon={FileText}
           title="Документы по мероприятию"
-          description="Готовый файл по форме документа в PDF — для печати и отправки. Собирается сразу, в очередь работ не попадает."
+          description="Скачивание файла по текущим данным для печати или отправки. Для сохранения неизменного среза бюллетеня создайте выпуск ниже."
         >
-          {documentKinds.isPending ? (
+          {!hasPermission("event.view") ? <p className="text-sm text-muted-foreground">Выгрузка документов доступна с правом просмотра мероприятий.</p> : documentKinds.isError || documentKinds.readAccessBlocked ? (
+            <LoadFailure what="виды документов" onRetry={() => void documentKinds.refetch()} isRetrying={documentKinds.isFetching} />
+          ) : documentKinds.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка видов документов…</p>
           ) : documentKinds.data === undefined ? (
             <p className="text-sm text-muted-foreground">
@@ -357,9 +376,10 @@ export default function ServiceReportsPage() {
               <button
                 type="button"
                 className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={documentBlocker !== null || renderDocument.isPending}
+                disabled={documentBlocker !== null || renderDocument.isPending || documentKinds.canAct === false}
                 aria-busy={renderDocument.isPending}
                 onClick={() => {
+                  if (documentKinds.canAct === false) return;
                   setDocumentSaved(null);
                   renderDocument.mutate({
                     kind: documentKind,
@@ -397,7 +417,7 @@ export default function ServiceReportsPage() {
           )}
           {documentSaved !== null && (
             <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
-              Сохранён файл «{documentSaved}».
+              Файл «{documentSaved}» передан браузеру для скачивания.
             </p>
           )}
           {needsAsOf && (
@@ -413,16 +433,16 @@ export default function ServiceReportsPage() {
                 <div>
                   <p className="text-xs font-semibold">Выпуски бюллетеня</p>
                   <p className="text-[11px] text-muted-foreground">
-                    Выпуск замораживает строки и PDF на выбранный срез — это то, что
-                    ушло адресатам
+                    Выпуск сохраняет строки и PDF на выбранный срез. Скачайте сохранённый выпуск для передачи адресатам.
                   </p>
                 </div>
                 <button
                   type="button"
                   className="inline-flex h-8 items-center rounded-md border bg-background px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={documentAsOf.trim() === "" || issueBulletin.isPending}
+                  disabled={documentAsOf.trim() === "" || issueBulletin.isPending || documentKinds.canAct === false || bulletinIssues.canAct === false || !hasPermission("event.bulletin")}
                   aria-busy={issueBulletin.isPending}
                   onClick={() => {
+                    if (documentKinds.canAct === false || bulletinIssues.canAct === false || !hasPermission("event.bulletin")) return;
                     setIssued(null);
                     issueBulletin.mutate({ asOf: documentAsOf });
                   }}
@@ -485,9 +505,10 @@ export default function ServiceReportsPage() {
                         // Гаснет ТОЛЬКО нажатая строка (Plane №627): конвертация
                         // идёт секунды, и погашенный целиком список читается как
                         // замёрзший экран.
-                        disabled={busyIssueId === issue.id}
+                        disabled={busyIssueId === issue.id || bulletinIssues.canAct === false}
                         aria-busy={busyIssueId === issue.id}
                         onClick={() => {
+                          if (bulletinIssues.canAct === false) return;
                           setDocumentSaved(null);
                           setDownloadingIssueId(issue.id);
                           issueFile.mutate({ id: issue.id });
@@ -512,7 +533,11 @@ export default function ServiceReportsPage() {
           )}
         </ReportSectionCard>
 
-        <ReportSectionCard icon={ScrollText} title="Работы и артефакты">
+        <ReportSectionCard icon={ScrollText} title="Готовность отчётов и файлы">
+          {jobsQuery.isError && jobsQuery.data !== undefined && <>
+            <LoadFailure what="список отчётов" onRetry={() => void jobsQuery.refetch()} isRetrying={jobsQuery.isFetching} />
+            <p role="status" className="mb-3 text-sm text-muted-foreground">Показаны ранее загруженные данные. Действия доступны после успешного обновления.</p>
+          </>}
           {jobsQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
           ) : jobsQuery.data === undefined ? (
@@ -587,13 +612,11 @@ export default function ServiceReportsPage() {
                           <button
                             type="button"
                             className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                            disabled={!artifact.available || download.isPending}
+                            disabled={!artifact.available || download.isPending || jobsQuery.canAct === false}
                             title={
                               artifact.available ? undefined : "Срок хранения истёк"
                             }
-                            onClick={() =>
-                              download.mutate({ artifactId: artifact.artifactId })
-                            }
+                            onClick={() => { if (jobsQuery.canAct !== false) download.mutate({ artifactId: artifact.artifactId }); }}
                           >
                             Скачать CSV
                           </button>
@@ -613,24 +636,7 @@ export default function ServiceReportsPage() {
         </ReportSectionCard>
 
         {typesQuery.data !== undefined && (
-          <ReportSectionCard
-            className="border-dashed bg-muted/30"
-            icon={Info}
-            title="Что отчёт не содержит и почему"
-          >
-            <ul className="flex flex-col gap-2">
-              {[
-                ...typesQuery.data.maskedFields,
-                ...typesQuery.data.unavailableFormats,
-                ...typesQuery.data.unavailableArtifactFields,
-              ].map((item) => (
-                <li key={item.code} className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">{item.label}</span>{" "}
-                  — {item.reason}
-                </li>
-              ))}
-            </ul>
-          </ReportSectionCard>
+          <CapabilityNotes title="Состав и форматы отчёта за период" items={[...typesQuery.data.maskedFields, ...typesQuery.data.unavailableFormats, ...typesQuery.data.unavailableArtifactFields]} />
         )}
       </div>
     </DashboardLayout>

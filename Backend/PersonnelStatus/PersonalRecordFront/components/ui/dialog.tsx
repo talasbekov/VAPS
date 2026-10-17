@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { OpsProtectedPortalContext, OpsProtectedInteractionContext } from "@/lib/ops-permission-suspension"
 
 function Dialog({
   ...props
@@ -19,9 +20,11 @@ function DialogTrigger({
 }
 
 function DialogPortal({
+  container,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  const protectedContainer = React.useContext(OpsProtectedPortalContext)
+  return <DialogPrimitive.Portal data-slot="dialog-portal" container={container ?? protectedContainer} {...props} />
 }
 
 function DialogClose({
@@ -50,10 +53,13 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onEscapeKeyDown,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const interactionBlocked = React.useContext(OpsProtectedInteractionContext)
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -76,6 +82,8 @@ function DialogContent({
           className
         )}
         {...props}
+        onEscapeKeyDown={event => { if (interactionBlocked()) event.preventDefault(); else onEscapeKeyDown?.(event) }}
+        onInteractOutside={event => { if (interactionBlocked()) event.preventDefault(); else onInteractOutside?.(event) }}
       >
         {children}
         {showCloseButton && (

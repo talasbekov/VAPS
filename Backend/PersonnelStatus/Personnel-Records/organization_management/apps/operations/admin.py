@@ -45,7 +45,85 @@ from organization_management.apps.operations.models_status import (
     OpsStatusParticipation,
 )
 from organization_management.apps.operations.models_vehicle import OpsEventVehicle
+from organization_management.apps.operations.models_recon_material import OpsReconMaterial
+from organization_management.apps.operations.models_legal import OpsLegalDocumentFile
 from organization_management.apps.ops.security_events import new_recon_checklist
+from . import admin_dictionaries  # noqa: F401 — register the reference-aware editor
+from organization_management.apps.operations.models_duty_log import OpsDutyCreationClosure, OpsDutyLogEntry, OpsDutyRecordSupplement
+
+
+@admin.register(OpsDutyLogEntry, OpsDutyRecordSupplement)
+class OpsDutyRegisterHistoryAdmin(admin.ModelAdmin):
+    """Inspect journal facts while mutations retain their service lifecycle."""
+    search_fields = ("employee_name", "service_duty_label")
+    list_filter = ("created_at", "actual_start", "actual_end")
+    actions = None
+
+    def get_list_display(self, request):
+        identity = ("id",) if self.model is OpsDutyLogEntry else ("source_type", "source_id")
+        return identity + ("employee_name", "service_duty_label", "acknowledged_at", "actual_start", "actual_end")
+
+    def get_readonly_fields(self, request, obj=None):
+        return tuple(field.name for field in self.model._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OpsDutyCreationClosure)
+class OpsDutyCreationClosureAdmin(OpsDutyRegisterHistoryAdmin):
+    search_fields = ("created_by",)
+    list_filter = ("created_at",)
+
+    def get_list_display(self, request):
+        return ("client_request_id", "created_by", "created_at")
+
+
+@admin.register(OpsReconMaterial)
+class OpsReconMaterialAdmin(admin.ModelAdmin):
+    """Inspect working-material metadata without another private-file mutation path."""
+
+    list_display = ("original_name", "event", "visit_object", "content_type", "size", "created_at")
+    search_fields = ("original_name", "checklist_item_id")
+    list_filter = ("created_at",)
+    fields = ("id", "event", "visit_object", "checklist_item_id", "original_name", "content_type", "size", "sha256", "created_by", "created_at", "updated_at")
+    readonly_fields = fields
+    actions = None
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OpsLegalDocumentFile)
+class OpsLegalDocumentFileAdmin(admin.ModelAdmin):
+    """Inspect retained file versions without a second upload/delete path."""
+    list_display = ("original_name", "document", "content_type", "size", "created_at")
+    search_fields = ("original_name", "sha256")
+    list_filter = ("created_at",)
+    fields = ("id", "document", "original_name", "content_type", "size", "sha256", "created_by", "created_at", "updated_at")
+    readonly_fields = fields
+    actions = None
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(OpsSubmissionControlSettings)
@@ -249,12 +327,19 @@ register_allowed(
         "OpsSubmissionControlSettings", "OpsPassportFreshnessPolicy",
         "OpsDutyConflictPolicy", "OpsRatingFeatureFlags", "OpsDocumentSequence",
         "OpsDivisionNotifyRecipient", "OpsApprovalRouteStep", "OpsSettingChangeEvent",
+        # Системные строки и связи, которые должны быть видны для ручной проверки.
+        "OpsE2EFixtureDateCursor", "OpsEventVehicle", "OpsPassportVersion",
+        "OpsPlacementDocumentVersion", "OpsRatingDynamicsPoint",
+        "OpsPolicySectionVersion",
+        "OpsRatingIdempotencyRecord", "OpsSecurityEventPerson",
+        "OpsStatusParticipation", "OpsWatermark",
         # Охранные мероприятия, объекты, посты, расстановка и оценки.
         "OpsSecurityEvent", "OpsSecurityEventTransition", "OpsSecurityObject",
         "OpsObjectSector", "OpsSecurityPost", "OpsSecurityEventVisitObject",
         "OpsVisitObjectDeputy", "OpsRatedParticipant", "OpsEvaluationEvent",
         "OpsEventEvaluation", "OpsEvaluationWorkItem", "OpsEvaluationCorrection",
         "OpsDutyShift", "OpsDutyMonthlyPlan", "OpsCombatDutyShift", "OpsForeignVisit",
+        "OpsDutyDispatchConfig", "OpsDutyDispatchAssignment",
         "OpsGvoSummaryPatch",
         "OpsTomorrowBlockOverride",
         # Сбор сил и расход.

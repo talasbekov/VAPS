@@ -3,7 +3,7 @@
 // Этап 8 «Проведение»: журнал штаба (инструктаж/распоряжение/инцидент),
 // замена выбывшего (атомарно: снять + назначить + запись в журнал) и
 // закрытие с обязательными итогами ВСЕХ направлений.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,7 +87,7 @@ function useConductVisitRights(
   const me = useMyEmployee();
   return conductVisitRightsOf({
     hasEventManage: access.can(EVENT_MANAGE),
-    identityResolved: me.isSuccess && me.data?.employee != null,
+    identityResolved: me.isSuccess && me.data?.employee?.is_active === true,
     myEmployeeId: me.data?.employee != null ? String(me.data.employee.id) : null,
     eventChiefEmployeeId: event.chiefEmployeeId,
     visitChiefEmployeeId: visit?.chiefEmployeeId ?? null,
@@ -137,9 +137,9 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
           gate и не должно наследовать эту причину отказа. */}
       <GlobalClosureAccessHint>
         <ClosurePanel event={event} />
+        <PostControlPanel event={event} />
+        <JournalPanel event={event} />
       </GlobalClosureAccessHint>
-      <PostControlPanel event={event} />
-      <JournalPanel event={event} />
       <ReplacementPanel event={event} />
     </div>
   );
@@ -272,6 +272,9 @@ function PostControlPanel({ event }: { event: SecurityEvent }) {
 }
 
 function JournalPanel({ event }: { event: SecurityEvent }) {
+  const access = useChainAccess();
+  const canManage = access.can(EVENT_MANAGE);
+  const submitting = useRef(false);
   const [type, setType] = useState<JournalEntryType>("INSTRUCTION");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -295,6 +298,7 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
               id="journal-type"
               className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               value={type}
+              disabled={add.isPending || !canManage}
               onChange={(e) => setType(e.target.value as JournalEntryType)}
             >
               {/* 🔴 ИНЦИДЕНТА ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №729). Эта форма шлёт
@@ -317,6 +321,7 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
             <Input
               id="journal-title"
               value={title}
+              disabled={add.isPending || !canManage}
               onChange={(e) => setTitle(e.target.value)}
             />
           </div>
@@ -325,21 +330,35 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
             <Input
               id="journal-description"
               value={description}
+              disabled={add.isPending || !canManage}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+          <RightGate reason={access.reason(EVENT_MANAGE)}>
+            {(describedBy) => (
           <Button
             type="button"
-            disabled={add.isPending}
-            onClick={() => {
+            disabled={add.isPending || !canManage || title.trim() === ""}
+            aria-describedby={describedBy}
+            onClick={async () => {
+              if (submitting.current || !canManage || title.trim() === "") return;
+              submitting.current = true;
               setFieldErrors(null);
-              add.mutate({ type, title, description });
-              setTitle("");
-              setDescription("");
+              try {
+                await add.mutateAsync({ type, title, description });
+                setTitle("");
+                setDescription("");
+              } catch {
+                // The mutation exposes the failure below; retain the draft.
+              } finally {
+                submitting.current = false;
+              }
             }}
           >
             {add.isPending ? "Запись…" : "Добавить запись"}
           </Button>
+            )}
+          </RightGate>
         </div>
         <FieldErrors errors={fieldErrors} />
         <StageError error={add.error} />
@@ -363,9 +382,46 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
   );
   const replace = useReplaceAssignment(event.id, {
     onFormError: (details) => setFieldErrors(details),
+    onEvent: () => { setAssignmentId(""); setIncomingEmployeeId(""); setReasonCode(""); },
   });
+  const access = useChainAccess();
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const me = useMyEmployee();
+  const myEmployeeId = me.isSuccess && me.data?.employee?.is_active === true
+    ? String(me.data.employee.id) : null;
 
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
+  const assignedEmployeeIds = new Set(
+    event.placementAssignments.map((assignment) => assignment.employeeId)
+  );
+  const mayReplaceOn = (postId: string): boolean => {
+    if (permissionsLoading || !["ACKNOWLEDGEMENT", "CONDUCT"].includes(event.stage)) return false;
+    if (access.can(EVENT_MANAGE)) return true;
+    if (myEmployeeId === null) return false;
+    if (event.chiefEmployeeId != null && String(event.chiefEmployeeId) === myEmployeeId) return true;
+    const post = postById.get(postId);
+    if (!post) return false;
+    const visit = post.visitObjectId
+      ? event.visitObjects.find(row => String(row.id) === String(post.visitObjectId))
+      : event.visitObjects.length === 1 ? event.visitObjects[0] : undefined;
+    return visit !== undefined && (
+      (visit.chiefEmployeeId != null && String(visit.chiefEmployeeId) === myEmployeeId) ||
+      (visit.deputies ?? []).some(deputy =>
+        String(deputy.employeeId) === myEmployeeId && deputy.canEditPlacement === true)
+    );
+  };
+  const selectedAssignment = event.placementAssignments.find(row => row.id === assignmentId);
+  const canChooseAssignment = event.placementAssignments.some(row => mayReplaceOn(row.postId));
+  const canReplaceSelected = selectedAssignment !== undefined && mayReplaceOn(selectedAssignment.postId);
+  const canReadCandidates = canReplaceSelected && hasPermission("personnel.view");
+  const canSubmit = canReadCandidates && reasonCode.trim() !== "" && incomingEmployeeId !== "" &&
+    !assignedEmployeeIds.has(incomingEmployeeId) && !replace.isPending;
+  const blockedReason = !canChooseAssignment
+    ? "Заменять сотрудника может ведущий мероприятия, старший его объекта или назначенный замещающий."
+    : !selectedAssignment ? "Выберите сотрудника, которого нужно заменить."
+      : !canReplaceSelected ? "Это назначение относится к другому объекту или уже изменилось."
+        : !hasPermission("personnel.view") ? "Для подбора замены нужно право просмотра сотрудников."
+          : null;
 
   return (
     <Card>
@@ -380,13 +436,14 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
               id="replace-assignment"
               className="h-9 min-w-56 rounded-md border border-input bg-background px-2 text-sm"
               value={assignmentId}
-              onChange={(e) => setAssignmentId(e.target.value)}
+              disabled={!canChooseAssignment || replace.isPending}
+              onChange={(e) => { setAssignmentId(e.target.value); setIncomingEmployeeId(""); replace.reset(); setFieldErrors(null); }}
             >
               <option value="">— выберите назначение —</option>
               {event.placementAssignments.map((assignment) => {
                 const post = postById.get(assignment.postId);
                 return (
-                  <option key={assignment.id} value={assignment.id}>
+                  <option key={assignment.id} value={assignment.id} disabled={!mayReplaceOn(assignment.postId)}>
                     {assignment.employeeName} ({post?.post ?? assignment.postId})
                   </option>
                 );
@@ -402,16 +459,16 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
               id="replace-reason"
               placeholder="Например: болезнь"
               value={reasonCode}
+              disabled={!canReplaceSelected || replace.isPending}
               onChange={(e) => setReasonCode(e.target.value)}
             />
           </div>
           <Button
             type="button"
             variant="outline"
-            disabled={
-              replace.isPending || assignmentId === "" || incomingEmployeeId === ""
-            }
+            disabled={!canSubmit}
             onClick={() => {
+              if (!canSubmit) return;
               setFieldErrors(null);
               replace.mutate({ assignmentId, incomingEmployeeId, reasonCode });
             }}
@@ -422,16 +479,19 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
         {/* Кем заменяем — поиск и страницы НА СЕРВЕРЕ (Plane №61). Раньше тут
             стоял `select`, набитый ВСЕМ кадровым снимком: на живой базе это
             тысячи строк одним ответом и прокрутка вместо поиска. */}
-        <div className="space-y-1">
+        {blockedReason && <p className="text-sm text-muted-foreground" role="status">{blockedReason}</p>}
+        {canReadCandidates && <fieldset disabled={replace.isPending} className="space-y-1">
           <p className="text-sm font-medium">Кем заменить</p>
           <PersonnelPicker
             value={incomingEmployeeId === "" ? null : incomingEmployeeId}
+            disabledIds={assignedEmployeeIds}
+            disabledNote="уже назначен на мероприятие"
             onPick={(id) =>
               setIncomingEmployeeId((current) => (current === id ? "" : id))
             }
             pageSize={8}
           />
-        </div>
+        </fieldset>}
         <FieldErrors errors={fieldErrors} />
         <StageError error={replace.error} />
       </CardContent>
@@ -817,8 +877,8 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                       className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
                       data-slot="close-unrated"
                     >
-                      {unrated} сотрудников без оценки. Закрыть? Неоценённые в средний балл не
-                      войдут.
+                      {unrated} сотрудников без оценки. Закрыть? Им автоматически будет
+                      поставлена оценка 7 — в реестре она помечена как поставленная системой.
                     </p>
                   )}
                 </DialogHeader>
@@ -844,13 +904,22 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                   <Button type="button" variant="outline" onClick={closeDialog}>
                     Отмена
                   </Button>
-                  <Button
-                    type="button"
-                    disabled={close.isPending}
-                    onClick={() => close.mutate({ visitObjectId: visit.id, comment })}
-                  >
-                    {close.isPending ? "Закрытие…" : "Подтвердить закрытие"}
-                  </Button>
+                  <RightGate reason={rights.reason}>
+                    {(describedBy) => (
+                      <Button
+                        type="button"
+                        disabled={close.isPending || !rights.canManage}
+                        aria-describedby={describedBy}
+                        onClick={() => {
+                          if (rights.canManage) {
+                            close.mutate({ visitObjectId: visit.id, comment });
+                          }
+                        }}
+                      >
+                        {close.isPending ? "Закрытие…" : "Подтвердить закрытие"}
+                      </Button>
+                    )}
+                  </RightGate>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -904,6 +973,10 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         )}
         <FieldErrors errors={fieldErrors} />
         <StageError error={close.error} />
+        <p className="text-xs text-muted-foreground">
+          Участникам закрываемых объектов без оценки будет поставлено 7.
+          Ручные оценки сохранятся.
+        </p>
         {/* Та же правка, что у «Закрыть объект» выше (Plane №777): подсказка
             на выключенной кнопке не показывается никогда. */}
         <div className="flex flex-wrap items-center justify-end gap-2">

@@ -25,7 +25,9 @@ import type {
   StrengthReport,
 } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
+import { loadDailyEmployees, type DailyEmployeesResponse } from "@/lib/daily-employees-batch";
 import {
+  addDaysIso,
   DAILY_EMPLOYEES_PATH,
   EVENT_PARTICIPATION_STATUS_CODES,
 } from "@/entities/daily-grid";
@@ -49,28 +51,22 @@ export interface GatheringPerson {
   /** Код активного статуса; null — статуса нет вовсе, что и есть «в строю». */
   statusCode: string | null;
   statusLabel: string | null;
+  statusSince: string | null;
+  /** Inclusive last day for Employee display; API date_end is exclusive. */
+  statusUntil: string | null;
 }
 
-interface DailyEmployeesResponse {
-  results: {
-    id: string;
-    full_name: string;
-    rank_code: string;
-    /** Подразделение строки (Plane №376): по нему общий ответ раскладывается
-     *  обратно. У старых ответов поля нет — тогда человек не раскладывается. */
-    division_id?: number;
-  }[];
-}
-
-export function useForcesGathering() {
+export function useForcesGathering(enabled = true) {
   const report = useQuery<StrengthReport>({
     queryKey: ["strength-report", "live", "today"],
     queryFn: () => apiClient.getStrengthReport({}),
+    enabled,
   });
 
   const statusTypes = useQuery<OpsStatusType[]>({
     queryKey: ["ops-status-types"],
     queryFn: () => apiClient.getOpsStatusTypes(),
+    enabled,
     // Справочник меняется в админке, а не по ходу дня.
     staleTime: 5 * 60 * 1000,
   });
@@ -90,11 +86,13 @@ export function useForcesGathering() {
     queryKey: ["ops-statuses", "on", businessDate],
     queryFn: () =>
       apiClient.getOpsStatusesOn({ businessDate: businessDate as string }),
-    enabled: businessDate !== null,
+    enabled: enabled && businessDate !== null,
   });
 
   const divisions = report.data?.rows ?? [];
   //  🔴 ОДИН ЗАПРОС НА ВСЕ ПОДРАЗДЕЛЕНИЯ, А НЕ ЗАПРОС НА КАЖДОЕ (Plane №376).
+  //  Запросы идут пакетами до 200 подразделений — это лимит API. На дереве
+  //  из 570 подразделений нужны три пакета; состав загружается целиком.
   //  Здесь стоял `useQueries` по строкам расхода: на живом дереве это 51
   //  обращение к одной и той же ручке при каждом открытии экрана
   //  «Сотрудники» (замер по прод-стенду 02.09.2026 — 74 обращения к API, из
@@ -108,12 +106,12 @@ export function useForcesGathering() {
   const peopleQuery = useQuery<DailyEmployeesResponse>({
     queryKey: ["daily-employees", "batch", divisionIds],
     queryFn: () =>
-      opsApiClient.get<DailyEmployeesResponse>(
-        `${DAILY_EMPLOYEES_PATH}?${divisionIds
-          .map((id) => `division_id=${id}`)
-          .join("&")}`
+      loadDailyEmployees(divisionIds, (ids) =>
+        opsApiClient.get<DailyEmployeesResponse>(
+          `${DAILY_EMPLOYEES_PATH}?${ids.map((id) => `division_id=${id}`).join("&")}`,
+        ),
       ),
-    enabled: divisionIds.length > 0,
+    enabled: enabled && divisionIds.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -162,6 +160,8 @@ export function useForcesGathering() {
         : divisionById.get(person.division_id);
     if (division === undefined) continue;
     const status = statusByEmployee.get(employeeId) ?? null;
+    const statusSince = status?.date_start || null;
+    const lastDay = status?.date_end ? addDaysIso(status.date_end, -1) : null;
     persons.push({
       employeeId,
       fullName: person.full_name,
@@ -169,6 +169,8 @@ export function useForcesGathering() {
       divisionId: division.division_id,
       divisionName: division.name,
       statusCode: status?.status_type_code ?? null,
+      statusSince,
+      statusUntil: statusSince && lastDay ? (lastDay < statusSince ? statusSince : lastDay) : null,
       statusLabel:
         status === null
           ? null
@@ -199,6 +201,7 @@ export function useForcesGathering() {
 
   const totals = report.data?.totals;
   return {
+    isFetching: report.isFetching || statuses.isFetching || statusTypes.isFetching || peopleQuery.isFetching,
     isPending:
       report.isPending ||
       // Пока даты нет, запрос статусов ещё не запускался: `isPending` у

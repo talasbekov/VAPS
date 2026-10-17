@@ -319,6 +319,8 @@ export interface PlacementAssignment {
   postId: string;
   employeeId: string;
   employeeName: string;
+  /** Позывной в снимке назначения; старые строки могут не содержать поле. */
+  callsign?: string;
   /** Ознакомление: null до подтверждения. */
   acknowledgedAt: string | null;
   /**
@@ -360,6 +362,8 @@ export interface PlacementAssignment {
   acknowledgementMethod?: string;
   acknowledgementBasis?: string;
   employeeHasAccount?: boolean;
+  /** Server authority for this employee, including the head's unit scope. */
+  canConfirmWithoutAccount?: boolean;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Обоснование УСИЛЕНИЯ поста сверх расчёта (Plane №414); заполнено только
@@ -559,6 +563,12 @@ export interface DocumentVersionDiff {
 export interface PersonnelSummarySnapshot {
   id: string;
   name: string;
+  /** «Фамилия Имя Отчество» и путь «департамент / управление / отдел»
+   *  (Plane №1247): по инициалам и одному отделу однофамильцы неразличимы.
+   *  Необязательны по той же причине, что и `callsign`: состав сил этих
+   *  полей не несёт. */
+  fullName?: string;
+  unitPath?: string;
   rankLabel: string;
   /** Позывной (`[МД-10]`, Plane №456); пустая строка — не вписан.
    *
@@ -1427,6 +1437,14 @@ export function securityEventForceTopUpPath(eventId: string, allocationId: strin
   return `${SECURITY_EVENTS_PATH}${eventId}/forces/allocation/${allocationId}/top-up/`;
 }
 
+/** All visit objects of one event, including objects whose demand is not published yet. */
+export interface ForceCollectionVisitObject {
+  visitObjectId: string;
+  objectId: string | null;
+  objectName: string;
+  stage: string;
+}
+
 export interface ForceCollectionRow {
   eventId: string;
   code: string;
@@ -1446,6 +1464,8 @@ export interface ForceCollectionRow {
    *  назначает штаб по отдельности. */
   eventTime: string | null;
   location: string;
+  /** Optional during rollout; an absent field does not mean zero objects. */
+  visitObjects?: ForceCollectionVisitObject[];
   stage: SecurityEventStage;
   need: number;
   allocated: number;
@@ -1471,6 +1491,8 @@ export interface ForceCollectionDetail {
   urgent: boolean;
   eventTime: string | null;
   location: string;
+  /** Includes objects still on recon; `objects` contains assignment targets only. */
+  visitObjects?: ForceCollectionVisitObject[];
   stage: SecurityEventStage;
   /** Includes completed-object demand while another object is still on RECON. */
   canCollect?: boolean;

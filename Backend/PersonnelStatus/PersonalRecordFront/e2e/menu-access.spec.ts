@@ -58,7 +58,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
   { name: 'Сбор сил на ОМ', href: '/employees' },
   { name: 'Ежедневный отчет', href: '/reports' },
   { name: 'Свод по Службе', href: '/security-ops/service-summary' },
-  { name: 'Командный центр', href: '/security-ops/command-center' },
+  { name: 'Готовность', href: '/security-ops/command-center' },
   { name: 'Аналитика службы', href: '/security-ops/analytics' },
   { name: 'Объекты и паспорта', href: '/security-ops/objects' },
   { name: 'Реестр ОМ', href: '/security-ops/events' },
@@ -75,7 +75,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
 
 /** Списки — словами заказчика из карточки №348, а не пересчётом прав. */
 const CLOSED_TO_EMPLOYEE = [
-  'Командный центр', 'Реестр ОМ', 'Транспорт ГОН', 'Аналитика ОМ',
+  'Готовность', 'Реестр ОМ', 'Транспорт ГОН', 'Аналитика ОМ',
   'Отчёты по Службе', 'Аналитика службы', 'Свод по Службе', 'Справочники', 'Администрирование',
   'Журнал изменений',
 ]
@@ -203,14 +203,23 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
 
     await serviceReports.click()
     await expect(page).toHaveURL(/\/security-ops\/service-reports\/?$/)
-    await expect(page.getByRole('heading', { name: 'Отчёты службы' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Отчёты по ОМ', exact: true })).toBeVisible()
     await page.getByLabel('Начало периода').fill('2026-09-09')
     await page.getByLabel('Конец периода').fill('2026-09-10')
     const create = page.getByRole('button', { name: 'Сформировать отчёт' })
     await expect(create).toBeEnabled()
+    const created = page.waitForResponse(response =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/ops/service-report-jobs/')
     await create.click()
-
-    const jobLink = page.getByRole('link', { name: 'Карточка работы' }).first()
+    const createdResponse = await created
+    expect(createdResponse.ok()).toBeTruthy()
+    const { reportJobId } = await createdResponse.json() as { reportJobId: string }
+    expect(reportJobId).toMatch(/^report-job-\d+$/)
+    // A reused own job may be older than other visible jobs. Open the actual
+    // create response, not the first row of shared report history.
+    const jobLink = itemByHref(page.locator('main'), `/security-ops/service-reports/${reportJobId}`)
+    await expect(jobLink).toHaveAccessibleName('Карточка работы')
     await expect(jobLink).toBeVisible({ timeout: 30_000 })
     await jobLink.click()
     await expect(page).toHaveURL(/\/security-ops\/service-reports\/report-job-/)

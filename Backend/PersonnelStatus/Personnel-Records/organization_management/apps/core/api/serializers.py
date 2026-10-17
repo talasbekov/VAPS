@@ -150,21 +150,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
 
 class PositionSerializer(serializers.ModelSerializer):
-    """Донорский контракт справочника должностей: code, name, level,
-    sort_order, is_active.
+    """Должность в контракте портала; активность берётся из модели.
 
-    Читаются напрямую `code` (заведён срезом 154a), `name` и `level` —
-    последний совпадает и по смыслу: «чем меньше число, тем выше должность».
-
-    ИСТОЧНИКА НЕТ — `sort_order` и `is_active`. Отдаются null по тому же
-    доводу, что и null-поля EmployeeSerializer (срез 154b): подставить сюда
-    похожее поле было бы хуже молчания. `sort_order` ← `level` выглядел бы
-    заданным порядком, хотя порядка в старой схеме нет вовсе, а `is_active`
-    со значением True объявил бы действующей строку, у которой признака нет.
+    sort_order остаётся null: уровень должности не является порядком показа.
     """
 
-    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
-    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
     sort_order = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField()
 
@@ -176,8 +166,8 @@ class PositionSerializer(serializers.ModelSerializer):
     def get_sort_order(self, obj: Position) -> None:
         return None
 
-    def get_is_active(self, obj: Position) -> None:
-        return None
+    def get_is_active(self, obj: Position) -> bool:
+        return obj.is_active
 
 
 class RankSerializer(serializers.ModelSerializer):
@@ -194,14 +184,12 @@ class RankSerializer(serializers.ModelSerializer):
     индексом справочника. `level` наружу под своим именем НЕ выходит — в
     контракте донора такого ключа нет.
 
-    ИСТОЧНИКА НЕТ — `category` и `is_active`. Отдаются null: подставить сюда
-    похожее поле было бы хуже молчания (см. довод у PositionSerializer).
+    Категория отсутствует в модели и остаётся null. Признак активности
+    появился в UC-REF-001 и отдаётся из той же записи, что в справочнике.
     """
 
     rank_index = serializers.IntegerField(source="level", read_only=True)
-
-    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
-    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    # Отдельной категории звания в модели нет.
     category = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField()
 
@@ -213,8 +201,8 @@ class RankSerializer(serializers.ModelSerializer):
     def get_category(self, obj: Rank) -> None:
         return None
 
-    def get_is_active(self, obj: Rank) -> None:
-        return None
+    def get_is_active(self, obj: Rank) -> bool:
+        return obj.is_active
 
 
 class StaffingSlotSerializer(serializers.ModelSerializer):

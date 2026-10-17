@@ -28,6 +28,12 @@ docs/registries/error-codes.yaml лежат коды, которых разде�
 
 # Код → допустимые HTTP-статусы.
 CODES = {
+    "PLACEMENT_MAP_UNAVAILABLE": frozenset({503}),
+    "LEGAL_DOCUMENT_STALE": frozenset({409}),
+    "LEGAL_DOCUMENT_STORAGE_FAILED": frozenset({503}),
+    "SUMMARY_SOURCE_MISSING": frozenset({409}),
+    "SERVICE_SUMMARY_ROOT_MISSING": frozenset({409}),
+    "DICTIONARY_SIMILAR_ENTRIES": frozenset({409}),
     # ── Общие ────────────────────────────────────────────────────────────
     # 400 — беда в нагрузке (пустая причина, поле неизменяемо, дата не
     # разбирается); 422 — нагрузка верна, но операция в этом состоянии
@@ -35,6 +41,9 @@ CODES = {
     "VALIDATION_ERROR": frozenset({400, 422}),
     "ENTITY_NOT_FOUND": frozenset({404}),
     "REMINDER_DELIVERY_FAILED": frozenset({503}),
+    # Локальный резерв дат e2e исчерпал допустимый календарный диапазон:
+    # запрос корректен, но новый диапазон уже невозможно выдать.
+    "FIXTURE_DATE_RANGE_EXHAUSTED": frozenset({409}),
     # ── Доступ (Plane №36) ───────────────────────────────────────────────
     # 422, а не 400: нагрузка верна (роль есть, строка есть), невозможно
     # именно СОСТОЯНИЕ — снявший с себя последнюю административную роль
@@ -146,6 +155,8 @@ CODES = {
     "FORCE_OBJECTS_NOT_READY": frozenset({422}),
     "FORCE_VISIT_UNSTAFFED": frozenset({422}),
     "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
+    # Вид участия сотрудника не совпадает со строкой потребности (Plane №1250).
+    "FORCE_CAMPAIGN_KIND_MISMATCH": frozenset({422}),
     "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
@@ -181,6 +192,9 @@ CODES = {
     "REST_AFTER_DUTY": frozenset({422}),
     # Отдых в SOFT_OVERRIDE-режиме обходится причиной — 409 и overridable.
     "DUTY_CONFLICT_DETECTED": frozenset({409}),
+    "DUTY_DISPATCH_CONFLICT": frozenset({409}),
+    "DUTY_REGISTER_CONFLICT": frozenset({409}),
+    "DUTY_CREATION_CLOSED": frozenset({409}),
     # ── Боевые группы (§24, мок-контракт отдаёт все отказы 422-ми) ───────
     "INVALID_BUSINESS_DATE": frozenset({422}),
     "EMPTY_ROUTE_SET": frozenset({422}),
@@ -212,6 +226,8 @@ CODES = {
     "EVALUATION_ALREADY_SUBMITTED": frozenset({422}),
     "PARTICIPATION_NOT_CONFIRMED": frozenset({422}),
     "GROUP_EVALUATION_UNSUPPORTED": frozenset({422}),
+    "GROUP_ROSTER_UNRECORDED": frozenset({422}),
+    "GROUP_ROSTER_CHANGED": frozenset({409}),
     "EVALUATION_NOT_SUBMITTED": frozenset({422}),
     # §19.25: конфликт редакции — 409 и СВОЙ код, НЕ overridable: конфликт
     # версии оценки не ведётся через диалог обхода назначений.
@@ -243,6 +259,7 @@ CODES = {
     "SNAPSHOT_OUTDATED": frozenset({422}),
     "UNKNOWN_METRIC": frozenset({422}),
     "UNKNOWN_LEVEL_TARGET": frozenset({422}),
+    "ANALYTICS_SCOPE_UNAVAILABLE": frozenset({403}),
     # ── Служебные отчёты (§22.18-22.28; отказы — 422) ────────────────────
     "IDEMPOTENCY_KEY_REQUIRED": frozenset({422}),
     "UNKNOWN_REPORT_TYPE": frozenset({422}),
@@ -259,6 +276,14 @@ CODES = {
     "DICTIONARY_USAGE_UNKNOWN": frozenset({422}),
     # Значение используется — конфликт данных, обходу не подлежит.
     "DICTIONARY_ENTRY_IN_USE": frozenset({409}),
+    # Системный код (физнаряд, типы журнала штаба) зашит в расчёты: снимать,
+    # удалять и заменять его нельзя, только править подпись.
+    "DICTIONARY_ENTRY_PROTECTED": frozenset({422}),
+    # У значения уже есть преемник: оно история, активировать или удалять
+    # его нельзя.
+    "DICTIONARY_ENTRY_SUPERSEDED": frozenset({409}),
+    # Заменить можно только активное значение.
+    "DICTIONARY_ENTRY_INACTIVE": frozenset({409}),
     "PERMISSION_DENIED": frozenset({403}),
     # ── Статусы ──────────────────────────────────────────────────────────
     "INVALID_STATUS_TYPE": frozenset({422}),

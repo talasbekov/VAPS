@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Экспорт оперативного рейтинга (§19.29). Экран не собирает файл, не
 // придумывает ему имя и не строит ссылку: кнопка «Скачать» появляется, когда
 // работа READY и у неё есть артефакт, а сам файл выдаёт отдельная серверная
@@ -239,24 +241,7 @@ export default function RatingExportPage() {
               <p className="text-sm text-destructive-ink">{cancel.error.message}</p>
             )}
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не выгружается</h2>
-              <ul className="flex flex-col gap-2">
-                {[...data.unavailableScopes, ...data.unavailableFormats].map(
-                  (view) => (
-                    <li
-                      key={view.code}
-                      className="text-xs text-muted-foreground"
-                    >
-                      <span className="font-semibold text-foreground">
-                        {view.label}.{" "}
-                      </span>
-                      {view.reason}
-                    </li>
-                  )
-                )}
-              </ul>
-            </section>
+            <CapabilityNotes title="Состав и форматы выгрузки" items={[...data.unavailableScopes, ...data.unavailableFormats]} />
           </>
         )}
       </div>

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { LoadFailure } from "@/components/load-failure";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
@@ -26,9 +28,6 @@ import {
   FileSpreadsheet,
   Loader2,
   FileText,
-  Users,
-  BarChart3,
-  Wrench,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -43,6 +42,8 @@ import { cn } from "@/lib/utils";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { ReportSectionCard } from "@/components/reports/report-section-card";
+import { PersonnelReportCards } from "@/components/reports/personnel-report-cards";
+import { ReportNavigation } from "@/components/reports/report-navigation";
 import {
   Table,
   TableHeader,
@@ -53,20 +54,22 @@ import {
 } from "@/components/ui/table";
 
 export default function ReportsPage() {
+  const queryClient = useQueryClient();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [report, setReport] = useState<StrengthReport | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Выгрузка идёт по одному подразделению, поэтому «занято» держим на строке,
   // а не одним флагом на всю карточку: общий флаг гасил бы кнопки всех строк.
-  const [exportingId, setExportingId] = useState<number | null>(null);
+  const [exportingIds, setExportingIds] = useState<ReadonlySet<number>>(new Set());
+  const pendingExports = useRef(new Set<number>());
   const { toast } = useToast();
 
   // ГЕЙТ ПО ПРАВАМ РАЗДЕЛА (Plane №352, Ш-1). Экран был открыт каждому
   // вошедшему: видимость решало только меню, а прямой адрес пускал любого.
   // Право спрашивается из той же карты, по которой меню решает, показывать ли
   // пункт, — иначе спрятанный пункт и открытый экран разойдутся.
-  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading, error: permissionsError } =
     useOpsPermissions();
   const allowed = modulePermissionsOf("/reports").some((code) =>
     hasOpsPermission(code)
@@ -134,18 +137,21 @@ export default function ReportsPage() {
   // Код DAY_NOT_SUBMITTED показываем как обычное сообщение, а не как ошибку:
   // это не поломка, а состояние дня, и красный тост пугал бы напрасно.
   const handleExport = async (row: StrengthReportRow) => {
+    if (!report || pendingExports.current.has(row.division_id)) return;
+    pendingExports.current.add(row.division_id);
+    setExportingIds(new Set(pendingExports.current));
+    const exportDate = report.business_date;
     try {
-      setExportingId(row.division_id);
       const blob = await apiClient.downloadStrengthReportExport({
         divisionId: row.division_id,
-        businessDate: dateStr,
+        businessDate: exportDate,
         fileFormat: "xlsx",
       });
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `расход_${row.name}_${dateStr ?? ""}.xlsx`;
+      a.download = `расход_${row.name}_${exportDate}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -164,14 +170,21 @@ export default function ReportsPage() {
         variant: notSubmitted ? "default" : "destructive",
       });
     } finally {
-      setExportingId(null);
+      pendingExports.current.delete(row.division_id);
+      setExportingIds(new Set(pendingExports.current));
     }
   };
 
   // Отказ — ПОСЛЕ всех хуков (правило хуков React): ранний возврат выше
   // пропускал бы хуки при смене прав, и React падал бы на «rendered fewer
   // hooks than expected».
-  if (!opsPermissionsLoading && !allowed) {
+  if (permissionsError) {
+    return <DashboardLayout><LoadFailure what="права доступа к отчётам" onRetry={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })} /></DashboardLayout>;
+  }
+  if (opsPermissionsLoading) {
+    return <DashboardLayout><p role="status">Проверяем доступ к отчётам…</p></DashboardLayout>;
+  }
+  if (!allowed) {
     return <OpsAccessDenied what="ежедневного отчёта" />;
   }
 
@@ -180,17 +193,19 @@ export default function ReportsPage() {
       <div className="container mx-auto py-10 space-y-8">
         <PageHeader
           eyebrow="Ежедневный расход"
-          title="Отчеты"
-          description="Генерация и скачивание отчетов по сотрудникам и статусам."
+          title="Расход и кадровые отчёты"
+          description="Проверьте текущий расход на дату или скачайте сохранённый результат сдачи."
         />
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <ReportNavigation current="daily" />
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           <ReportSectionCard
             className="md:col-span-2 lg:col-span-3"
             icon={FileSpreadsheet}
             iconClassName="text-green-600"
             title="Расход Л/С"
-            description="Строевая записка на выбранную дату по вашей области видимости. Выгрузка доступна для дня, который уже сдан."
+            description="Таблица показывает текущие данные в вашей области видимости. XLSX содержит сохранённый снимок сданного дня: после правок он может отличаться от таблицы."
           >
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-2">
@@ -224,18 +239,25 @@ export default function ReportsPage() {
                     </PopoverContent>
                   </Popover>
                 </div>
-                <Button onClick={handleLoad} disabled={loading}>
+                <Button onClick={handleLoad} disabled={loading || !date} aria-busy={loading}>
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                   )}
-                  Показать расход
+                  {loading ? "Загружаем расход…" : "Показать расход"}
                 </Button>
               </div>
 
               {reportError && (
-                <p className="text-sm text-destructive-ink">{reportError}</p>
+                <p role="alert" className="text-sm text-destructive-ink">{reportError}</p>
+              )}
+
+              {report && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Текущий расход на {report.business_date}. Выгрузка — снимок сдачи за эту дату.
+                  {dateStr !== report.business_date && " Дата в фильтре изменена: нажмите «Показать расход», чтобы обновить таблицу."}
+                </p>
               )}
 
               {report && report.rows.length === 0 && (
@@ -276,7 +298,7 @@ export default function ReportsPage() {
                     </TableHeader>
                     <TableBody>
                       {report.rows.map((row) => (
-                        <TableRow key={row.division_id}>
+                        <TableRow key={row.division_id} data-division-id={row.division_id}>
                           <TableCell>
                             {row.name}
                             {/* Путь — подписью под именем (Plane №327). Имена
@@ -332,9 +354,12 @@ export default function ReportsPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => handleExport(row)}
-                              disabled={exportingId === row.division_id}
+                              disabled={exportingIds.has(row.division_id)}
+                              aria-label={`Скачать снимок сдачи «${row.name}» на ${report.business_date}, XLSX`}
+                              title="Скачать снимок сданного дня, XLSX"
+                              aria-busy={exportingIds.has(row.division_id)}
                             >
-                              {exportingId === row.division_id ? (
+                              {exportingIds.has(row.division_id) ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Download className="h-4 w-4" />
@@ -412,59 +437,15 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Заглушка: Статистика отсутствий */}
-          <Card className="relative overflow-hidden border-dashed">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm">
-              <Wrench className="h-3.5 w-3.5 animate-pulse" />
-              <span>В работе</span>
-            </div>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-blue-500" />
-                Статистика отсутствий
-              </CardTitle>
-              <CardDescription>
-                Аналитика по типам отсутствий (отпуска, больничные) за выбранный
-                период.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="h-24 bg-muted/30 rounded-md flex items-center justify-center text-muted-foreground text-sm border border-dashed">
-                Графики и диаграммы
-              </div>
-              <Button variant="outline" className="w-full" disabled>
-                Сформировать
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Заглушка: Штатное расписание */}
-          <Card className="relative overflow-hidden border-dashed">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm">
-              <Wrench className="h-3.5 w-3.5 animate-pulse" />
-              <span>В работе</span>
-            </div>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-purple-500" />
-                Штатное расписание
-              </CardTitle>
-              <CardDescription>
-                Полный список сотрудников с должностями и званиями.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="h-24 bg-muted/30 rounded-md flex items-center justify-center text-muted-foreground text-sm border border-dashed">
-                Табличный вид
-              </div>
-              <Button variant="outline" className="w-full" disabled>
-                Скачать Excel
-              </Button>
-            </CardContent>
-          </Card>
+          <PersonnelReportCards
+            canReadStaffing={allowed && hasOpsPermission("orgstructure.view")}
+            canReadAbsences={allowed && hasOpsPermission("status.view")}
+            permissionsLoading={opsPermissionsLoading}
+          />
 
           {/* Журнал действий раздела ЖИВОЙ — на /security-ops/audit; мёртвая
               кнопка «Просмотреть» была бы враньём при работающем экране. */}
+          {hasOpsPermission("audit.view") && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -472,8 +453,7 @@ export default function ReportsPage() {
                 Журнал действий
               </CardTitle>
               <CardDescription>
-                Доменные события раздела: кто, что и когда изменил. Журнал
-                append-only, только чтение.
+                Кто, что и когда изменил. Записи доступны только для просмотра.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -482,6 +462,7 @@ export default function ReportsPage() {
               </Button>
             </CardContent>
           </Card>
+          )}
         </div>
 
 

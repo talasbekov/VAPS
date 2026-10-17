@@ -10,7 +10,7 @@
 // первой ошибке. Раньше ошибки наряда уезжали в общую сводку списком строк —
 // «Выберите объект» не показывал, какое из четырёх полей блока пустое.
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Select,
   SelectContent,
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Field } from "@/shared/lib/form";
+import { Button } from "@/components/ui/button";
 import { useSecurityObjects } from "@/hooks/use-security-objects";
 import { DUTY_GROUPS, DUTY_KINDS } from "@/entities/duty-assignment";
 import {
@@ -32,6 +33,7 @@ export type { DutyDraft };
 interface DutyAssignmentFieldsProps {
   value: DutyDraft;
   onChange: (next: DutyDraft) => void;
+  onReadyChange?: (ready: boolean) => void;
   /** Ошибки вложенного объекта `duty` из формы: `Field` берёт из них `message`. */
   errors?: { [K in keyof DutyDraft]?: unknown };
 }
@@ -39,10 +41,11 @@ interface DutyAssignmentFieldsProps {
 export function DutyAssignmentFields({
   value,
   onChange,
+  onReadyChange,
   errors,
 }: DutyAssignmentFieldsProps) {
-  const { data, isLoading, isError } = useSecurityObjects();
-  const objects = useMemo(() => data?.results ?? [], [data]);
+  const { data, isLoading, isError, isFetching, refetch } = useSecurityObjects({ fresh: true });
+  const objects = useMemo(() => (data?.results ?? []).filter((item) => item.objectState !== "ARCHIVED"), [data]);
 
   const selectedObject = useMemo(
     () => objects.find((item) => item.id === value.objectId) ?? null,
@@ -66,12 +69,37 @@ export function DutyAssignmentFields({
   // Зависимое поле заблокировано, пока объект не выбран: пост без объекта
   // указывать не на что, а группа без объекта — наряд в никуда.
   const dependentDisabled = value.objectId === "";
+  const catalogReady = !isFetching && !isLoading && !isError && data !== undefined;
+  const currentPost = posts.some((post) => post.id === value.postId);
+  const retiredPost = catalogReady && selectedObject !== null && value.dutyKind === "POST"
+    && ((value.postId !== "" && !currentPost) || (value.postId === "" && value.postName !== ""));
+  const unavailableObject = catalogReady && value.objectId !== "" && selectedObject === null;
+  const ready = catalogReady && selectedObject !== null && (
+    value.dutyKind === "POST" ? currentPost : value.dutyKind === "GROUP" && DUTY_GROUPS.some((group) => group.id === value.groupId)
+  );
+  useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
+  useEffect(() => {
+    if (retiredPost && value.postId !== "") onChange({ ...value, postId: "" });
+  }, [retiredPost, value, onChange]);
 
   return (
     <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50/60 p-4">
       <div className="text-sm font-semibold text-blue-900">
-        Наряд на дежурство
+        Место дежурства
       </div>
+
+      {isError && <div role="alert" className="text-sm">
+        <p>Не удалось загрузить объекты.</p>
+        <Button type="button" size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>Повторить загрузку объектов</Button>
+      </div>}
+      {retiredPost && <div role="alert" className="text-sm">
+        <p>Пост изменён в паспорте. Выберите актуальный пост.</p>
+        <p className="text-muted-foreground">Ранее: {value.postName}.</p>
+      </div>}
+      {unavailableObject && <div role="alert" className="text-sm">
+        <p>Объект больше недоступен для назначения. Выберите действующий объект.</p>
+        <p className="text-muted-foreground">Ранее: {value.objectName}.</p>
+      </div>}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field

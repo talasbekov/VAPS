@@ -13,7 +13,8 @@
  * незамеченным (событие с частым объектом привело бы туда же по случайности).
  */
 import path from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+import { test } from './gvo-owned-fixture'
 import { requireFixture } from './fixtures'
 import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
@@ -75,6 +76,7 @@ interface EventRow {
   protectedPersons?: { id: string; name: string }[]
   visitObjects?: {
     id: string
+    objectId: string | null
     objectName: string
     chiefEmployeeId: string | null
     chiefName: string
@@ -102,15 +104,21 @@ async function events(token: string, stage = ''): Promise<EventRow[]> {
   return ((await res.json()) as { results: EventRow[] }).results
 }
 
-/** ОМ, чей объект НЕ самый частый в выборке — см. заголовок файла. */
+function passportObjectId(row: EventRow): string | null {
+  const visits = row.visitObjects ?? []
+  return visits.length > 0 ? visits.find(visit => visit.objectId !== null)?.objectId ?? null : row.objectId
+}
+
+/** ОМ, чей доступный паспорт НЕ самый частый в выборке. */
 function pickDistinctObjectEvent(rows: EventRow[]): EventRow | undefined {
-  const withObject = rows.filter((r) => r.objectId !== null)
+  const withObject = rows.filter((r) => passportObjectId(r) !== null)
   const counts = new Map<string, number>()
   for (const r of withObject) {
-    counts.set(r.objectId as string, (counts.get(r.objectId as string) ?? 0) + 1)
+    const objectId = passportObjectId(r)!
+    counts.set(objectId, (counts.get(objectId) ?? 0) + 1)
   }
   const mode = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-  return withObject.find((r) => r.objectId !== mode) ?? withObject[0]
+  return withObject.find((r) => passportObjectId(r) !== mode) ?? withObject[0]
 }
 
 async function objectName(token: string, objectId: string): Promise<string> {
@@ -234,31 +242,26 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const rows = await events(token)
     const target = pickDistinctObjectEvent(rows)
     expect(target, 'на стенде нет ни одного ОМ с привязанным объектом').toBeDefined()
-    const expectedName = await objectName(token, target!.objectId as string)
+    const targetObjectId = passportObjectId(target!)!
+    const expectedName = await objectName(token, targetObjectId)
+    const targetVisit = target!.visitObjects?.find(visit => visit.objectId === targetObjectId)
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-    // Скоуп — контент, а не боковое меню: там уже есть пункт «Объекты и
-    // паспорта», и без скоупа локатор ловит оба. Имя ссылки ТОЧНОЕ: с
-    // 24.08.2026 в шапке карточки рядом стоит вторая ссылка на тот же объект
-    // («карточка объекта →» в контексте объекта посещения), и подстрочный
-    // матчер /объект/i ловил обе.
-    const escaped = expectedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const link = page
-      .getByRole('main')
-      .getByRole('link', { name: new RegExp(`^Объект: ${escaped} →$`) })
+    await page.goto(`${APP}/security-ops/events/${target!.id}/${targetVisit ? `?visit=${encodeURIComponent(targetVisit.id)}` : ""}`)
+    const link = page.locator('[data-slot="event-workspace-header"]')
+      .getByRole('link', { name: targetVisit ? `Паспорт объекта ${targetVisit.objectName}` : `Паспорт основного объекта: ${target!.objectName} →`, exact: true })
     await expect(link).toBeVisible({ timeout: 15_000 })
     await link.click()
 
     await expect(page).toHaveURL(/\/security-ops\/objects\//)
-    await expect(page).toHaveURL(new RegExp(`/security-ops/objects/${target!.objectId}/?$`))
+    await expect(page).toHaveURL(new RegExp(`/security-ops/objects/${targetObjectId}/?$`))
     await expect(
       page.getByRole('heading', { name: expectedName }),
     ).toBeVisible({ timeout: 15_000 })
   })
 
   test('карточка ОМ: мёртвых ссылок на снятый модуль ГВО не осталось', async ({
-    page,
+    page, ownForeign,
   }) => {
     // Модуль «Реестр ГВО» снят (Plane «Реестр ОМ-35.8»). Раньше эта проба
     // стерегла ссылку «Сводка ГВО →» из шапки карточки; теперь она стережёт
@@ -266,9 +269,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // «Карточка визита →» в шапке бюллетеня (`[ГВО-03]`, Plane №441 —
     // кнопки-разворота «Информация по ГВО» больше нет). Ссылка на удалённый
     // маршрут — 404 в лицо человеку, и молча её возвращать нельзя.
-    const token = await apiToken()
-    const rows = await events(token)
-    const target = rows.find((r) => r.stage !== 'BULLETIN' && r.kind !== 'INTERNAL')
+    const target = ownForeign
     expect(
       target,
       'на стенде нет ОМ с иностранным ОЛ вне стадии «Бюллетень»',
@@ -604,7 +605,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     expect(saved.kind).toBe('FOREIGN')
     expect(saved.eventTime).toContain('09:30')
     expect(saved.location).toBe('Казахстан, Алматы, пр. Абая, 1')
-    expect(saved.chiefName).toContain(chiefLabel.split(' · ')[0]!.trim())
+    // Список печатает полное имя (Plane №1247), сервер хранит «Фамилия И.»:
+    // сверяем по фамилии.
+    expect(saved.chiefName).toContain(chiefLabel.split(' · ')[0]!.trim().split(' ')[0])
     const personShort = personName.split(' · ')[0]!.trim()
     const savedPersons = [
       saved.protectedPersonName,
@@ -670,6 +673,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
 
     // ДАТА ПОСЕЩЕНИЯ (Plane №194): у объекта либо свой день, либо прямая
     // отсылка к дате мероприятия. Пусто быть не может — это и стережётся.
+    await details.getByRole('button', { name: `Подробности объекта ${first!.visitObjects[0].objectName}`, exact: true }).click()
     await expect(details).toContainText(/Посещение: \d{2}\.\d{2}\.\d{4}|в дату мероприятия \d{2}\.\d{2}\.\d{4}/)
 
     // Свернуть: у той же кнопки МЕНЯЕТСЯ подпись — «Развернуть» → «Свернуть».
@@ -750,6 +754,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     })
     const detailsId = await expandedToggle.getAttribute('aria-controls')
     const details = page.locator(`#${detailsId}`)
+    await details.getByRole('button', { name: `Подробности объекта ${created.visitObjects[0].objectName}`, exact: true }).click()
     await details
       .getByRole('button', { name: `Добавить описание объекта ${created.visitObjects[0].objectName}` })
       .click()
@@ -766,132 +771,63 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     expect(objectCatalogRequests).toBe(0)
   })
 
-  test('клик по строке бюллетеня раскрывает список, а не уводит в этапы', async ({
-    page,
-  }) => {
-    // Решение заказчика 27.08.2026 (Plane №191), дословно: «При нажатии на
-    // бюллетень только список должен раскрываться».
-    //
-    // Проба стережёт ОБА утверждения, и второе важнее первого: раскрытие
-    // видно глазами, а вот НЕ-переход — нет. Строка прежде вела в карточку, и
-    // проба, проверяющая только раскрытие, зеленела бы и на странице этапов,
-    // где текст объектов тоже есть.
-    const token = await apiToken()
-    const rows = await events(token)
-    const first = rows.find((r) => (r.visitObjects ?? []).length > 0)
-    test.skip(first === undefined, 'на стенде нет ОМ с объектами посещения')
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/`)
-    const toggle = page.getByRole('button', {
-      name: `Развернуть объекты посещения ${first!.code}`,
-    })
-    await expect(toggle).toBeVisible({ timeout: 15_000 })
-    const details = page.locator(`#${await toggle.getAttribute('aria-controls')}`)
-    await expect(details).toBeHidden()
-
-    // Бьём в ЯЧЕЙКУ ДАТ, а не в ячейку с кодом: там ссылка, и клик по ней
-    // обязан вести в карточку — это другое требование той же строки.
-    await page
-      .getByRole('row')
-      .filter({ hasText: first!.code })
-      .first()
-      .getByRole('cell')
-      .nth(2)
-      .click()
-
-    await expect(details).toBeVisible()
-    await expect(page).toHaveURL(/\/security-ops\/events\/?(\?.*)?$/)
-
-    // Второй клик по строке — сворачивает: одно действие, обратимое на месте.
-    await page
-      .getByRole('row')
-      .filter({ hasText: first!.code })
-      .first()
-      .getByRole('cell')
-      .nth(2)
-      .click()
-    await expect(details).toBeHidden()
-  })
-
-  test('сам бюллетень раскрывает список, а не уводит в этапы', async ({ page }) => {
-    /**
-     * 🔴 ПИН ПЕРЕВЁРНУТ ОСОЗНАННО (Plane №256, 28.08.2026).
-     *
-     * Здесь стояла проба «ссылка в строке бюллетеня по-прежнему ведёт в
-     * карточку»: она стерегла, что код мероприятия остался ссылкой в этапы.
-     * Заказчик поставил задачу ВТОРОЙ РАЗ — «при нажатии на бюллетень не
-     * должно переходить на этапы» — и именно этот пин закреплял поведение, на
-     * которое он жаловался: №191 снял переход с фона строки, но оставил его на
-     * самом бюллетене, то есть на самом крупном и очевидном месте.
-     *
-     * Что охраняется теперь: нажатие на бюллетень раскрывает и НЕ меняет
-     * адрес. Требование «в карточку должно быть чем попасть» никуда не делось
-     * — его стережёт соседняя проба про стрелку «Открыть этапы мероприятия».
-     */
-    const token = await apiToken()
-    const rows = await events(token)
+  test('клик по свободной ячейке строки открывает мероприятие', async ({ page }) => {
+    const rows = await events(await apiToken())
     test.skip(rows.length === 0, 'реестр стенда пуст')
     const first = rows[0]!
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/`)
-    const row = page.getByRole('row').filter({ hasText: first.code }).first()
-    const bulletin = row.getByRole('button').filter({ hasText: first.code }).first()
-    await expect(bulletin, 'бюллетень в строке не кнопка-раскрыватель').toBeVisible({
-      timeout: 15_000,
-    })
-
-    const details = page.locator(`#${await bulletin.getAttribute('aria-controls')}`)
-    await expect(details).toBeHidden()
-
-    await bulletin.click()
-    await expect(details, 'нажатие на бюллетень не раскрыло объекты').toBeVisible()
-    await expect(
-      page,
-      'нажатие на бюллетень увело со страницы реестра — ровно то, на что жаловался заказчик',
-    ).toHaveURL(/\/security-ops\/events\/?(\?.*)?$/)
-
-    await bulletin.click()
-    await expect(details, 'повторное нажатие не свернуло список').toBeHidden()
-  })
-
-  test('в этапы из строки ведёт названная стрелка, и она там одна', async ({ page }) => {
-    /**
-     * Обратная сторона №256. Убрав переход с бюллетеня, легко убрать его
-     * вовсе — и тогда у мероприятия БЕЗ объектов посещения этапы (бюллетень,
-     * согласование, закрытие) стали бы недостижимы из реестра.
-     *
-     * Стережём два утверждения: вход в карточку из строки ЕСТЬ и он ОДИН —
-     * второй превратил бы «нажатие на бюллетень» обратно в лотерею.
-     */
-    const token = await apiToken()
-    const rows = await events(token)
-    test.skip(rows.length === 0, 'реестр стенда пуст')
-    const first = rows[0]!
-
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
     const row = page.getByRole('row').filter({ hasText: first.code }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.getByRole('cell').nth(2).click()
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/security-ops/events/${first.id}/`)
+  })
 
-    const toStages = row.getByRole('link', {
-      name: `Открыть этапы мероприятия ${first.code}`,
-    })
-    await expect(toStages, 'в строке не осталось входа в карточку ОМ').toHaveCount(1)
-    // Ссылок в строке столько же, сколько входов в карточку: лишняя означала
-    // бы, что переход вернулся куда-то ещё.
-    await expect(
-      row.locator('a[href*="/security-ops/events/"]'),
-      'в строке больше одной ссылки в карточку ОМ',
-    ).toHaveCount(1)
+  test('название бюллетеня открывает мероприятие с клавиатуры', async ({ page }) => {
+    const rows = await events(await apiToken())
+    test.skip(rows.length === 0, 'реестр стенда пуст')
+    const first = rows[0]!
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const row = page.getByRole('row').filter({ hasText: first.code }).first()
+    const bulletin = row.getByRole('link', { name: `Открыть мероприятие ${first.code}: ${first.title}`, exact: true })
+    await expect(bulletin).toBeVisible({ timeout: 15_000 })
+    await bulletin.focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/security-ops/events/${first.id}/`)
+  })
 
-    await toStages.click()
-    // Идентификатор ОМ на стенде — ЧИСЛО, а не UUID: ассерт по `[0-9a-f-]{36}`
-    // краснел бы на верном переходе.
-    await expect(page).toHaveURL(/\/security-ops\/events\/[^/?]+/, {
-      timeout: 15_000,
-    })
+  test('отдельная кнопка раскрывает площадки на месте, а ссылки сохраняют их контекст', async ({ page }) => {
+    const rows = await events(await apiToken())
+    const first = rows.find(row => (row.visitObjects ?? []).length > 0)
+    test.skip(first === undefined, 'на стенде нет ОМ с объектами посещения')
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const row = page.getByRole('row').filter({ hasText: first!.code }).first()
+    const toggle = row.getByRole('button', { name: `Развернуть объекты посещения ${first!.code}`, exact: true })
+    await expect(toggle).toBeVisible({ timeout: 15_000 })
+    const bounds = await toggle.boundingBox()
+    expect(bounds?.width).toBeGreaterThanOrEqual(44)
+    expect(bounds?.height).toBeGreaterThanOrEqual(44)
+    const details = page.locator(`#${await toggle.getAttribute('aria-controls')}`)
+    await toggle.click()
+    await expect(details).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/security-ops/events/')
+    for (const visit of first!.visitObjects ?? []) {
+      const link = details.locator(`a[href*="visit=${encodeURIComponent(visit.id)}"]`)
+      await expect(link).toHaveText(visit.objectName)
+      const href = new URL((await link.getAttribute('href'))!, APP)
+      expect(href.pathname).toBe(`/security-ops/events/${first!.id}/`)
+      expect(href.searchParams.get('visit')).toBe(visit.id)
+    }
+    const openedToggle = row.getByRole('button', { name: `Свернуть объекты посещения ${first!.code}`, exact: true })
+    await openedToggle.click()
+    await expect(details).toBeHidden()
+    await row.getByRole('button', { name: `Действия ${first!.code}`, exact: true }).click()
+    const open = page.getByRole('menuitem', { name: `Открыть этапы мероприятия ${first!.code}`, exact: true })
+    await expect(open).toHaveText('Открыть ОМ')
+    await open.click()
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/security-ops/events/${first!.id}/`)
   })
 
   test('старший наряда назначается из строки реестра и снимается там же', async ({
@@ -1148,6 +1084,58 @@ async function createEvent(
     await expect(dialog).toBeVisible()
   })
 
+  test('таймер blur не закрывает повторно открытый список охраняемых лиц', async ({ page }) => {
+    const token = await apiToken()
+    const persons = await protectedPersons(token)
+    expect(persons.length, 'нужны три охраняемых лица, чтобы после двух выборов поле оставалось доступным').toBeGreaterThanOrEqual(3)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+    await pickPerson(page, dialog, persons[0]!.name)
+    await pickPerson(page, dialog, persons[1]!.name)
+    const input = dialog.getByLabel('Охраняемые лица')
+    await expect(input).toBeFocused()
+
+    // Останавливаем часы после загрузки формы: удаление чипа уводит фокус,
+    // а возврат в поиск происходит до отложенного закрытия через 150 мс.
+    const now = new Date()
+    await page.clock.install({ time: now })
+    await page.clock.pauseAt(new Date(now.getTime() + 1_000))
+    const removeSecond = dialog.getByRole('button', {
+      name: `Убрать ${persons[1]!.name} из списка охраняемых лиц`,
+    })
+    await removeSecond.click()
+    await expect(removeSecond).toBeHidden()
+    await input.click()
+    await input.fill(persons[1]!.name)
+    const option = dialog.locator('[data-slot="persons-combobox"] li button')
+      .filter({ hasText: persons[1]!.name })
+    await expect(option).toHaveCount(1)
+    await expect(option).toBeVisible()
+    await expect(input).toHaveAttribute('aria-expanded', 'true')
+    await page.clock.runFor(200)
+    await expect(input).toBeFocused()
+    await expect(input).toHaveAttribute('aria-expanded', 'true')
+    await expect(option).toBeVisible()
+
+    // Обычный уход в другое поле по-прежнему закрывает список через 150 мс.
+    await dialog.getByLabel('Название ОМ').click()
+    await page.clock.runFor(149)
+    await expect(input).toHaveAttribute('aria-expanded', 'true')
+    await page.clock.runFor(1)
+    await expect(input).toHaveAttribute('aria-expanded', 'false')
+    await input.click()
+    await option.click()
+    await expect(removeSecond).toBeVisible()
+    await expect(dialog.getByRole('button', {
+      name: `Убрать ${persons[0]!.name} из списка охраняемых лиц`,
+    })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Отмена' }).click()
+    await expect(dialog).toBeHidden()
+  })
+
   test('в бюллетень выбирается несколько охраняемых лиц', async ({ page }) => {
     // Plane №188, дословно: «Там есть выбрать справочник ОЛ, туда нужно
     // добавить возможность выбирать несколько или возможность добавления ОЛ в
@@ -1299,6 +1287,7 @@ async function createEvent(
     expect(after.visitObjects.map((v) => v.objectName)).toContain(second.name)
 
     // Снятие возвращает стенд в исходное состояние — и это же проба кнопки.
+    await details.getByRole('button', { name: `Подробности объекта ${second.name}`, exact: true }).click()
     await details.getByRole('button', { name: `Снять объект ${second.name} с мероприятия` }).click()
     await expect(details).toContainText('Объекты посещения · 1', { timeout: 15_000 })
     const restored = (await (
@@ -1448,6 +1437,7 @@ async function createEvent(
     // Строка ОБЪЕКТА во врезке (`li`), а не `tr`: имя объекта стоит и в
     // колонке бюллетеня, и таких `tr` на стенде десятки.
     const row = page.locator('li').filter({ hasText: visit.objectName }).first()
+    await row.getByRole('button', { name: `Подробности объекта ${visit.objectName}`, exact: true }).click()
     // Ведём по СВОЕЙ группе, а не по всей строке объекта: «не назначен»
     // входит подстрокой в «Замещающие: не назначены», и ассерт по строке
     // зеленел бы, ничего не проверяя.
@@ -1480,7 +1470,9 @@ async function createEvent(
     await assign.click()
     await expect(chiefDialog).toHaveCount(0, { timeout: 15_000 })
 
-    await expect(chief).toContainText(`Старший объекта:${personName}`, {
+    // Список печатает полное имя (Plane №1247), а подпись строки — «Фамилия
+    // И.» с сервера: сверяем по фамилии, она есть в обоих.
+    await expect(chief).toContainText(`Старший объекта:${personName.split(' ')[0]}`, {
       timeout: 15_000,
     })
     // И это видит сервер, а не только экран.
@@ -1488,12 +1480,14 @@ async function createEvent(
     const assignedVisit = (afterAssign?.visitObjects ?? []).find(
       (v) => v.id === visit.id,
     )
-    expect(assignedVisit?.chiefName).toEqual(personName)
+    // Полное имя из списка против «Фамилия И.» сервера (Plane №1247) — по фамилии.
+    expect(assignedVisit?.chiefName).toContain(personName.split(' ')[0])
 
     // Снятие уносит имя — и фикстура не копится между прогонами.
+    // Кнопка называет «Фамилия И.» с сервера, список — полное имя (Plane №1247).
     await chief
       .getByRole('button', {
-        name: `Снять старшего ${personName} с объекта ${visit.objectName}`,
+        name: new RegExp(`^Снять старшего ${personName.split(' ')[0]}.* с объекта ${visit.objectName}$`),
       })
       .click()
     await expect(chief).toHaveText('Старший объекта:не назначен+ Старший', {
@@ -1540,6 +1534,7 @@ async function createEvent(
     // колонке самого бюллетеня, и `tr` с ним находится у каждого ОМ на этом
     // объекте — их на стенде десятки.
     const row = page.locator('li').filter({ hasText: visit.objectName }).first()
+    await row.getByRole('button', { name: `Подробности объекта ${visit.objectName}`, exact: true }).click()
     // Регистр из РАЗМЕТКИ, а не с экрана: капс делает `uppercase`, а
     // `toContainText` читает textContent и капса не видит.
     await expect(row).toContainText('Замещающие:', { timeout: 15_000 })
@@ -1594,7 +1589,9 @@ async function createEvent(
 
     // Право названо СЛОВОМ, а не только присутствием в списке: наблюдателя от
     // правящего по одному имени в строке не отличить.
-    await expect(row).toContainText(personName, { timeout: 15_000 })
+    // Фамилия, а не полное имя из списка (Plane №1247): строка печатает
+    // «Фамилия И.» с сервера.
+    await expect(row).toContainText(personName.split(' ')[0], { timeout: 15_000 })
     await expect(row).toContainText('правит расстановку')
 
     // И это видит сервер, а не только экран.
@@ -1603,9 +1600,10 @@ async function createEvent(
     expect(savedVisit?.deputies.map((d) => d.canEditPlacement)).toEqual([true])
 
     // Снятие уносит право — фикстура не копится между прогонами.
+    // Кнопка называет «Фамилия И.» с сервера, список — полное имя (Plane №1247).
     await row
       .getByRole('button', {
-        name: `Снять замещающего ${personName} с объекта ${visit.objectName}`,
+        name: new RegExp(`^Снять замещающего ${personName.split(' ')[0]}.* с объекта ${visit.objectName}$`),
       })
       .click()
     await expect(row).toContainText('не назначены', { timeout: 15_000 })

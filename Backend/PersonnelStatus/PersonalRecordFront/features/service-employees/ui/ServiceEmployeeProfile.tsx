@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { PageHeader } from '@/components/page-header';
@@ -8,30 +8,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadFailure } from '@/components/load-failure';
 import { opsApiClient } from '@/lib/ops-api';
 import { OpsApiError } from '@/lib/ops-errors';
-import { useOpsPermissions } from '@/hooks/use-ops-permissions';
+import { useServiceEmployeeAuthority } from '../use-service-employee-authority';
 import { formatIsoDate, formatIsoDateTime } from '@/shared/lib/date';
 import { addDaysIso } from '@/entities/daily-grid';
 import { SERVICE_EMPLOYEES_PATH, type ServiceEmployeeDetail, type ServiceAssignment } from '@/entities/service-employee';
+import { EmployeePortrait } from '@/components/employee-portrait';
 
 export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: string }) {
-  const { hasPermission } = useOpsPermissions();
+  const { key: authority, ready: authorityReady, hasPermission, isLoading: permissionsLoading } = useServiceEmployeeAuthority();
+  const queryClient = useQueryClient();
+  const checkingAccess = useIsFetching({ queryKey: ['ops-me'] }) > 0;
   const employee = useQuery({
-    queryKey: ['service-employee', id],
+    queryKey: ['service-employee', authority, id],
     queryFn: () => opsApiClient.get<ServiceEmployeeDetail>(`${SERVICE_EMPLOYEES_PATH}${encodeURIComponent(id)}/`),
     retry: false,
+    enabled: authorityReady,
   });
-  const data = employee.data;
-  const notFound = employee.error instanceof OpsApiError && [401, 403, 404].includes(employee.error.status);
+  const data = authorityReady && employee.isSuccess ? employee.data : undefined;
+  const notFound = authorityReady && employee.error instanceof OpsApiError && [401, 403, 404].includes(employee.error.status);
   const eventTitle = (assignment: ServiceAssignment) => hasPermission('event.view')
     ? <Link className="font-semibold text-primary-ink hover:underline" href={`/security-ops/events/${assignment.event_id}`}>{assignment.event_code} · {assignment.event_title}</Link>
     : <span className="font-semibold">{assignment.event_code} · {assignment.event_title}</span>;
   return <DashboardLayout><div className="space-y-4">
-    <Link href={`/service-employees${filters ? `?${new URLSearchParams(filters)}` : ''}`} className="inline-flex min-h-11 items-center text-sm font-medium text-primary-ink hover:underline">← Сотрудники Службы</Link>
+    <Link href={`/service-employees${filters ? `?${new URLSearchParams(filters)}` : ''}`} className="inline-flex min-h-11 items-center text-sm font-medium text-primary-ink hover:underline">← Сотрудники подразделения</Link>
     <PageHeader eyebrow="Личный состав" title={data?.full_name ?? 'Карточка сотрудника'} description="Основные сведения, назначения и история ОМ · только чтение" />
-    {employee.isPending && <p role="status">Загрузка карточки…</p>}
-    {notFound ? <p role="alert">Сотрудник не найден в вашей области доступа.</p> : employee.isError && <LoadFailure what="карточку сотрудника" onRetry={() => void employee.refetch()} isRetrying={employee.isFetching} />}
+    {(permissionsLoading || (authorityReady && employee.isPending)) && <p role="status">Загрузка карточки…</p>}
+    {!authorityReady && !permissionsLoading && <LoadFailure what="доступ к кадровому разделу" onRetry={() => void queryClient.refetchQueries({ queryKey: ['ops-me'], exact: true })} isRetrying={checkingAccess} />}
+    {notFound ? <p role="alert">Сотрудник не найден в вашей области доступа.</p> : authorityReady && employee.isError && <LoadFailure what="карточку сотрудника" onRetry={() => void employee.refetch()} isRetrying={employee.isFetching} />}
     {data && <>
       <Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="sm:col-span-2"><EmployeePortrait name={data.full_name} photoUrl={data.photo_url} className="h-24 w-24 text-2xl" /></div>
         <div>
           <p className="font-medium">{[data.rank, data.position].filter(Boolean).join(' · ')}</p>
           <p className="text-sm text-muted-foreground">{data.division?.name ?? 'Без подразделения'}</p>

@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityNotes } from "@/shared/ui/capability-notes";
+
 // Рабочее пространство оценивания (§19.14): очередь заданий, форма оценки и
 // сводка мероприятия. Экран не создаёт заданий и не придумывает значений:
 // начальная оценка, перечень оснований, состав очереди и счётчики приходят
@@ -18,6 +20,7 @@ import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import { RatingNotificationsSection } from "@/features/ops-ratings/rating-notifications-section";
 import { SubmittedEvaluationCard } from "@/features/ops-ratings/submitted-evaluation-card";
 import { EvaluationConflictNotice } from "@/features/ops-ratings/evaluation-conflict-notice";
+import { GroupRoster } from "@/features/ops-ratings/group-roster";
 import {
   DIRECTION_LABEL,
   RATING_DEFAULT_SCORE,
@@ -122,7 +125,10 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
     const found = validateSubmission(input, bases);
     setViolation(found);
     if (found !== null) return;
-    mutation.mutate({ ...input, revision: item.revision, idempotencyKey });
+    mutation.mutate({
+      ...input, revision: item.revision, idempotencyKey,
+      ...(item.targetGroupId ? { groupRosterToken: item.groupRosterToken } : {}),
+    });
   }
 
   return (
@@ -143,6 +149,8 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         </span>
         <span>Начальная оценка: {item.initialScore}</span>
       </div>
+
+      <GroupRoster snapshot={item.groupSnapshot} />
 
       <label
         className="mb-1 block text-xs font-semibold"
@@ -250,12 +258,24 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
             {mutation.error.message}
           </p>
         )}
+      {serverErrorCode === "GROUP_ROSTER_CHANGED" && (
+        <button
+          type="button"
+          className="mb-3 rounded-md border px-3 py-1.5 text-sm"
+          onClick={async () => {
+            await queryClient.invalidateQueries({ queryKey: ["ops-ratings", "workspace"] });
+            mutation.reset();
+          }}
+        >
+          Обновить состав
+        </button>
+      )}
 
       <div className="flex gap-2">
         <button
           type="submit"
           className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || item.canSubmit === false}
         >
           Отправить оценку
         </button>
@@ -308,7 +328,7 @@ function EvaluationWorkspaceScreen() {
         <PageHeader
           eyebrow="Оценка и отчётность"
           title="Оценивание участников"
-          description="Задания на оценивание формирует сервер. Оценки, полученные вами от других лиц, здесь не показываются и не запрашиваются."
+          description="Выберите мероприятие и оцените участников из списка ваших заданий."
         />
 
         <RatingsNav />
@@ -457,6 +477,8 @@ function EvaluationWorkspaceScreen() {
                           {item.participated ? "участвовал" : "не участвовал"} ·
                           Начальная оценка: {item.initialScore} · Не отправлено
                         </p>
+                        {item.submissionUnavailableReason && <p className="mt-2 text-xs text-muted-foreground">{item.submissionUnavailableReason}</p>}
+                        {item.canSubmit === false && <GroupRoster snapshot={item.groupSnapshot} />}
                         {openItemId === item.id ? (
                           <EvaluationForm
                             item={item}
@@ -467,6 +489,7 @@ function EvaluationWorkspaceScreen() {
                           <button
                             type="button"
                             className="mt-2 rounded-md border px-3 py-1.5 text-sm"
+                            disabled={item.canSubmit === false}
                             onClick={() => setOpenItemId(item.id)}
                           >
                             Оценить: {item.targetSafeLabel}
@@ -548,7 +571,7 @@ function EvaluationWorkspaceScreen() {
                 aria-label={TAB_LABEL.progress}
               >
                 <p className="text-sm">
-                  Участников: {data.eventProgress.participants} · Заданий:{" "}
+                  {data.eventProgress.byDirection.some(row => row.direction === "SENIOR_TO_GROUP") ? "Участников и групп" : "Участников"}: {data.eventProgress.participants} · Заданий:{" "}
                   {data.eventProgress.counters.total} · Отправлено:{" "}
                   {data.eventProgress.counters.submitted} · Осталось:{" "}
                   {data.eventProgress.counters.remaining}
@@ -571,19 +594,7 @@ function EvaluationWorkspaceScreen() {
               </section>
             )}
 
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Что не показывается</h2>
-              <ul className="flex flex-col gap-2">
-                {data.unavailableViews.map((view) => (
-                  <li key={view.code} className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">
-                      {view.label}.{" "}
-                    </span>
-                    {view.reason}
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <CapabilityNotes title="Правила оценивания" items={data.unavailableViews} />
           </>
         )}
       </div>

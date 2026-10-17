@@ -48,7 +48,9 @@ class TestTestDatabaseIsolation(SimpleTestCase):
             # Не skip: ручка обязана исполняться. Промолчи тест здесь —
             # settings, перестав её читать, вернули бы прогоны в общую базу,
             # и ровно в этом режиме этого никто бы не заметил.
-            assert name == override, f"{name!r} не равно PR_TEST_DB_NAME"
+            worker = os.environ.get("PYTEST_XDIST_WORKER")
+            expected = f"{override}_{worker}" if worker else override
+            assert name == expected, f"{name!r} не равно {expected!r}"
             return
 
         tag = hashlib.sha1(str(settings.BASE_DIR).encode()).hexdigest()[:8]

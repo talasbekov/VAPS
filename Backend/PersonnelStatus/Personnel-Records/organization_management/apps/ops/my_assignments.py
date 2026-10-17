@@ -65,33 +65,52 @@ _DIRECTORATE_HEAD_ROLES = frozenset(
 def acknowledgement_authority(event, assignment_id, actor_user_id):
     """Кто вправе подтвердить строку: сам либо начальник его управления."""
     row = _find_assignment(event, assignment_id)
-    target = Employee.objects.filter(
-        pk=row.get("employeeId"), is_active=True
-    ).first()
-    if target is None or not actor_user_id:
-        return None
-    if target.user_id is not None:
-        return "self" if str(target.user_id) == str(actor_user_id) else None
-    division_id = employee_scope_division(target.pk)
-    if division_id is None:
-        return None
-    target_division = Division.objects.filter(pk=division_id).first()
-    if target_division is None:
-        return None
-    permitted_scopes = {
-        target_division.pk,
-        *target_division.get_ancestors().values_list("pk", flat=True),
-    }
-    is_head = UserRole.objects.filter(
+    key = str(row.get("employeeId"))
+    return confirmation_authorities([key], actor_user_id).get(key)
+
+
+def confirmation_authorities(employee_ids, actor_user_id):
+    """Общий предикат записи и UI, без отдельного запроса на каждую строку.
+
+    Чтение чужого профиля и глобальное status.manage сами по себе не дают
+    права подтвердить за человека. Сохраняем действующее правило: только
+    сам владелец учётки либо начальник с областью среди предков подразделения
+    сотрудника без учётки. Неназначенная область начальника не глобальная.
+    """
+    keys = {str(value) for value in employee_ids}
+    authorities = dict.fromkeys(keys)
+    numeric = [int(key) for key in keys if key.isdigit()]
+    if not actor_user_id or not numeric:
+        return authorities
+    targets = list(Employee.objects.filter(pk__in=numeric, is_active=True).select_related(
+        "staff_unit__division"
+    ))
+    role_scopes = UserRole.objects.filter(
         user_id=str(actor_user_id),
         role_code_id__in=_DIRECTORATE_HEAD_ROLES,
-        # Руководитель управления отвечает и за отделы в его поддереве. На
-        # живой структуре сотрудник стоит в отделе, а роль начальника — на
-        # управлении; прямое равенство оставляло `[ОЗН-05]` с вечным 403.
-        scope_division_id__in=permitted_scopes,
         is_active=True,
-    ).exists()
-    return "unit_head" if is_head else None
+        scope_division_id__isnull=False,
+    ).values_list("scope_division_id", flat=True)
+    bounds = list(Division.objects.filter(pk__in=role_scopes).values_list(
+        "tree_id", "lft", "rght"
+    )) if any(target.user_id is None for target in targets) else []
+    for target in targets:
+        key = str(target.pk)
+        if target.user_id is not None:
+            if str(target.user_id) == str(actor_user_id):
+                authorities[key] = "self"
+            continue
+        try:
+            staff_unit = target.staff_unit
+        except Employee.staff_unit.RelatedObjectDoesNotExist:
+            continue
+        division = staff_unit.division if staff_unit is not None else None
+        if division is not None and any(
+            tree_id == division.tree_id and left <= division.lft and right >= division.rght
+            for tree_id, left, right in bounds
+        ):
+            authorities[key] = "unit_head"
+    return authorities
 
 
 def may_acknowledge(event, assignment_id, employee, *, actor_user_id=None):

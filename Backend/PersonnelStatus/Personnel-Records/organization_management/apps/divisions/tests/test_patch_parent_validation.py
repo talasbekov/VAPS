@@ -1,4 +1,5 @@
 import pytest
+from organization_management.apps.operations.tests.support import client_for
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
@@ -11,9 +12,7 @@ URL = "/api/divisions/divisions/{}/"
 
 @pytest.fixture
 def api():
-    user = get_user_model().objects.create_user(username="division-patch-user")
-    client = APIClient()
-    client.force_authenticate(user=user)
+    client, _ = client_for("division-validator", "DIVISION_VALIDATOR", ["orgstructure.manage"])
     return client
 
 

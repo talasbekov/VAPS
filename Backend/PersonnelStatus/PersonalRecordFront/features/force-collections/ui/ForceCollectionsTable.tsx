@@ -22,6 +22,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -146,7 +147,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <ForceCampaignsPanel
         enabled={enabled}
         collectionRows={rows}
@@ -159,7 +160,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
           Сборы сил
         </h2>
         <p className="text-muted-foreground text-sm">
-          Мероприятия, с которых штаб собирает силы с департаментов
+          Один сбор на всё ОМ: потребность и распределение сил по всем объектам посещения
         </p>
       </div>
 
@@ -242,10 +243,33 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                         </Badge>
                       )}
                     </div>
-                    <p className="font-medium">{row.title}</p>
+                    <button
+                      type="button"
+                      onClick={() => setOpened(row.eventId)}
+                      className="hover:text-primary focus-visible:ring-ring inline-flex min-h-11 items-center rounded-sm text-left font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2"
+                    >
+                      {row.title}
+                    </button>
+                    {row.visitObjects === undefined ? (
+                      <p className="text-muted-foreground text-xs">
+                        Объекты посещения — в карточке сбора
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium">Объекты ОМ: {row.visitObjects.length}</p>
+                        {row.visitObjects.length > 0 && (
+                          <ol aria-label="Объекты посещения" className="flex max-w-md flex-wrap gap-x-3 gap-y-1 text-xs">
+                            {row.visitObjects.map((visit, index) => (
+                              <li key={visit.visitObjectId} className="whitespace-normal break-words">
+                                <span className="text-muted-foreground">{index + 1}. </span>{visit.objectName}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    )}
                     <p className="text-muted-foreground text-xs">
                       {[
-                        row.location,
                         row.eventTime,
                         row.departments > 0
                           ? `департаментов: ${row.departments}`
@@ -282,22 +306,16 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                     )}
                   </TableCell>
                   <TableCell>
-                    {/* ЗОНА НАЖАТИЯ 44 px (Plane №684). Здесь стоял `p-1`, и
-                        вокруг шеврона в 16 px оставалось около 24 px — вдвое
-                        меньше минимума, которого требуют правила касания. А
-                        это ЕДИНСТВЕННЫЙ орган управления в строке и
-                        единственный вход в карточку сбора: промах по нему
-                        означает «страница не отвечает». Размер задан
-                        `size-11` (44 px) с центрированием, а не увеличенным
-                        отступом: отступ раздул бы и строку таблицы. */}
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
                       onClick={() => setOpened(row.eventId)}
                       aria-label={`Открыть сбор ${row.code}`}
-                      className="hover:bg-muted inline-flex size-11 items-center justify-center rounded-md"
+                      className="min-h-11 whitespace-nowrap"
                     >
+                      Открыть сбор
                       <ChevronRight className="size-4" aria-hidden="true" />
-                    </button>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

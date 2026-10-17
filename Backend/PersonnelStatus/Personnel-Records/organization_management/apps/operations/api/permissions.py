@@ -66,6 +66,19 @@ def require_any_permission(request, *permission_codes):
         raise PermissionDenied("PERMISSION_DENIED")
 
 
+def require_global_permission(request, permission_code):
+    """Authorize administration of global resources from unscoped grants."""
+    actor_id = resolve_actor_id(request)
+    if actor_id is None:
+        raise PermissionDenied("PERMISSION_DENIED")
+    perms = getattr(request, "_ops_global_permissions", None)
+    if perms is None:
+        perms = PermissionService.unscoped_permissions(actor_id)
+        request._ops_global_permissions = perms
+    if "*" not in perms and permission_code not in perms:
+        raise PermissionDenied("PERMISSION_DENIED")
+
+
 def require_scoped_permission(request, permission_code, division_id):
     """Гейт действия на право В ОБЛАСТИ подразделения (Plane №74).
 

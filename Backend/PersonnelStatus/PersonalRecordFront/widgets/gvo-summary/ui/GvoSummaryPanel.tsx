@@ -283,7 +283,7 @@ export function GvoSummaryPanel({
                         </p>
                       </div>
                     </div>
-                    <div className="mt-3 grid gap-px bg-[hsl(210_40%_94%)] [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+                    <div className="mt-3 grid gap-px bg-[hsl(210_40%_94%)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">
                       {person.facts.map((fact) => (
                         <div key={fact.key} className="bg-card px-3 py-2">
                           <p className="text-[10.5px] font-semibold text-muted-foreground">
@@ -303,7 +303,7 @@ export function GvoSummaryPanel({
         </Section>
 
         {/* Борта */}
-        <div className="grid gap-[14px] [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
+        <div className="grid gap-[14px] [grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))]">
           <FlightCard
             title="Прибытие / тип борта"
             flight={summary.arrival}
@@ -322,7 +322,7 @@ export function GvoSummaryPanel({
 
         {/* Организация */}
         <Section title="Организация">
-          <div className="grid gap-[10px] [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
+          <div className="grid gap-[10px] [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]">
             {(
               [
                 ["Место проживания", summary.stay.place],
@@ -389,7 +389,7 @@ export function GvoSummaryPanel({
             </div>
           }
         >
-          <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
+          <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))]">
             {summary.groups.map((group, index) => (
               <div key={`${group.name}-${index}`} className="overflow-hidden rounded-[10px] border">
                 {/* bg-muted вместо хардкода прототипа: тот не переопределён
@@ -519,7 +519,7 @@ export function GvoSummaryPanel({
           {summary.visits.length === 0 ? (
             <EmptyBox text="Объекты посещения не добавлены в мероприятие" />
           ) : (
-          <div className="grid gap-[11px] [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+          <div className="grid gap-[11px] [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]">
             {summary.visits.map((visit, index) => (
               <div key={`${visit.day}-${index}`} className="overflow-hidden rounded-[10px] border">
                 {/* bg-muted вместо хардкода прототипа: тот не переопределён

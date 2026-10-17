@@ -17,10 +17,13 @@
  * 🔴 Фикстура обязана содержать И просроченные статусы, И действующие — иначе
  * ассерт «просроченные отмечены» вырождается в «отмечены все» или «никто».
  */
+import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { businessDateOf, localIsoDate } from './business-date'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { probeComment } from './probe-statuses'
+import { probeTitle } from './probe-events'
+import { objectWithPassport, standCall } from './prepare-events'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -94,6 +97,438 @@ async function column(page: Page, head: string): Promise<string[]> {
 // Местная дата, не UTC (Plane №373 и №377): ночью `toISOString()` отдаёт
 // вчерашнее число, и заведённый статус приходит вчерашним днём.
 const iso = (date: Date): string => localIsoDate(date)
+
+interface OwnTablePerson {
+  id: number
+  first_name: string
+  last_name: string
+  personnel_number: string
+}
+
+interface TableScene {
+  people: OwnTablePerson[]
+  search: string
+  departmentId: number
+  directorateId: number
+}
+
+interface SectionStatus {
+  id: number
+  employee_id: number
+  status_type_code: string
+  date_start: string
+  date_end: string
+  state: string
+  source: string
+  source_ref: string | null
+  comment: string | null
+  participations: { event_id: number; kind_code: string; event_code?: string }[]
+}
+
+async function tableApi<T>(token: string, method: string, path: string, data?: unknown, expectedStatus?: number): Promise<T> {
+  const response = await fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: data === undefined ? undefined : JSON.stringify(data),
+  })
+  const body = await response.text()
+  expect(response.ok, `[фикстура] ${method} ${path}: ${response.status} ${body}`).toBe(true)
+  if (expectedStatus !== undefined) expect(response.status, `${method} ${path}: ${body}`).toBe(expectedStatus)
+  return JSON.parse(body) as T
+}
+
+async function tablePages<T>(token: string, path: string): Promise<T[]> {
+  const rows: T[] = []
+  const visited = new Set<string>()
+  let next: string | null = path
+  let count = 0
+  while (next !== null) {
+    expect(visited.has(next), '[фикстура] кольцо страниц таблицы').toBe(false)
+    visited.add(next)
+    const page: { results: T[]; next: string | null; count: number } = await tableApi(token, 'GET', next)
+    rows.push(...page.results)
+    count = page.count
+    const url: URL | null = page.next === null ? null : new URL(page.next, API)
+    next = url === null ? null : `${url.pathname}${url.search}`
+  }
+  expect(rows.length, '[фикстура] API вернул не все строки').toBe(count)
+  return rows
+}
+
+interface TableSubmission {
+  id: number
+  business_date: string
+  version: number
+  is_current: boolean
+}
+
+/** The amendment selector uses saved roster IDs, even after an employee moves. */
+async function tableSubmissionRosters(token: string, businessDate: string): Promise<{
+  history: TableSubmission[]
+  coveredEmployeeIds: Set<number>
+}> {
+  const access = await tableApi<{
+    permissions: string[]; roles: { code: string; scope_division_id: number | null }[]
+  }>(token, 'GET', '/api/operations/my-permissions/')
+  const roles = await tablePages<{ code: string; permissions: string[] }>(
+    token, '/api/operations/roles/?limit=500',
+  )
+  // A scoped wildcard also appears in effective permissions. Confirm the
+  // actual unscoped grant, or invisible submissions could look absent.
+  expect(access.roles.some((grant) => grant.scope_division_id === null && roles.some((role) =>
+    role.code === grant.code && (role.permissions.includes('*') || role.permissions.includes('status.view')))),
+  '[фикстура] нужны глобальные права чтения всех сдач дня').toBe(true)
+  expect(access.permissions.includes('*') || access.permissions.includes('status.view')).toBe(true)
+  const history = await tablePages<TableSubmission>(
+    token, `/api/operations/daily-submissions/?business_date=${businessDate}&history=true&limit=500`,
+  )
+  expect(new Set(history.map((row) => row.id)).size).toBe(history.length)
+  const coveredEmployeeIds = new Set<number>()
+  for (const row of history) {
+    expect(row.business_date).toBe(businessDate)
+    expect(Number.isInteger(row.id) && row.id > 0).toBe(true)
+    expect(Number.isInteger(row.version) && row.version > 0).toBe(true)
+    expect(typeof row.is_current).toBe('boolean')
+    if (!row.is_current) continue
+    const detail = await tableApi<TableSubmission & { snapshot: { roster: { employee_id: number }[] } }>(
+      token, 'GET', `/api/operations/daily-submissions/${row.id}/`, undefined, 200,
+    )
+    expect([detail.id, detail.business_date, detail.version, detail.is_current])
+      .toEqual([row.id, businessDate, row.version, true])
+    expect(Array.isArray(detail.snapshot?.roster), '[фикстура] сдача должна раскрывать сохранённый состав').toBe(true)
+    for (const person of detail.snapshot.roster) {
+      expect(Number.isInteger(person.employee_id) && person.employee_id > 0).toBe(true)
+      coveredEmployeeIds.add(person.employee_id)
+    }
+  }
+  return { history, coveredEmployeeIds }
+}
+
+/** Own USER rows on free stand personnel; no existing employee/status is edited. */
+async function withOwnPaginationBackground(
+  token: string,
+  businessDate: string,
+  excludedEmployeeIds: number[],
+  check: (background: SectionStatus[]) => Promise<void>,
+): Promise<void> {
+  expect(LIVE, '[фикстура] массовая проба требует явно включённый живой стенд').toBe(true)
+  const submissionsBefore = await tableSubmissionRosters(token, businessDate)
+  const before = await tablePages<SectionStatus>(
+    token, `/api/operations/statuses/?business_date=${businessDate}&limit=500`,
+  )
+  const beforeIds = new Set(before.map((row) => row.id))
+  const occupied = new Set([
+    ...excludedEmployeeIds, ...before.map((row) => row.employee_id), ...submissionsBefore.coveredEmployeeIds,
+  ])
+  const people = await tablePages<{
+    id: number; is_active: boolean; employment_status: string; division: number | null
+    hire_date: string | null; dismissal_date: string | null
+  }>(token, '/api/core/employees/?status=working&page_size=500')
+  const candidates = people.filter((person) => person.is_active && person.employment_status === 'working' &&
+    person.division !== null && !occupied.has(person.id) &&
+    (person.hire_date === null || person.hire_date <= businessDate) &&
+    (person.dismissal_date === null || person.dismissal_date > businessDate)).slice(0, 500)
+  expect(candidates, '[фикстура] нужны 500 действующих сотрудников со слотом без текущего Ops-статуса и без покрытия сдачей').toHaveLength(500)
+  expect(new Set(candidates.map((person) => person.id)).size).toBe(500)
+  const types = await tablePages<{ code: string; is_active: boolean; is_hard_block: boolean }>(
+    token, '/api/operations/status-types/?limit=500',
+  )
+  const type = types.find((row) => row.code === 'IN_SERVICE')
+  expect(type?.is_active, '[фикстура] IN_SERVICE должен быть активен').toBe(true)
+  expect(type?.is_hard_block).toBe(false)
+  const end = new Date(`${businessDate}T00:00:00Z`)
+  end.setUTCDate(end.getUTCDate() + 1)
+  const dateEnd = end.toISOString().slice(0, 10)
+  const batchId = randomUUID()
+  const comment = probeComment(`Фон пагинации таблицы ${batchId}`)
+  const refs = new Map(candidates.map((person) => [person.id, `e2e-table-page:${batchId}:${person.id}`]))
+  const statusIds = new Set<number>()
+  const statusEmployeeIds = new Map<number, number>()
+  let attempted = false
+  const discover = async () => {
+    const rows = await tablePages<SectionStatus>(
+      token, `/api/operations/statuses/?business_date=${businessDate}&include_cancelled=true&limit=500`,
+    )
+    const owned = rows.filter((row) => !beforeIds.has(row.id) && row.comment === comment &&
+      refs.has(row.employee_id) && row.source_ref === refs.get(row.employee_id))
+    for (const row of owned) {
+      statusIds.add(row.id)
+      statusEmployeeIds.set(row.id, row.employee_id)
+    }
+    return owned
+  }
+  try {
+    const beforeCreate = await tableSubmissionRosters(token, businessDate)
+    expect(candidates.filter((person) => beforeCreate.coveredEmployeeIds.has(person.id)),
+      '[фикстура] фон не должен менять сотрудника из состава сданного дня').toEqual([])
+    expect([...beforeCreate.history].sort((a, b) => a.id - b.id), 'сдачи изменились во время подготовки фона')
+      .toEqual([...submissionsBefore.history].sort((a, b) => a.id - b.id))
+    attempted = true
+    // Bulk is atomic and deliberately has no overlap override. Every subject
+    // was free on this exact day; a race/conflict must fail this preparation.
+    // No amendment reason: a newly covering submission causes atomic 422,
+    // rather than authorizing a foreign submission's next version.
+    const created = await tableApi<{ created: number }>(token, 'POST', '/api/operations/statuses/bulk/', {
+      business_date: businessDate,
+      rows: candidates.map((person) => ({
+        employee_id: person.id, status_type_code: type!.code, date_start: businessDate, date_end: dateEnd,
+        comment, source_ref: refs.get(person.id),
+      })),
+    }, 201)
+    const background = await discover()
+    expect(created.created).toBe(500)
+    expect(background).toHaveLength(500)
+    expect(statusIds.size).toBe(500)
+    expect(background.map((row) => row.employee_id).sort((a, b) => a - b))
+      .toEqual(candidates.map((person) => person.id).sort((a, b) => a - b))
+    for (const row of background) {
+      expect(row.id).toBeGreaterThan(0)
+      expect(row.state).toBe('ACTIVE')
+      expect(row.source).toBe('USER')
+      expect(row.comment).toBe(comment)
+      expect(row.source_ref).toBe(refs.get(row.employee_id))
+      expect(row.status_type_code).toBe('IN_SERVICE')
+      expect(row.date_start).toBe(businessDate)
+      expect(row.date_end).toBe(dateEnd)
+      expect(row.participations).toEqual([])
+    }
+    await check(background)
+  } finally {
+    const failures: unknown[] = []
+    // A failed/lost bulk response may still have committed. Rediscover by
+    // this unique batch and subjects, never by status type or global (e2e).
+    if (attempted) {
+      try { await discover() } catch (error) { failures.push(error) }
+    }
+    const ids = [...statusIds]
+    const protectedStatusIds: number[] = []
+    let beforeCleanup: Awaited<ReturnType<typeof tableSubmissionRosters>> | undefined
+    if (ids.length > 0) {
+      try { beforeCleanup = await tableSubmissionRosters(token, businessDate) }
+      catch (error) { failures.push(error) }
+    }
+    const eachOwned = async (action: (id: number) => Promise<void>) => {
+      let cursor = 0
+      await Promise.all(Array.from({ length: Math.min(8, ids.length) }, async () => {
+        while (cursor < ids.length) {
+          const id = ids[cursor++]
+          try { await action(id) } catch (error) { failures.push(error) }
+        }
+      }))
+    }
+    await eachOwned(async (id) => {
+      // Cancel requires reason, and the service also uses it as amendment
+      // authorization. There is no public amend=false option: fail closed
+      // if a submission now covers an own row, or coverage cannot be read.
+      const employeeId = statusEmployeeIds.get(id)
+      if (beforeCleanup === undefined || employeeId === undefined || beforeCleanup.coveredEmployeeIds.has(employeeId)) {
+        protectedStatusIds.push(id)
+        throw new Error(`не отменён свой статус ${id}: нельзя исключить поправку чужой сдачи`)
+      }
+      const cancelled = await tableApi<SectionStatus>(
+        token, 'POST', `/api/operations/statuses/${id}/cancel/`, { reason: comment }, 200,
+      )
+      expect(cancelled.id).toBe(id)
+      expect(cancelled.state).toBe('CANCELLED')
+    })
+    // Verify every stored row independently even when one cancel request failed.
+    await eachOwned(async (id) => {
+      const stored = await tableApi<SectionStatus>(token, 'GET', `/api/operations/statuses/${id}/`, undefined, 200)
+      expect(stored.id).toBe(id)
+      expect(stored.state).toBe('CANCELLED')
+      expect(stored.comment).toBe(comment)
+      expect(stored.source_ref).toBe(refs.get(stored.employee_id))
+    })
+    try {
+      const restored = await tablePages<SectionStatus>(
+        token, `/api/operations/statuses/?business_date=${businessDate}&limit=500`,
+      )
+      expect(restored.sort((a, b) => a.id - b.id), 'пачка изменила существующие текущие статусы')
+        .toEqual([...before].sort((a, b) => a.id - b.id))
+    } catch (error) { failures.push(error) }
+    try {
+      const afterCleanup = await tableSubmissionRosters(token, businessDate)
+      expect([...afterCleanup.history].sort((a, b) => a.id - b.id), 'фон создал или изменил чужую версию сдачи')
+        .toEqual([...submissionsBefore.history].sort((a, b) => a.id - b.id))
+    } catch (error) { failures.push(error) }
+    await test.info().attach('owned-table-pagination-background', {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify({
+        batchId, comment, employeeIds: [...refs.keys()], statusIds: ids, beforeIds: [...beforeIds],
+        submissionIds: submissionsBefore.history.map((row) => row.id), protectedStatusIds,
+      })),
+    })
+    if (failures.length > 0) throw new AggregateError(failures, 'failed to clean up owned pagination background')
+  }
+}
+
+/** Only these new employees/slots are changed; their inactive cards retain audit history. */
+async function withOwnTablePeople(
+  token: string,
+  count: number,
+  check: (scene: TableScene) => Promise<void>,
+): Promise<void> {
+  const divisions = await tablePages<{ id: number; parent: number | null; type_code: string; is_active: boolean }>(
+    token, '/api/core/divisions/?page_size=200',
+  )
+  const directorate = divisions.find((row) => row.is_active && row.type_code === 'directorate' &&
+    divisions.some((parent) => parent.id === row.parent && parent.type_code === 'department' && parent.is_active))
+  expect(directorate, '[фикстура] нужно активное управление департамента').toBeDefined()
+  const positions = await tablePages<{ id: number; is_active: boolean }>(token, '/api/dictionaries/positions/?page_size=200')
+  const position = positions.find((row) => row.is_active)
+  expect(position, '[фикстура] нужна активная должность').toBeDefined()
+  const search = `ПробаТаблиц${randomUUID().replaceAll('-', '')}`
+  const people: OwnTablePerson[] = []
+  const slotIds: number[] = []
+  try {
+    const created = await tableApi<{
+      success: boolean; errors: unknown; rolled_back: boolean
+      created: { employees: OwnTablePerson[]; staff_units: { id: number }[] }
+    }>(token, 'POST', '/api/staff_unit/staff-units/directorate/', {
+      atomic: true,
+      employees: Array.from({ length: count }, (_, index) => ({
+        last_name: search, first_name: index === 0 ? 'Аватар' : `Безфото${index}`,
+        callsign: `ТАБ-${index}-${search.slice(-8)}`,
+      })),
+      staff_units: Array.from({ length: count }, () => ({ division: directorate!.id, position: position!.id })),
+    })
+    people.push(...created.created.employees)
+    slotIds.push(...created.created.staff_units.map((row) => row.id))
+    expect(created.success, JSON.stringify(created.errors)).toBe(true)
+    expect(created.rolled_back).toBe(false)
+    expect(people).toHaveLength(count)
+    expect(slotIds).toHaveLength(count)
+    await check({ people, search, departmentId: directorate!.parent!, directorateId: directorate!.id })
+  } finally {
+    const failures: unknown[] = []
+    if (people.length > 0) {
+      try {
+        const blocked = await tableApi<{ success: boolean; updated: { employees: number }; errors?: unknown }>(
+          token, 'PATCH', '/api/staff_unit/staff-units/directorate/', {
+            atomic: true, employees: people.map((person) => ({ id: person.id, is_active: false })),
+          },
+        )
+        expect(blocked.success, JSON.stringify(blocked.errors)).toBe(true)
+        expect(blocked.updated.employees).toBe(people.length)
+      } catch (error) { failures.push(error) }
+    }
+    for (const id of slotIds) {
+      try {
+        const removed = await fetch(`${API}/api/staff_unit/staff-units/${id}/`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+        })
+        expect(removed.status, `свой штатный слот ${id} не удалён`).toBe(204)
+      } catch (error) { failures.push(error) }
+    }
+    await test.info().attach('owned-table-people', {
+      contentType: 'application/json', body: Buffer.from(JSON.stringify({ people, slotIds, search })),
+    })
+    if (failures.length > 0) throw new AggregateError(failures, 'failed to clean up owned table people')
+  }
+}
+
+/** Current named participation with a real requested event, even after midnight/reseeding. */
+async function withOwnCurrentParticipations(
+  token: string,
+  scene: TableScene,
+  duplicate: boolean,
+  check: (own: { businessDate: string; eventId: number; rows: SectionStatus[] }) => Promise<void>,
+): Promise<void> {
+  const businessDate = await businessDateOf(API, token)
+  const end = new Date(`${businessDate}T00:00:00Z`)
+  end.setUTCDate(end.getUTCDate() + 1)
+  const dateEnd = end.toISOString().slice(0, 10)
+  const comment = probeComment(`Текущее участие таблицы ${scene.search}`)
+  const statusIds: number[] = []
+  let event: { id: string; title: string } | undefined
+  try {
+    const call = standCall(token)
+    const object = await objectWithPassport(call)
+    event = await call('POST', '/api/ops/security-events/', {
+      title: probeTitle(`Текущее участие таблицы ${scene.search}`), objectId: object.id,
+      businessDate, kind: 'INTERNAL', chiefEmployeeId: String(scene.people[0].id),
+    })
+    expect(Number(event!.id), '[фикстура] собственный ОМ ответил без ID').toBeGreaterThan(0)
+    expect(event!.title).toContain('(e2e)')
+    const base = `/api/ops/security-events/${event!.id}`
+    await call('POST', `${base}/recon/import-from-passport/`)
+    const imported = await call('GET', `${base}/`)
+    expect(imported.reconSectorPosts.length, '[фикстура] паспорт не дал постов').toBeGreaterThan(0)
+    await call('PATCH', `${base}/recon/`, {
+      checklist: imported.reconChecklist.map((row: Record<string, unknown>) => ({ ...row, state: 'NORMAL', done: true, result: 'MATCHES' })),
+      sectorPosts: imported.reconSectorPosts.map((row: Record<string, unknown>, index: number) =>
+        index === 0 ? { ...row, need: scene.people.length } : row),
+    })
+    const demand = await call('POST', `${base}/recon/complete/`)
+    expect(demand.forceDemandTotal, '[фикстура] нет потребности для запроса сил').toBeGreaterThanOrEqual(scene.people.length)
+    const allocated = await call('POST', `${base}/forces/allocation/`, {
+      rows: [{ departmentId: String(scene.departmentId), need: scene.people.length }],
+    })
+    const allocation = allocated.forceAllocation.find((row: { departmentId: string }) => row.departmentId === String(scene.departmentId))
+    expect(allocation?.id, '[фикстура] собственная заявка не сохранена').toBeTruthy()
+    const allocationBase = `${base}/forces/allocation/${encodeURIComponent(allocation.id)}`
+    await call('POST', `${allocationBase}/split/`, { rows: [{ divisionId: String(scene.directorateId), need: scene.people.length }] })
+    const notified = await call('POST', `${allocationBase}/notify/`)
+    const saved = notified.forceAllocation.find((row: { id: string }) => row.id === allocation.id)
+    expect(saved?.status).toBe('NOTIFIED')
+    const requested = saved.directorates.find((row: { divisionId: string }) => row.divisionId === String(scene.directorateId))
+    expect(requested?.need).toBe(scene.people.length)
+    expect(requested?.notifiedAt).toBeTruthy()
+    const catalog = await tableApi<{ results: { code: string; groupCode: string | null; isActive: boolean }[] }>(
+      token, 'GET', '/api/ops/dictionaries/EVENT_GROUP_ROLES/entries/',
+    )
+    const role = catalog.results.find((row) => row.isActive && row.groupCode === 'SCREENING_GROUP')
+    expect(role, '[фикстура] нужна активная роль SCREENING_GROUP').toBeDefined()
+    expect(role?.isActive).toBe(true)
+    expect(role?.groupCode).toBe('SCREENING_GROUP')
+    expect(role?.code, '[фикстура] роль группы ответила без кода').toEqual(expect.any(String))
+    expect(role!.code.trim()).not.toBe('')
+    const participation = { event_id: Number(event!.id), kind_code: 'SCREENING_GROUP', role_code: role!.code }
+    for (const person of scene.people) {
+      for (let index = 0; index < (duplicate ? 2 : 1); index += 1) {
+        const created = await tableApi<SectionStatus>(token, 'POST', '/api/operations/statuses/', {
+          employee_id: person.id, status_type_code: 'IN_EVENT', date_start: businessDate, date_end: dateEnd,
+          comment, amendment_reason: comment, participations: [participation],
+          // All possible overlaps are this fixture's new personnel projection or
+          // its own first duplicate; no existing employee/status is overwritten.
+          override: true, override_reason: comment,
+        })
+        statusIds.push(created.id)
+        expect(created.id).toBeGreaterThan(0)
+        expect(created.employee_id).toBe(person.id)
+        expect(created.state).toBe('ACTIVE')
+        expect(created.date_start).toBe(businessDate)
+        expect(created.date_end).toBe(dateEnd)
+        expect(created.participations).toEqual([expect.objectContaining(participation)])
+      }
+    }
+    const rows: SectionStatus[] = []
+    for (const id of statusIds) rows.push(await tableApi(token, 'GET', `/api/operations/statuses/${id}/`))
+    expect(rows).toHaveLength(scene.people.length * (duplicate ? 2 : 1))
+    for (const row of rows) {
+      expect(row.participations).toEqual([expect.objectContaining(participation)])
+      expect(row.date_start).toBe(businessDate)
+      expect(row.date_end).toBe(dateEnd)
+    }
+    expect(rows.every((row) => row.state === 'ACTIVE' && row.participations[0]?.event_code)).toBe(true)
+    await check({ businessDate, eventId: Number(event!.id), rows })
+  } finally {
+    const failures: unknown[] = []
+    for (const id of statusIds) {
+      try {
+        const cancelled = await tableApi<SectionStatus>(token, 'POST', `/api/operations/statuses/${id}/cancel/`, { reason: comment })
+        expect(cancelled.state).toBe('CANCELLED')
+      } catch (error) { failures.push(error) }
+    }
+    // Event deletion retains actionable notification history. The established
+    // probe purge receives the exact own ID/title instead of a dangling request.
+    await test.info().attach('owned-table-participations', {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify({ businessDate, statusIds, event, eventCleanup: 'purge_probe_events by exact ID/title' })),
+    })
+    if (failures.length > 0) throw new AggregateError(failures, 'failed to cancel owned table participations')
+  }
+}
 
 /**
  * Завести СРОЧНЫЙ действующий статус (с датой окончания) первому сотруднику
@@ -290,229 +725,149 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
   })
 
   test('строка называет, из какого учёта пришло привлечение на ОМ', async ({ page }) => {
-    /**
-     * Plane №314. В одной ячейке соседствуют два факта из РАЗНЫХ каталогов:
-     * бейдж кадрового статуса (`EmployeeStatus` — например «В строю») и ссылки
-     * на мероприятия из каталога раздела ОМ. Оба верны каждый в своём учёте, но
-     * рядом и без подписи строка утверждала разом «в строю» и «привлечён на
-     * ОМ» — и читалось это как противоречие данных, а не как два учёта.
-     *
-     * 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (30.08.2026). Здесь стерёгся ПОДПИСЬ-ярлык «по
-     * учёту ОМ» внутри общей ячейки — половинчатая мера, пока заказчик не
-     * выбрал главный каталог. Выбор сделан: ЯВНАЯ ВТОРАЯ КОЛОНКА «По разделу
-     * ОМ». Подписи больше нет — вместо неё колонка, и проба стережёт её:
-     * учёт раздела обязан стоять В СВОЕЙ ячейке, а кадровый бейдж — в своей.
-     * Мост кодов (раздел перекрывает кадровый) заказчиком отвергнут, и проба
-     * заодно держит этот конец: кадровый бейдж из строки не исчезает.
-     *
-     * 🔴 ПОДОПЫТНОГО НАХОДИМ ЧЕРЕЗ API, А НЕ «КТО ПОПАЛСЯ НА ПЕРВОЙ СТРАНИЦЕ»
-     * (урок Plane №288). Первая редакция этой пробы искала строку с ссылкой на
-     * ОМ среди видимых пятидесяти — и через полчаса покраснела, потому что
-     * фикстуры пересеялись и привлечённый уехал с первой страницы. Кто
-     * привлечён сегодня, знает сервер; таблицу доводим до него поиском.
-     */
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
-    // Деловая дата — С СЕРВЕРА (Plane №373). `toISOString()` отдаёт UTC, и в
-    // плюсовой зоне после семи вечера проба спрашивала бы ВЧЕРАШНИЕ статусы,
-    // сравнивая их с сегодняшним экраном.
-    const today = await businessDateOf(API, token)
-    const statuses = (await (
-      await fetch(`${API}/api/operations/statuses/?business_date=${today}&limit=200`, {
-        headers: { Authorization: `Bearer ${token}` },
+    await withOwnTablePeople(token, 1, async (scene) => {
+      await withOwnCurrentParticipations(token, scene, true, async (own) => {
+        const employee = scene.people[0]
+        // Two real ACTIVE rows carry the same named event. Deduplication cannot
+        // pass vacuously when a reseed or midnight removed the old stand data.
+        const serverRows = await tablePages<SectionStatus>(
+          token,
+          `/api/operations/statuses/?employee_id=${employee.id}&business_date=${own.businessDate}&limit=200`,
+        )
+        const attached = serverRows.filter((row) => own.rows.some((created) => created.id === row.id))
+        expect(attached).toHaveLength(2)
+        expect(attached.every((row) => row.state === 'ACTIVE')).toBe(true)
+        const events = attached.flatMap((row) => row.participations.map((part) => part.event_id))
+        expect(events).toEqual([own.eventId, own.eventId])
+
+        await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+        await page.goto('/statuses')
+        await hydrated(page)
+        await tableFilled(page)
+        await page.getByPlaceholder('Поиск по ФИО').fill(`${employee.last_name} ${employee.first_name}`)
+        const row = page.locator(`table tbody tr[data-employee-id="${employee.id}"]`)
+        await expect(row, `сотрудник ${employee.last_name} не нашёлся в таблице`).toBeVisible({ timeout: 15_000 })
+
+        // Address columns by their headings so a layout reorder stays valid.
+        const headers = await page.locator('table thead th').allInnerTexts()
+        const kadrIndex = headers.findIndex((text) => text.includes('Статус (кадровый)'))
+        const opsIndex = headers.findIndex((text) => text.includes('По разделу ОМ'))
+        expect(kadrIndex, 'колонки кадрового статуса нет вовсе').toBeGreaterThanOrEqual(0)
+        expect(opsIndex, 'колонки «По разделу ОМ» нет вовсе (Plane №314)').toBeGreaterThanOrEqual(0)
+        const opsCell = row.locator('td').nth(opsIndex)
+        const kadrCell = row.locator('td').nth(kadrIndex)
+        const opsLinks = opsCell.getByRole('link', { name: /^→ ОМ-/ })
+        await expect(opsLinks.first(), 'ссылка ушла не в колонку раздела').toBeVisible({ timeout: 20_000 })
+        await expect(opsCell.locator(
+          `a[href="/security-ops/events/${own.eventId}"], a[href="/security-ops/events/${own.eventId}/"]`,
+        )).toHaveCount(1)
+        const labels = (await opsLinks.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
+        expect(labels.length - new Set(labels).size, `повторяется подпись: ${labels.join(' | ')}`).toBe(0)
+
+        await expect(kadrCell.getByRole('link', { name: /^→ ОМ-/ }), 'учёты снова в одной ячейке').toHaveCount(0)
+        await expect(kadrCell.locator('span,div').first(), 'кадровый бейдж исчез').toBeVisible()
+        expect((await kadrCell.innerText()).trim(), 'кадровая колонка пуста').not.toBe('')
       })
-    ).json()) as {
-      results?: Array<{
-        employee_id: number
-        participations?: Array<{ event_id: number }>
-      }>
-    }
-    const rows = statuses.results ?? []
-    const attached = rows.find((row) => (row.participations ?? []).length > 0)
-    expect(
-      attached,
-      'на стенде сегодня нет ни одного привлечения на ОМ — проверять нечего',
-    ).toBeDefined()
-
-    // 🔴 ПОДОПЫТНЫЙ ВЫБИРАЕТСЯ ПО СТЕРЕГОМОМУ СВОЙСТВУ, А НЕ «КТО ПЕРВЫЙ»
-    // (уточнено ревью №819). Дубль в ячейке возникает у сотрудника, у
-    // которого ОДНО И ТО ЖЕ мероприятие висит на ДВУХ строках статуса; строка
-    // «первая с любым участием» этого не гарантирует. Пока свойство совпадало
-    // случайно, ассерт о повторах был бы вакуумно зелёным после первого же
-    // пересева фикстур — то есть перестал бы падать на мутации «убрать
-    // сведение в хуке», сохраняя вид рабочего.
-    const eventsOfEmployee = new Map<number, number[]>()
-    for (const row of rows) {
-      const seen = eventsOfEmployee.get(row.employee_id) ?? []
-      seen.push(...(row.participations ?? []).map((p) => p.event_id))
-      eventsOfEmployee.set(row.employee_id, seen)
-    }
-    const duplicated = [...eventsOfEmployee.entries()].find(
-      ([, events]) => new Set(events).size < events.length,
-    )
-    const subjectId = duplicated?.[0] ?? attached!.employee_id
-    // Гард — как у соседей: «свойства нет на стенде» и «дефект вернулся»
-    // должны выглядеть по-разному.
-    if (duplicated === undefined) {
-      console.log(
-        'на стенде нет сотрудника с одним ОМ на двух строках статуса — ' +
-          'проверяется только раскладка учётов по колонкам, не сведение дублей',
-      )
-    }
-
-    const employee = (await (
-      await fetch(`${API}/api/core/employees/${subjectId}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).json()) as { last_name: string; first_name: string }
-
-    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/statuses')
-    await hydrated(page)
-    await tableFilled(page)
-
-    await page.getByPlaceholder('Поиск по ФИО').fill(`${employee.last_name} ${employee.first_name}`)
-    // 🔴 СТРОКА АДРЕСУЕТСЯ ПО id, А НЕ ПО ФАМИЛИИ. На стенде полных тёзок по
-    // четверо, и поиск (пословный с Plane №312) вернёт их всех: `.first()` по
-    // фамилии выбрал бы однофамильца БЕЗ привлечения, проба упала бы с
-    // «пропала ссылка на мероприятие» и указала на регрессию, которой нет.
-    // Атрибут `data-employee-id` заведён ради этого же в №281.
-    const row = page.locator(
-      `table tbody tr[data-employee-id="${subjectId}"]`,
-    )
-    await expect(row, `сотрудник ${employee.last_name} не нашёлся в таблице`).toBeVisible({
-      timeout: 15_000,
     })
-    // Колонки адресуются по позиции заголовка, а не по номеру ячейки в коде:
-    // порядок колонок — вопрос вёрстки, и вшитый индекс сломался бы от любой
-    // перестановки, ничего не сказав о сути.
-    const headers = await page.locator('table thead th').allInnerTexts()
-    const kadrIndex = headers.findIndex((text) => text.includes('Статус (кадровый)'))
-    const opsIndex = headers.findIndex((text) => text.includes('По разделу ОМ'))
-    expect(kadrIndex, 'колонки кадрового статуса нет вовсе').toBeGreaterThanOrEqual(0)
-    expect(opsIndex, 'колонки «По разделу ОМ» нет вовсе (Plane №314)').toBeGreaterThanOrEqual(0)
-
-    const opsCell = row.locator('td').nth(opsIndex)
-    const kadrCell = row.locator('td').nth(kadrIndex)
-
-    const opsLinks = opsCell.getByRole('link', { name: /^→ ОМ-/ })
-    await expect(
-      opsLinks.first(),
-      'ссылка на мероприятие ушла не в колонку раздела — учёты снова в одной ячейке',
-    ).toBeVisible()
-    // 🔴 ОДНО МЕРОПРИЯТИЕ — ОДНА СТРОКА (Plane №819). Участия склеивались со
-    // ВСЕХ строк статуса сотрудника, а у кого их две (на стенде у сотрудника 1
-    // две действующие строки `IN_EVENT`, и одно и то же участие висит на
-    // обеих), ячейка печатала одну и ту же ссылку дважды — строка утверждала
-    // «привлечён на ОМ-2026-11 ДВАЖДЫ», факт о расстановке, которого нет.
-    // Повторы ищем ПО ВИДИМОЙ ПОДПИСИ, а не по `href`: у одного ОМ законно
-    // бывает несколько строк (разные объект и пост), и подписи у них разные —
-    // а вот две одинаковые подписи не значат ничего, кроме дубля.
-    const labels = (await opsLinks.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
-    expect(
-      labels.length - new Set(labels).size,
-      `в колонке раздела повторяется подпись: ${labels.join(' | ')}`,
-    ).toBe(0)
-    await expect(
-      kadrCell.getByRole('link', { name: /^→ ОМ-/ }),
-      'ссылка на мероприятие осталась в кадровой колонке: строка снова утверждает два факта разом',
-    ).toHaveCount(0)
-    // Кадровый статус НЕ перекрыт разделом (мост кодов заказчиком отвергнут):
-    // бейдж на месте, и им живут кадровые отчёты.
-    await expect(
-      kadrCell.locator('span,div').first(),
-      'кадровый бейдж исчез из своей колонки',
-    ).toBeVisible()
-    await expect(
-      await kadrCell.innerText(),
-      'кадровая колонка пуста — статус подменён учётом раздела',
-    ).not.toBe('')
   })
 
   test('привлечения доезжают до таблицы ВСЕ, а не первой страницей', async ({ page }) => {
-    /**
-     * Класс дефекта, который проба «одной строки» поймать не может.
-     *
-     * Соседняя проба выше проверяет, что у КОНКРЕТНОГО привлечённого видна
-     * ссылка на ОМ, — и она была зелёной, когда экран получал 50 строк участий
-     * из тысячи: её подопытный попадал в эти 50. Дефект (ручка раздела
-     * пагинируется limit/offset и параметр `page_size` ИГНОРИРУЕТ, умолчание
-     * 50) нашло ревью, а не прогон, потому что ни один ассерт не говорил
-     * о ЧИСЛЕ. Утверждение «участие видно у Иванова» не отвечает на вопрос
-     * «а у остальных?».
-     *
-     * Здесь ассерт именно о числе: у КАЖДОЙ видимой строки, чей сотрудник по
-     * данным сервера сегодня привлечён, обязана стоять ссылка на мероприятие.
-     * Разъедется клиент с сервером на одну строку — проба назовёт её поимённо.
-     */
+    test.setTimeout(240_000)
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
-    // 🔴 ДЕЛОВАЯ ДАТА — С СЕРВЕРА, а не из браузерных часов (Plane №373).
-    // Здесь эта проба и попалась: 01.09.2026 в 00:26 по местному времени
-    // (UTC+5) `toISOString()` дал 31.08, проба взяла ВЧЕРАШНИЕ привлечения и
-    // объявила «у сотрудников 7, 9, 10 сервер знает, а таблица не
-    // показывает». Экран при этом был прав — он спрашивает дату у расхода
-    // (`use-ops-section-statuses`), как и положено.
-    const today = await businessDateOf(API, token)
+    await withOwnTablePeople(token, 2, async (scene) => {
+      await withOwnCurrentParticipations(token, scene, false, async (own) => {
+        const employeeIds = scene.people.map((person) => person.id)
+        await withOwnPaginationBackground(token, own.businessDate, employeeIds, async (background) => {
+          const serverRows = await tablePages<SectionStatus>(
+            token, `/api/operations/statuses/?business_date=${own.businessDate}&limit=500`,
+          )
+          const attachedIds = new Set(serverRows.filter((row) => row.participations.length > 0).map((row) => row.employee_id))
+          expect(employeeIds.every((id) => attachedIds.has(id)), 'сервер не отдал собственные участия').toBe(true)
+          const tail = own.rows.map((created) => serverRows.find((row) => row.id === created.id)!)
+          expect(tail.every(Boolean), 'собственные статусы отсутствуют в полной выдаче').toBe(true)
+          expect(tail).toHaveLength(2)
 
-    // Все страницы, а не первая: ровно та ошибка, которую проба и стережёт.
-    const attachedIds = new Set<number>()
-    let next: string | null =
-      `${API}/api/operations/statuses/?business_date=${today}&limit=200`
-    for (let guard = 0; guard < 20 && next !== null; guard += 1) {
-      const body = (await (
-        await fetch(next, { headers: { Authorization: `Bearer ${token}` } })
-      ).json()) as {
-        results?: Array<{ employee_id: number; participations?: unknown[] }>
-        next?: string | null
-      }
-      for (const row of body.results ?? []) {
-        if ((row.participations ?? []).length > 0) attachedIds.add(row.employee_id)
-      }
-      next = body.next ?? null
-    }
-    expect(
-      attachedIds.size,
-      'на стенде сегодня нет ни одного привлечения — проверять нечего',
-    ).toBeGreaterThan(0)
+          // Pagination UI contract: use EVERY real API row and the real count.
+          // Only their order changes: 500 owned background rows first, the two
+          // owned named participations last. Existing stand statuses stay intact.
+          const firstPage = background.map((created) => serverRows.find((row) => row.id === created.id)!)
+          expect(firstPage).toHaveLength(500)
+          expect(firstPage.every(Boolean), 'API потерял собственные фоновые статусы').toBe(true)
+          expect(firstPage.every((row) => !employeeIds.includes(row.employee_id))).toBe(true)
+          const firstIds = new Set(firstPage.map((row) => row.id))
+          const tailIds = new Set(tail.map((row) => row.id))
+          const ordered = [
+            ...firstPage,
+            ...serverRows.filter((row) => !firstIds.has(row.id) && !tailIds.has(row.id)),
+            ...tail,
+          ]
+          expect(ordered.map((row) => row.id).sort((a, b) => a - b))
+            .toEqual(serverRows.map((row) => row.id).sort((a, b) => a - b))
+          expect(new Set(ordered.map((row) => row.id)).size).toBe(serverRows.length)
+          expect(tail.every((row) => ordered.findIndex((item) => item.id === row.id) >= 500)).toBe(true)
+          const expectedOffsets = Array.from({ length: Math.ceil(ordered.length / 500) }, (_, index) => index * 500)
+          expect(expectedOffsets.length, 'проба не создала вторую страницу').toBeGreaterThan(1)
+          const offsets: number[] = []
+          await page.route(
+            (url) => url.pathname === '/api/operations/statuses/' &&
+              url.searchParams.get('business_date') === own.businessDate,
+            async (route) => {
+              const url = new URL(route.request().url())
+              expect(route.request().method()).toBe('GET')
+              expect(url.searchParams.get('limit'), 'клиент должен использовать limit, не page_size').toBe('500')
+              const offset = Number(url.searchParams.get('offset') ?? '0')
+              expect(expectedOffsets, 'запрошена несуществующая страница').toContain(offset)
+              offsets.push(offset)
+              const pageUrl = (value: number) => {
+                const next = new URL(url)
+                next.searchParams.set('offset', String(value))
+                return next.toString()
+              }
+              await route.fulfill({
+                status: 200, contentType: 'application/json',
+                body: JSON.stringify({
+                  count: ordered.length,
+                  next: offset + 500 < ordered.length ? pageUrl(offset + 500) : null,
+                  previous: offset === 0 ? null : pageUrl(offset - 500),
+                  results: ordered.slice(offset, offset + 500),
+                }),
+              })
+            },
+          )
 
-    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/statuses')
-    await hydrated(page)
-    await tableFilled(page)
+          await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+          await page.goto('/statuses')
+          await hydrated(page)
+          await tableFilled(page)
+          await page.getByPlaceholder('Поиск по ФИО').fill(scene.search)
+          const ownRows = page.locator('table tbody tr[data-employee-id]')
+          await expect(ownRows).toHaveCount(2)
+          for (const id of employeeIds) {
+            await expect(
+              page.locator(`table tbody tr[data-employee-id="${id}"]`).locator(
+                `a[href="/security-ops/events/${own.eventId}"], a[href="/security-ops/events/${own.eventId}/"]`,
+              ),
+              `собственное участие ${id} после первой страницы не доехало`,
+            ).toBeVisible({ timeout: 20_000 })
+          }
+          expect(offsets[0]).toBe(0)
+          expect([...offsets].sort((a, b) => a - b), 'клиент запросил не все страницы или продублировал их')
+            .toEqual(expectedOffsets)
 
-    // 🔴 ЖДЁМ УЧАСТИЯ, а не читаем таблицу сразу. `tableFilled` говорит, что
-    // пришли СТРОКИ; участия едут отдельным запросом и позже — ровно как
-    // фотографии в пробе аватарок (Plane №293). Первая редакция этой пробы
-    // читала DOM немедленно и объявляла «сервер знает привлечение, а таблица
-    // не показывает» у девяти сотрудников подряд — то есть обвиняла код в
-    // дефекте, которого нет, ещё и убедительным списком имён.
-    await expect(
-      page.locator('table tbody a[href^="/security-ops/events/"]').first(),
-      'ни одной ссылки на мероприятие не появилось — участия не доехали вовсе',
-    ).toBeVisible({ timeout: 20_000 })
-
-    const visible = await page.evaluate(() =>
-      [...document.querySelectorAll('table tbody tr[data-employee-id]')].map((row) => ({
-        id: Number(row.getAttribute('data-employee-id')),
-        // Ссылка ИЛИ подпись «ОМ снят»: у участия в удалённом мероприятии
-        // интерфейс намеренно рисует текст, а не ссылку в 404 (Plane №281).
-        // Требовать здесь именно <a> значило бы краснеть на правильном коде.
-        shown:
-          row.querySelector('a[href^="/security-ops/events/"]') !== null ||
-          (row.textContent ?? '').includes('ОМ снят'),
-      })),
-    )
-    const shouldHaveLink = visible.filter((row) => attachedIds.has(row.id))
-    expect(
-      shouldHaveLink.length,
-      'ни один привлечённый не попал на видимую страницу — ассерт о числе стал бы вакуумным',
-    ).toBeGreaterThan(0)
-
-    const missing = shouldHaveLink.filter((row) => !row.shown).map((row) => row.id)
-    expect(
-      missing,
-      `у сотрудников ${missing.join(', ')} сервер знает привлечение, а таблица его не показывает — ` +
-        'клиент забрал не все участия (так было при page_size вместо limit: 50 строк из тысячи)',
-    ).toEqual([])
+          const visible = await ownRows.evaluateAll((rows) => rows.map((row) => ({
+            id: Number(row.getAttribute('data-employee-id')),
+            shown: row.querySelector('a[href^="/security-ops/events/"]') !== null ||
+              (row.textContent ?? '').includes('ОМ снят'),
+          })))
+          expect(visible.map((row) => row.id).sort((a, b) => a - b)).toEqual([...employeeIds].sort((a, b) => a - b))
+          const shouldHaveLink = visible.filter((row) => attachedIds.has(row.id))
+          expect(shouldHaveLink, 'ассерт о полном покрытии стал вакуумным').toHaveLength(2)
+          const missing = shouldHaveLink.filter((row) => !row.shown).map((row) => row.id)
+          expect(missing, `сервер знает участия ${missing.join(', ')}, но клиент забрал не все страницы`).toEqual([])
+        })
+      })
+    })
   })
 
   test('без известного мероприятия «Участие в ОМ» ведёт на общий разрез и говорит об этом', async ({
@@ -948,73 +1303,94 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
   })
 
   test('в строке реестра стоит аватарка, а без фотографии — инициалы', async ({ page }) => {
-    /**
-     * Две половины, и обе обязательны (Plane №206).
-     *
-     * 🔴 ФОТОГРАФИЯ ДОЛЖНА ЗАГРУЗИТЬСЯ, а не просто «тег на месте»: адрес
-     * приходит относительным («/media/…»), и без перезаписи `/media/*` в
-     * `next.config.js` браузер получил бы 404 — картинка была бы битой, а
-     * ассерт «есть <img>» этого не заметил бы. Поэтому проверяется
-     * `naturalWidth`, то есть факт декодирования.
-     *
-     * 🔴 БЕЗ ФОТОГРАФИИ ОБЯЗАНЫ БЫТЬ ИНИЦИАЛЫ. У части сотрудников стенда
-     * фотографии нет вовсе; заглушка-картинка вместо инициалов не различает
-     * строки, а битая иконка браузера читается как поломка.
-     */
-    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
-    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
-    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
-    await page.goto('/employees?view=forces')
-    await hydrated(page)
-    await tableFilled(page)
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    await withOwnTablePeople(token, 2, async (scene) => {
+      const [photoEmployee, fallbackEmployee] = scene.people
+      const mediaPath = `/media/employees/photos/e2e_${photoEmployee.id}_${randomUUID()}.png`
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      )
+      const calls = { realPages: 0, overlays: 0, photoGets: 0 }
 
-    const rows = page.locator('table tbody tr')
-    const total = await rows.count()
-    expect(total, 'в реестре нет строк — проба вакуумна').toBeGreaterThan(1)
+      // UI contract, not an employee-upload or stand media-serving probe.
+      // Fetch the real filtered page and change only photo_url of our record.
+      // IDs, names, pagination and the second employee's empty photo stay real.
+      await page.route(
+        (url) => url.pathname === '/api/staff_unit/staff-units/directorate/' &&
+          url.searchParams.get('with_summary') === null &&
+          url.searchParams.get('search') === scene.search,
+        async (route) => {
+          expect(route.request().method()).toBe('GET')
+          const response = await route.fetch()
+          expect(response.status(), 'реальная страница собственных сотрудников недоступна').toBe(200)
+          const body = (await response.json()) as {
+            matched_count: number
+            staff_units: { employee: OwnTablePerson & { photo_url: string | null; photo?: string | null } }[]
+          }
+          calls.realPages += 1
+          expect(body.matched_count).toBe(2)
+          expect(body.staff_units.map((unit) => unit.employee.id).sort((a, b) => a - b))
+            .toEqual(scene.people.map((person) => person.id).sort((a, b) => a - b))
+          for (const person of scene.people) {
+            const employee = body.staff_units.find((unit) => unit.employee.id === person.id)!.employee
+            expect(employee.first_name).toBe(person.first_name)
+            expect(employee.last_name).toBe(person.last_name)
+            expect(employee.photo_url, 'собственная новая запись неожиданно уже с фото').toBeNull()
+            expect(employee.photo ?? null).toBeNull()
+          }
+          body.staff_units.find((unit) => unit.employee.id === photoEmployee.id)!.employee.photo_url = mediaPath
+          calls.overlays += 1
+          await route.fulfill({ response, json: body })
+        },
+      )
+      await page.route(
+        (url) => url.pathname === mediaPath,
+        async (route) => {
+          expect(route.request().method()).toBe('GET')
+          calls.photoGets += 1
+          await route.fulfill({ status: 200, contentType: 'image/png', body: png })
+        },
+      )
 
-    const avatars = page.locator('table tbody tr img[src*="/media/"]')
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`/employees?view=forces&search=${encodeURIComponent(scene.search)}`)
+      await hydrated(page)
+      await tableFilled(page)
+      const rows = page.locator('table tbody tr[data-employee-id]')
+      await expect(rows, 'поиск не вернул две собственные записи').toHaveCount(2)
+      for (const employee of scene.people) {
+        await expect(page.locator(`table tbody tr[data-employee-id="${employee.id}"]`))
+          .toContainText(`${employee.last_name} ${employee.first_name}`)
+      }
 
-    // 🔴 КАРТИНКИ ЖДУТ, А НЕ СЧИТАЮТСЯ МГНОВЕННО (Plane №293). `tableFilled`
-    // говорит, что пришли СТРОКИ; фотографии в них подгружаются отдельными
-    // запросами и позже. Прежний `avatars.count()` сразу после него ловил
-    // момент, когда строки уже есть, а картинок ещё нет, — и проба падала на
-    // «ни одной аватарки» в КОНЦЕ длинного прогона, когда машине тяжелее, а
-    // запущенная одиночно была зелёной. Красная проба, зависящая от нагрузки,
-    // не отвечает ни на один вопрос: «смоук зелёный» перестаёт значить что-то
-    // определённое, и каждый прогон разбирается руками (так было дважды за
-    // 28-29.08.2026).
-    await expect(
-      avatars.first(),
-      'ни одной аватарки в реестре: ни одна строка не показала фотографию',
-    ).toBeVisible({ timeout: 20_000 })
+      const photoRow = page.locator(`table tbody tr[data-employee-id="${photoEmployee.id}"]`)
+      const fallbackRow = page.locator(`table tbody tr[data-employee-id="${fallbackEmployee.id}"]`)
+      const avatars = rows.locator('img[src*="/media/"]')
+      await expect(photoRow.locator('img[src*="/media/"]'), 'собственная аватарка не появилась')
+        .toBeVisible({ timeout: 20_000 })
+      await expect(avatars).toHaveCount(1)
+      const image = await avatars.first().evaluate((img) => ({
+        src: (img as HTMLImageElement).src,
+        width: (img as HTMLImageElement).naturalWidth,
+        alt: (img as HTMLImageElement).alt,
+      }))
+      expect(new URL(image.src).origin, 'относительный media URL должен идти через origin приложения')
+        .toBe(new URL(page.url()).origin)
+      expect(new URL(image.src).pathname).toBe(mediaPath)
+      expect(image.width, 'аватарка не декодировалась').toBeGreaterThan(0)
+      expect(image.alt, 'декоративная аватарка повторяет имя для скринридера').toBe('')
+      const broken = await avatars.evaluateAll((images) => images.filter((img) =>
+        (img as HTMLImageElement).naturalWidth === 0).length)
+      expect(broken, 'реестр содержит битую аватарку').toBe(0)
 
-    // Ждать «пока догрузятся ВСЕ» не нужно и вредно: Radix-аватарка вставляет
-    // <img> в DOM ТОЛЬКО после успешной загрузки, а до тех пор держит
-    // заглушку-инициалы. Значит каждая найденная картинка уже загружена, а
-    // строка с едущей фотографией просто не попадает в выборку. Проверка «все
-    // complete» была бы новым источником мигания: под задержкой отдачи
-    // картинок она не сходится, хотя проверять там нечего.
-    const withPhoto = await avatars.count()
-    expect(withPhoto, 'ни одной аватарки в реестре').toBeGreaterThan(0)
-
-    // `naturalWidth` — это факт ДЕКОДИРОВАНИЯ, а не «тег на месте»: адрес
-    // приходит относительным, и без перезаписи `/media/*` браузер получил бы
-    // 404 (картинка битая, а `complete` у неё всё равно true).
-    const decoded = await avatars.first().evaluate((img) => (img as HTMLImageElement).naturalWidth)
-    expect(decoded, 'аватарка не загрузилась: адрес отдаёт не картинку').toBeGreaterThan(0)
-
-    const initials = await page.evaluate(() => {
-      const rows = [...document.querySelectorAll('table tbody tr')]
-      return rows
-        .filter((row) => row.querySelector('img[src*="/media/"]') === null)
-        .map((row) => (row.querySelector('[data-slot="avatar-fallback"]')?.textContent ?? '').trim())
+      await expect(fallbackRow.locator('img')).toHaveCount(0)
+      const fallback = fallbackRow.locator('[data-slot="avatar-fallback"]')
+      await expect(fallback, 'у сотрудника без фотографии нет инициалов').toBeVisible()
+      await expect(fallback).toHaveText('ПБ')
+      expect((await fallback.innerText()).trim()).toMatch(/^[А-ЯЁA-Z]{1,2}$/)
+      expect(calls, 'реальный GET, проекция фото и отдельный media GET должны быть использованы ровно один раз')
+        .toEqual({ realPages: 1, overlays: 1, photoGets: 1 })
     })
-    const withoutPhoto = initials.length
-    expect(withoutPhoto, 'на стенде все с фотографиями — заглушку никто не проверит').toBeGreaterThan(0)
-    expect(
-      initials.every((text) => /^[А-ЯЁA-Z]{1,2}$/.test(text)),
-      `вместо инициалов: ${initials.filter((t) => !/^[А-ЯЁA-Z]{1,2}$/.test(t)).join(', ')}`,
-    ).toBe(true)
   })
 })

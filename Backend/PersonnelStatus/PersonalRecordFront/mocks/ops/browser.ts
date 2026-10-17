@@ -117,9 +117,13 @@ async function start(): Promise<void> {
     // bypass остаётся для путей вне включённых мок-доменов. Внутри домена
     // bypass запрещён: опечатка или снятый handler не должен уходить в живой
     // бэк и выдавать мок-пробе зелёный ответ.
-    onUnhandledRequest(request, print) {
+    async onUnhandledRequest(request, print) {
       if (opsMockDomainForPath(new URL(request.url).pathname) !== null) {
-        print.error();
+        // MSW 2.15's custom callback print.error() only logs; resolving the
+        // callback now passes the request through. Reject explicitly so a
+        // missing active-domain handler cannot reach the real backend.
+        await print.error();
+        throw new Error(`Unhandled active mock request: ${request.method} ${new URL(request.url).pathname}`);
       }
     },
     serviceWorker: { url: "/mockServiceWorker.js" },

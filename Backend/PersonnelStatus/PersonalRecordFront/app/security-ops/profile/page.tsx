@@ -11,13 +11,14 @@
 // плитки: нули здесь читались бы как «ничего не было».
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { useMyEmployee } from "@/hooks/use-my-employee";
 import { ProfileBody } from "@/widgets/my-profile";
 
 export default function MyProfilePage() {
   const me = useMyEmployee();
-  const employee = me.data?.employee ?? null;
+  const employee = me.isSuccess ? me.data.employee : null;
 
   return (
     <DashboardLayout>
@@ -34,14 +35,16 @@ export default function MyProfilePage() {
 
         {me.isError && (
           <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Не удалось прочитать кадровую запись. Профиль показан не будет —
-              подставлять сюда чужие данные нельзя.
+            <CardContent className="space-y-3 p-6 text-sm text-muted-foreground">
+              <p role="alert">Не удалось прочитать кадровую запись. Повторите загрузку.</p>
+              <Button variant="outline" disabled={me.isFetching} onClick={() => void me.refetch()}>
+                Повторить загрузку профиля
+              </Button>
             </CardContent>
           </Card>
         )}
 
-        {me.data !== undefined && employee === null && (
+        {me.isSuccess && employee === null && (
           <Card className="border-dashed">
             <CardHeader>
               <CardTitle>Кадровая запись не найдена</CardTitle>

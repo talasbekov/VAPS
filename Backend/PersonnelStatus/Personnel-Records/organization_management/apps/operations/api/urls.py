@@ -4,6 +4,7 @@
 и администрирование RBAC.
 """
 from rest_framework.routers import DefaultRouter
+from organization_management.apps.operations.api.service_summary_context import ServiceSummaryContextViewSet
 
 from organization_management.apps.operations.api.views import (
     AccountViewSet,
@@ -28,6 +29,7 @@ from organization_management.apps.operations.api.views import (
 )
 
 router = DefaultRouter()
+router.register("service-summary-context", ServiceSummaryContextViewSet, basename="ops-service-summary-context")
 router.register("roles", RoleViewSet, basename="ops-role")
 router.register("permissions", PermissionViewSet, basename="ops-permission")
 router.register("user-roles", UserRoleViewSet, basename="ops-user-role")

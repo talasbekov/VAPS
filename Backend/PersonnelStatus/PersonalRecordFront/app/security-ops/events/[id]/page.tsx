@@ -24,10 +24,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
 import { useOverrideStage } from "@/hooks/use-security-event-stages";
+import { AddVisitObjectsDialog } from "@/features/event-visit-objects";
+import { mayManageVisitObjects } from "@/entities/security-event/model/capabilities";
 import { EventStepper } from "@/widgets/security-event-stepper";
 import {
   EVENT_STEPS,
   STEP_ENTRY_STAGE,
+  STAGE_LABEL,
   placementEditable,
   stepIndexOfStage,
 } from "@/entities/security-event";
@@ -207,7 +210,7 @@ function SecurityEventScreen() {
   const requestedIndex = stepInRange ? parsedStep - 1 : currentIndex;
   const stepAllowed =
     canOverrideStage ||
-    (placementReopenable && requestedIndex === placementStepIndex);
+    (currentIndex > placementStepIndex && requestedIndex === placementStepIndex);
   const viewedIndex = stepInRange && stepAllowed ? requestedIndex : currentIndex;
   const viewingOtherStep = viewedIndex !== currentIndex;
   // Открытая назад расстановка — НЕ «просмотр чужого шага»: форма живая, и
@@ -250,7 +253,7 @@ function SecurityEventScreen() {
         </ol>
       </nav>
 
-      <Card className="mb-4">
+      <Card className="mb-4" data-slot="event-workspace-header">
         <CardContent className="p-4">
           {/* Шапка в две колонки: сведения слева, действия справа. Обёртка
               нужна именно здесь: содержимое карточки было вертикальным
@@ -291,13 +294,13 @@ function SecurityEventScreen() {
               в сводку ведёт ссылка «Карточка визита →» в шапке бюллетеня
               (`[ГВО-03]`, Plane №441) — вторая ссылка на то же место рядом
               только сбивала бы. */}
-          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
-            {event.objectId !== null ? (
+          {visits.length === 0 && <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
+            {event.objectId !== null && hasPermission("object.view") ? (
               <Link
                 href={`/security-ops/objects/${event.objectId}`}
                 className="font-semibold text-primary-ink"
               >
-                Объект: {objectLabel(event)} →
+                Паспорт основного объекта: {objectLabel(event)} →
               </Link>
             ) : (
               <span className="text-muted-foreground">
@@ -315,7 +318,7 @@ function SecurityEventScreen() {
                 место рядом снимались намеренно ещё в «Реестр ОМ-35.8», и
                 проба мёртвых ссылок ГВО ловит их строгим режимом — она и
                 покраснела на задвоении. */}
-          </p>
+          </p>}
           {/* Строка «Паспорт: версия …» снята (`[РЕК-09]`, Plane №443): объект
               и версия паспорта уже названы полосой объекта посещения ниже. */}
             </div>
@@ -328,6 +331,7 @@ function SecurityEventScreen() {
                 «открыто/закрыто» означал бы рассинхрон. */}
           </div>
           <VisitObjectContext
+            key={event.id}
             event={event}
             selected={selectedVisit}
             unassignedShown={unassignedShown}
@@ -362,6 +366,9 @@ function SecurityEventScreen() {
               viewedIndex={viewedIndex}
               onSelect={canOverrideStage ? selectStep : undefined}
             />
+            {currentIndex > placementStepIndex && viewedIndex !== placementStepIndex && (
+              <Button className="mt-2" size="sm" variant="outline" onClick={() => selectStep(placementStepIndex)}>Расстановка и карта</Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -401,6 +408,7 @@ function SecurityEventScreen() {
         <StageViewNotice
           eventId={event.id}
           currentStage={objectStage}
+          objectScope={selectedVisit !== null}
           viewedStage={viewedStage}
           viewedStepIndex={viewedIndex}
           editing={editingReopenedPlacement}
@@ -409,20 +417,13 @@ function SecurityEventScreen() {
         />
       )}
 
-      {/* Ключ — ЭТАП, а не версия данных: смена этапа это новая форма, а
-          обновление карточки (своя же мутация в соседней панели, инвалидация,
-          чужая правка) не должно пересобирать форму и терять набранное.
-          В режиме просмотра чужого шага панель ЦЕЛИКОМ выключена `inert`:
-          поля и значения видны (прятать их значило бы скрыть предмет
-          просмотра), но ни клик, ни Tab внутрь не проходят — иначе форма
-          принимала бы ввод, который сервер на этой стадии отвергнет. */}
+      {/* Расстановка сама отключает запись в режиме просмотра, сохраняя
+          выбор поста, поиск, ссылки и карту. Остальные формы чужого этапа
+          остаются inert. Ключ по этапу сохраняет ввод при обновлении данных. */}
       <div
-        inert={(viewingOtherStep && !editingReopenedPlacement) || undefined}
-        className={
-          viewingOtherStep && !editingReopenedPlacement ? "opacity-60" : undefined
-        }
+        inert={(viewingOtherStep && !editingReopenedPlacement && viewedIndex !== placementStepIndex) || undefined}
       >
-        <ActiveStage key={viewedStage} event={event} stage={viewedStage} />
+        <ActiveStage key={viewedStage} event={event} stage={viewedStage} readOnly={viewingOtherStep && !editingReopenedPlacement} />
       </div>
     </DashboardLayout>
   );
@@ -539,6 +540,7 @@ function StageHeading({ stage }: { stage: SecurityEventStage }) {
 function StageViewNotice({
   eventId,
   currentStage,
+  objectScope,
   viewedStage,
   viewedStepIndex,
   editing,
@@ -547,6 +549,7 @@ function StageViewNotice({
 }: {
   eventId: string;
   currentStage: SecurityEventStage;
+  objectScope: boolean;
   viewedStage: SecurityEventStage;
   viewedStepIndex: number;
   /** Шаг открыт НАЗАД для правки (Plane №861): форма живая, и говорить про
@@ -561,6 +564,10 @@ function StageViewNotice({
   const override = useOverrideStage(eventId, { onEvent: () => setConfirmOpen(false) });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const currentStepIndex = stepIndexOfStage(currentStage);
+  const scopeLabel = objectScope ? "объект" : "мероприятие";
+  const currentState = STAGE_LABEL[currentStage] !== EVENT_STEPS[currentStepIndex].label
+    ? `, состояние «${STAGE_LABEL[currentStage]}»`
+    : "";
   const passed = viewedStepIndex < currentStepIndex;
   return (
     <div
@@ -594,8 +601,8 @@ function StageViewNotice({
           {editing ? (
             <>
               <span className="font-semibold">
-                Правка расстановки открыта · мероприятие на шаге{" "}
-                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
+                Правка расстановки открыта · {scopeLabel} на шаге{" "}
+                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}»{currentState}.
               </span>{" "}
               Документ ещё не ушёл согласующим, поэтому состав правится. После
               отправки на согласование правка закроется.
@@ -603,10 +610,10 @@ function StageViewNotice({
           ) : (
             <>
               <span className="font-semibold">
-                {passed ? "Этап пройден" : "Этап ещё не открыт"} · мероприятие на шаге{" "}
-                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
+                {passed ? "Этап пройден" : "Этап ещё не открыт"} · {scopeLabel} на шаге{" "}
+                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}»{currentState}.
               </span>{" "}
-              Форма только для чтения.
+              {viewedStage === "PLACEMENT" ? "Расстановка только для просмотра: можно выбрать пост и воспользоваться поиском." : "Форма только для чтения."}
             </>
           )}
         </p>
@@ -677,10 +684,12 @@ function StageViewNotice({
 function ActiveStage({
   event,
   stage,
+  readOnly = false,
 }: {
   event: SecurityEvent;
   /** Показываемая стадия: своя у мероприятия либо выбранная админом к просмотру. */
   stage: SecurityEventStage;
+  readOnly?: boolean;
 }) {
   switch (stage) {
     case "BULLETIN":
@@ -692,7 +701,7 @@ function ActiveStage({
     case "DEMAND":
     case "FORCES":
     case "PLACEMENT":
-      return <PlacementStage event={event} />;
+      return <PlacementStage event={event} readOnly={readOnly} />;
     case "APPROVAL":
       return <ApprovalStage event={event} />;
     case "ACKNOWLEDGEMENT":
@@ -724,104 +733,66 @@ function VisitObjectContext({
 }: {
   event: SecurityEvent;
   selected: VisitObject | null;
-  /** На этапе показаны строки расчёта без объекта (`?visit=__unassigned__`).
-   *  Шапка ОТРАЖАЕТ это, а не предлагает как выбор: сколько таких строк, знает
-   *  этап — он их и считает, — и заводить второй счётчик здесь значило бы
-   *  завести второй ответ на тот же вопрос. */
   unassignedShown: boolean;
   onSelect: (visitId: string) => void;
 }) {
   const visits = event.visitObjects ?? [];
-  if (visits.length === 0) return null;
-  if (selected === null && !unassignedShown) return null;
+  const { hasPermission } = useOpsPermissions();
+  const canManage = mayManageVisitObjects(event, hasPermission("event.manage"));
+  const [addOpen, setAddOpen] = useState(false);
+  useEffect(() => { if (!canManage) setAddOpen(false); }, [canManage]);
 
   return (
-    <div className="mt-2 rounded-md border bg-muted/30 px-3 py-2" data-slot="visit-context">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-          Объект посещения
-        </span>
-        {unassignedShown ? (
-          <span className="text-xs font-semibold">Не отнесены к объекту</span>
-        ) : visits.length === 1 ? (
-          <span className="text-xs font-semibold">{selected!.objectName}</span>
+    <>
+      <section className="mt-3 rounded-lg border bg-muted/30 p-3" data-slot="visit-context" aria-label="Объекты ОМ">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Объекты ОМ: {visits.length}</h2>
+          {canManage && <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setAddOpen(true)}>Добавить объекты</Button>}
+        </div>
+        {visits.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">Объекты ещё не добавлены. Площадки одного мероприятия ведутся в общей карточке.</p>
         ) : (
-          <span
-            role="group"
-            aria-label="Объект посещения мероприятия"
-            className="flex flex-wrap gap-1"
-          >
-            {visits.map((visit) => {
-              const active = visit.id === selected?.id;
-              return (
-                <button
-                  key={visit.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onSelect(visit.id)}
-                  className={
-                    active
-                      ? "rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      : "rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  }
-                >
-                  {visit.objectName}
-                </button>
-              );
-            })}
-          </span>
+          <>
+            <div role="group" aria-label="Объект посещения мероприятия" className="mt-2 flex flex-wrap gap-2">
+              {visits.map((visit, index) => {
+                const active = visit.id === selected?.id;
+                const repeated = visits.filter(item => item.objectName === visit.objectName).length > 1;
+                const label = repeated ? "Объект " + (index + 1) + ": " + visit.objectName : visit.objectName;
+                return (
+                  <button key={visit.id} type="button" aria-label={label} aria-pressed={active} onClick={() => onSelect(visit.id)}
+                    className={active
+                      ? "flex min-h-11 min-w-0 max-w-full flex-wrap items-center gap-2 rounded-lg border border-primary bg-primary/10 px-3 py-2 text-left text-sm font-semibold text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      : "flex min-h-11 min-w-0 max-w-full flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"}>
+                    <span className="min-w-0 break-words">{label}</span>
+                    <StageBadge stage={visit.stage} />
+                  </button>
+                );
+              })}
+            </div>
+            {selected !== null && (
+              <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-semibold text-foreground">Выбран объект: {selected.objectName}</span>
+                  {selected.objectId !== null && hasPermission("object.view") && (
+                    <Link href={"/security-ops/objects/" + selected.objectId} aria-label={"Паспорт объекта " + selected.objectName}
+                      className="inline-flex min-h-11 items-center font-semibold text-primary-ink hover:underline">
+                      Паспорт объекта →
+                    </Link>
+                  )}
+                  <span>{selected.passportBinding === null ? "паспорт не привязан" : "паспорт вер. " + selected.passportBinding.versionNumber}</span>
+                </div>
+                <p data-slot="visit-chief-line">Старший объекта: <span className="font-semibold text-foreground">{selected.chiefName || "не назначен"}</span>
+                  {" · Замещающие: "}{selected.deputies.length === 0 ? "нет" : selected.deputies.map(item => item.employeeName).join(", ")}
+                </p>
+                <p>{selected.protectedPersonName ? "Охраняемое лицо: " + selected.protectedPersonName : "Охраняемое лицо не назначено"}</p>
+              </div>
+            )}
+            {unassignedShown && <p className="mt-2 text-xs font-medium">Не отнесены к объекту: показаны неразмеченные строки расчёта. Выберите площадку выше, чтобы вернуться к её этапам.</p>}
+            <p className="mt-2 text-xs text-muted-foreground">Рекогносцировка, расстановка и согласование ниже относятся к выбранному объекту.</p>
+          </>
         )}
-        {selected !== null && selected.objectId !== null && (
-          <Link
-            href={`/security-ops/objects/${selected.objectId}`}
-            className="text-xs font-semibold text-primary-ink"
-          >
-            карточка объекта →
-          </Link>
-        )}
-        {selected !== null && (
-          /* Старший объекта и замещающие — в строке объекта (`[РЕК-01]`,
-             Plane №442): кто отвечает за объект, видно на любом этапе. */
-          <span className="text-xs text-muted-foreground" data-slot="visit-chief-line">
-            · Старший объекта:{" "}
-            <span className="font-semibold text-foreground">
-              {selected.chiefName === "" ? "не назначен" : selected.chiefName}
-            </span>
-            {" · Замещающие: "}
-            {selected.deputies.length === 0
-              ? "нет"
-              : selected.deputies.map((d) => d.employeeName).join(", ")}
-          </span>
-        )}
-      </div>
-      {selected === null ? (
-        // У «ничейных строк» нет ни охраняемого лица, ни паспорта — и молчать
-        // здесь нельзя: пустая строка читалась бы как «не загрузилось».
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Показаны строки расчёта, не отнесённые ни к одному объекту.
-        </p>
-      ) : (
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {selected.protectedPersonName === ""
-            ? "охраняемое лицо не назначено"
-            : `Охраняемое лицо: ${selected.protectedPersonName}`}
-          {" · "}
-          {selected.passportBinding === null
-            ? "паспорт не привязан"
-            : `паспорт вер. ${selected.passportBinding.versionNumber}`}
-        </p>
-      )}
-      {visits.length > 1 && (
-        /* Справка правится ТРЕТИЙ раз и каждый раз вслед за устройством: до
-           №409/№410 она говорила «этапы ведутся по мероприятию целиком», после
-           них — «переключатель меняет только справку в шапке». С №388 верно
-           третье: переключатель и выбор на этапе — одно и то же. */
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Этапы ниже ведутся ПО ЭТОМУ ОБЪЕКТУ. Тот же выбор стоит над расчётом
-          на самом этапе — это одно значение, и оно записано в адресе страницы:
-          ссылку можно переслать.
-        </p>
-      )}
-    </div>
+      </section>
+      {canManage && <AddVisitObjectsDialog event={event} open={addOpen} onClose={() => setAddOpen(false)} />}
+    </>
   );
 }

@@ -6,140 +6,20 @@
  * она появляется РОВНО тогда, когда лицо названо в сводке ГВО, и исчезает,
  * когда его оттуда убрали.
  *
- * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
+ * Без SMOKE_LIVE=1 скипается. Собственные мутирующие фикстуры допускаются
+ * только на Night: API :18346, frontend :3347, собственная ночная БД.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+import { test } from './protected-person-owned-fixture'
+import { resetOwnGvoSummary } from './gvo-owned-fixture'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import type { SecurityEvent } from '@/entities/security-event'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-/**
- * Лицо каталога, которым проверяется связь со сводкой ГВО в мутирующем
- * сценарии. ИМЯ БОЛЬШЕ НЕ ЗАШИТО (Plane №197): сценарий начинается с «лицо не
- * названо ни в одной сводке», и любое конкретное имя рано или поздно
- * оказывается названо — фикстура стенда (`seed_smoke_fixtures`) заводит
- * закрытое мероприятие, в сводке которого стоит первое лицо справочника, и
- * зашитая «Салимова Гульнара Ержановна» стала таким лицом. Проба выбирает
- * НАШЕ лицо, которого нет ни в одной собранной сводке, и говорит вслух, если
- * такого не нашлось, — а не падает ассертом про пустое состояние.
- */
-/**
- * Роль, с которой проба вписывает лицо в сводку, — по ней хвосты и узнаются.
- *
- * 🔴 МЕТКА, А НЕ ПРАВДОПОДОБНАЯ ДОЛЖНОСТЬ (Plane №741). Прежняя роль была
- * обычным «Куратор визитов», и уборка снимала ЛЮБОЕ лицо с такой должностью
- * во ВСЕХ сводках стенда, без сужения к тому ОМ, который правил этот прогон.
- * Сегодня эту должность не сеет ничто, но стенд общий и правится руками —
- * по-настоящему введённый «Куратор визитов» в чужой сводке молча уничтожался
- * бы.
- *
- * Сузить уборку к одному ОМ было НЕЛЬЗЯ: она зовётся ещё и на старте, чтобы
- * подобрать хвост УПАВШЕГО прошлого прогона, а его код мероприятия к тому
- * моменту неизвестен. Поэтому узнаваемой сделана сама метка: префикс
- * `PROBE_ROLE_PREFIX` человек не введёт, и широкий проход по сводкам остаётся
- * безопасным.
- */
-const PROBE_ROLE_PREFIX = 'Куратор визитов (проба e2e'
-const PROBE_ROLE = `${PROBE_ROLE_PREFIX} ${Date.now()})`
-
-/**
- * Насколько старым должен быть чужой хвост, чтобы стартовая уборка считала
- * его брошенным, а не живым соседним прогоном (Plane №1061). Сильно больше
- * времени одного прогона этой пробы (10-20 c на этом стенде).
- */
-const STALE_PROBE_AGE_MS = 5 * 60 * 1000
-
-/** Время прогона из роли `PROBE_ROLE`, если это она; иначе `null`. */
-function probeRoleTimestamp(role: string): number | null {
-  if (!role.startsWith(PROBE_ROLE_PREFIX)) return null
-  const match = role.slice(PROBE_ROLE_PREFIX.length).match(/^\s*(\d+)\)$/)
-  return match ? Number(match[1]) : null
-}
-
-/**
- * Снимает со сводок ГВО лиц, вписанных этой пробой: упавший прогон оставлял
- * лицо в сводке, и каждый следующий заход съедал ещё одно свободное «наше»
- * лицо каталога — на четвёртом фикстуры не оставалось (прогон 04.09.2026,
- * три лица из четырёх были «названы»).
- *
- * 🔴 ТОЧНОЕ ИМЯ РОЛИ — ПРИ СВОЁЙ УБОРКЕ, ВОЗРАСТ — ПРИ ЧУЖОЙ (Plane №1061).
- * Стенд общий, и одновременно с этим прогоном на нём может идти ДРУГОЙ такой
- * же прогон (свой процесс, своя сессия) — оба используют один и тот же общий
- * `omCode` (единственный незакрытый визит фикстуры). Прежняя уборка снимала
- * ЛЮБОЕ лицо с ПРЕФИКСОМ метки, включая ЕЩЁ ЖИВОЕ лицо соседнего прогона —
- * воспроизведено намеренно двумя параллельными вызовами этой самой пробы:
- * второй падал РОВНО на строке 253, как в жалобе карточки. Свой хвост
- * (`exactRole`) убирается по ТОЧНОМУ совпадению — он known заранее и убрать
- * его можно сразу. Чужой хвост убирается только если он старше
- * `STALE_PROBE_AGE_MS`: тогда это гарантированно брошенный прошлый прогон, а
- * не сосед, который ещё работает.
- */
-async function unlinkProbePersons(exactRole?: string): Promise<void> {
-  const token = await apiToken()
-  const rows = await apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token)
-  const isRemovable = (role: string): boolean => {
-    if (exactRole !== undefined) return role === exactRole
-    const ts = probeRoleTimestamp(role)
-    return ts !== null && Date.now() - ts > STALE_PROBE_AGE_MS
-  }
-  for (const row of rows.results) {
-    const persons = row.summary.persons ?? []
-    const kept = persons.filter((person) => !isRemovable(person.role ?? ''))
-    if (kept.length === persons.length) continue
-    // 🔴 СНЯТЫЙ ОСТАТОК ПАТЧИТСЯ ЦЕЛИКОМ, А НЕ СБРАСЫВАЕТСЯ, КОГДА В НЁМ
-    // ЕЩЁ ЕСТЬ ЛЮДИ (Plane №1061). До этой правки любое совпадение вело к
-    // `reset/`, который снимает раздел ЦЕЛИКОМ — вместе со СВОИМ пробным
-    // лицом улетало и лицо СОСЕДНЕГО прогона, ещё живущее в той же сводке
-    // (оба используют один и тот же общий незакрытый `omCode` фикстуры).
-    // Патч с непустым остатком убирает ТОЛЬКО отобранных, сохраняя всех
-    // остальных — базу бюллетеня и живых соседей.
-    //
-    // `reset/` остаётся, но ТОЛЬКО когда остаток пуст: патч с `persons: []`
-    // навсегда подменил бы список — база бюллетеня перестала бы просвечивать
-    // через пустой патч (Plane №740), а `reset/` возвращает сводку к её
-    // выводу из бюллетеня, а не к «пустому списку, записанному руками».
-    const res =
-      kept.length > 0
-        ? await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`, {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
-          })
-        : await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/reset/`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ section: 'persons' }),
-          })
-    // 🔴 КОД ОТВЕТА ПРОВЕРЯЕТСЯ (Plane №739). Ответ не читался вовсе, а 4xx
-    // здесь достижим буднично: `apply_patch` отвечает 400 на кривое тело, а
-    // `_require_foreign` отбивает ВНУТРЕННИЙ ОМ — тогда как
-    // `assembled_summaries()` отдаёт строку на КАЖДОЕ мероприятие, внутренние
-    // включительно. Неудачная уборка оставляла пробное лицо приклеенным к
-    // сводке, а проба объявляла стенд убранным — ровно та беда, ради
-    // устранения которой уборку и переписывали.
-    if (!res.ok) {
-      throw new Error(
-        `уборка сводки ${row.omCode} не прошла: ${res.status} ${await res.text()}`,
-      )
-    }
-  }
-}
-
-async function cleanDomesticPerson(): Promise<string> {
-  await unlinkProbePersons()
-  const { matches, catalog } = await findNameIntersections()
-  const busy = new Set(matches.map((m) => m.person.name.trim().toLowerCase()))
-  return requireFixture(
-    catalog.find(
-      (row) => row.category === 'OURS' && !busy.has(row.name.trim().toLowerCase()),
-    ),
-    'наше охраняемое лицо, не названное ни в одной сводке ГВО (сценарий ' +
-      'начинается с пустой связи; все лица каталога уже названы)',
-  ).name
-}
-
+// Мутирующий сценарий создаёт собственные OURS и FOREIGN; чужие хвосты не снимаются.
 async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
@@ -153,8 +33,9 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
 test.describe(LIVE ? 'охраняемые лица' : 'охраняемые лица (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('вкладки делят каталог, связь с ОМ идёт из сводки ГВО', async ({ page }) => {
-    const PERSON = await cleanDomesticPerson()
+  test('вкладки делят каталог, связь с ОМ идёт из сводки ГВО', async ({ page, request, ownForeign, ownDomestic }) => {
+    const PERSON = ownDomestic.name
+    const PROBE_ROLE = ownDomestic.role
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
@@ -194,38 +75,12 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
 
     // До правки сводки связи нет — и экран говорит об этом прямо.
     await card.getByRole('button', { name: 'Все мероприятия с ОЛ' }).click()
-    await expect(card).toContainText('не назван ни в одной сводке ГВО', {
+    await expect(card).toContainText('Связанные мероприятия не найдены.', {
       timeout: 10_000,
     })
 
-    // Вносим лицо в сводку ГВО НЕЗАКРЫТОГО ОМ, а не первого в реестре
-    // (Plane №197): первой строкой стоит закрытое мероприятие фикстуры, а его
-    // карточка — архив дела, read-only. Окно «Добавить лицо» там открывается,
-    // но правка не сохраняется, и проба падала на «имени не видно», имея в
-    // виду «править было нечего».
-    const token = await apiToken()
-    const [summaries, registry] = await Promise.all([
-      apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token),
-      apiGet<{ results: EventRow[] }>('/api/ops/security-events/?page_size=200', token),
-    ])
-    // Реестр ГВО показывает ТО ЖЕ, что и кнопка сводки: `kind !== 'INTERNAL'`.
-    // Закрытые исключены отдельно — их карточка это архив дела, read-only.
-    const openCodes = new Set(
-      registry.results
-        .filter((e) => e.stage !== 'CLOSED' && e.kind !== 'INTERNAL')
-        .map((e) => e.code),
-    )
-    const omCode = requireFixture(
-      summaries.results.map((r) => r.omCode).find((code) => openCodes.has(code)),
-      'незакрытый визит иностранного ОЛ со сводкой ГВО — только такие строки ' +
-        'показывает реестр ГВО, а в архив дела лицо не внести',
-    )
-    // 🔴 УБОРКА В `finally`, А ПРОВЕРКА КОНСОЛИ ПОСЛЕ НЕЁ (Plane №742).
-    // Проверка `errors` стояла ПЕРЕД уборкой, и случайная ошибка в консоли
-    // оставляла пробное лицо привязанным к чужой сводке: стартовый
-    // `unlinkProbePersons()` подбирал это лишь на СЛЕДУЮЩЕМ прогоне, а до
-    // тех пор стенд стоял грязным. Уборке место в `finally` — она обязана
-    // случиться и при упавшем ассерте, и при брошенном локаторе.
+    // Этот RECON FOREIGN с объектом создан самой пробой, не взят из первой страницы.
+    const omCode = ownForeign.code
     try {
       await page.goto(`${APP}/security-ops/events/?view=gvo`)
       await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
@@ -271,6 +126,13 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(0)
       await personBlock.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
       await page.getByRole('button', { name: 'Сохранить' }).click()
+      // Имя уже видно в открытой форме. Ждём завершения записи, иначе
+      // следующий page.goto обрывает PATCH, а наличие текста даёт ложный успех.
+      await expect(page.locator('[data-slot="gvo-edit-form"]')).toBeHidden({ timeout: 20_000 })
+      const persisted = await apiGet<{ summary: { persons: { personId?: string; role: string }[] } }>(
+        `/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/`, await apiToken(),
+      )
+      expect(persisted.summary.persons).toContainEqual(expect.objectContaining({ personId: ownDomestic.id, role: PROBE_ROLE }))
       // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
       // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
       // режим ловил оба вхождения.
@@ -287,18 +149,14 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       })
       await linked.getByRole('button', { name: 'Объекты ОЛ' }).click()
       await expect(linked.getByRole('link', { name: omCode })).toBeHidden()
-      await expect(linked.locator('li')).toHaveCount(1)
+      // The person was added to the bulletin summary, not assigned to a visit.
+      // Do not attribute the FOREIGN event's other person's object to this one.
+      await expect(linked).toContainText('связь лица с конкретными объектами посещения не указана')
+      await expect(linked.locator('a[href^="/security-ops/objects/"]')).toHaveCount(0)
 
     } finally {
-      // Гигиена стенда: снимаем лицо, которое сами вписали, — иначе PERSON
-      // остаётся приклеен к этому ОМ и следующий прогон стартует не с чистого
-      // состояния. Ручкой, а не окном: окна «Изменить список охраняемых лиц»
-      // с единым режимом правки (№441) больше нет.
-      //
-      // ТОЧНАЯ РОЛЬ, а не общий префикс (Plane №1061): снимается ровно то
-      // лицо, которое вписал ЭТОТ прогон, а не любое лицо соседнего прогона,
-      // ещё живущего на том же общем `omCode` в этот самый момент.
-      await unlinkProbePersons(PROBE_ROLE)
+      // Exact own ID/code/title/date is rechecked before the real reset.
+      await resetOwnGvoSummary(request, ownForeign)
     }
 
     // Консоль проверяется ПОСЛЕ уборки: её падение не должно оставлять след.
@@ -324,7 +182,7 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
  * какой-то строки.
  */
 const EVENTS_LINK_GAP_LINE =
-  'Связь показана по совпадению имени в сводках ГВО — прямой ссылки «лицо → мероприятие» в модели нет; появится бэк-этапом.'
+  'Участие указано в бюллетене, объектах посещения или сводке ГВО.'
 
 /**
  * Fix round 1: строка отказа реестра ОМ / сводок ГВО. Тоже дословный пин —
@@ -333,7 +191,7 @@ const EVENTS_LINK_GAP_LINE =
  * которая в этом случае была бы неправдой.
  */
 const LINKS_ERROR_LINE =
-  'Реестр ОМ или сводки ГВО сейчас не отвечают — связанные мероприятия показать нечем.'
+  'Не удалось загрузить связанные мероприятия. Попробуйте открыть список ещё раз.'
 
 interface CatalogPerson {
   id: string
@@ -345,17 +203,12 @@ interface CatalogPerson {
  * Раньше здесь был патч ручных правок: сводку собирал экран. */
 interface GvoSummaryRow {
   omCode: string
-  summary: { persons?: { name: string; role?: string }[] }
+  summary: { persons?: { personId?: string | null; name: string; role?: string }[] }
   filled?: boolean
   updatedAt?: string | null
 }
 
-interface EventRow {
-  id: string
-  code: string
-  stage?: string
-  kind?: string
-}
+type EventRow = SecurityEvent
 
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -373,6 +226,18 @@ async function apiGet<T>(path: string, token: string): Promise<T> {
   return (await res.json()) as T
 }
 
+async function allEventRows(token: string): Promise<{ results: EventRow[] }> {
+  const results: EventRow[] = []
+  for (let page = 1; ; page++) {
+    const response = await apiGet<{ results: EventRow[]; next: string | null }>(
+      `/api/ops/security-events/?page_size=200&page=${page}`, token,
+    )
+    results.push(...response.results)
+    if (!response.next) return { results }
+    expect(response.results.length, 'registry pagination did not advance').toBeGreaterThan(0)
+  }
+}
+
 /**
  * Живое пересечение ФИО каталога охраняемых лиц и лиц в сводках ГВО, КАК ОНО
  * ЕСТЬ на стенде без всякого перехвата. Используется ниже только чтобы найти
@@ -388,16 +253,27 @@ async function findNameIntersections(): Promise<{
   const [catalog, patches, events] = await Promise.all([
     apiGet<{ results: CatalogPerson[] }>('/api/ops/protected-persons/', token),
     apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token),
-    apiGet<{ results: EventRow[] }>('/api/ops/security-events/?page_size=200', token),
+    allEventRows(token),
   ])
   const eventByCode = new Map(events.results.map((e) => [e.code, e]))
   const matches: { person: CatalogPerson; event: EventRow }[] = []
+  for (const event of events.results) {
+    for (const person of catalog.results) {
+      if (event.protectedPersonId === person.id ||
+          (event.protectedPersons ?? []).some(row => row.id === person.id) ||
+          (event.visitObjects ?? []).some(row => row.protectedPersonId === person.id)) {
+        matches.push({ person, event })
+      }
+    }
+  }
   for (const record of patches.results) {
     const event = eventByCode.get(record.omCode)
     if (event === undefined) continue
     for (const gvoPerson of record.summary.persons ?? []) {
       const needle = gvoPerson.name.trim().toLowerCase()
-      const hit = catalog.results.find((c) => c.name.trim().toLowerCase() === needle)
+      const hit = catalog.results.find((c) => gvoPerson.personId != null
+        ? c.id === gvoPerson.personId
+        : c.name.trim().toLowerCase() === needle)
       if (hit !== undefined) matches.push({ person: hit, event })
     }
   }
@@ -484,7 +360,7 @@ test.describe(
       const token = await apiToken()
       const [catalogRes, eventsRes] = await Promise.all([
         apiGet<{ results: CatalogPerson[] }>('/api/ops/protected-persons/', token),
-        apiGet<{ results: EventRow[] }>('/api/ops/security-events/?page_size=200', token),
+        allEventRows(token),
       ])
       const catalog = catalogRes.results
       const events = eventsRes.results
@@ -571,7 +447,7 @@ test.describe(
       await expect(unmatchedCard.getByText(EVENTS_LINK_GAP_LINE, { exact: true })).toBeVisible()
       await expect(
         unmatchedCard.getByText(
-          `${unmatchedPerson!.name} не назван ни в одной сводке ГВО — связанных мероприятий и объектов нет.`,
+          'Связанные мероприятия не найдены.',
           { exact: true },
         ),
       ).toBeVisible()
@@ -630,7 +506,7 @@ test.describe(
       // причина (отказ запроса, а не отсутствие совпадений), и текст не
       // должен молчать под похожей на правду формулировкой.
       await expect(
-        card.getByText(`${anyPerson!.name} не назван ни в одной сводке ГВО`),
+        card.getByText('Связанные мероприятия не найдены.', { exact: true }),
       ).toBeHidden()
     })
   },

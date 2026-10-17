@@ -556,3 +556,114 @@ def test_sending_is_written_to_the_log(types, tree):
     entry = OpsAuditLog.objects.get(action=audit_service.DAILY_SUMMARY_SENT)
     assert entry.entity_id == summary.pk
     assert entry.new_value["laggards"] == []
+
+
+# ── Отправка уведомляет оперативных дежурных (Plane №1222, Ш-3) ────────────
+
+
+def _duty_officer(user_id):
+    from organization_management.apps.operations.models import Role, UserRole
+
+    role, _ = Role.objects.get_or_create(
+        code="DUTY_OFFICER", defaults={"name": "Оперативный дежурный"}
+    )
+    return UserRole.objects.create(user_id=user_id, role_code=role, scope_division_id=None)
+
+
+def _default_duty_recipient(value):
+    from organization_management.apps.operations.models_submission import (
+        OpsSubmissionControlSettings,
+    )
+
+    settings = OpsSubmissionControlSettings.objects.first() or OpsSubmissionControlSettings()
+    settings.default_notify_recipient = value
+    settings.save()
+
+
+def test_send_summary_notifies_every_duty_officer_and_the_default_recipient(types, tree):
+    """RED до фикса: `send_summary` писал только аудит — дежурный узнавал о
+    своде, лишь открыв экран (`[ДОП-20-09]`, решение заказчика 12.09.2026)."""
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.summary_service import send_summary
+
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    summary = assemble(root)
+    _duty_officer("42")
+    _duty_officer("43")
+    _default_duty_recipient(" duty ")
+
+    with clock.override(MORNING):
+        send_summary(division_id=root.id, business_date=TODAY, actor=ACTOR)
+
+    rows = OpsNotification.objects.filter(kind=OpsNotification.Kind.SUMMARY_SENT)
+    assert sorted(rows.values_list("recipient", flat=True)) == ["42", "43", "duty"]
+    row = rows.get(recipient="42")
+    assert row.business_date == TODAY
+    assert row.dedupe_key == f"summary:{root.id}:v{summary.version}"
+    assert row.payload == {
+        "division_id": root.id,
+        "division_name": "Управление",
+        "submission_id": summary.pk,
+        "version": summary.version,
+        "sent_by": ACTOR,
+        "incomplete": False,
+        "incomplete_reason": "",
+        "laggard_division_ids": [],
+    }
+
+
+def test_send_summary_incomplete_notification_carries_reason_and_laggards(types, tree):
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.summary_service import send_summary
+
+    root, left, right = tree
+    submit(left)
+    with clock.override(MORNING):
+        assemble_summary(division_id=root.id, business_date=TODAY, actor=ACTOR, allow_incomplete=True)
+    _duty_officer("42")
+
+    with clock.override(MORNING):
+        send_summary(division_id=root.id, business_date=TODAY, actor=ACTOR, reason="штаб предупреждён")
+
+    row = OpsNotification.objects.get(kind=OpsNotification.Kind.SUMMARY_SENT, recipient="42")
+    assert row.payload["incomplete"] is True
+    assert row.payload["incomplete_reason"] == "штаб предупреждён"
+    assert row.payload["laggard_division_ids"] == [right.id]
+
+
+def test_send_summary_without_any_duty_officer_still_sends(types, tree):
+    """Некому сообщить — не отказ отправки: факт доставки фиксируется в строке
+    свода и аудите, а получателей администратор заведёт позже."""
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.summary_service import send_summary
+
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+
+    with clock.override(MORNING):
+        sent = send_summary(division_id=root.id, business_date=TODAY, actor=ACTOR)
+
+    assert sent.sent_at is not None
+    assert OpsNotification.objects.filter(kind=OpsNotification.Kind.SUMMARY_SENT).count() == 0
+
+
+def test_send_summary_notifies_an_inactive_duty_officer_never(types, tree):
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.summary_service import send_summary
+
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+    assignment = _duty_officer("42")
+    assignment.is_active = False
+    assignment.save(update_fields=["is_active"])
+
+    with clock.override(MORNING):
+        send_summary(division_id=root.id, business_date=TODAY, actor=ACTOR)
+
+    assert OpsNotification.objects.filter(kind=OpsNotification.Kind.SUMMARY_SENT).count() == 0

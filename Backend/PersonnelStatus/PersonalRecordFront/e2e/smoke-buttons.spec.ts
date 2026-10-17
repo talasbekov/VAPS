@@ -52,7 +52,7 @@ const APP_ORIGIN = process.env.SMOKE_BASE_URL ?? 'http://localhost:3106'
 // Playwright компилирует спеку в CJS — `import.meta` там запрещён, файл падает
 // ещё до сборки тестов. Заодно снимается ловушка кириллицы в пути репозитория:
 // `__dirname` — обычный путь ФС, процентного кодирования в нём не бывает.
-const OUT_DIR = path.join(__dirname, '..', 'smoke-results')
+const OUT_DIR = process.env.SMOKE_RESULTS_DIR ?? path.join(__dirname, '..', 'smoke-results')
 
 /** Селектор «интерактивного». Один на весь файл: индексы дескрипторов и
  *  локаторов обязаны считаться по ОДНОМУ И ТОМУ ЖЕ списку. */
@@ -109,8 +109,10 @@ async function dismissPopup(page: Page): Promise<void> {
 }
 
 // ─────────────────────────── персоны ───────────────────────────
-// Учётки стенда (сид RBAC + ручные пользователи). Пароли стендовые,
-// секретами не являются: контур локальный.
+// Учётки стенда (сид RBAC + ручные пользователи). С 12.09.2026 (Plane
+// №1202) у `admin`, `observer` и `erda` ОДИН пароль — тот же, что у учёток
+// закрытой сети, — и читается он из защищённого файла стенда
+// (`stand-credentials`), а не из этого текста.
 interface Persona {
   key: string
   username: string
@@ -123,13 +125,13 @@ const ALL_PERSONAS: readonly Persona[] = [
   {
     key: 'observer',
     username: 'observer',
-    password: 'observer123',
+    password: STAND_PASSWORD,
     role: 'OPS_READER (object.view + duty.view + event.view)',
   },
   {
     key: 'erda',
     username: 'erda',
-    password: 'erda123',
+    password: STAND_PASSWORD,
     role: 'DIVISION_OPERATOR (ОМ-прав нет)',
   },
   {
@@ -148,7 +150,7 @@ const FORM_LOGIN_DESTINATION: Readonly<Record<string, { path: string; heading: s
   [STAND_USERNAME]: { path: '/dashboard', heading: 'Обзор' },
   observer: { path: '/security-ops/objects', heading: 'Объекты и паспорта' },
   erda: { path: '/statuses', heading: 'Управление статусами' },
-  'forces-officer': { path: '/employees', heading: 'Сбор сил на ОМ' },
+  'forces-officer': { path: '/employees', heading: 'Рабочий стол' },
 }
 
 // ─────────────────────── запись трафика ───────────────────────
@@ -728,6 +730,9 @@ async function resolveIds(token: string): Promise<Record<string, string>> {
   // не в базе. Спрашивать его у сервера значило бы делать вид, что он может
   // прийти оттуда, и молча потерять маршрут в день, когда ручка ответит пусто.
   put('staffDictionaryKind', 'positions')
+  // The geographical kind is also a closed route enum (countries/cities),
+  // independent of whether the selected dictionary currently has rows.
+  put('geoDictionaryKind', 'countries')
   put('feedbackId', (await get('/api/ops/feedback-requests/'))?.results?.[0]?.feedbackId)
   return ids
 }

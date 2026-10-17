@@ -22,6 +22,17 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
   })
 }
 
+async function openOrgBoardTable(page: Page, timeout = 45_000) {
+  const scene = page.getByRole('region', { name: '3D-структура организации', exact: true })
+  // The overview opens in 3D. Table styling/scrolling needs the actual
+  // user-selected table, after the full staffing data has arrived.
+  await expect(scene).toBeVisible({ timeout })
+  await scene.getByRole('button', { name: 'Таблица', exact: true }).click()
+  await expect(page.getByRole('group', { name: 'Вид структуры', exact: true })
+    .getByRole('button', { name: 'Таблица', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  return page.locator('main table').first()
+}
+
 test.describe(LIVE ? 'слой прототипа' : 'слой прототипа (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
@@ -38,7 +49,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // Ассерт при этом НЕ ослаблен: заголовок обязан появиться, просто ждём мы
     // его столько, сколько стоит первая сборка страницы.
     await expect(
-      page.getByRole('heading', { name: 'Командный центр' }),
+      page.getByRole('heading', { name: 'Готовность' }),
     ).toBeVisible({ timeout: 30_000 })
 
     const read = () =>
@@ -226,10 +237,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // в диффе.
     const headings = aside.getByRole('heading', { level: 2 })
     await expect(headings).toHaveText([
-      'Личный кабинет',
       'Ежедневный расход',
       'Объекты',
       'Охранные мероприятия',
+      'Личный кабинет',
       // Категория переименована 25.08.2026 (Plane №50): её имя совпадало с
       // именем пункта внутри неё.
       'Система',
@@ -269,8 +280,13 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // человека, ведущая в «Мой профиль», и она пунктом меню не является.
     const total = groups.reduce((sum, group) => sum + group.links, 0)
     expect(await aside.locator('nav a').count()).toBe(total)
-    await expect(aside.getByRole('link', { name: 'Сотрудники Службы', exact: true })).toHaveCount(1)
-    expect(total).toBe(24)
+    await expect(aside.getByRole('link', { name: 'Сотрудники подразделения', exact: true })).toHaveCount(1)
+    await expect(aside.getByRole('link', { name: 'Боевое дежурство по Службе', exact: true }))
+      .toHaveAttribute('href', /\/security-ops\/combat-duty\/?$/)
+    const dispatch = aside.getByRole('link', { name: 'Расстановка дежурств', exact: true })
+    await expect(dispatch).toHaveCount(1)
+    await expect(dispatch).toHaveAttribute('href', /\/security-ops\/duty-dispatch\/?$/)
+    expect(total).toBe(26)
 
     // Подвал: карточка человека ведёт в профиль, и статус связи подписан.
     await expect(aside.locator('[data-slot="sidebar-link-status"]')).toContainText(
@@ -291,6 +307,11 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })).toBeVisible()
 
     const nav = page.locator('aside nav').first()
+    // Страница и меню получают права независимо: H1 уже виден, пока
+    // категории ещё не отрисованы. Меряем полный административный список.
+    await expect(nav.getByRole('link')).toHaveCount(26)
+    await expect(nav.getByRole('list', { name: 'Личный кабинет', exact: true }).getByRole('link'))
+      .toHaveCount(2)
     const metrics = await nav.evaluate((el) => {
       const links = Array.from(el.querySelectorAll('a'))
       const heading = el.querySelector('h2')!
@@ -309,7 +330,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
         pitch: b.getBoundingClientRect().top - a.getBoundingClientRect().top,
       }
     })
-    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(24)
+    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(26)
     expect(metrics.fontPx, `кегль пункта ${metrics.fontPx}px — мельче 14px меню не читается`).toBeGreaterThanOrEqual(14)
     expect(
       metrics.headingPx,
@@ -329,12 +350,16 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
     const nav = page.locator('aside nav').first()
     const hint = page.locator('[data-slot="sidebar-scroll-hint"]')
+    // До ответа о правах меню пустое и ещё не имеет переполнения.
+    await expect(nav.getByRole('link')).toHaveCount(26)
 
     // Меню и правда длиннее окна — иначе весь сторож вакуумен: у
     // непрокручиваемого списка «доскроллили до последнего пункта» истинно
     // без единого движения.
     const overflow = await nav.evaluate((el) => el.scrollHeight - el.clientHeight)
     expect(overflow, 'меню помещается целиком — прокрутку проверять не на чем').toBeGreaterThan(0)
+    // Подводка активного пункта может уже прокрутить меню до самого низа.
+    await nav.evaluate((el) => { el.scrollTop = 0 })
     await expect(hint, 'о продолжении списка ничем не сказано').toHaveCSS('opacity', '1')
 
     // Список при загрузке уже подкручен подводкой к активному пункту, поэтому
@@ -467,18 +492,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await page.goto(`${APP}/dashboard/`)
     await expect(page.getByRole('heading', { name: 'Обзор' })).toBeVisible()
 
-    const labels = page.locator('[data-slot="stat-label"]')
+    const summary = page.getByText('Сводка подразделения на сегодняшний день', { exact: true }).locator('..')
+    await expect(summary).toBeVisible()
+    // The dashboard now uses compact definition rows. Expand the breakdown
+    // so the longer status labels still participate in the clipping check.
+    await summary.getByText('Подробная сводка статусов', { exact: true }).click()
+    const labels = summary.locator('dt')
     // 🔴 Guard ДО содержательной проверки: getBoundingClientRect/scrollWidth на
     // СКРЫТОМ узле отдаёт нули с обеих сторон неравенства, и «обрезанных нет»
     // означает «я ничего не нашёл», а не «оформление верное».
     await expect(labels.first()).toBeVisible()
     const count = await labels.count()
-    expect(count, 'ни одной KPI-плитки на экране — проверка была бы вакуумной').toBeGreaterThan(0)
+    expect(count, 'детальная сводка статусов не показана — проверялись бы только два итога').toBeGreaterThan(2)
 
     const clipped = await labels.evaluateAll((els) => {
       const visible = els.filter((el) => (el as HTMLElement).clientWidth > 0)
-      if (visible.length === 0) {
-        throw new Error('все data-slot="stat-label" скрыты — clientWidth=0 у всех')
+      if (visible.length !== els.length) {
+        throw new Error('часть подписей сводки скрыта — clientWidth=0')
       }
       return visible
         .filter((el) => el.scrollWidth > el.clientWidth + 1)
@@ -486,13 +516,13 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     })
     expect(clipped, `обрезанные подписи: ${clipped.join('; ')}`).toEqual([])
 
-    const value = page.locator('[data-slot="stat-value"]').first()
+    const value = summary.getByRole('definition').first()
     const shape = await value.evaluate((el) => {
       const cs = getComputedStyle(el)
       return { size: cs.fontSize, weight: cs.fontWeight, numeric: cs.fontVariantNumeric }
     })
     expect(shape.size).toBe('24px')
-    expect(shape.weight).toBe('800')
+    expect(shape.weight).toBe('600')
     expect(shape.numeric).toContain('tabular-nums')
   })
 
@@ -638,8 +668,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await signIn(page)
     await page.goto(`${APP}/dashboard/`)
 
-    const board = page.locator('table').first()
-    await expect(board).toBeVisible()
+    const board = await openOrgBoardTable(page)
+    // Полная штатка приходит по всем страницам: ночной trace содержит
+    // 11 страниц с page_size=500, после которых монтируется доска.
+    await expect(board).toBeVisible({ timeout: 45_000 })
     // Примитива на доске быть не должно: он и есть откаченное состояние.
     await expect(page.locator('[data-slot="table"]')).toHaveCount(0)
     await expect(page.locator('[data-slot="table-head"]')).toHaveCount(0)
@@ -683,6 +715,62 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       tokens.some((token) => token !== 'board' && token.includes('board')),
       `среди классов обёртки нет модульного имени доски (${className})`,
     ).toBe(true)
+  })
+
+  test('OrgBoard: оба края таблицы доступны горизонтальной прокруткой', async ({ page }) => {
+    test.setTimeout(120_000)
+    await signIn(page)
+    await page.goto(`${APP}/dashboard/`)
+    const table = await openOrgBoardTable(page, 90_000)
+    // Доска монтируется после загрузки всех страниц реальной штатки.
+    await expect(table.locator('tbody td:not(:empty)').first()).toBeVisible({ timeout: 90_000 })
+
+    const bounds = await table.evaluate((element) => {
+      const board = element.parentElement!
+      const originalLeft = board.scrollLeft
+      const read = () => {
+        const box = board.getBoundingClientRect()
+        const tableBox = element.getBoundingClientRect()
+        return {
+          start: box.left + board.clientLeft,
+          end: box.left + board.clientLeft + board.clientWidth,
+          clientWidth: board.clientWidth,
+          scrollWidth: board.scrollWidth,
+          scrollLeft: board.scrollLeft,
+          tableLeft: tableBox.left,
+          tableRight: tableBox.right,
+          tableWidth: tableBox.width,
+          overflowX: getComputedStyle(board).overflowX,
+          direction: getComputedStyle(board).direction,
+        }
+      }
+      try {
+        board.scrollLeft = 0
+        const left = read()
+        board.scrollLeft = board.scrollWidth
+        return { left, right: read() }
+      } finally {
+        board.scrollLeft = originalLeft
+      }
+    })
+    await test.info().attach('org-board-scroll-bounds', {
+      contentType: 'application/json', body: Buffer.from(JSON.stringify(bounds)),
+    })
+    expect(bounds.left.overflowX, 'измеряется не прокручиваемая обёртка доски').toBe('auto')
+    expect(bounds.left.direction).toBe('ltr')
+    expect(bounds.left.clientWidth, 'контейнер доски скрыт').toBeGreaterThan(0)
+    expect(bounds.left.tableWidth, 'таблица не шире контейнера — проверка края вакуумна')
+      .toBeGreaterThan(bounds.left.clientWidth)
+    expect(bounds.left.scrollWidth, 'у доски нет горизонтальной прокрутки')
+      .toBeGreaterThan(bounds.left.clientWidth)
+    expect(bounds.left.scrollLeft).toBe(0)
+    expect(Math.abs(bounds.left.tableLeft - bounds.left.start),
+      'левые столбцы лежат вне достижимого диапазона прокрутки').toBeLessThanOrEqual(1)
+    expect(bounds.right.scrollLeft, 'до правого края не прокручивались').toBeGreaterThan(0)
+    expect(Math.abs(bounds.right.scrollLeft - (bounds.right.scrollWidth - bounds.right.clientWidth)),
+      'проверяется не максимальная прокрутка').toBeLessThanOrEqual(1)
+    expect(Math.abs(bounds.right.tableRight - bounds.right.end),
+      'правые столбцы лежат вне достижимого диапазона прокрутки').toBeLessThanOrEqual(1)
   })
 
   // Task 12: хвост сырых таблиц (история отчётов, сводный отчёт по расходу).
@@ -795,7 +883,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // 24px/800/tabular-nums) и подписи не обрезаются (scrollWidth <= clientWidth
   // с guard на пустое множество/clientWidth=0).
   for (const [route, heading] of [
-    ['/employees/', 'Сбор сил на ОМ'],
+      ['/employees/', 'Ежедневный расход организации'],
     ['/statuses/', 'Управление статусами'],
   ] as const) {
     test(`KPI-плитки на StatCard: ${route}`, async ({ page }) => {
@@ -803,21 +891,29 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       await page.goto(`${APP}${route}`)
       await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
 
-      const cards = page.locator('[data-slot="stat-card"]')
+      const compact = route === '/statuses/'
+      const summary = page.locator('dl[aria-label="Сводка статусов"]')
+      const cards = compact ? summary.locator(':scope > div') : page.locator('[data-slot="stat-card"]')
       await expect(cards.first()).toBeVisible()
       const cardCount = await cards.count()
-      expect(cardCount, `на ${route} нет ни одной [data-slot="stat-card"] — проверка была бы вакуумной`).toBeGreaterThan(0)
+      if (compact) {
+        expect(cardCount, 'компактная сводка должна показывать четыре показателя').toBe(4)
+        await expect(summary.getByRole('term')).toHaveText(['Сотрудников', 'Без статуса', 'Просрочено', 'Запланировано'])
+        await expect(summary.getByRole('definition')).toHaveText([/^\d+$/, /^\d+$/, /^\d+$/, /^\d+$/])
+      } else {
+        expect(cardCount, `на ${route} нет ни одной [data-slot="stat-card"] — проверка была бы вакуумной`).toBeGreaterThan(0)
+      }
 
-      const value = page.locator('[data-slot="stat-value"]').first()
+      const value = compact ? summary.getByRole('definition').first() : page.locator('[data-slot="stat-value"]').first()
       const shape = await value.evaluate((el) => {
         const cs = getComputedStyle(el)
         return { size: cs.fontSize, weight: cs.fontWeight, numeric: cs.fontVariantNumeric }
       })
-      expect(shape.size, `на ${route} число плитки не 24px`).toBe('24px')
-      expect(shape.weight, `на ${route} число плитки не весом 800`).toBe('800')
+      expect(shape.size, `на ${route} размер числа не соответствует виду сводки`).toBe(compact ? '14px' : '24px')
+      expect(shape.weight, `на ${route} вес числа не соответствует виду сводки`).toBe(compact ? '600' : '800')
       expect(shape.numeric, `на ${route} число плитки не tabular-nums`).toContain('tabular-nums')
 
-      const labels = page.locator('[data-slot="stat-label"]')
+      const labels = compact ? summary.getByRole('term') : page.locator('[data-slot="stat-label"]')
       await expect(labels.first()).toBeVisible()
       const labelCount = await labels.count()
       expect(labelCount, `на ${route} нет ни одной [data-slot="stat-label"] — проверка была бы вакуумной`).toBeGreaterThan(0)
@@ -888,19 +984,21 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   test('переход с /dashboard кликом не красит таблицу /employees чужим CSS', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/dashboard/`)
-    // Ждём, что доска подразделений (носитель org-board.styles.css) реально
-    // смонтирована — иначе чанк не гарантированно загружен.
-    await expect(page.locator('table').first()).toBeVisible()
+    // Ждём полную штатку и доску (носитель org-board.module.css), а не
+    // только H1: загрузка всех страниц на полном стенде превышает 15 секунд.
+    await expect(await openOrgBoardTable(page)).toBeVisible({ timeout: 45_000 })
 
     // Путь ДВУМЯ клиентскими переходами: пункт меню ведёт на «Сбор сил на ОМ»
-    await page.getByRole('link', { name: 'Сбор сил на ОМ' }).click()
+    await page.locator('aside nav').getByRole('link', { name: 'Сбор сил на ОМ', exact: true }).click()
     await expect(page).toHaveURL(new RegExp('/employees/?$'))
 
     // С Plane №273 модуль открывается вкладкой «Ежедневный расход
     // организации», а утечка CSS проверяется на таблице РЕЕСТРА. Переходим на
     // неё ТЕМ ЖЕ клиентским переходом — суть пробы (переход без полной
     // перезагрузки) от этого не меняется, а `page.goto` её бы разрушил.
-    await page.getByRole('button', { name: 'Сбор сил на ОМ' }).click()
+    await page.getByRole('navigation', { name: 'Разделы модуля', exact: true })
+      .getByRole('button', { name: 'Сбор сил на ОМ', exact: true }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('forces')
 
     const cell = page.locator('table tbody td').first()
     await expect(cell).toBeVisible()
@@ -942,15 +1040,15 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // text-transform; проба, написанная капсом, заставила бы дублировать капс в
   // JSX через toUpperCase() — компонент начал бы терять регистр акронимов и
   // имён собственных (так уже случилось в Task 5 и откатывалось).
-  const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string }> = [
+  const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string | null }> = [
     // Легаси-портал
     { path: '/dashboard/', title: 'Обзор', eyebrow: 'Ежедневный расход' },
-    { path: '/employees/', title: 'Сбор сил на ОМ', eyebrow: 'Ежедневный расход' },
+    { path: '/employees/', title: 'Ежедневный расход организации', eyebrow: 'Ежедневный расход' },
     { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
-    { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Ежедневный расход' },
+    { path: '/statuses/', title: 'Управление статусами', eyebrow: null },
     { path: '/reports/', title: 'Отчеты', eyebrow: 'Ежедневный расход' },
     // Охранные мероприятия и объекты
-    { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Ежедневный расход' },
+    { path: '/security-ops/command-center/', title: 'Готовность', eyebrow: 'Ежедневный расход' },
     { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
     // «Реестр ГВО» снят из меню и с маршрутов (Plane «Реестр ОМ-35.8»):
     // сводка живёт панелью в карточке ОМ, сводный взгляд — вкладкой реестра.
@@ -1005,11 +1103,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       expect(h1Count, `${path}: на странице ${h1Count} заголовков H1`).toBe(1)
 
       const eyebrowEl = page.locator('[data-slot="page-eyebrow"]')
-      await expect(eyebrowEl, `${path}: нет надзаголовка`).toHaveText(eyebrow)
-      expect(
-        await eyebrowEl.evaluate((el) => getComputedStyle(el).textTransform),
-        `${path}: капс надзаголовка должен делать CSS`
-      ).toBe('uppercase')
+      if (eyebrow === null) {
+        // Status management now opens with an actionable description,
+        // without repeating the section name above its H1.
+        await expect(eyebrowEl).toHaveCount(0)
+        const description = h1.locator('..').locator('..').getByText(
+          'Подготовьте статусы сотрудников, проверьте расход на нужную дату и сдайте день.',
+          { exact: true },
+        )
+        await expect(description).toBeVisible()
+        expect(await description.evaluate((el) => getComputedStyle(el).fontSize)).toBe('14px')
+      } else {
+        await expect(eyebrowEl, `${path}: нет надзаголовка`).toHaveText(eyebrow)
+        expect(
+          await eyebrowEl.evaluate((el) => getComputedStyle(el).textTransform),
+          `${path}: капс надзаголовка должен делать CSS`
+        ).toBe('uppercase')
+      }
     })
   }
 

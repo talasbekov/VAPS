@@ -1,3 +1,4 @@
+import { requireIsolatedForcesClone, withOwnedForcesFixture, type OwnedForcesFixture } from './owned-forces-fixture'
 /**
  * Этап «Расстановка» карточки ОМ на ЖИВОМ стенде.
  *
@@ -14,6 +15,7 @@
  *
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
+import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { requireFixture } from './fixtures'
@@ -291,6 +293,30 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const row = after.placementAssignments.find((a) => a.postId === postId)
     requireFixture(row, 'назначение не завелось — проверять нечего')
 
+    // Гибридная UI-проба: назначение настоящее, ответы об авторизации подменены.
+    // Admin готовит данные и законно получает canManagePlacement=true от API.
+    // Для недоступной кнопки нужны ОБА отказа: нет общего права и нет права
+    // редактировать объект по назначению. Реальный RBAC эта подмена не проверяет.
+    let deniedCapabilityResponses = 0
+    await page.route(
+      (url) => url.pathname === `/api/ops/security-events/${eventId}/`,
+      async (route) => {
+        const response = await route.fetch()
+        expect(response.status()).toBe(200)
+        const body = (await response.json()) as {
+          visitObjects: { id: string; canManagePlacement: boolean }[]
+        }
+        expect(body.visitObjects.length, 'у своей расстановки должны быть объекты посещения').toBeGreaterThan(0)
+        await route.fulfill({
+          response,
+          json: {
+            ...body,
+            visitObjects: body.visitObjects.map((visit) => ({ ...visit, canManagePlacement: false })),
+          },
+        })
+        deniedCapabilityResponses += 1
+      },
+    )
     await page.route(
       (url) => url.pathname.includes('/api/operations/my-permissions/'),
       async (route) =>
@@ -302,6 +328,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await page.goto(`${APP}/security-ops/events/${eventId}/`)
     const card = page.getByRole('region', { name: 'Расстановка сил' })
     await expect(card).toBeVisible({ timeout: 15_000 })
+    expect(deniedCapabilityResponses, 'браузер должен получить отказ по серверному праву объекта').toBeGreaterThan(0)
     // Пост выбирается тем же деревом, что и в первой пробе файла.
     const tree = page.getByRole('complementary', { name: 'Дерево постов' })
     await tree.locator(`li[data-drop-post="${postId}"]`).click()
@@ -318,6 +345,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     ).toBeTruthy()
     const hint = page.locator(`#${describedBy}`)
     await expect(hint).toBeVisible()
+    await expect(hint).toContainText('Расставляет людей по постам старший объекта')
     expect((await hint.innerText()).trim().length).toBeGreaterThan(0)
   })
 
@@ -540,16 +568,14 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 
-    const dictionary = async (code: string) =>
-      ((await (
-        await request.get(`${API}/api/ops/dictionaries/${code}/entries/`, { headers: auth })
-      ).json()) as { results: { code: string; label: string }[] }).results
+    const dictionary = async (code: string) => {
+      const response = await request.get(`${API}/api/ops/dictionaries/${code}/entries/`, { headers: auth })
+      expect(response.status()).toBe(200)
+      return ((await response.json()) as { results: { code: string; label: string; isActive: boolean }[] }).results
+    }
 
-    const sections = await dictionary('PLACEMENT_SECTIONS')
     const roles = await dictionary('PLACEMENT_ROLES')
-    const section = sections[0]
-    const role = roles[0]
-    requireFixture(section, 'справочник секций бланка пуст — назначать нечего')
+    const role = roles.find((entry) => entry.isActive)
     requireFixture(role, 'справочник ролей наряда пуст — менять роль нечем')
 
     const target = await placementEventWithRoster(token)
@@ -566,8 +592,23 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     const before = new Set((await assignmentsOf()).map((row) => row.id))
     const mineOf = (rows: Row[]) => rows.filter((row) => !before.has(row.id)).at(-1) ?? null
+    const sectionCode = `E2E_SECTION_${randomUUID().replaceAll('-', '').toUpperCase()}`
+    let sectionId: string | undefined
 
     try {
+      // Справочник на чистом стенде может быть пуст. Заводим только свою
+      // активную секцию и удаляем её после снятия собственного назначения.
+      const createdSection = await request.post(`${API}/api/ops/dictionaries/PLACEMENT_SECTIONS/entries/`, {
+        headers: auth,
+        data: { code: sectionCode, label: `Секция пробы ${sectionCode}`, confirmSimilar: true },
+      })
+      expect(createdSection.status(), await createdSection.text()).toBe(201)
+      const section = (await createdSection.json()) as { id: string; code: string; isActive: boolean }
+      sectionId = section.id
+      expect(section.id).toEqual(expect.any(String))
+      expect(section.code).toBe(sectionCode)
+      expect(section.isActive).toBe(true)
+
       await signIn(page)
       await page.goto(`${APP}/security-ops/events/${eventId}/`)
       await page.locator('button', { hasText: 'Пост' }).first().click()
@@ -621,13 +662,34 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         'смена роли снесла секцию бланка — место в документе опустеет молча',
       ).toBe(section!.code)
     } finally {
-      for (const row of await assignmentsOf()) {
-        if (before.has(row.id)) continue
-        await request.delete(
-          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
-          { headers: auth },
-        )
+      const failures: unknown[] = []
+      try {
+        for (const row of await assignmentsOf()) {
+          if (before.has(row.id)) continue
+          try {
+            const removed = await request.delete(
+              `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+              { headers: auth },
+            )
+            expect(removed.status()).toBe(200)
+          } catch (error) {
+            failures.push(error)
+          }
+        }
+      } catch (error) {
+        failures.push(error)
       }
+      if (sectionId !== undefined) {
+        try {
+          const removed = await request.delete(`${API}/api/ops/dictionaries/entries/${encodeURIComponent(sectionId)}/`, {
+            headers: auth,
+          })
+          expect(removed.status(), 'своя секция после снятия назначения должна удаляться без связей').toBe(204)
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      if (failures.length > 0) throw new AggregateError(failures, 'failed to clean up the owned placement section')
     }
   })
 
@@ -798,7 +860,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const created = await call('post', '/api/ops/security-events/', {
       title: `Проба №410 · расстановка по объекту ${Date.now()}`,
       objectId: withPassport!.id,
-      businessDate: '2026-08-26',
+      businessDate: uniqueBusinessDate(),
       kind: 'INTERNAL',
       chiefEmployeeId: await anyChiefId(token),
     })
@@ -1065,7 +1127,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const created = (await call('POST', '/api/ops/security-events/', {
       title: 'Проба недобора расстановки (e2e)',
       objectId: object.id,
-      businessDate: '2026-09-03',
+      businessDate: uniqueBusinessDate(),
       kind: 'INTERNAL',
       chiefEmployeeId: await anyChiefId(token),
     })) as { id: string }
@@ -1834,82 +1896,38 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       page,
       request,
     }) => {
-      // Сервер требует обоснование усиления поста сверх расчёта
-      // (`needOverrideReason`) и хранит его, а показывал его НИКТО (Plane №746):
-      // грепом по фронту поле встречалось только в типах и в моке. Оператор
-      // набирал объяснение, и оно исчезало — заявленная цель правки №414
-      // («чтобы усиление осталось объяснимым в реестре») не выполнялась вовсе.
-      //
-      // Состояние подставляется перехватом: ставить второго человека на
-      // укомплектованный пост ради одной строки текста значит мутировать стенд.
+      requireIsolatedForcesClone()
       const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
-      const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const target = await placementEventWithRoster(token)
-      requireFixture(target, 'мероприятие на стадии «Расстановка»')
-
+      const auth = { Authorization: `Bearer ${token}` }
       const REASON = 'Усиление: два входа на объекте'
-      // 🔴 ПРИГОДНОСТЬ ФИКСТУРЫ ПРОВЕРЯЕТСЯ ДО ПЕРЕХВАТА. `test.skip()` внутри
-      // обработчика `page.route` БРОСАЕТ — `route.fulfill` тогда не
-      // выполняется, запрос карточки виснет, и экран навсегда остаётся на
-      // «Загрузка мероприятия…». Проба падала «элемент не найден», хотя
-      // причина была в ней самой (проверено выводом текста экрана).
-      const card = (await (
-        await request.get(`${API}/api/ops/security-events/${target!.id}/`, {
-          headers: auth,
+      async function verifyReinforcement(fixture: OwnedForcesFixture) {
+        const first = await request.post(`${API}${fixture.base}/placement/assign/`, { headers: auth,
+          data: { postId: fixture.post.id, employeeId: fixture.employeeIds[0] } })
+        expect(first.status(), await first.text()).toBe(200)
+        const data = { postId: fixture.post.id, employeeId: fixture.employeeIds[1] }
+        const refused = await request.post(`${API}${fixture.base}/placement/assign/`, { headers: auth, data })
+        expect(refused.status(), await refused.text()).toBe(409)
+        expect(await refused.json()).toMatchObject({
+          error_code: 'SOFT_CONFLICT_DETECTED', overridable: true,
+          details: { conflicts: expect.arrayContaining([expect.objectContaining({ conflict_code: 'OVER_NEED' })]) },
         })
-      ).json()) as {
-        placementAssignments: { postId: string }[]
-        reconSectorPosts: { id: string; post: string }[]
+        const before = await fixture.call('GET', `${fixture.base}/`)
+        expect(before.placementAssignments).toHaveLength(1)
+        const reinforced = await request.post(`${API}${fixture.base}/placement/assign/`, { headers: auth,
+          data: { ...data, override: true, override_reason: REASON } })
+        expect(reinforced.status(), await reinforced.text()).toBe(200)
+        const saved = await fixture.call('GET', `${fixture.base}/`)
+        expect(saved.placementAssignments).toHaveLength(2)
+        expect(saved.placementAssignments.find((row: { employeeId: string }) =>
+          String(row.employeeId) === fixture.employeeIds[1])).toMatchObject({ needOverrideReason: REASON })
+        await signIn(page)
+        await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
+        const main = page.getByRole('main')
+        await main.getByText(fixture.post.post, { exact: true }).first().click()
+        await expect(main.locator('[data-slot="need-override-reason"]')).toContainText(REASON, { timeout: 15_000 })
+        await expect(main).toContainText('постов усилено сверх расчёта: 1')
       }
-      test.skip(
-        (card.placementAssignments ?? []).length === 0,
-        'у ОМ нет ни одного назначения',
-      )
-
-      await page.route(
-        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
-        async (route) => {
-          const response = await route.fetch()
-          const body = await response.json()
-          // Обоснование ставится ВСЕМ назначениям, а не первому: экран
-          // показывает посты ОДНОГО объекта посещения, и первое назначение
-          // легко оказывается на посту соседнего — тогда бейдж не рисуется
-          // вовсе, и проба падает не на своём предмете (так и вышло на первом
-          // прогоне).
-          body.placementAssignments = (body.placementAssignments ?? []).map(
-            (row: Record<string, unknown>) => ({
-              ...row,
-              needOverrideReason: REASON,
-            }),
-          )
-          await route.fulfill({ response, json: body })
-        },
-      )
-
-      await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-      const main = page.getByRole('main')
-      await expect(main).toBeVisible({ timeout: 15_000 })
-
-      // 🔴 БЕЙДЖ ЖИВЁТ В ПАНЕЛИ ВЫБРАННОГО ПОСТА, а по умолчанию выбран
-      // первый — а он часто пуст. Открываем ТОТ пост, на котором есть
-      // назначение: без этого проба искала строку на экране, где её и не
-      // должно быть (проверено выводом текста экрана).
-      const busyPost = card.reconSectorPosts.find((post) =>
-        card.placementAssignments.some((a) => String(a.postId) === String(post.id)),
-      )
-      test.skip(busyPost === undefined, 'ни на одном посту нет назначения')
-      await main.getByText(busyPost!.post, { exact: true }).first().click()
-
-      // Обоснование стоит В СТРОКЕ — там видно, к кому оно относится.
-      await expect(main.locator('[data-slot="need-override-reason"]')).toContainText(
-        REASON,
-        { timeout: 15_000 },
-      )
-      // И оно посчитано ОТДЕЛЬНО от обхода по рейтингу: два разных факта не
-      // сложены в одно число. Числа не пиним — оно зависит от того, сколько
-      // назначений у показанного объекта; предмет в том, что счёт есть.
-      await expect(main).toContainText('постов усилено сверх расчёта:')
+      await withOwnedForcesFixture(token, { accepted: true }, verifyReinforcement)
     })
 
     test('баннер возврата показывает причину ПОКАЗАННОГО объекта', async ({

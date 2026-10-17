@@ -98,6 +98,32 @@ def test_the_seed_resyncs_a_renamed_permission(seeded):
     assert Permission.objects.get(code="audit.view").name == "Просмотр аудита"
 
 
+def test_reference_seed_initializes_passport_freshness_for_a_clean_stand():
+    from organization_management.apps.ops.passport import read_policy
+
+    call_command("seed_operations", reference_only=True)
+    policy = read_policy()
+    assert policy.verification_interval_days == 120
+    assert policy.due_soon_percent == 25
+    assert policy.version == "fp-v1"
+
+
+def test_reference_seed_preserves_an_existing_configured_passport_policy():
+    from organization_management.apps.operations.models_object import OpsPassportFreshnessPolicy
+    from organization_management.apps.operations.models_settings import OpsPolicySectionVersion
+    from organization_management.apps.ops.passport import read_policy
+
+    configured = OpsPassportFreshnessPolicy.objects.create(
+        singleton_key=1, version="fp-v9", verification_interval_days=180, due_soon_percent=40,
+    )
+    OpsPolicySectionVersion.objects.create(section_code="PASSPORT_FRESHNESS", version="fp-v9")
+    call_command("seed_operations", reference_only=True)
+    call_command("seed_operations", reference_only=True)
+    policy = read_policy()
+    assert policy.pk == configured.pk
+    assert (policy.verification_interval_days, policy.due_soon_percent, policy.version) == (180, 40, "fp-v9")
+
+
 def test_no_role_is_left_without_permissions(seeded):
     """Роль без единого права не даёт держателю НИЧЕГО, и завести её — то же,
     что забыть про неё. Такая роль в списке — почти всегда недописанная
@@ -165,9 +191,20 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
         "HEAD_OPS_UNIT",
         "FORCES_GATHERING_OFFICER",
     }
-    assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
-    assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}
+    # СДАЧУ ДНЯ ДЕРЖАТ ТРОЕ с 12.09.2026 (Plane №1202): персоны заказчика
+    # «Начальник управления» (`HEAD_DIRECTORATE_LINE`, `HEAD_OPS_UNIT`) по
+    # канону расхода (RAW/README §19–20) сами сдают день своего управления, а
+    # до этого право было только у технической `DIRECTORATE_HEAD` — и на
+    # кнопке «Сдать день» персона получала 403.
+    assert holders("daily_report.mark_update") == {
+        "DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT",
+    }
+    assert holders("daily_report.correct") == {
+        "DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT",
+    }
     assert holders("daily_report.override_block") == {"DUTY_OFFICER"}
+    # Plane №1223 (`[РАСХ-РШ-07]`): статусы «Руководству Службы» — только дежурный.
+    assert holders("status.manage_root") == {"DUTY_OFFICER"}
     assert holders("audit.view") == {"SECURITY_ADMIN", "AUDITOR"}
     # Раздача ролей — у своей роли, а не только через «*»: это и есть смысл
     # SECURITY_ADMIN.

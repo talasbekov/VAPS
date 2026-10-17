@@ -130,7 +130,6 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
     // состояние `[РЕК-02]` (Plane №424), кнопки перехода там нет; берём этап
     // 2/4, а этап 1 — только с назначенным старшим.
     const target =
-      rows.find((e) => e.stage === 'PLACEMENT') ??
       rows.find(
         (e) =>
           e.stage === 'RECON' &&
@@ -138,7 +137,8 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
             (v) => v.chiefEmployeeId !== null,
           ),
       ) ??
-      rows.find((e) => e.stage === 'ACKNOWLEDGEMENT')
+      rows.find((e) => e.stage === 'ACKNOWLEDGEMENT') ??
+      rows.find((e) => e.stage === 'PLACEMENT')
     test.skip(target === undefined, 'на стенде нет ОМ на этапах 1, 2 или 4')
 
     await signIn(page, 'acc_employee_d2', PASSWORD)
@@ -161,7 +161,10 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
     expect(hintId, 'у выключенной кнопки нет связи с причиной').toBeTruthy()
     // Идентификатор от `useId` содержит двоеточия («:r7:»), которые CSS
     // читает как псевдокласс, — поэтому ищем по атрибуту, а не селектором id.
-    await expect(page.locator(`[id="${hintId}"]`)).toHaveText(/ведущий ОМ или штаб/)
+    const expectedHint = target!.stage === 'RECON'
+      ? /Рекогносцировку ведёт назначенный старший выбранного объекта/
+      : /ведущий ОМ или штаб/
+    await expect(page.locator(`[id="${hintId}"]`)).toHaveText(expectedHint)
 
     // 🔴 И СКАЗАНА ОДИН РАЗ НА ШАГ (вторая половина №801, найдена ревью
     //    коммита 94f37610). Первый заход печатал причину У КАЖДОЙ обёртки, а
@@ -172,7 +175,7 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
     //    краснит этот ассерт числом, а не словами.
     const said = page
       .locator('[data-slot="access-note"], [data-slot="right-hint"]')
-      .filter({ hasText: /ведущий ОМ или штаб/ })
+      .filter({ hasText: expectedHint })
     await expect(said, 'причина повторяется на экране').toHaveCount(1)
   })
 })

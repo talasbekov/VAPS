@@ -76,6 +76,7 @@ def row_of(employee, names):
     return {
         'id': employee.pk,
         'full_name': ' '.join(filter(None, [employee.last_name, employee.first_name, employee.middle_name])),
+        'photo_url': employee.photo.url if employee.photo else None,
         'personnel_number': employee.personnel_number,
         'callsign': employee.callsign,
         'rank': employee.rank.name if employee.rank else None,

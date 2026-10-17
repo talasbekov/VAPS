@@ -13,6 +13,7 @@ handlers.ts) ДОСЛОВНО — он был первой реализацие�
 """
 import datetime as dt
 import hashlib
+import json
 import logging
 import re
 from uuid import uuid4
@@ -5756,6 +5757,35 @@ def personnel_display_name(employee):
     return f"{employee.last_name}{initial}"
 
 
+def personnel_full_name(employee):
+    """«Фамилия Имя Отчество» без пустых частей (Plane №1247)."""
+    return " ".join(
+        part for part in (employee.last_name, employee.first_name, employee.middle_name)
+        if part
+    )
+
+
+def unit_path_of(division, *, cache=None):
+    """Путь подразделения «департамент / управление / отдел» (Plane №1247).
+
+    Корень дерева (организация, уровень 0) опускается: он у всех один и
+    только удлиняет строку. `cache` — словарь на один запрос: предки читаются
+    по одному запросу на подразделение, а подразделений на странице подбора
+    куда меньше, чем людей.
+    """
+    if division is None:
+        return ""
+    if cache is not None and division.pk in cache:
+        return cache[division.pk]
+    nodes = [node for node in division.get_ancestors(include_self=True) if node.level > 0]
+    if not nodes:
+        nodes = [division]
+    path = " / ".join(node.name for node in nodes)
+    if cache is not None:
+        cache[division.pk] = path
+    return path
+
+
 def actor_display_name(actor):
     """Подпись актора для ЭКРАНА: ФИО из кадровой записи, иначе username
     учётки, иначе сам идентификатор.
@@ -5968,14 +5998,15 @@ def assign_placement(
             ),
             detail={"visitObjectId": given_to},
         )
-    # hard-правило: сотрудник не может занимать два поста одного ОМ
+    # Один сотрудник занимает одно место в составе ОМ, включая тот же пост.
+    # Обоснование усиления разрешает добавить людей, но не удвоить одного.
     if any(
-        a.get("employeeId") == employee_key and a.get("postId") != post_id
+        str(a.get("employeeId")) == employee_key
         for a in event.placement_assignments
     ):
         raise DomainError("DOUBLE_ASSIGNMENT", 422, message=
-            f"{personnel_display_name(employee)} уже назначен(а) на другой "
-            "пост этого мероприятия.",
+            f"{personnel_display_name(employee)} уже назначен(а) "
+            "на пост этого мероприятия.",
         )
     # мягкие предупреждения — ПОСЛЕ жёстких правил: обходить обоснованием
     # можно только назначение, которое иначе состоялось бы. Собираются В ОДИН
@@ -6806,13 +6837,18 @@ def _document_snapshot(event, visit):
     """Снимок того, что подписывают: посты объекта и назначения на них."""
     posts = visit_object_posts(event, visit)
     post_ids = {str(p.get("id")) for p in posts}
-    return {
+    snapshot = {
         "posts": posts,
         "assignments": [
             a for a in (event.placement_assignments or [])
             if str(a.get("postId")) in post_ids
         ],
     }
+    from organization_management.apps.ops import map_locations
+    geometry = map_locations.read(event, visit)
+    if geometry["objects"] or geometry["posts"]:
+        snapshot["map"] = geometry
+    return snapshot
 
 
 def _current_document_version(visit):
@@ -7654,7 +7690,7 @@ def decide_approver(
     return _autocomplete_approval(event, visit, actor=actor)
 
 
-def placement_signature(event, visit=None, *, single=None):
+def placement_signature(event, visit=None, *, single=None, include_map=True):
     """Подпись расстановки: что именно согласуют.
 
     Сортированная, потому что порядок назначений в списке — деталь хранения, а
@@ -7678,10 +7714,17 @@ def placement_signature(event, visit=None, *, single=None):
         f"{item.get('postId')}:{item.get('employeeId')}"
         for item in assignments
     )
-    return ";".join(pairs)
+    signature = ";".join(pairs)
+    if not include_map:
+        return signature
+    from organization_management.apps.ops import map_locations
+    geometry = map_locations.read(event, visit)
+    if geometry["objects"] or geometry["posts"]:
+        signature += "|map:" + json.dumps(geometry, sort_keys=True, separators=(",", ":"))
+    return signature
 
 
-def approval_is_stale(event, visit=None, *, single=None):
+def approval_is_stale(event, visit=None, *, single=None, tolerate_map_failure=False):
     """Расстановка изменилась ПОСЛЕ отправки на согласование.
 
     Пустой снимок — «не отправляли», а не «не изменилась»: до отправки
@@ -7697,7 +7740,15 @@ def approval_is_stale(event, visit=None, *, single=None):
         return False
     if visit.approval_snapshot == "":
         return False
-    return visit.approval_snapshot != placement_signature(event, visit, single=single)
+    try:
+        return visit.approval_snapshot != placement_signature(event, visit, single=single)
+    except DomainError as exc:
+        if not tolerate_map_failure or exc.code != "PLACEMENT_MAP_UNAVAILABLE":
+            raise
+        # Registry/detail reads remain available when only map storage fails.
+        # Signing/approval still uses the strict comparison above.
+        saved_assignments = visit.approval_snapshot.split("|map:", 1)[0]
+        return saved_assignments != placement_signature(event, visit, single=single, include_map=False)
 
 
 def _unattributed_posts(event):
@@ -8473,13 +8524,12 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
         raise _not_found("Назначение не найдено.", assignment_id)
     incoming_key = str(incoming.pk)
     if any(
-        a.get("employeeId") == incoming_key
-        and a.get("postId") != outgoing.get("postId")
+        str(a.get("employeeId")) == incoming_key
         for a in event.placement_assignments
     ):
         raise DomainError("DOUBLE_ASSIGNMENT", 422, message=
-            f"{personnel_display_name(incoming)} уже назначен(а) на другой "
-            "пост этого мероприятия.",
+            f"{personnel_display_name(incoming)} уже назначен(а) "
+            "на пост этого мероприятия. Выберите другого сотрудника.",
         )
     post = next(
         (
@@ -8494,6 +8544,7 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
         "postId": outgoing.get("postId"),
         "employeeId": incoming_key,
         "employeeName": personnel_display_name(incoming),
+        "callsign": (incoming.callsign or "").strip(),
         # Роль наряда НАСЛЕДУЕТСЯ (Plane №239): замена меняет человека, а не
         # место в бланке — «водитель VIP» остаётся водителем VIP. Потерять её
         # здесь значило бы оставить место в документе пустым ровно тогда, когда
@@ -8721,9 +8772,9 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
 
     Спецификация: «Кнопка „Закрыть объект“. Подтверждение: „… После закрытия
     изменения невозможны“». Итоговый комментарий по объекту — `[ЗАК-04]`,
-    необязателен. Оценки и инциденты (`[ЗАК-02]`/`[ЗАК-03]`) этот шаг не
-    заводит — их карточек в очереди нет; подтверждение «оценено K из N» на
-    экране появится вместе с ними.
+    необязателен. Инциденты (`[ЗАК-03]`) этот шаг не заводит. Оценки: всем
+    неоценённым назначениям объекта ставится 7 методом SYSTEM_DEFAULT
+    (`[ОМ-РШ-16]`, решение заказчика 12.09.2026) — ручные не трогаются.
 
     Последний закрытый объект закрывает МЕРОПРИЯТИЕ (`[ЗАК-12]`): стадия
     мероприятия — наименьшая среди объектов, и «Закрыто» у всех даёт
@@ -8740,6 +8791,12 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
             422,
             message="Объект уже закрыт — изменения после закрытия невозможны.",
         )
+    # Неоценённым — 7 автоматически (`[ОМ-РШ-16]`, решение заказчика
+    # 12.09.2026 по проходке №1142): закрыть без ручных оценок можно, но
+    # никто не остаётся без балла. Импорт локальный: модуль оценок сам
+    # импортирует этот, и верхний импорт замкнул бы круг.
+    from organization_management.apps.ops import conduct_evaluations
+    default_scored = conduct_evaluations.score_unscored_on_close(event, visit, actor=actor)
     visit.stage = "CLOSED"
     visit.closed_at = Clock.now()
     visit.closing_comment = str(comment or "").strip()
@@ -8754,6 +8811,7 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
             "objectName": visit.object_name,
             "code": event.code,
             "comment": visit.closing_comment,
+            "defaultScored": default_scored,
         },
     )
     old_stage = event.stage
@@ -8787,12 +8845,30 @@ def close_event(event_id, *, direction_summaries=None, actor, comment=""):
     # закрытое ОМ с объектом «на расстановке» показывало бы работу, которой
     # больше нет. Обратный путь — «все объекты закрыты → закрыто мероприятие»
     # — `close_visit_object` (`[ЗАК-12]`, №404).
+    from organization_management.apps.ops import conduct_evaluations
+
     closed_at = Clock.now()
     for visit in event.visit_objects.all():
         if visit.stage != "CLOSED":
+            default_scored = conduct_evaluations.score_unscored_on_close(
+                event, visit, actor=actor,
+            )
             visit.stage = "CLOSED"
             visit.closed_at = visit.closed_at or closed_at
             visit.save(update_fields=["stage", "closed_at", "updated_at"])
+            audit_service.record(
+                actor=actor,
+                action=audit_service.VISIT_OBJECT_CLOSED,
+                entity_type=audit_service.ENTITY_SECURITY_EVENT,
+                entity_id=event.pk,
+                new_value={
+                    "visitObjectId": str(visit.pk),
+                    "objectName": visit.object_name,
+                    "code": event.code,
+                    "comment": visit.closing_comment,
+                    "defaultScored": default_scored,
+                },
+            )
     event.closure_direction_summaries = [
         {
             "direction": item.get("direction"),

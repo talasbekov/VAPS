@@ -19,12 +19,13 @@
 // Экран НИЧЕГО не считает сам. Состояние паспорта, срок проверки, политику
 // свежести и снимки версий присылает сервер; страница только раскладывает их
 // по вкладкам и печатает его же словами.
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Building2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -105,13 +106,16 @@ export default function SecurityObjectPage() {
 function SecurityObjectScreen() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
-  const query = useSecurityObject(id);
+  const access = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading } = access;
+  const canView = !permissionsLoading && access.permissions !== undefined && hasPermission("object.view");
+  const query = useSecurityObject(id, { enabled: canView });
   // Свежесть и «чего нет» приезжают ТОЛЬКО с конвертом реестра — у карточки
   // своей ручки под них нет. Ключ запроса тот же, что у реестра, поэтому
   // переход из списка ничего не догружает, а прямой заход по адресу берёт
   // конверт один раз. Своего срока карточка не считает: дни до проверки уже
   // посчитала политика на сервере.
-  const registry = useSecurityObjects();
+  const registry = useSecurityObjects({ enabled: canView });
 
   const router = useRouter();
   const pathname = usePathname();
@@ -129,7 +133,22 @@ function SecurityObjectScreen() {
     [registry.data, id]
   );
   const unavailableKpi: UnavailableMetric[] = registry.data?.unavailableKpi ?? [];
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  // Та же граница, что у PATCH и POST /passport/ на сервере: object.view открывает
+  // карточку, object.manage — только её мутирующие контролы.
+  const canManagePassport = hasPermission("object.manage");
+  const accessReadFailed = query.readAccessBlocked;
+  const showPassport = canView && query.data?.id === id && !accessReadFailed;
+  // An access loss closes this form instance. Its late mutation must not
+  // publish cached data or reset a newly opened form for the same object.
+  const passportContext = useMemo(() => ({}), [id, showPassport, canManagePassport]);
+  const currentContext = useRef(passportContext);
+  const mounted = useRef(false);
+  currentContext.current = passportContext;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isCurrentResult = () => mounted.current && currentContext.current === passportContext && showPassport;
 
   function pickTab(next: TabCode): void {
     const params = new URLSearchParams(searchParams);
@@ -143,7 +162,10 @@ function SecurityObjectScreen() {
 
   // Тот же код, что у реестра объектов: паспорт открывается прямой ссылкой в
   // обход реестра, и без гварда отказ по правам выглядел как «объект не найден».
-  if (!permissionsLoading && !hasPermission("object.view")) {
+  if (permissionsLoading) {
+    return <DashboardLayout><p className="text-sm text-muted-foreground">Проверка доступа к паспорту…</p></DashboardLayout>;
+  }
+  if (!canView) {
     return <OpsAccessDenied what="паспорта объекта" />;
   }
 
@@ -154,10 +176,16 @@ function SecurityObjectScreen() {
       </DashboardLayout>
     );
   }
-  if (query.isError || query.data === undefined) {
+  if (!showPassport || query.data === undefined) {
     return (
       <DashboardLayout>
-        <p className="text-sm text-destructive-ink">Объект не найден или недоступен.</p>
+        <LoadFailure
+          what="паспорт объекта"
+          description={accessReadFailed ? "Объект не найден или недоступен для просмотра." :
+            query.data !== undefined && query.data.id !== id ? "Ответ не соответствует выбранному объекту. Повторите загрузку." : undefined}
+          onRetry={() => { void query.refetch(); }}
+          isRetrying={query.isFetching}
+        />
         <Link
           href={backTo}
           className="mt-2 inline-block text-sm font-semibold text-primary-ink"
@@ -178,6 +206,12 @@ function SecurityObjectScreen() {
       >
         ← Назад к реестру
       </Link>
+
+      {query.isError && (
+        <LoadFailure what="паспорт объекта"
+          description="Показаны последние загруженные данные. Черновики сохранены; повторите загрузку для проверки актуальности."
+          onRetry={() => { void query.refetch(); }} isRetrying={query.isFetching} />
+      )}
 
       <PassportHeader
         object={object}
@@ -216,7 +250,7 @@ function SecurityObjectScreen() {
       {tab === "general" && (
         <>
           <GeneralTab object={object} freshness={freshness} />
-          <DutyForcesSection objectId={object.id} />
+          <DutyForcesSection key={`${object.id}:${searchParams.get('dutyDate') ?? ''}`} objectId={object.id} initialDate={searchParams.get('dutyDate') ?? undefined} />
         </>
       )}
 
@@ -239,10 +273,12 @@ function SecurityObjectScreen() {
           а не версия данных. */}
       <div hidden={tab !== "posts"}>
         <PassportForm
-          key={`posts-${formGeneration}`}
+          key={`posts-${object.id}-${formGeneration}`}
           objectId={object.id}
           sectors={object.sectors}
+          canEdit={canManagePassport}
           onSaved={() => setFormGeneration((value) => value + 1)}
+          isCurrentResult={isCurrentResult}
         />
       </div>
 
@@ -254,14 +290,22 @@ function SecurityObjectScreen() {
         <PassportPlannedTabs kind="groups" />
       </div>
 
-      {tab === "history" && (
+      {/* Сверка постов и чужое обновление объекта сохраняют черновик
+          публикации. Поля сбрасывает только собственный успешный POST. */}
+      <div hidden={tab !== "history"}>
         <PassportVersionsPanel
-          key={`versions-${object.updatedAt}`}
+          key={`versions-${object.id}`}
           objectId={object.id}
           versions={object.passportVersions}
+          objectName={object.name}
+          isActive={tab === "history"}
+          readFailure={query.isError ? { onRetry: () => { void query.refetch(); }, isRetrying: query.isFetching } : undefined}
+          backToRegistry={back}
           hasPosts={object.sectors.some((sector) => sector.posts.length > 0)}
+          canPublish={canManagePassport}
+          isCurrentResult={isCurrentResult}
         />
-      )}
+      </div>
 
       <MissingSection unavailableKpi={unavailableKpi} />
     </DashboardLayout>
@@ -304,15 +348,15 @@ function PassportHeader({
 
   return (
     <Card className="mb-4">
-      <CardContent className="flex gap-4 p-4">
+      <CardContent className="flex flex-col gap-4 p-4 sm:flex-row">
         {/* Снимок объекта-каталога (Plane SJ-1049, «в стиле Модуля ОЛ») —
             та же плашка-плейсхолдер, что карточка охраняемого лица
             (`app/security-ops/persons/page.tsx`): квадрат `bg-muted` с
             иконкой, пока снимка нет. Действие загрузки показываем только с
             `object.manage`; сервер повторно проверяет это право при
             сохранении. */}
-        <div className="flex flex-col items-center gap-1.5">
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-muted text-muted-foreground">
+        <div className="flex items-center gap-3 sm:flex-col sm:gap-1.5">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-muted text-muted-foreground sm:h-24 sm:w-24">
             {object.photoUrl !== null ? (
               // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
               <img src={object.photoUrl} alt="" className="h-full w-full object-cover" />
@@ -446,7 +490,7 @@ function GeneralTab({
           {rows.map(([key, value]) => (
             <div
               key={key}
-              className="grid grid-cols-[minmax(9rem,14rem)_1fr] gap-3 py-2.5 text-sm"
+              className="grid grid-cols-1 gap-1 py-2.5 text-sm sm:grid-cols-[minmax(9rem,14rem)_1fr] sm:gap-3"
             >
               <dt className="text-xs text-muted-foreground">{key}</dt>
               <dd className="font-medium">{value}</dd>

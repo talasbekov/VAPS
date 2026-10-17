@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -39,8 +39,8 @@ import { modulePermissionsOf } from "@/entities/portal-access";
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
 import {
   directorateDenial,
-  useStaffUnitsByDirectorate,
 } from "@/hooks/use-staff-units-by-directorate";
+import { retryUnlessClientError } from "@/lib/query-retry";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
@@ -49,7 +49,7 @@ import {
   EMPLOYEE_STATUS_LABELS,
 } from "@/lib/status";
 import { useStatusNaming, type StatusNaming } from "@/entities/status";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { formatIsoDate } from "@/shared/lib/date";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
@@ -63,7 +63,7 @@ import {
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
 import { ForcesWorkspace } from "@/features/forces-workspace/ui/ForcesWorkspace";
-import { resolveWorkspaceRole } from "@/features/forces-workspace/model/workspace";
+import { legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole } from "@/features/forces-workspace/model/workspace";
 
 /**
  * «Сбор сил на ОМ» — прежний экран личного состава, ДОПОЛНЕННЫЙ разрезом
@@ -176,8 +176,8 @@ function toEmployees(units: any[] | undefined, naming: StatusNaming): Employee[]
           staffUnitId: unit.id.toString(),
           number: globalIndex++,
           position: empData.position?.name || "Должность не указана",
-          department: unit.division.name,
-          departmentId: unit.division.id.toString(),
+          department: unit.division?.name ?? "Без подразделения",
+          departmentId: unit.division?.id.toString() ?? "",
         });
       });
     } else if (employee) {
@@ -186,8 +186,8 @@ function toEmployees(units: any[] | undefined, naming: StatusNaming): Employee[]
         staffUnitId: unit.id.toString(),
         number: globalIndex++,
         position: (unit as any).position?.name || "Должность не указана",
-        department: unit.division.name,
-        departmentId: unit.division.id.toString(),
+        department: unit.division?.name ?? "Без подразделения",
+        departmentId: unit.division?.id.toString() ?? "",
       });
     }
   });
@@ -221,9 +221,8 @@ function EmployeesEntry() {
 }
 
 function EmployeesScreen() {
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
-    null
-  );
+  const profilePanelRef = useRef<HTMLDivElement>(null);
+  const returnFocusEmployee = useRef<{ id: string | null } | null>(null);
   // Отбор живёт в АДРЕСЕ: раньше он держался в useState и пропадал при
   // перезагрузке, а ссылкой на отфильтрованный список нельзя было поделиться.
   // Так уже сделаны девять экранов раздела ОМ — здесь тот же приём.
@@ -243,15 +242,11 @@ function EmployeesScreen() {
   // Третья вкладка «Свод департамента» (Plane №990) — тем же приёмом, но
   // значением, а не булем: `view` остаётся ОДНИМ полем адреса на все три.
   const viewParam = searchParams.get("view");
-  const view =
-    viewParam === "forces"
-      ? "forces"
-      : viewParam === "department-summary"
-        ? "department-summary"
-        : "daily";
+  const view = legacyWorkspaceView(viewParam);
   // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
   // открываться такой же (Plane №228).
-  const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
+  const requestedPage = Number(searchParams.get("page") ?? 1);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   // Деловая дата «Ежедневного расхода» (Plane №988) — тем же приёмом: нет в
   // адресе → борд сам возьмёт «завтра» сервера, выбор руками уезжает в
   // ссылку так же, как отбор и вкладка.
@@ -271,7 +266,10 @@ function EmployeesScreen() {
       // «Заявки» и вернувшись на «Сборы», человек снова попадал в карточку
       // вместо списка, а ссылка, отправленная со словами «вот список сборов»,
       // открывала коллеге чужой сбор. Тем же правилом, что и `page`.
-      if (key === "tab" || key === "view") next.delete("collection");
+      if (key === "tab" || key === "view") {
+        next.delete("collection");
+        next.delete("employee");
+      }
       const query = next.toString();
       router.replace(query === "" ? pathname : `${pathname}?${query}`, {
         scroll: false,
@@ -281,9 +279,9 @@ function EmployeesScreen() {
   );
 
   // Поиск фиксируется с задержкой: значение уходит в адрес по окончании ввода.
-  const [searchDraft, setSearchDraft] = useDebouncedCommit(
+  const [searchDraft, setSearchDraft, cancelSearch] = useDebouncedCommit(
     searchQuery,
-    (value) => setFilter("search", value, "")
+    (value) => { if (!profileOpen) setFilter("search", value, ""); }
   );
   // Вкладка стала управляемой: по ней решается, грузить ли ВЕСЬ состав
   // подразделения (вкладки сбора сил) или хватит страницы (Plane №228).
@@ -310,10 +308,9 @@ function EmployeesScreen() {
   // сотрудников», то есть ломает ровно ту ссылку, ради которой вкладка и
   // переехала в адрес. Первый же заход это и показал: в списке не оказалось
   // `in-service` и `cards`, и обе вкладки открывались бы «списком».
-  const tabParam = searchParams.get("tab") ?? "table";
-  const activeTab = KNOWN_TABS.includes(tabParam) ? tabParam : "table";
+  const tabParam = searchParams.get("tab");
   const setActiveTab = useCallback(
-    (value: string) => setFilter("tab", value, "table"),
+    (value: string) => { if (value !== "profile") setFilter("tab", value, "table"); },
     [setFilter]
   );
   const setBusinessDate = useCallback(
@@ -327,7 +324,10 @@ function EmployeesScreen() {
   const {
     hasPermission: hasOpsPermission,
     isLoading: opsPermissionsLoading,
+    error: permissionsError,
     roles: opsRoles,
+    permissions: opsPermissions,
+    globalPermissions: opsGlobalPermissions,
   } = useOpsPermissions();
   // Третья вкладка «Свод департамента» (Plane №990, `[РАСХ-РШ-03]`) видна
   // ТОЛЬКО ответственному за сбор сил — по РОЛИ, а не по праву: право
@@ -338,6 +338,30 @@ function EmployeesScreen() {
   );
   const allowedCodes = modulePermissionsOf("/employees");
   const allowed = allowedCodes.some((code) => hasOpsPermission(code));
+  const canReadStatuses = !opsPermissionsLoading && !permissionsError && hasOpsPermission("status.view");
+  const dataEnabled = allowed && canReadStatuses;
+  const defaultTab = canReadStatuses ? "table" : hasOpsPermission("forces.allocate") ? "requests" : hasOpsPermission("forces.command") ? "collections" : "table";
+  const sourceTab = tabParam && KNOWN_TABS.includes(tabParam) ? tabParam : defaultTab;
+  const employeeParam = searchParams.get("employee");
+  const profileOpen = view === "forces" && (employeeParam !== null || sourceTab === "profile");
+  const activeTab = profileOpen ? "profile" : sourceTab;
+  const employeeId = employeeParam !== null && /^[1-9]\d*$/.test(employeeParam) && Number.isSafeInteger(Number(employeeParam)) ? employeeParam : null;
+  const profileUsesOps = sourceTab === "assigned" || sourceTab === "in-service";
+  useEffect(() => { if (profileOpen) cancelSearch(); }, [profileOpen, cancelSearch]);
+  const openProfile = useCallback((employee: Employee) => {
+    cancelSearch();
+    const next = new URLSearchParams(searchParams);
+    next.set("employee", employee.id);
+    router.push(`${pathname}?${next}`, { scroll: false });
+  }, [cancelSearch, searchParams, router, pathname]);
+  const closeProfile = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("employee");
+    if (next.get("tab") === "profile") next.delete("tab");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
+  const statusAccessReason = "Списки сотрудников и показатели расхода доступны с правом «Статусы: просмотр».";
 
   // ── Страница вместо всего состава (Plane №228) ──────────────────────
   //
@@ -366,6 +390,19 @@ function EmployeesScreen() {
     divisionId: departmentId,
     // Статус отбирается сервером по коду ДЕЙСТВУЮЩЕГО статуса.
     status: statusFilter === "all" ? undefined : statusFilter,
+  }, dataEnabled && !profileOpen);
+
+  const profileAuthority = {
+    actor: user?.id,
+    permissions: Array.from(opsPermissions ?? []).sort(),
+    globalPermissions: Array.from(opsGlobalPermissions ?? []).sort(),
+    scopes: opsRoles.map(role => [role.code, role.scope_division_id] as const).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  };
+  const profileQuery = useQuery({
+    queryKey: ["staff-units-by-directorate", "employee-profile", profileAuthority, employeeId],
+    queryFn: () => apiClient.getStaffUnitsByDirectorate({ employeeIds: [employeeId!], page: 1, pageSize: 1 }),
+    enabled: dataEnabled && profileOpen && employeeId !== null,
+    retry: retryUnlessClientError,
   });
 
   // Вкладки «Участие в ОМ» и «В строю» пересекают состав с данными сбора сил,
@@ -373,7 +410,16 @@ function EmployeesScreen() {
   // грузится ЛЕНИВО — только когда такую вкладку открыли: на пяти тысячах
   // человек это 2,7 МБ, и платить их при каждом открытии реестра незачем.
   const opsTabOpen = activeTab === "assigned" || activeTab === "in-service";
-  const fullDirectorate = useStaffUnitsByDirectorate(opsTabOpen);
+  const fullListFilters = {
+    search: searchQuery || undefined,
+    divisionId: departmentId,
+  };
+  const fullDirectorate = useQuery({
+    queryKey: ["staff-units-by-directorate", "gathering-list", fullListFilters],
+    queryFn: () => apiClient.getStaffUnitsByDirectorate(fullListFilters),
+    enabled: dataEnabled && opsTabOpen,
+    retry: retryUnlessClientError,
+  });
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, обязан подписываться сам, без правки клиента.
   const naming = useStatusNaming();
@@ -439,9 +485,57 @@ function EmployeesScreen() {
       : "Произошла ошибка при загрузке данных"
     : null;
 
-  const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
-    refetch();
+  const [refreshingDaily, setRefreshingDaily] = useState(false);
+  const [refreshingForces, setRefreshingForces] = useState(false);
+  const refreshGathering = async () => {
+    if (!dataEnabled) return;
+    await Promise.all(["strength-report", "ops-status-types", "ops-statuses", "daily-employees"].map(key =>
+      queryClient.invalidateQueries({ queryKey: [key] })
+    ));
+  };
+  const handleRefresh = async () => {
+    if (view !== "forces") {
+      if (refreshingDaily) return;
+      setRefreshingDaily(true);
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] }),
+          queryClient.invalidateQueries({ queryKey: ["strength-report"] }),
+          queryClient.invalidateQueries({ queryKey: ["traffic-light"] }),
+          queryClient.invalidateQueries({ queryKey: ["ops-daily"] }),
+          queryClient.invalidateQueries({ queryKey: ["summary-freshness"] }),
+        ]);
+      } finally {
+        setRefreshingDaily(false);
+      }
+      return;
+    }
+    if (!canReadStatuses) {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ops-department-requests"] }),
+        queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] }),
+        queryClient.invalidateQueries({ queryKey: ["ops-force-campaigns"] }),
+      ]);
+      return;
+    }
+    if (!dataEnabled || refreshingForces || gatheringRefreshing) return;
+    setRefreshingForces(true);
+    try {
+      if (profileOpen) {
+        await Promise.all([
+          ...(employeeId !== null ? [profileQuery.refetch()] : []),
+          ...(profileUsesOps ? [refreshGathering()] : []),
+        ]);
+        return;
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] }),
+        refetch(),
+        refreshGathering(),
+      ]);
+    } finally {
+      setRefreshingForces(false);
+    }
   };
 
   // Сводка считалась тремя отдельными `filter` на каждый рендер, то есть на
@@ -505,16 +599,21 @@ function EmployeesScreen() {
       : EMPLOYEE_STATUS_ITEMS.map((item) => ({ code: item.code, label: item.label }));
 
   const filtersApplied =
-    searchQuery !== "" || departmentFilter !== "all" || statusFilter !== "all";
+    searchQuery !== "" || departmentFilter !== "all" || (!opsTabOpen && statusFilter !== "all");
 
   const resetFilters = useCallback(() => {
     setSearchDraft("");
-    router.replace(pathname, { scroll: false });
-  }, [router, pathname, setSearchDraft]);
+    const next = new URLSearchParams(searchParams);
+    for (const key of ["search", "department", "status", "page"]) next.delete(key);
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [router, pathname, searchParams, setSearchDraft]);
 
   // Разрез сбора сил. Живёт РЯДОМ с реестром, а не вместо него: список
   // сотрудников и его отбор — прежние, добавлен только вопрос «кого отдали».
-  const gathering = useForcesGathering();
+  const gathering = useForcesGathering(dataEnabled);
+  const gatheringRefreshing = view === "forces" && dataEnabled && (!profileOpen || profileUsesOps) && gathering.isFetching;
+  const gatheringValue = (value: number) => gathering.isError ? "—" : gathering.isPending ? "…" : value;
   // Право департамента (Plane №272, Ш-3). Клиент гейтит по КОДУ права —
   // область («мой ли это департамент») проверяет сервер, и второй ответ на
   // тот же вопрос разошёлся бы с ним при первой правке дерева подразделений.
@@ -585,29 +684,29 @@ function EmployeesScreen() {
   // Те же строки, что и в списке ниже, только суженные разрезом сбора: поиск,
   // фильтр по отделу и права продолжают действовать и на этих вкладках —
   // иначе они спорили бы с соседней вкладкой при том же отборе.
-  // 🔴 Статус в строке ПОДМЕНЯЕТСЯ подписью раздела, и это не косметика.
+  // Статус, его код и период берутся из одной записи расхода раздела.
   // Кадровая карточка несёт СВОЙ статус (легаси-система), а отбор на этих
   // вкладках идёт по статусам раздела ОМ — источники расходятся: человек без
   // действующего статуса раздела попадает в «В строю», а его легаси-карточка
   // при этом печатает «Отпуск». Строка спорила бы с вкладкой, в которой
   // стоит. Показываем то, по чему отбирали.
-  const opsStatusLabel = useMemo(() => {
-    const byId = new Map<string, string>();
-    for (const person of gathering.persons) {
-      byId.set(
-        String(person.employeeId),
-        person.statusLabel ?? EMPLOYEE_STATUS_LABELS.in_service
-      );
-    }
-    return byId;
-  }, [gathering.persons]);
+  const opsStatusByEmployee = useMemo(
+    () => new Map(gathering.persons.map(person => [String(person.employeeId), person] as const)),
+    [gathering.persons]
+  );
 
   const withOpsStatus = useCallback(
-    (employee: Employee): Employee => ({
-      ...employee,
-      status: opsStatusLabel.get(employee.id) ?? employee.status,
-    }),
-    [opsStatusLabel]
+    (employee: Employee): Employee => {
+      const person = opsStatusByEmployee.get(employee.id);
+      return {
+        ...employee,
+        status: person?.statusLabel ?? EMPLOYEE_STATUS_LABELS.in_service,
+        statusCode: person?.statusCode ?? null,
+        statusSince: person?.statusSince ?? "",
+        statusUntil: person?.statusUntil ?? "",
+      };
+    },
+    [opsStatusByEmployee]
   );
 
   const assignedEmployees = useMemo(
@@ -624,7 +723,46 @@ function EmployeesScreen() {
         .map(withOpsStatus),
     [allVisibleEmployees, inServiceIds, withOpsStatus]
   );
-
+  const profileEmployee = useMemo(() => {
+    const employee = toEmployees(profileQuery.data?.staff_units, naming).find(row => row.id === employeeId && visible(row));
+    return employee ? (profileUsesOps ? withOpsStatus(employee) : employee) : null;
+  }, [profileQuery.data, naming, employeeId, visible, profileUsesOps, withOpsStatus]);
+  const retryProfile = () => {
+    if (!dataEnabled || !profileOpen || employeeId === null) return;
+    void profileQuery.refetch();
+    if (profileUsesOps) {
+      void refreshGathering();
+    }
+  };
+  const opsEmployees = activeTab === "assigned" ? assignedEmployees : inServiceEmployees;
+  const opsPage = Math.min(page, Math.max(1, Math.ceil(opsEmployees.length / PAGE_SIZE)));
+  const opsReady = dataEnabled && fullDirectorate.isSuccess && !fullDirectorate.isFetching && !gathering.isPending && !gathering.isError;
+  const profileReturnReady = !loading && (!opsTabOpen || opsReady || fullDirectorate.isError || gathering.isError);
+  useEffect(() => {
+    // Radix Presence makes the newly selected panel visible after this effect.
+    const frame = requestAnimationFrame(() => {
+      if (profileOpen) {
+        returnFocusEmployee.current = { id: employeeId };
+        profilePanelRef.current?.focus();
+      } else if (returnFocusEmployee.current !== null && profileReturnReady) {
+        const id = returnFocusEmployee.current.id;
+        const name = id === null ? null : document.querySelector<HTMLButtonElement>(`[data-profile-employee="${id}"]`);
+        const target = name ?? document.querySelector<HTMLElement>('[role="tabpanel"][data-state="active"]');
+        // Keep focus on an explicitly selected navigation tab or view button.
+        const activeElement = document.activeElement;
+        if (view === "forces" && (!activeElement || activeElement === document.body || activeElement === profilePanelRef.current)) target?.focus({ preventScroll: true });
+        returnFocusEmployee.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [profileOpen, employeeId, profileReturnReady, dataEnabled, view]);
+  const pageParam = searchParams.get("page");
+  useEffect(() => {
+    if (opsTabOpen && opsReady && pageParam !== null && (pageParam !== String(opsPage) || opsPage === 1)) {
+      setFilter("page", String(opsPage), "1");
+    }
+  }, [opsTabOpen, opsReady, pageParam, opsPage, setFilter]);
+  const handleOpsPageChange = (next: number) => setFilter("page", String(next), "1");
 
   // Выгружается ВЕСЬ ОТБОР, а не показанная страница (Plane №228). Экран
   // теперь листает по пятьдесят строк, и файл «сотрудники.csv» с полусотней
@@ -637,23 +775,27 @@ function EmployeesScreen() {
   //
   // ИИН уходит в файл ХВОСТОМ: полных двенадцати цифр во фронте нет.
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportRows = opsTabOpen ? opsEmployees : filteredEmployees;
+  const exportAvailable = canSeeAll && canReadStatuses && exportRows.length > 0 &&
+    (opsTabOpen ? opsReady : !loading && !refreshing && !queryError);
   const exportCsv = useCallback(async () => {
+    if (exporting || !exportAvailable) return;
+    setExportError(null);
     setExporting(true);
     let selection: Employee[] = [];
     try {
       const whole = await apiClient.getStaffUnitsByDirectorate({
         search: searchQuery || undefined,
         divisionId: departmentId,
-        status: statusFilter === "all" ? undefined : statusFilter,
+        status: opsTabOpen || statusFilter === "all" ? undefined : statusFilter,
       });
       selection = toEmployees(whole.staff_units, naming).filter(visible);
-    } catch {
-      // Сеть отказала — выгружаем хотя бы показанное, но молчать об этом
-      // нельзя: файл, тихо ставший короче, читается как «столько и есть».
-      selection = filteredEmployees;
-      window.alert(
-        "Не удалось получить весь отбор — в файл ушла только показанная страница."
-      );
+      if (activeTab === "assigned") selection = selection.filter(employee => assignedIds.has(employee.id)).map(withOpsStatus);
+      else if (activeTab === "in-service") selection = selection.filter(employee => inServiceIds.has(employee.id)).map(withOpsStatus);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Не удалось получить данные для экспорта.");
+      return;
     } finally {
       setExporting(false);
     }
@@ -696,7 +838,17 @@ function EmployeesScreen() {
     link.download = "сотрудники.csv";
     link.click();
     URL.revokeObjectURL(url);
-  }, [filteredEmployees, searchQuery, departmentId, statusFilter, visible]);
+  }, [exporting, exportAvailable, searchQuery, departmentId, statusFilter, naming, visible, activeTab, opsTabOpen, assignedIds, inServiceIds, withOpsStatus]);
+
+  const fullListFailure = fullDirectorate.isError && (
+    <div role="alert" className="space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
+      <p className="font-medium">Не удалось загрузить состав для выбранного отбора.</p>
+      <p className="break-words text-muted-foreground">{fullDirectorate.error instanceof Error ? fullDirectorate.error.message : "Повторите загрузку."}</p>
+      <Button type="button" variant="outline" size="sm" disabled={!dataEnabled || fullDirectorate.isFetching} onClick={() => void fullDirectorate.refetch()}>
+        Повторить загрузку состава
+      </Button>
+    </div>
+  );
 
   // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
   // directorate. Закрыта ручка — закрывается вся страница: иначе на экране
@@ -709,14 +861,17 @@ function EmployeesScreen() {
   // сервер и так отказал. В обычном случае экран открывался кому угодно:
   // fail-open, найден фоновым ревью коммита, а не гейтом, потому что целевые
   // пробы ходили по экранам раздела и портальные не трогали.
-  if (!opsPermissionsLoading && !allowed) {
+  if (opsPermissionsLoading) {
+    return <DashboardLayout><p role="status" className="text-sm text-muted-foreground">Проверяем доступ к сбору сил…</p></DashboardLayout>;
+  }
+  if (permissionsError || !allowed) {
     return <OpsAccessDenied what="сбора сил на ОМ" />;
   }
 
-  // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
-  // directorate. Закрыта ручка — закрывается вся страница.
+  // Ошибка доступного кадрового чтения поясняет его область; отсутствие
+  // status.view не закрывает разрешённые заявки и сборы.
   const denial = directorateDenial(queryError);
-  if (denial) {
+  if (canReadStatuses && !profileOpen && denial) {
     return (
       <DashboardLayout>
         <DirectorateAccessNotice denial={denial} reason={error} />
@@ -729,14 +884,11 @@ function EmployeesScreen() {
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
-          eyebrow="Ежедневный расход"
-          title="Сбор сил на ОМ"
+          eyebrow={view === "forces" ? "Личный состав" : "Ежедневный расход"}
+          title={legacyWorkspaceTitle(view)}
           description="Ежедневный расход департамента и сбор сил на мероприятия"
-          // 🔴 МЕТКА «В РАЗРАБОТКЕ» — ТОЛЬКО У СБОРА СИЛ (Plane №598). По
-          // этому адресу живут ДВА модуля, и выбирает `?view=`; все открытые
-          // карточки записи `/employees` — про сбор сил (№425, №426, №444), а
-          // у ежедневного расхода их нет вовсе. Реестр видит только
-          // `pathname`, поэтому различить модули может лишь сам экран.
+          // Расход и сбор сил делят pathname. Если в реестре появится
+          // незавершённая функция сбора сил, она не пометит готовый расход.
           inDevelopment={view === "forces"}
           actions={
             <div className="flex flex-wrap items-center gap-3">
@@ -744,7 +896,7 @@ function EmployeesScreen() {
                   сил» — на вкладке «Ежедневный расход» ни фильтруемого
                   списка, ни диалога заведения нет, и обе кнопки повисали бы
                   над чужим экраном. */}
-              {view === "forces" && (
+              {view === "forces" && canReadStatuses && !opsTabOpen && !profileOpen && (
                 <>
                   {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
                       под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
@@ -759,10 +911,10 @@ function EmployeesScreen() {
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
-                disabled={refreshing}
+                disabled={refreshing || refreshingDaily || refreshingForces || gatheringRefreshing}
               >
                 <RefreshCw
-                  className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
+                  className={`h-4 w-4 mr-2 ${refreshing || refreshingDaily || refreshingForces || gatheringRefreshing ? "animate-spin" : ""}`}
                 />
                 Обновить
               </Button>
@@ -774,7 +926,7 @@ function EmployeesScreen() {
             заявки, вкладки реестра) без изменений; «Ежедневный расход» —
             задача Task 2, до неё карточка-заглушка. */}
         <nav
-          className="flex w-fit gap-1 rounded-lg bg-muted p-1"
+          className="flex w-fit max-w-full flex-wrap gap-1 rounded-lg bg-muted p-1"
           aria-label="Разделы модуля"
         >
           {/* ПОРЯДОК И НАЗВАНИЯ — ТРЕБОВАНИЕ ЗАКАЗЧИКА (Plane №273): «первая
@@ -825,7 +977,7 @@ function EmployeesScreen() {
           )}
         </nav>
 
-        {(view === "daily" || view === "department-summary") && (
+        {(view === "daily" || view === "department-summary") && (canReadStatuses ? (
           <DailyExpenseBoard
             businessDate={businessDateParam || undefined}
             onBusinessDateChange={setBusinessDate}
@@ -833,7 +985,7 @@ function EmployeesScreen() {
               view === "department-summary" ? "Свод департамента" : undefined
             }
           />
-        )}
+        ) : <ClosedByRight reason={statusAccessReason} />)}
 
         {view === "forces" && (
         <>
@@ -844,40 +996,48 @@ function EmployeesScreen() {
             что расход этого не даёт: справочник кладёт «Участие в ОМ» в свою
             колонку «В строю», то есть отданные и оставшиеся в расходе
             неразличимы. */}
-        <div
+        {canReadStatuses && !profileOpen && <div
           role="group"
           aria-label="Личный состав на сбор"
+          aria-busy={gathering.isPending || refreshingForces || gatheringRefreshing}
           className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
         >
           <StatCard
             label="По штату"
-            value={gathering.staffTotal}
+            value={gatheringValue(gathering.staffTotal)}
             caption="Штатных единиц по расходу"
           />
           <StatCard
             label="По списку"
-            value={gathering.listTotal}
+            value={gatheringValue(gathering.listTotal)}
             caption="Занятых слотов — без вакансий"
           />
           <StatCard
             label="В строю"
-            value={gathering.inServiceColumn}
+            value={gatheringValue(gathering.inServiceColumn)}
             tone="success"
             caption="Колонка расхода: и оставшиеся, и отданные"
           />
           <StatCard
             label="Участие в ОМ"
-            value={gathering.assigned.length}
+            value={gatheringValue(gathering.assigned.length)}
             tone="warning"
             caption="Поимённо по статусу — расход их не считает"
           />
           <StatCard
             label="Осталось в строю"
-            value={Math.max(0, gathering.inServiceColumn - gathering.assigned.length)}
+            value={gatheringValue(Math.max(0, gathering.inServiceColumn - gathering.assigned.length))}
             tone="info"
             caption="«В строю» минус отданные: иначе счёт двойной"
           />
-        </div>
+        </div>}
+        {canReadStatuses && !profileOpen && gathering.isPending && <p role="status" className="text-sm text-muted-foreground">Загрузка показателей сбора…</p>}
+        {canReadStatuses && !profileOpen && gathering.isError && (
+          <div role="alert" className="space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
+            <p>Не удалось загрузить показатели сбора.</p>
+            <Button variant="outline" size="sm" disabled={!dataEnabled || refreshingForces || gatheringRefreshing} onClick={handleRefresh}>Повторить показатели сбора</Button>
+          </div>
+        )}
 
         {/* 🔴 БЛОКА «ЗАПРОС СИЛ ПО МЕРОПРИЯТИЯМ» ЗДЕСЬ БОЛЬШЕ НЕТ (Plane
             №928, задача заказчика: «зачем этот бокс нужен, если он ничего не
@@ -902,7 +1062,7 @@ function EmployeesScreen() {
         {/* Main Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <TabsList className="max-w-full overflow-x-auto">
+            <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 [&>button]:min-h-11">
               {/* ЗАЯВКИ ДЕПАРТАМЕНТУ (Plane №272, Ш-3) — ВКЛАДКА, а не блок
                   над экраном. Первая версия висела над всем содержимым: у
                   эталона заказчика это вкладка, и, что важнее, блок сверху
@@ -923,6 +1083,7 @@ function EmployeesScreen() {
               {chainAccess.can(FORCES_ALLOCATE) && (
                 <TabsTrigger value="requests">Заявки</TabsTrigger>
               )}
+              {canReadStatuses && <>
               <TabsTrigger value="table">Список сотрудников</TabsTrigger>
               {/* Две вкладки сбора — ТОТ ЖЕ список, суженный по статусу. Свою
                   разметку они не заводят: разойдясь с реестром колонками, они
@@ -932,38 +1093,47 @@ function EmployeesScreen() {
                   когда вкладку открыли), и счётчик из него показывал бы ноль
                   до первого нажатия — то есть врал бы (Plane №228). */}
               <TabsTrigger value="assigned">
-                Участие в ОМ ({gathering.assigned.length})
+                Участие в ОМ ({gatheringValue(gathering.assigned.length)})
               </TabsTrigger>
               <TabsTrigger value="in-service">
-                В строю ({gathering.inService.length})
+                В строю ({gatheringValue(gathering.inService.length)})
               </TabsTrigger>
               <TabsTrigger value="cards">Карточки</TabsTrigger>
-              {selectedEmployee && (
+              {profileOpen && (
                 <TabsTrigger value="profile">Профиль сотрудника</TabsTrigger>
               )}
+              </>}
             </TabsList>
 
-            {/* Кнопка «Импорт» убрана: обработчика у неё не было вовсе, а
-                загрузка сотрудников в системе есть только management-командой
-                — ручки, к которой её можно подключить, не существует.
-                «Экспорт» обработчика тоже не имел; теперь он выгружает то, что
-                показано на экране, — прямо из уже загруженного отбора. */}
+            {/* CSV получает полный серверный отбор по явному нажатию. */}
             <div className="flex flex-wrap items-center gap-2">
               {/* Выгрузка — ТОГО ОТБОРА, что показан в реестре. На вкладке
                   «Заявки» она выгрузила бы список людей, которого человек в
                   этот момент не видит. */}
               {activeTab !== "requests" &&
                 activeTab !== "collections" &&
-                canSeeAll && (
+                !profileOpen &&
+                canSeeAll && canReadStatuses && (
+                  <>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={exportCsv}
-                    disabled={filteredEmployees.length === 0 || exporting}
+                    disabled={!exportAvailable || exporting}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     {exporting ? "Собираем файл…" : "Экспорт CSV"}
                   </Button>
+                  {exportError && (
+                    <div role="alert" className="basis-full space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
+                      <p className="font-medium">Не удалось выгрузить весь отбор. Файл не создан.</p>
+                      <p className="break-words text-muted-foreground">{exportError}</p>
+                      <Button type="button" variant="outline" size="sm" disabled={!exportAvailable || exporting} onClick={exportCsv}>
+                        {exporting ? "Собираем файл…" : "Повторить экспорт"}
+                      </Button>
+                    </div>
+                  )}
+                  </>
                 )}
             </div>
           </div>
@@ -973,7 +1143,7 @@ function EmployeesScreen() {
               оговорка отвечает на вопрос, которого не задавали. Пустой
               элемент управления, который ничего не делает, — не нейтральная
               деталь: человек пробует им пользоваться. */}
-          {activeTab !== "requests" && activeTab !== "collections" && (
+          {canReadStatuses && !profileOpen && activeTab !== "requests" && activeTab !== "collections" && (
           <>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
@@ -995,7 +1165,7 @@ function EmployeesScreen() {
               onChange={(value) => setFilter("department", value, "all")}
             />
 
-            <Select
+            {!opsTabOpen && <Select
               value={statusFilter}
               onValueChange={(value) => setFilter("status", value, "all")}
             >
@@ -1015,7 +1185,7 @@ function EmployeesScreen() {
                     её так же, как не понимала остальные подписи. */}
                 <SelectItem value="none">Не обновлено</SelectItem>
               </SelectContent>
-            </Select>
+            </Select>}
           </div>
 
           {/* Четвёртого отбора прототипа — по рейтингу сотрудника — здесь нет,
@@ -1060,6 +1230,8 @@ function EmployeesScreen() {
             )}
           </TabsContent>
 
+          {!canReadStatuses && activeTab !== "collections" && activeTab !== "requests" && <ClosedByRight reason={statusAccessReason} />}
+          {canReadStatuses && <>
           <TabsContent value="table" className="space-y-6">
             {loading && (
               <div className="text-center py-8 text-muted-foreground">
@@ -1084,7 +1256,7 @@ function EmployeesScreen() {
               <>
                 <EmployeeTable
                   employees={filteredEmployees}
-                  onSelectEmployee={setSelectedEmployee}
+                  onSelectEmployee={openProfile}
                   onResetFilters={filtersApplied ? resetFilters : undefined}
                 />
                 <Pager
@@ -1102,6 +1274,7 @@ function EmployeesScreen() {
           </TabsContent>
 
           <TabsContent value="assigned" className="space-y-6">
+            {fullListFailure}
             {fullDirectorate.isLoading && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Загрузка состава подразделения…
@@ -1117,12 +1290,11 @@ function EmployeesScreen() {
                 Расход и статусы раздела не ответили — разрез сбора показать нечем.
               </p>
             )}
-            {!gathering.isPending && !gathering.isError && (
+            {!fullDirectorate.isLoading && !fullDirectorate.isError && !gathering.isPending && !gathering.isError && (
               <>
                 {gathering.assigned.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Со статусом «Участие в ОМ» сегодня никого нет: на мероприятия
-                    ещё никого не выставили.
+                    На {formatIsoDate(gathering.businessDate ?? "")} активных участников ОМ в разрезе сбора нет.
                   </p>
                 )}
                 <ScopeNotice
@@ -1130,15 +1302,17 @@ function EmployeesScreen() {
                   total={gathering.assigned.length}
                 />
                 <EmployeeTable
-                  employees={assignedEmployees}
-                  onSelectEmployee={setSelectedEmployee}
+                  employees={assignedEmployees.slice((opsPage - 1) * PAGE_SIZE, opsPage * PAGE_SIZE)}
+                  onSelectEmployee={openProfile}
                   onResetFilters={filtersApplied ? resetFilters : undefined}
                 />
+                <Pager page={opsPage} pageSize={PAGE_SIZE} matched={assignedEmployees.length} hasNext={opsPage * PAGE_SIZE < assignedEmployees.length} busy={!opsReady} onChange={handleOpsPageChange} />
               </>
             )}
           </TabsContent>
 
           <TabsContent value="in-service" className="space-y-6">
+            {fullListFailure}
             {fullDirectorate.isLoading && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Загрузка состава подразделения…
@@ -1154,17 +1328,18 @@ function EmployeesScreen() {
                 Расход и статусы раздела не ответили — разрез сбора показать нечем.
               </p>
             )}
-            {!gathering.isPending && !gathering.isError && (
+            {!fullDirectorate.isLoading && !fullDirectorate.isError && !gathering.isPending && !gathering.isError && (
               <>
                 <ScopeNotice
                   shown={inServiceEmployees.length}
                   total={gathering.inService.length}
                 />
                 <EmployeeTable
-                  employees={inServiceEmployees}
-                  onSelectEmployee={setSelectedEmployee}
+                  employees={inServiceEmployees.slice((opsPage - 1) * PAGE_SIZE, opsPage * PAGE_SIZE)}
+                  onSelectEmployee={openProfile}
                   onResetFilters={filtersApplied ? resetFilters : undefined}
                 />
+                <Pager page={opsPage} pageSize={PAGE_SIZE} matched={inServiceEmployees.length} hasNext={opsPage * PAGE_SIZE < inServiceEmployees.length} busy={!opsReady} onChange={handleOpsPageChange} />
               </>
             )}
           </TabsContent>
@@ -1221,7 +1396,7 @@ function EmployeesScreen() {
                       <Card
                         key={employee.id}
                         className="cursor-pointer hover:shadow-lg transition-shadow"
-                        onClick={() => setSelectedEmployee(employee)}
+                        onClick={() => openProfile(employee)}
                       >
                         <CardHeader className="pb-3">
                           <div className="flex items-center space-x-3">
@@ -1235,7 +1410,9 @@ function EmployeesScreen() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <CardTitle className="text-lg truncate">
-                                {employee.name}
+                                <button type="button" data-profile-employee={employee.id} className="max-w-full truncate rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(event) => { event.stopPropagation(); openProfile(employee); }}>
+                                  {employee.name}
+                                </button>
                               </CardTitle>
                               {/* Карточка прототипа: «звание · должность». */}
                               <p className="text-sm text-muted-foreground truncate">
@@ -1314,14 +1491,24 @@ function EmployeesScreen() {
             )}
           </TabsContent>
 
-          {selectedEmployee && (
-            <TabsContent value="profile" className="space-y-6">
-              <EmployeeProfile
-                employee={selectedEmployee}
-                onClose={() => setSelectedEmployee(null)}
-              />
-            </TabsContent>
-          )}
+          <TabsContent ref={profilePanelRef} value="profile" className="space-y-6">
+            {employeeId === null ? (
+              <Card><CardContent className="space-y-3 p-6"><p>В ссылке не указан корректный сотрудник.</p><Button variant="outline" onClick={closeProfile}>Вернуться к списку</Button></CardContent></Card>
+            ) : profileQuery.isError || (profileUsesOps && gathering.isError) ? (
+              <Card><CardContent className="space-y-3 p-6" role="alert">
+                <p>Не удалось загрузить профиль сотрудника.</p>
+                <p className="break-words text-muted-foreground">{profileQuery.error instanceof Error ? profileQuery.error.message : "Не удалось получить оперативный статус сотрудника."}</p>
+                <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={profileQuery.isFetching} onClick={retryProfile}>Повторить загрузку профиля</Button><Button variant="ghost" onClick={closeProfile}>Вернуться к списку</Button></div>
+              </CardContent></Card>
+            ) : profileQuery.isPending || (profileUsesOps && gathering.isPending) ? (
+              <Card><CardContent className="space-y-3 p-6"><p role="status">Загрузка профиля сотрудника…</p><Button variant="outline" onClick={closeProfile}>Вернуться к списку</Button></CardContent></Card>
+            ) : profileEmployee ? (
+              <EmployeeProfile employee={profileEmployee} onClose={closeProfile} />
+            ) : (
+              <Card><CardContent className="space-y-3 p-6"><p>Сотрудник не найден или недоступен в вашей области.</p><Button variant="outline" onClick={closeProfile}>Вернуться к списку</Button></CardContent></Card>
+            )}
+          </TabsContent>
+          </>}
         </Tabs>
         </>
         )}

@@ -262,7 +262,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
             ...detail,
             placementAssignments: assignments.map((row) =>
               String(row.id) === assignment.id
-                ? { ...row, employeeHasAccount: false }
+                ? { ...row, employeeHasAccount: false, canConfirmWithoutAccount: true }
                 : row,
             ),
           }
@@ -298,6 +298,10 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
         deliveryMethod: 'Устно на построении',
         accountAbsenceBasis: 'Учётка ещё не заведена',
       })
+      await expect(dialog).toBeHidden()
+      // Saving invalidates the detail query. Finish its route.fetch before
+      // Playwright closes the context, so teardown cannot abort the fixture.
+      await page.unrouteAll({ behavior: 'wait' })
     })
 
     test('старший объекта ведёт этап без event.manage (Plane №612, №494)', async ({ page }) => {
@@ -360,6 +364,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
                     : {
                         id: Number(id),
                         full_name: 'Старший (проба №612)',
+                        is_active: true,
                         rank_code: null,
                         position_code: null,
                         division: null,
@@ -556,6 +561,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
             json: {
               employee: {
                 id: Number(deputyId),
+                is_active: true,
                 full_name: 'Замещающий (проба №453)',
                 rank_code: null,
                 position_code: null,
@@ -630,26 +636,40 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await expect(replace.getByLabel('Причина')).toHaveValue('Отказ: Командировка')
     // Кандидат — заведомо не из расстановки (назначенного дважды сервер
     // отобьёт): берём из кадрового списка и ищем его по фамилии в подборе.
-    const roster = (await (
-      await fetch(`${API}/api/ops/personnel/?page_size=100`, {
+    type Person = { id: string; name: string; fullName: string }
+    const roster: Person[] = []
+    let pageNumber = 1
+    let expectedCount = 0
+    let more = true
+    while (more) {
+      const response = await fetch(`${API}/api/ops/personnel/?page_size=500&page=${pageNumber}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-    ).json()) as { results: { id: string; name: string }[] }
+      expect(response.status, `страница кадрового списка ${pageNumber}`).toBe(200)
+      const body = await response.json() as { results: Person[]; count: number; next: string | null }
+      expect(body.results.length, 'листание кадрового списка не продвигается').toBeGreaterThan(0)
+      expectedCount = body.count
+      roster.push(...body.results)
+      more = body.next !== null
+      pageNumber += 1
+      expect(roster.length).toBeLessThanOrEqual(expectedCount)
+    }
+    expect(roster).toHaveLength(expectedCount)
+    expect(new Set(roster.map(person => person.id)).size).toBe(roster.length)
     const assignedIds = new Set(event.placementAssignments.map((a) => a.employeeId))
-    // Подпись в подборе — «Фамилия И.», и однофамильцев в базе много: берём
-    // того, чья подпись в списке единственная, иначе клик попал бы в тёзку,
-    // а тёзка может стоять в расстановке.
+    // Подбор показывает полное ФИО. Сокращённые подписи повторяются даже
+    // у разных людей, поэтому выбираем по полному имени и ищем его целиком.
     const counts = new Map<string, number>()
-    for (const p of roster.results) counts.set(p.name, (counts.get(p.name) ?? 0) + 1)
-    const candidate = roster.results.find(
-      (p) => !assignedIds.has(p.id) && counts.get(p.name) === 1,
+    for (const p of roster) counts.set(p.fullName, (counts.get(p.fullName) ?? 0) + 1)
+    const candidate = roster.find(
+      (p) => !assignedIds.has(p.id) && counts.get(p.fullName) === 1,
     )
     expect(candidate, 'в кадровом списке нет никого вне расстановки').toBeDefined()
-    await replace.locator('#ack-replace-search').fill(candidate!.name.split(' ')[0]!)
+    await replace.locator('#ack-replace-search').fill(candidate!.fullName)
     const option = replace
       .locator('[data-slot="personnel-picker"] li button')
-      .filter({ hasText: candidate!.name })
-      .first()
+      .filter({ has: page.getByText(candidate!.fullName, { exact: true }) })
+    await expect(option).toHaveCount(1)
     await expect(option).toBeVisible({ timeout: 20_000 })
     await option.click()
     await replace.getByRole('button', { name: 'Заменить' }).click()
@@ -880,25 +900,41 @@ async function prepareEvent(
           : roster.results[index].id,
     })
   }
-  await call('POST', `${base}/placement/complete/`)
-  // Согласование с 25.08 (Plane «ОМ-37.3») — это маршрут, отправка и решение:
-  // завершить этап «просто так» больше нельзя. Фикстуре нужен один
-  // согласующий, доведённый до «Согласовано».
-  const withRoute = (await call('POST', `${base}/approval/route/`, {
-    name: 'Согласующий пробы',
-    unit: 'Управление ОМ',
-    position: 'полковник',
-  })) as unknown as { approvalRoute: { id: string }[] }
-  await call('POST', `${base}/approval/send/`)
-  await call(
-    'POST',
-    `${base}/approval/route/${withRoute.approvalRoute[0]!.id}/decide/`,
-    { decision: 'APPROVED', comment: '' },
-  )
-  // 🔴 `approval/approve/` ЗДЕСЬ ЛИШНИЙ И ОТБИВАЕТСЯ 422 (Plane №812, найдено
-  // проверкой шагов). Этап согласования закрывает ПОСЛЕДНЯЯ ПОДПИСЬ сама
-  // (`[СОГ-09]`): строкой выше объект уже уехал дальше, и согласовывать
-  // нечего. Шаг был мёртв с самого начала — ответ не смотрели, отказ молчал.
+  const placed = (await call('POST', `${base}/placement/complete/`)) as unknown as {
+    approvalRoute: { id: string }[]
+  }
+  // Сохраняем настроенный маршрут своего ОМ. Если глобальный маршрут ещё
+  // пуст, заводим одного согласующего только для этой пробной карточки.
+  if (placed.approvalRoute.length === 0) {
+    await call('POST', `${base}/approval/route/`, {
+      name: 'Согласующий пробы',
+      unit: 'Управление ОМ',
+      position: 'полковник',
+    })
+  }
+  const sent = (await call('POST', `${base}/approval/send/`)) as unknown as {
+    approvalRoute: { id: string; status: string }[]
+  }
+  expect(sent.approvalRoute.length, '[фикстура] маршрут согласования пуст').toBeGreaterThan(0)
+  // Администратор стенда вправе подписать каждую строку; порядок и аудит
+  // подписей проверяет сервер. Последняя подпись сама завершает этап.
+  for (const approver of sent.approvalRoute) {
+    await call(
+      'POST',
+      `${base}/approval/route/${encodeURIComponent(approver.id)}/decide/`,
+      { decision: 'APPROVED', comment: '' },
+    )
+  }
+  const ready = (await call('GET', `${base}/`)) as unknown as {
+    stage: string
+    approvalRoute: { id: string; status: string }[]
+  }
+  expect(ready.approvalRoute).toHaveLength(sent.approvalRoute.length)
+  expect(
+    ready.approvalRoute.filter((approver) => approver.status !== 'APPROVED'),
+    `[фикстура] в ${created.code} остались неподписанные строки маршрута`,
+  ).toEqual([])
+  expect(ready.stage, `[фикстура] ${created.code} не дошло до ознакомления`).toBe('ACKNOWLEDGEMENT')
   return created.code
 }
 

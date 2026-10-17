@@ -16,6 +16,12 @@
 ПОЛИТИКИ — отдельное состояние с причиной, а не значения по умолчанию.
 """
 import datetime as dt
+import hashlib
+import json
+import re
+
+from django.db.models import CharField, Subquery
+from django.db.models.functions import Cast
 
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
@@ -37,6 +43,7 @@ from organization_management.apps.operations.models_settings import (
     OpsPolicySectionVersion,
     OpsPolicySetting,
 )
+from organization_management.apps.operations.services import PermissionService
 
 VIEW_PERMISSION = "analytics.view"
 # §22.26: «drill-down», «персональная детализация» и «аналитика ОМ» — разные
@@ -66,13 +73,38 @@ METRIC_UNCONFIRMED = "UNCONFIRMED_PARTICIPATION"
 # бы сделать ровно ту склейку по названию, которую запрещает §22.15.
 UNBOUND_OBJECT_ID = "object:unbound"
 
-_SCOPE = {
-    # RBAC живого бэка плоский (области видимости нет — открытый вопрос
-    # владельца объекта в оргструктуре): scope один и назван честно.
-    "scopeType": "DEMO_FLAT",
-    "scopeId": "demo",
-    "safeLabel": "Единственная область видимости demo-режима",
-}
+def _division_scope(actor, permission):
+    # A missing actor must never mean the unscoped/global grant.
+    if actor is None or not str(actor):
+        return set()
+    return PermissionService.visible_division_ids(str(actor), permission)
+
+
+def _scope_metadata(allowed):
+    if allowed is None:
+        return {"scopeType": "ORGANIZATION", "scopeId": "organization",
+                "safeLabel": "Вся организация"}
+    digest = hashlib.sha256(
+        ",".join(str(pk) for pk in sorted(allowed)).encode()
+    ).hexdigest()[:16]
+    return {"scopeType": "DIVISION_SUBTREE", "scopeId": f"divisions:{digest}",
+            "safeLabel": "Доступные подразделения"}
+
+
+def _scope_covers(allowed, extension):
+    """A row-level extension cannot expand the aggregate's read grant."""
+    return extension is None or (allowed is not None and allowed <= extension)
+
+
+def _within_scope(allowed, unit_id):
+    return allowed is None or (unit_id is not None and int(unit_id) in allowed)
+
+
+def _canonical_employee_id(value):
+    if not isinstance(value, str) or re.fullmatch(r"[1-9][0-9]{0,18}", value) is None:
+        return None
+    number = int(value)
+    return number if number <= 9223372036854775807 else None
 
 _CUSTOM_PERIOD_UNAVAILABLE_REASON = (
     "Предел произвольного периода не задан политикой — период по датам не "
@@ -80,9 +112,8 @@ _CUSTOM_PERIOD_UNAVAILABLE_REASON = (
 )
 
 _PERSONAL_DETAIL_REASON = (
-    "У вас нет права на персональную детализацию: строки показаны без "
-    "сотрудника (§22.26). Сервер их не присылает — скрывать ФИО в вёрстке "
-    "значило бы всё равно отдать его браузеру."
+    "Персональная детализация доступна только в области отдельного права. "
+    "Данные сотрудников вне этой области не передаются (§22.26)."
 )
 
 _NO_FUNNEL_AT_LEVEL = (
@@ -153,11 +184,9 @@ UNAVAILABLE_HEADER_BLOCKS = [
         "code": "SCOPE_FILTER",
         "label": "Выбор scope и подразделения",
         "reason": (
-            "RBAC раздела плоский, без организационного scope: выбирать не "
-            "из чего, а список из одного пункта «вся организация» изображал "
-            "бы выбор, которого нет. §22.26 при этом требует, чтобы "
-            "недоступный scope не появлялся даже в списке фильтров, — здесь "
-            "его и нет."
+            "Область аналитики определяется грантами права просмотра и "
+            "включает доступные подразделения вместе с потомками. "
+            "Дополнительный выбор подразделения в этом разделе не задан."
         ),
     },
     {
@@ -423,16 +452,25 @@ class _SourceShift:
         self.updated_at = shift.updated_at
 
 
-def read_source():
+def read_source(*, actor):
     """Источник аналитики: живые смены + виды + режим отдыха + подписи
     подразделений. Связь смены с подразделением — через живого Employee
     (§22.9 «устойчивая связь»; ФИО связью не является)."""
     from organization_management.apps.employees.models import Employee
 
-    shifts = list(OpsDutyShift.objects.all())
+    allowed = _division_scope(actor, VIEW_PERMISSION)
+    query = OpsDutyShift.objects.all()
+    if allowed is not None:
+        # Compare canonical IDs as text in SQL. Names, malformed IDs and
+        # unlinked rows cannot establish membership in a scoped grant.
+        visible_employees = Employee.objects.filter(
+            staff_unit__division_id__in=allowed
+        ).annotate(analytics_id=Cast("pk", CharField())).values("analytics_id")
+        query = query.filter(employee_id__in=Subquery(visible_employees))
+    shifts = list(query)
     employee_ids = {
-        int(s.employee_id) for s in shifts
-        if s.employee_id is not None and str(s.employee_id).isdigit()
+        employee_id for s in shifts
+        if (employee_id := _canonical_employee_id(s.employee_id)) is not None
     }
     unit_by_employee = {}
     unit_labels = {}
@@ -453,21 +491,31 @@ def read_source():
         "shifts": [
             _SourceShift(shift, unit_by_employee.get(shift.employee_id))
             for shift in shifts
+            if _within_scope(allowed, unit_by_employee.get(shift.employee_id))
         ],
         "dutyTypes": {
             t.duty_type_code: t for t in OpsDutyType.objects.all()
         },
         "restMode": read_rest_mode(),
         "unitLabels": unit_labels,
+        "divisionScope": allowed,
+        "scope": _scope_metadata(allowed),
     }
 
 
-def _data_revision():
+def _data_revision(source):
     """Версия данных для детерминированного snapshotId: меняется с каждой
-    правкой источника или политики, стабильна между ними. Часы сюда не
-    входят — случайный или временной id различал бы два одинаковых снимка."""
-    stamps = []
-    for model in (OpsDutyShift, OpsDutyType, OpsPolicySetting,
+    правкой источника или политики, стабильна между ними. Точное время сюда
+    не входит; бизнес-дата расчёта передаётся в build_snapshot_id отдельно."""
+    # Include the resolved organizational links: a staff transfer changes
+    # a selection even when no OpsDutyShift.updated_at changes. Unreadable
+    # shifts never contribute counts or timestamps to this snapshot.
+    shifts = [(s.id, s.employee_id, s.unit_id, s.updated_at.isoformat())
+              for s in source["shifts"]]
+    stamps = [hashlib.sha256(json.dumps(
+        [shifts, source["unitLabels"]], sort_keys=True,
+    ).encode()).hexdigest()]
+    for model in (OpsDutyType, OpsPolicySetting,
                   OpsDutyConflictPolicy):
         latest = model.objects.order_by("-updated_at").values_list(
             "updated_at", flat=True
@@ -479,18 +527,19 @@ def _data_revision():
     return "|".join(stamps)
 
 
-def build_snapshot_id(*, revision, from_date, to_date, scope_id):
-    return f"snap-{revision}-{from_date}-{to_date}-{scope_id}"
+def build_snapshot_id(*, revision, from_date, to_date, scope_id, business_date):
+    return f"snap-{revision}-{from_date}-{to_date}-{scope_id}-asof-{business_date}"
 
 
 # ── Период (§22.5) ──────────────────────────────────────────────────────────
 
 
-def resolve_period(request):
+def resolve_period(request, *, business_date=None):
     """Период считает СЕРВЕР: экран присылает код пресета либо даты, но не то
     и другое — «текущая неделя» не должна означать разные интервалы у разных
     вкладок."""
-    business_date = Clock.today_local()
+    if business_date is None:
+        business_date = Clock.today_local()
     preset_code = request.get("presetCode")
     if preset_code:
         preset = OpsAnalyticsPeriodPreset.objects.filter(
@@ -718,14 +767,14 @@ def _source_updated_at(source):
 
 
 def _base_envelope(*, snapshot_id, period, calculation_version,
-                   policy_version):
+                   policy_version, scope, business_date, generated_at):
     return {
         "snapshotId": snapshot_id,
-        "businessDate": Clock.today_local().isoformat(),
+        "businessDate": business_date.isoformat(),
         "timezone": TIMEZONE,
         "period": period,
-        "scope": dict(_SCOPE),
-        "generatedAt": Clock.now().isoformat(),
+        "scope": dict(scope),
+        "generatedAt": generated_at.isoformat(),
         "sourceUpdatedAt": None,
         # Водяного знака источника нет — поле есть в контракте §22.4, и
         # врать в него нечем.
@@ -768,10 +817,11 @@ def list_presets():
     }
 
 
-def service_analytics(perms, request):
-    period = resolve_period(request)
-    source = read_source()
-    business_date = Clock.today_local()
+def service_analytics(perms, request, *, actor):
+    generated_at = Clock.now()
+    business_date = Clock.to_local(generated_at).date()
+    period = resolve_period(request, business_date=business_date)
+    source = read_source(actor=actor)
     selections = build_selections(source, period, business_date)
     metrics = [
         build_metric(
@@ -779,15 +829,20 @@ def service_analytics(perms, request):
         )
         for definition in OpsAnalyticsMetricDefinition.objects.all()
     ]
-    drilldown_allowed = has_perm(perms, DRILLDOWN_PERMISSION)
+    drilldown_allowed = has_perm(perms, DRILLDOWN_PERMISSION) and _scope_covers(
+        source["divisionScope"], _division_scope(actor, DRILLDOWN_PERMISSION)
+    )
     envelope = _base_envelope(
         snapshot_id=build_snapshot_id(
-            revision=_data_revision(), from_date=period["from"],
-            to_date=period["to"], scope_id=_SCOPE["scopeId"],
+            revision=_data_revision(source), from_date=period["from"],
+            to_date=period["to"], scope_id=source["scope"]["scopeId"],
+            business_date=business_date,
         ),
         period=period,
         calculation_version=CALCULATION_VERSION,
         policy_version=POLICY_VERSION,
+        scope=source["scope"],
+        business_date=business_date, generated_at=generated_at,
     )
     envelope["sourceUpdatedAt"] = _source_updated_at(source)
     envelope["data"] = {
@@ -799,8 +854,9 @@ def service_analytics(perms, request):
     envelope["drilldownDeniedReason"] = (
         None
         if drilldown_allowed
-        else "Раскрытие показателя до строк — отдельное право (§22.26): "
-             "дашборд показывает агрегаты, выборка показывает людей и смены."
+        else "Право на раскрытие показателя должно охватывать всю область "
+             "аналитики. Агрегаты остаются доступны; детализацию этой "
+             "области может открыть администратор."
     )
     return envelope
 
@@ -814,16 +870,24 @@ def _decode_cursor(cursor):
     return int(tail) if tail.isdigit() else 0
 
 
-def drilldown(perms, query):
+def drilldown(perms, query, *, actor):
     """§22.12: право проверяется ЗАНОВО и своё — переход со своего же дашборда
     доступа не подтверждает. Строки обязаны принадлежать ТОМУ ЖЕ снимку."""
     if not has_perm(perms, DRILLDOWN_PERMISSION):
         raise _permission_denied(DRILLDOWN_PERMISSION)
-    period = resolve_period(query)
-    revision = _data_revision()
+    generated_at = Clock.now()
+    business_date = Clock.to_local(generated_at).date()
+    source = read_source(actor=actor)
+    if not _scope_covers(
+        source["divisionScope"], _division_scope(actor, DRILLDOWN_PERMISSION)
+    ):
+        raise _permission_denied(DRILLDOWN_PERMISSION)
+    period = resolve_period(query, business_date=business_date)
+    revision = _data_revision(source)
     snapshot_id = build_snapshot_id(
         revision=revision, from_date=period["from"], to_date=period["to"],
-        scope_id=_SCOPE["scopeId"],
+        scope_id=source["scope"]["scopeId"],
+        business_date=business_date,
     )
     if query.get("snapshotId") != snapshot_id:
         raise DomainError(
@@ -831,8 +895,6 @@ def drilldown(perms, query):
             message="Данные изменились с момента показа показателя. "
                     "Обновите аналитику и раскройте показатель заново.",
         )
-    source = read_source()
-    business_date = Clock.today_local()
     selections = build_selections(source, period, business_date)
     ids = selections.get(query.get("metricCode"))
     if ids is None:
@@ -840,7 +902,13 @@ def drilldown(perms, query):
             "UNKNOWN_METRIC", 422, message="Неизвестный показатель.",
         )
     by_id = {s.id: s for s in source["shifts"]}
-    personal = has_perm(perms, PERSONAL_DETAIL_PERMISSION)
+    personal_scope = (
+        _division_scope(actor, PERSONAL_DETAIL_PERMISSION)
+        if has_perm(perms, PERSONAL_DETAIL_PERMISSION) else set()
+    )
+    personal = has_perm(perms, PERSONAL_DETAIL_PERMISSION) and _scope_covers(
+        source["divisionScope"], personal_scope
+    )
     offset = _decode_cursor(query.get("cursor"))
     page_ids = ids[offset:offset + DRILLDOWN_PAGE_SIZE]
     next_offset = offset + DRILLDOWN_PAGE_SIZE
@@ -849,6 +917,8 @@ def drilldown(perms, query):
         snapshot_id=snapshot_id, period=period,
         calculation_version=CALCULATION_VERSION,
         policy_version=POLICY_VERSION,
+        scope=source["scope"],
+        business_date=business_date, generated_at=generated_at,
     )
     envelope["data"] = {
         "metricCode": query.get("metricCode"),
@@ -862,7 +932,10 @@ def drilldown(perms, query):
                 "stateLabel": _STATE_LABEL.get(
                     shift.state_code, shift.state_code
                 ),
-                "employeeLabel": shift.employee_name if personal else None,
+                "employeeLabel": (
+                    shift.employee_name
+                    if _within_scope(personal_scope, shift.unit_id) else None
+                ),
             }
             for shift in (by_id.get(i) for i in page_ids)
             if shift is not None
@@ -989,14 +1062,15 @@ def _attention_severity(detector, value):
     return detector["baseSeverity"]
 
 
-def attention(request):
-    period = resolve_period(request)
-    source = read_source()
-    business_date = Clock.today_local()
+def attention(request, *, actor):
     generated_at = Clock.now()
+    business_date = Clock.to_local(generated_at).date()
+    period = resolve_period(request, business_date=business_date)
+    source = read_source(actor=actor)
     snapshot_id = build_snapshot_id(
-        revision=_data_revision(), from_date=period["from"],
-        to_date=period["to"], scope_id=_SCOPE["scopeId"],
+        revision=_data_revision(source), from_date=period["from"],
+        to_date=period["to"], scope_id=source["scope"]["scopeId"],
+        business_date=business_date,
     )
     policy = read_attention_policy()
     detectors = _apply_attention_policy(
@@ -1044,7 +1118,7 @@ def attention(request):
                 "safeTitle": ATTENTION_TITLES[detector["titleCode"]],
                 "safeDescription": description,
                 "count": count,
-                "scopeLabel": _SCOPE["safeLabel"],
+                "scopeLabel": source["scope"]["safeLabel"],
                 "targetRoute": detector["targetRoute"],
                 "targetPermission": detector["targetPermission"],
                 "detectedAt": generated_at.isoformat(),
@@ -1063,6 +1137,8 @@ def attention(request):
         # Версия политики НАБЛЮДЕНИЙ, а не порогов показателей: методики
         # независимы, и общая версия соврала бы про обе сразу.
         policy_version=policy_version,
+        scope=source["scope"],
+        business_date=business_date, generated_at=generated_at,
     )
     envelope["completenessState"] = (
         "COMPLETE" if unavailable_reason is None else "INCOMPLETE"
@@ -1081,12 +1157,20 @@ def attention(request):
 # ── Нагрузка (§22.9) ────────────────────────────────────────────────────────
 
 
-def load_analytics():
+def load_analytics(perms, *, actor):
     """ДВЕ СУММЫ, КОТОРЫЕ НЕ СМЕШИВАЮТСЯ (§22.9): план — по назначениям, факт
     — по подтверждённому участию; `loadState` красится ТОЛЬКО по плановой."""
-    source = read_source()
+    generated_at = Clock.now()
+    business_date = Clock.to_local(generated_at).date()
+    source = read_source(actor=actor)
+    personal_scope = (
+        _division_scope(actor, PERSONAL_DETAIL_PERMISSION)
+        if has_perm(perms, PERSONAL_DETAIL_PERMISSION) else set()
+    )
+    personal = has_perm(perms, PERSONAL_DETAIL_PERMISSION) and _scope_covers(
+        source["divisionScope"], personal_scope
+    )
     policy = read_load_policy()
-    business_date = Clock.today_local()
 
     duration_by_type = {
         code: t.default_duration_minutes
@@ -1141,6 +1225,8 @@ def load_analytics():
         })
         unit["planned"] += planned
         unit["actual"] += actual
+        if not _within_scope(personal_scope, shift.unit_id):
+            continue
         employee = employee_buckets.setdefault(shift.employee_id, {
             "employeeId": shift.employee_id,
             "safeLabel": shift.employee_name,
@@ -1195,12 +1281,14 @@ def load_analytics():
     )
     return {
         "businessDate": business_date.isoformat(),
-        "generatedAt": Clock.now().isoformat(),
+        "generatedAt": generated_at.isoformat(),
         "view": {
             "units": units,
             "employees": employees,
             "unlinkedShiftsCount": unlinked,
             "policy": policy,
+            "personalDetailSuppressed": not personal,
+            "personalDetailReason": None if personal else _PERSONAL_DETAIL_REASON,
         },
         "unavailable": LOAD_UNAVAILABLE,
     }
@@ -1672,25 +1760,41 @@ def _build_funnel(transitions, events, registry):
     }
 
 
-def operations_analytics(query):
+def operations_analytics(query, *, actor):
     """§22.13/§22.15: уровень разрешает СЕРВЕР — он собирает breadcrumb и
     решает, какие колонки сопоставимы на этом уровне."""
+    generated_at = Clock.now()
+    business_date = Clock.to_local(generated_at).date()
+    allowed = _division_scope(actor, OPS_VIEW_PERMISSION)
+    if allowed is not None:
+        # The event has creator/chief account IDs, but no authoritative
+        # division owner. Deriving ownership from their names or current
+        # staff units would expose unrelated events and participants.
+        raise DomainError(
+            "ANALYTICS_SCOPE_UNAVAILABLE", 403,
+            message="Аналитика мероприятий недоступна для ограниченной "
+                    "области: подразделение-владелец мероприятия не задано. "
+                    "Обратитесь к администратору.",
+        )
+    scope = _scope_metadata(allowed)
     registry = _lifecycle_registry()
     source = [
         _project_event(event) for event in OpsSecurityEvent.objects.all()
     ]
-    business_date = Clock.today_local().isoformat()
     level = query.get("level") or "ALL"
-    period = {"from": business_date, "to": business_date, "presetCode": None}
+    period = {"from": business_date.isoformat(), "to": business_date.isoformat(), "presetCode": None}
     envelope = _base_envelope(
         snapshot_id=build_snapshot_id(
-            revision=_ops_revision(), from_date=business_date,
-            to_date=business_date,
-            scope_id=f"{_SCOPE['scopeId']}:ops:{level}",
+            revision=_ops_revision(), from_date=period["from"],
+            to_date=period["to"],
+            scope_id=f"{scope['scopeId']}:ops:{level}",
+            business_date=business_date,
         ),
         period=period,
         calculation_version=OPS_CALCULATION_VERSION,
         policy_version=POLICY_VERSION,
+        scope=scope,
+        business_date=business_date, generated_at=generated_at,
     )
     unavailable = list(UNAVAILABLE_OPS_MEASURES)
     transitions = list(OpsSecurityEventTransition.objects.all())

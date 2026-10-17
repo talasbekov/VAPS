@@ -1,14 +1,16 @@
 // MSW-handlers «Справочники»: generic-реестр значений. Связи значений
 // считает СЕРВЕР при чтении, поимённо по источникам: JOURNAL_ENTRY_TYPES —
 // по журналам ОМ (хранят код типа), POST_REQUIREMENT_GROUPS — по groupCode
-// записей POST_REQUIREMENTS. Неотслеживаемые справочники несут причину, а не
-// ноль («удалять безопасно» было бы ложью). Удаление требует ДОКАЗАННОГО
-// отсутствия связей: у NOT_TRACKED/UNKNOWN оно запрещено.
+// записей POST_REQUIREMENTS; у остальных сканировать нечего — связей ноль,
+// а причина остаётся пояснением «почему». UC-REF-001: удаление не отказывает,
+// а разветвляется по исходу — без связей запись удаляется (204), со связями
+// деактивируется сегодняшней датой (200), замена заводит преемника.
 import { http, HttpResponse } from "msw";
 import {
   dictionaryEntriesPath,
   dictionaryEntryPath,
   dictionaryEntrySetActivePath,
+  dictionaryEntrySupersedePath,
   DICTIONARIES_PATH,
 } from "@/entities/dictionary";
 import type {
@@ -95,10 +97,14 @@ function entry(
     dictionaryCode,
     code,
     label,
+    labelKk: "",
     description,
     isActive: true,
     groupCode,
     updatedAt: "2026-07-01T00:00:00.000Z",
+    inactiveSince: null,
+    supersedes: null,
+    supersededBy: null,
   };
 }
 
@@ -202,9 +208,12 @@ function usageOf(item: DictionaryEntry): DictionaryUsage {
       totalCount: carriers.length,
     };
   }
+  // UC-REF-001: связи считаются для ВСЕХ справочников. Причина остаётся
+  // пояснением «почему сканировать нечего», но статус уже TRACKED — ноль
+  // связей здесь утверждение сервера, а не отказ считать.
   return {
-    status: "NOT_TRACKED",
-    reason: NOT_TRACKED_REASON[item.dictionaryCode] ?? "Связи не отслеживаются.",
+    status: "TRACKED",
+    reason: NOT_TRACKED_REASON[item.dictionaryCode] ?? null,
     references: [],
     totalCount: 0,
   };
@@ -313,6 +322,7 @@ export const dictionariesHandlers = [
       dictionaryCode,
       code,
       label: body.label.trim(),
+      labelKk: (body.labelKk ?? "").trim(),
       description: body.description.trim(),
       isActive: true,
       groupCode:
@@ -320,6 +330,9 @@ export const dictionariesHandlers = [
           ? (body.groupCode ?? null) || null
           : null,
       updatedAt: nowIso(),
+      inactiveSince: null,
+      supersedes: null,
+      supersededBy: null,
     };
     entries = [...getEntries(), created];
     persist();
@@ -346,9 +359,12 @@ export const dictionariesHandlers = [
         );
       }
       const body = (await request.json()) as SetDictionaryEntryActiveRequest;
+      const isActive = body.isActive === true;
       const updated: DictionaryEntry = {
         ...existing,
-        isActive: body.isActive === true,
+        isActive,
+        // дата неактуальности живёт вместе с флагом: активация её снимает
+        inactiveSince: isActive ? null : nowIso().slice(0, 10),
         updatedAt: nowIso(),
       };
       entries = getEntries().map((item) => (item.id === id ? updated : item));
@@ -373,25 +389,28 @@ export const dictionariesHandlers = [
       return errorEnvelope("ENTITY_NOT_FOUND", "Запись не найдена.", { id }, 404);
     }
     const usage = usageOf(existing);
-    // удаление необратимо — требует ДОКАЗАННОГО отсутствия связей
-    if (usage.status !== "TRACKED") {
-      return errorEnvelope(
-        "DICTIONARY_USAGE_UNKNOWN",
-        usage.reason ??
-          "Связи значения не отслеживаются — удаление запрещено, используйте деактивацию.",
-        {},
-        422
-      );
-    }
+    // UC-REF-001: удаление НЕ отказ, а развилка исхода — со связями значение
+    // деактивируется сегодняшней датой и остаётся в старых данных.
     if (usage.totalCount > 0) {
-      return errorEnvelope(
-        "DICTIONARY_ENTRY_IN_USE",
-        `Значение используется (${usage.totalCount}): ${usage.references
-          .map((ref) => `${ref.sourceLabel} — ${ref.samples.join(", ")}`)
-          .join("; ")}.`,
-        { usage: usage as unknown as Record<string, unknown> },
-        409
-      );
+      const updated: DictionaryEntry = {
+        ...existing,
+        isActive: false,
+        inactiveSince: nowIso().slice(0, 10),
+        updatedAt: nowIso(),
+      };
+      entries = getEntries().map((item) => (item.id === id ? updated : item));
+      persist();
+      appendAudit({
+        action: "dictionary.entry.deactivate",
+        entityType: "DictionaryEntry",
+        entityId: `${existing.dictionaryCode}/${existing.code}`,
+        oldValue: { isActive: existing.isActive },
+        newValue: { isActive: false },
+      });
+      return HttpResponse.json({
+        result: "deactivated",
+        entry: view(updated),
+      });
     }
     entries = getEntries().filter((item) => item.id !== id);
     persist();
@@ -402,5 +421,68 @@ export const dictionariesHandlers = [
       oldValue: { label: existing.label },
     });
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(`*${dictionaryEntrySupersedePath(":id")}`, async ({ params, request }) => {
+    const id = params.id as string;
+    const existing = getEntries().find((item) => item.id === id);
+    if (existing === undefined) {
+      return errorEnvelope("ENTITY_NOT_FOUND", "Запись не найдена.", { id }, 404);
+    }
+    if (!existing.isActive) {
+      return errorEnvelope(
+        "DICTIONARY_ENTRY_INACTIVE",
+        "Заменить можно только активное значение.",
+        {},
+        409
+      );
+    }
+    const body = (await request.json()) as CreateDictionaryEntryRequest;
+    const code = body.code.trim().toUpperCase();
+    if (
+      code === "" ||
+      getEntries().some(
+        (item) =>
+          item.dictionaryCode === existing.dictionaryCode && item.code === code
+      )
+    ) {
+      return errorEnvelope(
+        "VALIDATION_ERROR",
+        "Проверьте заполнение формы.",
+        { code: ["Код уже используется в этом справочнике."] },
+        400
+      );
+    }
+    seq += 1;
+    const successor: DictionaryEntry = {
+      ...existing,
+      id: `dict-${existing.dictionaryCode}-new-${Date.now()}-${seq}`,
+      code,
+      label: body.label.trim(),
+      labelKk: (body.labelKk ?? "").trim(),
+      description: (body.description ?? "").trim(),
+      isActive: true,
+      updatedAt: nowIso(),
+      inactiveSince: null,
+      supersedes: { id: existing.id, code: existing.code },
+      supersededBy: null,
+    };
+    const retired: DictionaryEntry = {
+      ...existing,
+      isActive: false,
+      inactiveSince: nowIso().slice(0, 10),
+      supersededBy: { id: successor.id, code: successor.code },
+      updatedAt: nowIso(),
+    };
+    entries = [...getEntries().map((item) => (item.id === id ? retired : item)), successor];
+    persist();
+    appendAudit({
+      action: "dictionary.entry.supersede",
+      entityType: "DictionaryEntry",
+      entityId: `${existing.dictionaryCode}/${existing.code}`,
+      oldValue: { code: existing.code, label: existing.label },
+      newValue: { code: successor.code, label: successor.label },
+    });
+    return HttpResponse.json(view(successor), { status: 201 });
   }),
 ];

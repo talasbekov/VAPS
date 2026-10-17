@@ -22,6 +22,9 @@ STATUS_TYPES = [
     ("REST_AFTER_DUTY", "После дежурства", 60, "AFTER_DUTY"),
     ("BEFORE_DUTY", "Перед дежурством", 65, "BEFORE_DUTY"),
     ("DUTY", "На дежурстве", 70, "ON_DUTY"),
+    ("DUTY_COMBAT", "Боевое дежурство", 71, "ON_DUTY"),
+    ("DUTY_DAILY", "Суточное дежурство", 72, "ON_DUTY"),
+    ("DUTY_OPERATIONAL", "Оперативное дежурство", 73, "ON_DUTY"),
     ("GEV", "Группа экстренного выезда", 75, "ON_DUTY"),
     # 🔴 УЧАСТИЕ В ОМ — ОДИН КОД (Plane №486, решение заказчика 04.09.2026:
     # «убери статусы Привлечён на мероприятие, обе»). Прежде их было два —
@@ -48,6 +51,9 @@ STATUS_TYPES = [
 
 # Жёсткая блокировка → 422 (мягкая → 409 + override).
 HARD_BLOCK_CODES = {"SICK_LEAVE", "LEAVE_BY_REPORT", "VACATION", "COMMAND"}
+# Новые варианты — начальные значения редактируемого справочника. Повторный
+# посев сохраняет переименования, ограничения и отключения администратора.
+ADDITIVE_DUTY_CODES = {"DUTY_COMBAT", "DUTY_DAILY", "DUTY_OPERATIONAL"}
 # Только «Откомандирован» теряет право редактировать статусы.
 RESTRICTS_EDITING_CODES = {"DETACHED"}
 # Прикомандированные — единственный тип ВНЕ штатных итогов (в отчёте «+N»).
@@ -125,6 +131,11 @@ class Command(BaseCommand):
                 "is_placeholder": code in PLACEHOLDER_CODES,
                 "legacy_code": LEGACY_CODE_BY_CODE.get(code),
             }
+            if code in ADDITIVE_DUTY_CODES:
+                StatusType.objects.get_or_create(
+                    code=code, defaults={**canon, "color": "", "is_active": True},
+                )
+                continue
             StatusType.objects.update_or_create(
                 code=code,
                 defaults=canon,

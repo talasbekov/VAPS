@@ -57,6 +57,8 @@ export const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/profile' },
   { template: '/security-ops/profile/{employeeId}', needs: ['employeeId'] },
   { template: '/security-ops/command-center' },
+  { template: '/security-ops/combat-duty' },
+  { template: '/security-ops/duty-dispatch' },
   // Маршруты «Сбор сил на ОМ», «Календарь смен», «Боевые группы» и «Расход
   // дня (ОМ)» удалены 21.08.2026 вместе с экранами — обходить нечего.
   { template: '/security-ops/events' },
@@ -99,6 +101,7 @@ export const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/audit' },
   { template: '/security-ops/dictionaries' },
   { template: '/security-ops/dictionaries/{dictionaryCode}', needs: ['dictionaryCode'] },
+  { template: '/security-ops/dictionaries/geo/{geoDictionaryKind}', needs: ['geoDictionaryKind'] },
   // Справочники ШТАТА (должности и звания) — свой раздел со своим макетом, а
   // не вид `dictionaries/{code}` выше. Добавлены по Plane №319: проба «карта
   // маршрутов покрыта обходом» их не находила, но сама в блоки `-g "persona"`

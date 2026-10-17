@@ -1,3 +1,4 @@
+import { requireIsolatedForcesClone, withOwnedForcesFixture } from './owned-forces-fixture'
 /**
  * «Ежедневный расход» (`/employees?view=daily`) — ЖИВОЙ стенд. Тот же
  * департамент, что и «Сбор сил», но привычной формой прототипа: управления
@@ -51,6 +52,7 @@ interface StrengthReport {
   rows: {
     division_id: number
     name: string
+    ancestors?: string[]
     list_total: number
     columns: Record<string, number>
     /** Занятость мероприятиями — справочно, вне суммы колонок (Plane №243). */
@@ -69,9 +71,10 @@ interface StrengthReport {
 // объявляет `StaffUnit` в `lib/api.ts`. См. `LeadershipStrip.tsx`.
 interface RawStaffUnit {
   id: number
+  department_id?: number | null
   division?: { id: number; name?: string } | null
   position?: { id: number; name: string; level: number } | null
-  employee?: { id: number; first_name: string; last_name: string } | null
+  employee?: { id: number; first_name: string; last_name: string; middle_name?: string | null } | null
 }
 
 // Дублируем ПОРОГ уровня, а не импортируем `features/daily-expense`: во всей
@@ -79,7 +82,7 @@ interface RawStaffUnit {
 // — «use client» React-компонент, сборка вне Next.js рискованна и без
 // прецедента в этом файле). Значение обязано совпадать с
 // `LEADERSHIP_MAX_LEVEL`, экспортированным `features/daily-expense/index.ts`.
-const LEADERSHIP_MAX_LEVEL = 1
+const LEADERSHIP_MAX_LEVEL = 2
 
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -175,7 +178,7 @@ interface TreeNode {
 // сборка вне Next.js рискованна и без прецедента в этом файле. Логика
 // ОБЯЗАНА зеркалить `resolveSummaryDivisionId` в `SummaryVersions.tsx`:
 // кандидат — узел, чей родитель сам корневой (`parent_id === null`);
-// победитель — ЕДИНСТВЕННЫЙ кандидат с максимальным ненулевым покрытием
+// автоматический выбор — ЕДИНСТВЕННЫЙ кандидат с положительным покрытием
 // `boardDivisionIds` в своём поддереве. `null` — «не определён», нарочно
 // без угадывания.
 function resolveSummaryDivisionId(nodes: TreeNode[], boardDivisionIds: number[]): number | null {
@@ -220,11 +223,9 @@ function resolveSummaryDivisionId(nodes: TreeNode[], boardDivisionIds: number[])
     for (const id of boardSet) if (subtree.has(id)) count += 1
     return { id: c.division_id, count }
   })
-  const maxCoverage = Math.max(...coverage.map((e) => e.count))
-  if (maxCoverage === 0) return null
-  const winners = coverage.filter((e) => e.count === maxCoverage)
-  if (winners.length !== 1) return null
-  return winners[0].id
+  const covered = coverage.filter((entry) => entry.count > 0)
+  if (covered.length !== 1) return null
+  return covered[0].id
 }
 
 test.use({ serviceWorkers: 'block' })
@@ -267,7 +268,7 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // причина названа вслух, а не оставлена читателю на догадку (ревью ветки
     // 22.08). Ниже — та же практика, что у «Руководства департамента».
     await expect(board.getByText(
-      'Статусы в списке показаны одной пилюлей без цвета: коды статусов раздела и колонки расхода — разные пространства кодов, и раскраска между ними была бы придуманным на фронте словарём; появится бэк-этапом.',
+      'Статусы показаны на выбранную дату. Сотрудник без отдельной отметки учитывается в строю.',
       { exact: true }
     )).toBeVisible()
   })
@@ -285,7 +286,8 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
       (unit): unit is RawStaffUnit & { employee: NonNullable<RawStaffUnit['employee']>; division: NonNullable<RawStaffUnit['division']> } =>
         (unit.position?.level ?? Infinity) <= LEADERSHIP_MAX_LEVEL &&
         unit.employee != null &&
-        unit.division != null
+        unit.division != null &&
+        (unit.department_id == null || unit.division.id === unit.department_id)
     )
     expect(leaders.length, 'в штатке нет руководителей уровня ⩽ порога — проба вакуумна').toBeGreaterThan(0)
 
@@ -316,40 +318,60 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // ТОЛЬКО отрисованные строки (скелетные плейсхолдеры — без этой роли),
     // поэтому совпадение счёта не может быть скелетом, отловленным рано.
     await expect(leadership.getByRole('listitem')).toHaveCount(leaders.length)
-    for (const leader of leaders) {
-      await expect(leadership.getByText(
-        `${leader.employee.last_name} ${leader.employee.first_name}`, { exact: true }
-      )).toBeVisible()
-    }
+    const nameOfLeader = (leader: (typeof leaders)[number]) =>
+      [leader.employee.last_name, leader.employee.first_name, leader.employee.middle_name].filter(Boolean).join(' ')
+    // ФИО не уникально. Проверяем полный состав с должностями и кратностью
+    // совпадений: Set скрыл бы пропущенного однофамильца или дубль строки.
+    // Язык задан с обеих сторон: локаль Node на Windows и браузера может
+    // различаться и переставлять латинские имена относительно кириллицы.
+    const expectedComposition = leaders
+      .map(leader => [nameOfLeader(leader), leader.position!.name])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), 'ru'))
+    await expect.poll(() => leadership.getByRole('listitem').evaluateAll(rows =>
+      rows.map(row => {
+        const captions = row.querySelectorAll('p')
+        return [captions[0]?.textContent?.trim(), captions[1]?.textContent?.trim()]
+      }).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), 'ru')),
+    )).toEqual(expectedComposition)
 
-    // Пилюля первой строки — по ПРАВДЕ статуса на деловую дату (не по
-    // умолчанию «в строю», как у рядовых строк расхода: тут честная метка
-    // «статус не заведён», если действующего статуса нет).
-    const statusTypes = await get<{ results: { code: string; name: string }[] }>(
+    // Действующий статус выбирается по приоритету справочника; отсутствие
+    // отметки означает производное «В строю», как в числовом расходе.
+    const statusTypes = await get<{ results: { code: string; name: string; priority: number }[] }>(
       token, '/api/operations/status-types/?limit=200')
     const nameByCode = new Map(statusTypes.results.map((t) => [t.code, t.name]))
     const first = leaders[0]
-    const divisionStatuses = await get<{ results: { employee_id: number; status_type_code: string }[] }>(
+    const divisionStatuses = await get<{ results: { employee_id: number; status_type_code: string; date_start: string; date_end: string; cancelled_at: string | null }[] }>(
       token,
       `/api/operations/statuses/?business_date=${report.business_date}&division_id=${first.division.id}&limit=500`
     )
-    const activeStatus = divisionStatuses.results.find((row) => row.employee_id === first.employee.id)
+    const priority = new Map(statusTypes.results.map(type => [type.code, type.priority]))
+    const activeStatus = divisionStatuses.results.filter(row => row.employee_id === first.employee.id && row.cancelled_at === null && row.date_start <= report.business_date && report.business_date < row.date_end)
+      .sort((a, b) => (priority.get(a.status_type_code) ?? Infinity) - (priority.get(b.status_type_code) ?? Infinity) || a.status_type_code.localeCompare(b.status_type_code) || a.date_start.localeCompare(b.date_start))[0]
     const expectedLabel = activeStatus
       ? (nameByCode.get(activeStatus.status_type_code) ?? activeStatus.status_type_code)
-      : 'статус не заведён'
-    const firstRow = leadership.getByRole('listitem').filter({
-      hasText: `${first.employee.last_name} ${first.employee.first_name}`,
-    })
+      : (nameByCode.get('IN_SERVICE') ?? 'В строю')
+    const matchingRows = leadership.getByRole('listitem')
+      .filter({ has: page.getByText(nameOfLeader(first), { exact: true }) })
+      .filter({ has: page.getByText(first.position!.name, { exact: true }) })
+    // Публичного employeeId в DOM нет. Если совпали и ФИО, и должность,
+    // связываем строку с employeeId через её место в полном порядке штатки:
+    // уровень должности, затем фамилия; при равенстве сохраняется порядок API.
+    const matchingLeaders = [...leaders]
+      .sort((left, right) => left.position!.level - right.position!.level ||
+        left.employee.last_name.localeCompare(right.employee.last_name, 'ru'))
+      .filter(leader => nameOfLeader(leader) === nameOfLeader(first) && leader.position!.name === first.position!.name)
+    await expect(matchingRows).toHaveCount(matchingLeaders.length)
+    const firstRow = matchingRows.nth(matchingLeaders.findIndex(leader => leader.employee.id === first.employee.id))
     await expect(firstRow.getByText(expectedLabel, { exact: true })).toBeVisible()
 
     // Честная подпись под блоком — verbatim, не подстрокой.
     await expect(leadership.getByText(
-      'Руководство собрано по уровню должности из штатного расписания (level ≤ 1); отдельного серверного признака „руководство" нет — появится бэк-этапом.',
+      'Начальники департаментов и их заместители по штатному расписанию.',
       { exact: true }
     )).toBeVisible()
   })
 
-  test('«Суточный свод» — узел выводится СЕРВЕРНЫМ деревом (родитель-корень + макс. покрытие), версии сходятся с живой ручкой', async ({ page }) => {
+  test('«Суточный свод» — узел выбирается по СЕРВЕРНОМУ дереву и положительному покрытию, версии сходятся с живой ручкой', async ({ page }) => {
     const token = await apiToken()
     const tomorrow = await tomorrowBusinessDate(token)
     const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
@@ -461,10 +483,12 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // ошибка «взять первого кандидата вместо покрытия» выбрала бы 99, и
     // красная проба ниже это ловит.
     const realFirstDivisionId = realBoardIds[0]
+    // The uncovered candidate must not itself be a real report row.
+    const emptyCandidateId = Math.max(99, ...realBoardIds) + 1
     const fakeTree: { nodes: TreeNode[] } = {
       nodes: [
         { division_id: 1, name: 'Служба (проба)', parent_id: null },
-        { division_id: 99, name: 'Пустой кандидат (проба)', parent_id: 1 },
+        { division_id: emptyCandidateId, name: 'Пустой кандидат (проба)', parent_id: 1 },
         { division_id: 42, name: 'Синтетический департамент (проба)', parent_id: 1 },
         { division_id: realFirstDivisionId, name: report.rows[0].name, parent_id: 42 },
       ],
@@ -546,7 +570,10 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
             reason: 'проверка пробой',
             sanction: 'выговор',
             triggered_by_status_id: null,
-            snapshot: { roster: [{}, {}], rows: [{}] },
+            snapshot: {
+              roster: [{ employee_id: 1, full_name: 'Первый сотрудник', rank: '' }, { employee_id: 2, full_name: 'Второй сотрудник', rank: '' }],
+              rows: [{ employee_id: 1, status_type_code: 'SICK', date_start: businessDate, date_end: businessDate }],
+            },
           },
         })
       }
@@ -616,10 +643,9 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
     const summary = board.getByRole('region', { name: 'Суточный свод' })
-    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №326): у этого дерева кандидатов нет
-    // ВОВСЕ (один корень без детей), и экран теперь называет именно эту
-    // причину, а не общее «узел не определён».
-    await expect(summary.getByText(/в вашей области видимости\s+департаментов нет/)).toBeVisible()
+    // Без департаментов экран объясняет доступный следующий шаг:
+    // расход сдаётся за управление целиком, а не отдельно за каждый отдел.
+    await expect(summary.getByText(/сдайте расход за управление целиком\. Отдельно сдавать каждый отдел не требуется/)).toBeVisible()
     await expect(summary.getByRole('listitem')).toHaveCount(0)
 
     // Даём сети шанс уйти, если бы компонент ошибочно её отправил, прежде
@@ -708,34 +734,41 @@ test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: з
     // `/reports/` (аналитика) читает `useStrengthReport` БЕЗ даты нарочно —
     // тот же снимок «сейчас», что у командного центра, и businessDate борда
     // «Ежедневный расход» его не касается (Plane №988 не меняет этот экран).
+    requireIsolatedForcesClone()
     const token = await apiToken()
-    const report = await get<StrengthReport>(
-      token,
-      '/api/operations/strength-report/',
-    )
-    // Сторож вакуумности: на расходе без единого привлечённого колонка
-    // показывает прочерки, и проверять в ней нечего.
-    const busy = report.rows.find((row) => row.event.total > 0)
-    test.skip(
-      busy === undefined,
-      'на стенде никто не привлечён на ОМ — колонку проверять не на чем ' +
-        '(участие в ОМ ставится сидом: manage.py seed_smoke_fixtures — статус IN_EVENT)',
-    )
+    await withOwnedForcesFixture(token, { group: true }, async (fixture) => {
+      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      expect(report.business_date).toBe(fixture.businessDate)
+      const busy = report.rows.find(row => row.division_id === fixture.divisionId)
+      expect(busy, 'управление собственного наряда').toBeDefined()
+      expect(fixture.initialEvent).toBeDefined()
+      expect(report.totals.event.group).toBe(fixture.initialEvent!.group + 1)
+      expect(report.totals.event.squad).toBe(fixture.initialEvent!.squad + 1)
+      expect(report.totals.event.total).toBe(fixture.initialEvent!.total + 2)
+      expect(busy!.event.total).toBeGreaterThan(0)
 
-    await signIn(page)
-    await page.goto(`${APP}/reports/`)
-    // Расход на этом экране показывается ПО КНОПКЕ, а не сразу: страница
-    // спрашивает дату, и таблицы до нажатия нет вовсе.
-    await page.getByRole('button', { name: 'Показать расход' }).click()
-    // Ищем по `th`, а не по роли `columnheader`: примитив таблицы задаёт
-    // ячейкам блочную раскладку, и неявная роль таблицы при этом теряется —
-    // `getByRole('columnheader')` не находит на этом экране НИ ОДНОГО
-    // заголовка, включая «Подразделение» (проверено).
-    await expect(page.locator('th', { hasText: 'На ОМ' })).toBeVisible({
-      timeout: 20_000,
+      await signIn(page)
+      await page.goto(`${APP}/reports/`)
+      // Расход на этом экране показывается ПО КНОПКЕ, а не сразу: страница
+      // спрашивает дату, и таблицы до нажатия нет вовсе.
+      await page.getByRole('button', { name: 'Показать расход' }).click()
+      // Ищем по `th`, а не по роли `columnheader`: примитив таблицы задаёт
+      // ячейкам блочную раскладку, и неявная роль таблицы при этом теряется —
+      // `getByRole('columnheader')` не находит на этом экране НИ ОДНОГО
+      // заголовка, включая «Подразделение» (проверено).
+      await expect(page.locator('th', { hasText: 'На ОМ' })).toBeVisible({
+        timeout: 20_000,
     })
 
-    const row = page.locator('tbody tr').filter({ hasText: busy!.name }).first()
+    // Separate imported/test units may share both name and ancestor labels.
+    // Select the exact server unit and still verify its displayed identity.
+    const row = page.locator(`tbody tr[data-division-id="${busy!.division_id}"]`)
+    const ancestors = busy!.ancestors ?? []
+    await expect(row, 'ровно одна строка подразделения из ответа сервера').toHaveCount(1)
+    await expect(row.locator('td').first()).toContainText(busy!.name)
+    if (ancestors.length > 0) {
+      await expect(row.locator('td').first()).toContainText(ancestors.join(' › '))
+    }
     // Число И его расшифровка: сумма без деления не отвечает на вопрос
     // «группами или нарядом», ради которого счётчик и заводился.
     await expect(row).toContainText(String(busy!.event.total))
@@ -745,6 +778,7 @@ test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: з
     // Занятость НЕ вычтена из «В строю»: человек на мероприятии остаётся в
     // строю, и колонка справочная (Plane №169 и №243).
     expect(busy!.columns.IN_SERVICE).toBeGreaterThanOrEqual(busy!.event.total)
+    })
   })
 })
 
@@ -782,20 +816,20 @@ test.describe(
       const businessDate = report.business_date
       const lastMoment = '2026-08-27T18:12:00+05:00'
 
-      // Подразделения: настоящий ответ, у которого сняты права сдачи. Живой
-      // ответ берём целиком (`route.fetch`), а не сочиняем: имена и пути в
-      // нём — те же, по которым проба адресует группы ниже.
+      // Подразделения: настоящий ответ, у которого сняты права сдачи.
+      // Получаем его до открытия страницы: повторный запрос структуры при
+      // раскрытии группы иначе оставлял route.fetch в полёте после последней
+      // успешной проверки и падал при закрытии контекста теста.
+      const divisions = await get<{
+        results: { id: string; name: string; ancestors?: string[] }[]
+      }>(token, `/api/ops/daily/divisions/?business_date=${businessDate}`)
       await page.route(
         (url) => url.pathname === '/api/ops/daily/divisions/',
-        async (route) => {
-          const real = await route.fetch()
-          const body = (await real.json()) as {
-            results: { id: string; name: string; ancestors?: string[] }[]
-          }
-          await route.fulfill({
+        (route) =>
+          route.fulfill({
             json: {
-              ...body,
-              results: body.results.map((row) => ({
+              ...divisions,
+              results: divisions.results.map((row) => ({
                 ...row,
                 can_submit: false,
                 // Дата последней сдачи — только у одного управления: вторая
@@ -805,8 +839,7 @@ test.describe(
                   row.id === String(pending.division_id) ? lastMoment : null,
               })),
             },
-          })
-        },
+          }),
       )
 
       // Сдачи дня: сдано РОВНО одно управление. Предикат — списочный запрос
@@ -1025,6 +1058,17 @@ test.describe(
       ]
       const expectedDivisionId = resolveSummaryDivisionId(fakeTree, realBoardIds)
       expect(expectedDivisionId, 'синтетическое дерево вырождено — проверь фикстуру').toBe(42)
+
+      // Свод синтетический: его актуальность тоже должна принадлежать
+      // фикстуре, иначе API закономерно не найдёт созданную только в UI версию.
+      await page.route(
+        (url) => url.pathname === '/api/operations/daily-summaries/freshness/' &&
+          url.searchParams.get('division_id') === String(expectedDivisionId),
+        (route) => route.fulfill({ json: {
+          division_id: expectedDivisionId, business_date: businessDate,
+          status: 'FRESH', can_rebuild: true, superseded: [], missing: [], unpinned: [],
+        } }),
+      )
 
       await page.route(
         (url) => url.pathname === '/api/operations/traffic-light/tree/',

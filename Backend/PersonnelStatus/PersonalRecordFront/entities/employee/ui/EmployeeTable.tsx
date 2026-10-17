@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import {
   getEmployeeStatusColor,
 } from "@/lib/status";
@@ -51,30 +51,10 @@ export function EmployeeTable({
   onSelectEmployee,
   onResetFilters,
 }: EmployeeTableProps) {
-  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [statusDialogFor, setStatusDialogFor] = useState<Employee | null>(null);
-  // Кнопку массовых действий открывает право РАЗДЕЛА, а не зашитый набор
-  // портальной роли (Plane №352, Ш-4): массовые действия правят статусы, и
-  // ключ у них тот же, что у остальной правки статусов.
   const { hasPermission } = useOpsPermissions();
   const canEditPersonnel = hasPermission("orgstructure.manage") && hasPermission("admin.roles");
   const queryClient = useQueryClient();
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedEmployees(employees.map((emp) => emp.id));
-    } else {
-      setSelectedEmployees([]);
-    }
-  };
-
-  const handleSelectEmployee = (employeeId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedEmployees([...selectedEmployees, employeeId]);
-    } else {
-      setSelectedEmployees(selectedEmployees.filter((id) => id !== employeeId));
-    }
-  };
 
   // Цвет — ПО КОДУ строки, а не обратным поиском по русской подписи
   // (Plane №366). Поиск «подпись → код» работал ровно до первого типа из
@@ -91,19 +71,12 @@ export function EmployeeTable({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>Список сотрудников</CardTitle>
-          {selectedEmployees.length > 0 && (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-muted-foreground">
-                Выбрано: {selectedEmployees.length}
-              </span>
-              {hasPermission("status.manage") && (
-                <Button variant="outline" size="sm">
-                  Массовые действия
-                </Button>
-              )}
-            </div>
+          {moduleOpenFor("/statuses", hasPermission) && hasPermission("status.manage") && (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/statuses">Массовое изменение статусов</Link>
+            </Button>
           )}
         </div>
       </CardHeader>
@@ -112,15 +85,6 @@ export function EmployeeTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={
-                      selectedEmployees.length === employees.length &&
-                      employees.length > 0
-                    }
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
                 <TableHead className="w-16">№</TableHead>
                 <TableHead>ФИО</TableHead>
                 <TableHead>Должность</TableHead>
@@ -150,14 +114,6 @@ export function EmployeeTable({
                   data-employee-id={employee.id}
                   className="cursor-pointer"
                 >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedEmployees.includes(employee.id)}
-                      onCheckedChange={(checked) =>
-                        handleSelectEmployee(employee.id, checked as boolean)
-                      }
-                    />
-                  </TableCell>
                   <TableCell className="font-medium">
                     {employee.number}
                   </TableCell>
@@ -165,7 +121,7 @@ export function EmployeeTable({
                     <div className="flex items-center gap-3">
                       <EmployeeAvatar name={employee.name} photo={employee.photo} />
                       <div className="min-w-0">
-                      <div className="font-medium">{employee.name}</div>
+                      <button type="button" data-profile-employee={employee.id} className="rounded text-left font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(event) => { event.stopPropagation(); onSelectEmployee(employee); }}>{employee.name}</button>
                       {/* Подстрока прототипа: «звание · ИИН». Здесь стояло
                           поле `manager`, которому ручка штатки не даёт
                           источника, — во всех строках печаталась пустая

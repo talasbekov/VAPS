@@ -46,6 +46,11 @@ class Vacancy(models.Model):
 class StaffUnit(MPTTModel):
     """Конкретная штатная единица (слот) для пары division+position."""
 
+    # Existing production import columns; omitted by the previous runtime models.
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    import_order = models.PositiveIntegerField(null=True, blank=True)
+    position_category = models.CharField(max_length=100, blank=True, default='')
+
     division = models.ForeignKey(
         Division,
         on_delete=models.SET_NULL,

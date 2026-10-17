@@ -30,6 +30,13 @@ const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const OVERRIDE_REASON = 'Проба: обоснование обхода предупреждения'
 
+interface ApproverRow {
+  id: string
+  name: string
+  status: string
+  comment: string
+}
+
 interface EventRow {
   id: string
   code: string
@@ -42,12 +49,13 @@ interface EventRow {
     postId: string
     ratingOverrideReason: string | null
   }[]
-  approvalRoute: { id: string; name: string; status: string; comment: string }[]
+  approvalRoute: ApproverRow[]
   visitObjects: {
     id: string
     objectName: string
     documentVersion: number
     documentStatus: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'RETURNED' | null
+    approvalRoute: ApproverRow[]
   }[]
 }
 
@@ -67,16 +75,32 @@ async function events(token: string): Promise<EventRow[]> {
   return ((await res.json()) as { results: EventRow[] }).results
 }
 
+async function eventDetail(token: string, eventId: string): Promise<EventRow> {
+  const res = await fetch(`${API}/api/ops/security-events/${eventId}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status !== 200) throw new Error(`фикстура ОМ ${eventId}: ${res.status} ${await res.text()}`)
+  const event = await res.json() as EventRow
+  expect(event.id, '[фикстура] получено чужое ОМ').toBe(eventId)
+  return event
+}
+
+function approvalVisit(event: EventRow, visitObjectId: string) {
+  const visit = event.visitObjects.find((row) => row.id === visitObjectId)
+  expect(visit, '[фикстура] собственный объект посещения отсутствует').toBeDefined()
+  return visit!
+}
+
 /**
  * Согласующий на объект — по API, а не кнопкой: с №429 (`[СОГ-05]`) маршрут
  * задаётся в настройках, и «+ Добавить согласующего» на объекте нет. Ручка
  * `approval/route/` осталась под админа и API — ею проба и пользуется.
  */
-async function addApproverViaApi(token: string, eventId: string, who: string): Promise<void> {
+async function addApproverViaApi(token: string, eventId: string, who: string, visitObjectId?: string): Promise<void> {
   const res = await fetch(`${API}/api/ops/security-events/${eventId}/approval/route/`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: who, unit: 'Управление ОМ', position: 'полковник' }),
+    body: JSON.stringify({ name: who, unit: 'Управление ОМ', position: 'полковник', visitObjectId }),
   })
   if (!res.ok) throw new Error(`согласующий не добавлен: ${res.status} ${await res.text()}`)
 }
@@ -105,6 +129,8 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     const own = (await events(token)).find((e) => e.code === code)
     expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
     const target = own!
+    expect(target.visitObjects.length, '[фикстура] нет собственного объекта посещения').toBeGreaterThan(0)
+    const visitObjectId = target.visitObjects[0]!.id
     expect(
       target.placementAssignments.some((a) => a.ratingOverrideReason !== null),
       'у своей фикстуры нет назначения с обоснованием — проверять нечего',
@@ -115,7 +141,7 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     const totalNeed = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    await page.goto(`${APP}/security-ops/events/${target.id}/?visit=${visitObjectId}`)
     // По ИМЕНИ ОБЛАСТИ: видимый заголовок карточки снят как повтор шапки
     // страницы (Plane №70).
     const card = page.getByRole('region', { name: 'Согласование расстановки' })
@@ -147,27 +173,68 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // нему и сверяем с тем, что вернул БЭК, а не с экраном.
     const route = card.locator('section', { hasText: 'Маршрут согласования' }).first()
     const who = `Проба ${Date.now()}`
-    await addApproverViaApi(token, target.id, who)
+    await addApproverViaApi(token, target.id, who, visitObjectId)
     await page.reload()
     await expect(route).toContainText(who, { timeout: 15_000 })
     // Внесённый в маршрут — ещё НЕ на согласовании: расстановку ему не
     // отправляли (эталон, задача «ОМ-37.3»).
     await expect(route).toContainText('Не отправлено')
 
-    const added = await expect
-      .poll(async () => {
-        const fresh = (await events(token)).find((e) => e.id === target.id)
-        return fresh?.approvalRoute.find((a) => a.name === who)?.id ?? null
-      }, { timeout: 15_000 })
-      .not.toBeNull()
-    void added
+    const addedRoute = approvalVisit(await eventDetail(token, target.id), visitObjectId).approvalRoute
+    const added = addedRoute.filter((approver) => approver.name === who)
+    expect(added, '[фикстура] собственный согласующий не найден однозначно').toHaveLength(1)
+    const whoId = added[0]!.id
 
     // Решать по неотправленному нечего — кнопок решения у строки нет.
     const row = route.locator('tr', { hasText: who }).first()
     await expect(row.getByRole('button', { name: 'Вернуть' })).toHaveCount(0)
 
     // Отправка переводит ВЕСЬ маршрут в «На согласовании».
+    const sendPath = `/api/ops/security-events/${target.id}/approval/send/`
+    const sending = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === sendPath && response.request().method() === 'POST',
+    )
     await route.getByRole('button', { name: 'Отправить на согласование' }).click()
+    const sentResponse = await sending
+    expect(sentResponse.status(), '[фикстура] отправка на согласование не принята').toBe(200)
+    const sent = await sentResponse.json() as EventRow
+    expect(sent.id).toBe(target.id)
+    const sentRoute = approvalVisit(sent, visitObjectId).approvalRoute
+    const whoIndex = sentRoute.findIndex((approver) => approver.id === whoId)
+    expect(whoIndex, '[фикстура] собственный согласующий пропал после отправки').toBeGreaterThanOrEqual(0)
+    expect(sentRoute[whoIndex]!.name).toBe(who)
+    expect(sentRoute[whoIndex]!.status).toBe('PENDING')
+    await expect(row).toContainText('На согласовании', { timeout: 15_000 })
+
+    // Маршрут последовательный. Администратор подписывает только предшественников
+    // собственной строки в этом ОМ; до самой строки проба не доходит.
+    const predecessors = sentRoute.slice(0, whoIndex)
+    for (const predecessor of predecessors) {
+      expect(predecessor.status).toBe('PENDING')
+      const res = await fetch(
+        `${API}/api/ops/security-events/${target.id}/approval/route/${encodeURIComponent(predecessor.id)}/decide/`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ decision: 'APPROVED', comment: '', visitObjectId }),
+        },
+      )
+      if (res.status !== 200) throw new Error(`[фикстура] подпись ${predecessor.id}: ${res.status} ${await res.text()}`)
+      const signed = await res.json() as EventRow
+      expect(signed.id).toBe(target.id)
+      const signedRoute = approvalVisit(signed, visitObjectId).approvalRoute
+      expect(signedRoute.map((approver) => approver.id)).toEqual(sentRoute.map((approver) => approver.id))
+      expect(signedRoute.find((approver) => approver.id === predecessor.id)?.status).toBe('APPROVED')
+      expect(signedRoute.find((approver) => approver.id === whoId)?.status).toBe('PENDING')
+    }
+    const ready = await eventDetail(token, target.id)
+    const readyRoute = approvalVisit(ready, visitObjectId).approvalRoute
+    expect(ready.stage).toBe('APPROVAL')
+    for (const predecessor of predecessors) {
+      expect(readyRoute.find((approver) => approver.id === predecessor.id)?.status).toBe('APPROVED')
+    }
+    expect(readyRoute.find((approver) => approver.id === whoId)?.status).toBe('PENDING')
+    await page.reload()
     await expect(row).toContainText('На согласовании', { timeout: 15_000 })
 
     // Возврат — модалка (`[ВОЗ-01]`, Plane №431): причина обязательна, и отказ
@@ -175,16 +242,27 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await row.getByRole('button', { name: 'Вернуть' }).click()
     const dialog = page.locator('[data-slot="return-dialog"]')
     await expect(dialog).toBeVisible()
+    const decisionPath = `/api/ops/security-events/${target.id}/approval/route/${encodeURIComponent(whoId)}/decide/`
+    const refusing = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === decisionPath && response.request().method() === 'POST',
+    )
     await dialog.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    const refusedResponse = await refusing
+    expect(refusedResponse.status(), 'пустую причину должен отбить сервер').toBe(400)
+    expect((await refusedResponse.json()).error_code).toBe('VALIDATION_ERROR')
     await expect(dialog).toContainText('Укажите причину возврата', { timeout: 15_000 })
 
     // С причиной решение фиксируется, и его видит бэк
     await dialog.getByLabel('Общая причина *').fill('Уточнить расчёт постов')
+    const returning = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === decisionPath && response.request().method() === 'POST',
+    )
     await dialog.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    expect((await returning).status(), 'возврат собственной строки не принят').toBe(200)
     await expect
       .poll(async () => {
-        const fresh = (await events(token)).find((e) => e.id === target.id)
-        const mine = fresh?.approvalRoute.find((a) => a.name === who)
+        const fresh = await eventDetail(token, target.id)
+        const mine = approvalVisit(fresh, visitObjectId).approvalRoute.find((a) => a.id === whoId)
         return `${mine?.status}|${mine?.comment}`
       }, { timeout: 15_000 })
       .toBe('RETURNED|Уточнить расчёт постов')

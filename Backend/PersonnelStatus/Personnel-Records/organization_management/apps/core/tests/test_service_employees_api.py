@@ -47,6 +47,22 @@ def test_anonymous_and_no_permission_cannot_list(people):
     assert api.get(URL).status_code == 403
 
 
+def test_directory_and_card_expose_existing_photo_without_bypassing_scope(people):
+    root, _, foreign, rows = people
+    rows[0].photo = 'employees/photos/portrait-example.jpg'
+    rows[0].save(update_fields=['photo'])
+    rows[2].photo = 'employees/photos/private-other-unit.jpg'
+    rows[2].save(update_fields=['photo'])
+    api, _ = client_for('directory-photos', 'DIRECTORY_PHOTOS', ['personnel.view'], root.pk)
+    result = api.get(URL, {'division_id': root.pk}).json()
+    by_id = {row['id']: row for row in result['results']}
+    assert by_id[rows[0].pk]['photo_url'] == rows[0].photo.url
+    assert by_id[rows[1].pk]['photo_url'] is None
+    assert api.get(f'{URL}{rows[0].pk}/').json()['photo_url'] == rows[0].photo.url
+    assert api.get(URL, {'division_id': foreign.pk}).json()['results'] == []
+    assert api.get(f'{URL}{rows[2].pk}/').status_code == 404
+
+
 def test_scope_filters_rows_count_and_options(people):
     root, child, foreign, rows = people
     api, _ = client_for('s1043-scoped', 'S1043-R', ['personnel.view'], root.pk)

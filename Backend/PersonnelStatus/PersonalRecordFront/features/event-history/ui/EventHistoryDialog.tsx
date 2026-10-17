@@ -15,6 +15,7 @@
  * действующего мероприятия выглядело бы потерей.
  */
 import { Button } from "@/components/ui/button";
+import { LoadFailure } from "@/components/load-failure";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,8 @@ export interface EventHistoryDialogProps {
   rows: EventHistoryEntry[];
   isLoading: boolean;
   isError: boolean;
+  onRetry: () => void;
+  isRetrying: boolean;
 }
 
 export function EventHistoryDialog({
@@ -59,6 +62,8 @@ export function EventHistoryDialog({
   rows,
   isLoading,
   isError,
+  onRetry,
+  isRetrying,
 }: EventHistoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -77,9 +82,8 @@ export function EventHistoryDialog({
           </p>
         )}
         {isError && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            История сейчас недоступна — повторите позже.
-          </p>
+          <LoadFailure what="историю мероприятий" onRetry={onRetry} isRetrying={isRetrying}
+            description={rows.length > 0 ? "Показаны последние загруженные сведения. Повторите чтение для проверки актуальности." : undefined} />
         )}
         {!isLoading && !isError && rows.length === 0 && (
           <p className="py-6 text-center text-sm text-muted-foreground">

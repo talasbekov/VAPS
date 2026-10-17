@@ -80,7 +80,7 @@ test('реальный ежедневный расход: статус, сдач
     const current = summaries.results.find((row: { is_current: boolean; business_date: string }) => row.is_current && row.business_date === businessDate)
     expect(current, 'Сохранённой сдаче управления соответствует current свод департамента').toBeTruthy()
     expect(current.sent_at).toBeTruthy()
-    await expect(board.getByLabel('Деловая дата')).toHaveValue(businessDate!)
+    await expect(board.getByLabel('Расход на дату')).toHaveValue(businessDate!)
     await expect(board.getByText(`Версия ${current.version}`, { exact: true })).toBeVisible()
     await stableScreenshot(page, `/tmp/1090-daily-${businessDate}-resumed-summary.png`)
     console.log(`Daily UI resume: date=${businessDate}, submission=${resumedSubmission.id}/v${resumedSubmission.version}, summary=${current.id}/v${current.version}`)
@@ -146,7 +146,7 @@ test('реальный ежедневный расход: статус, сдач
   const current = summaries.results.find((row: { is_current: boolean; business_date: string }) => row.is_current && row.business_date === businessDate)
   expect(current).toMatchObject({ version: 1, business_date: businessDate, division_id: 631, incomplete_reason: 'Приёмка1090: отправляем предварительный расход, ожидаем остальные источники' })
   expect(current.sent_at).toBeTruthy()
-  await expect(board.getByLabel('Деловая дата')).toHaveValue(businessDate!)
+  await expect(board.getByLabel('Расход на дату')).toHaveValue(businessDate!)
   await expect(board.getByText('Версия 1', { exact: true })).toBeVisible()
   console.log(`Daily UI complete: date=${businessDate}, submission=${submission.id}/v${submission.version}, summary=${current.id}/v${current.version}, reminders=${reminderIds.join(',')} (dedupe verified)`)
 })
@@ -501,10 +501,12 @@ test('реальные роли: два ОМ от создания до закр
       await expect(dialog).toHaveCount(0)
       const event = await persisted(page, managerToken, eventId)
       expect(event.visitObjects).toHaveLength(2)
-      await row.getByRole('button', { name: /^Развернуть объекты/ }).click()
+      const objectsToggle = row.getByRole('button', { name: /^(Развернуть|Свернуть) объекты/ })
+      if (await objectsToggle.getAttribute('aria-expanded') === 'false') await objectsToggle.click()
       for (let index = 0; index < 2; index++) {
         const object = published[index]
         const seniorName = index === 0 ? 'Приёмка1090Старший' : 'Приёмка1090Второй'
+        await page.getByRole('button', { name: `Подробности объекта ${object.name}`, exact: true }).click()
         await page.getByRole('button', { name: `Назначить старшего объекта ${object.name}`, exact: true }).click()
         await page.getByRole('dialog').getByLabel('Поиск сотрудника').fill(seniorName)
         await page.getByRole('dialog').getByRole('button', { name: new RegExp(seniorName) }).click()

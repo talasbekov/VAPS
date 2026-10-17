@@ -33,6 +33,8 @@ class OpsWatermark(models.Model):
     и молчаливый дефолт отнял бы у неё это решение.
     """
 
+    admin_readonly = True
+
     key = models.CharField(max_length=100, unique=True)
     last_materialized_date = models.DateField()
     updated_at = models.DateTimeField(auto_now=True)

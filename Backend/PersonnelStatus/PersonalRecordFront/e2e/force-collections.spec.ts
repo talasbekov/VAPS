@@ -41,7 +41,11 @@ async function apiToken(): Promise<string> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
-  return ((await res.json()) as { access: string }).access
+  if (!res.ok) throw new Error(`[фикстура] вход стенда: ${res.status} ${(await res.text()).slice(0, 600)}`)
+  const body = await res.json() as { access?: string }
+  expect(typeof body.access, 'вход стенда не вернул access').toBe('string')
+  expect(body.access!.length, 'вход стенда вернул пустой access').toBeGreaterThan(0)
+  return body.access!
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -394,8 +398,9 @@ test.describe('сборы сил (вид штаба)', () => {
      * весь список в общий пул, и у ОМ с двумя объектами люди одного объекта
      * предлагались на посты другого.
      *
-     * Фикстура доводит заявку до «принято штабом» по API (раскладка →
-     * оповещение → выделение одного человека → отправка → приём), дальше —
+     * Фикстура доводит заявку до «принято штабом» по API (квота департамента
+     * → раскладка управлению → оповещение → выделение своего сотрудника
+     * → отправка → приём), дальше —
      * экран: отметить человека → «Отдать объекту» → ёмкость «назначено 1» →
      * «Передать на расстановку» → недобор → комментарий → передано.
      */
@@ -408,38 +413,71 @@ test.describe('сборы сил (вид штаба)', () => {
         body: body === undefined ? undefined : JSON.stringify(body),
       })
       await assertStep(res, method, path)
-      return res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(`[фикстура] ${method} ${path}: ${res.status} ${(await res.text()).slice(0, 600)}`)
+      return res.status === 204 ? {} : res.json()
     }
     // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): `Math.floor(Date.now() /
     // 1000) % 300` цикличен ровно с периодом 300 с (5 мин) реального времени
     // — та же болезнь, которую №881 закрыла в `business-date.ts`, но не
     // заметила здесь. `uniqueBusinessDate()` не повторяется в пределах
     // процесса и разведена по воркерам (Plane №893).
-    const own = await prepareDemandEvent(token, uniqueBusinessDate())
-    const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {
-      results: { code: string; eventId: string }[]
-    }
-    const target = list.results.find((row) => row.code === own.code)!
-    const eventId = target.eventId
-    const divisions = (await call('GET', '/api/core/divisions/?page_size=200')) as {
-      results: { id: number; name: string; type_code: string; parent: number | null }[]
-    }
-    const department = divisions.results.find((d) => d.name === 'Первый департамент')!
-    const split = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/`, {
-      rows: [{ departmentId: String(department.id), need: own.total }],
-    })
-    const allocationId = split.forceAllocation[0].id as string
-    await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/notify/`)
-    const person = (await call('GET', '/api/ops/personnel/?search=%D0%A2%D0%BE%D0%BA%D1%82%D0%B0%D1%80%D0%BE%D0%B2&page_size=1')).results[0]
-    const added = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/members/`, {
-      employeeId: person.id,
-    })
-    expect(added.error_code, 'выделение не прошло').toBeUndefined()
-    await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/submit/`)
-    const accepted = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/accept/`)
-    expect(accepted.error_code, 'приём не прошёл').toBeUndefined()
-
+    const businessDate = uniqueBusinessDate()
+    const own = await prepareDemandEvent(token, businessDate)
+    const eventId = own.id
     try {
+      expect(own.total, 'для диалога недобора требуется больше одного сотрудника').toBeGreaterThan(1)
+      const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {
+        results: { code: string; eventId: string }[]
+      }
+      const target = list.results.find((row) => row.code === own.code)
+      expect(target, 'своё мероприятие не попало в список сборов').toBeDefined()
+      expect(target!.eventId).toBe(eventId)
+      type Division = { id: number; name: string; type_code: string; parent: number | null }
+      const divisions: Division[] = []
+      let divisionPath: string | null = '/api/core/divisions/?page_size=200'
+      const visited = new Set<string>()
+      while (divisionPath !== null) {
+        expect(visited.has(divisionPath), 'справочник подразделений вернул кольцо пагинации').toBe(false)
+        visited.add(divisionPath)
+        const response = await call('GET', divisionPath) as { results: Division[]; next: string | null }
+        divisions.push(...response.results)
+        const next: URL | null = response.next === null ? null : new URL(response.next, API)
+        divisionPath = next === null ? null : `${next.pathname}${next.search}`
+      }
+      const directorate = divisions.find(row => row.type_code === 'directorate' && divisions.some(parent => parent.id === row.parent && parent.type_code === 'department'))
+      expect(directorate, 'в справочнике нет управления своего департамента').toBeDefined()
+      const department = divisions.find(row => row.id === directorate!.parent && row.type_code === 'department')!
+      const roster = await call('GET', `/api/ops/personnel/?division_id=${directorate!.id}&business_date=${businessDate}&page_size=1`)
+      expect(roster.results, 'в выбранном управлении нет своего сотрудника').toHaveLength(1)
+      const person = roster.results[0]
+      const base = `/api/ops/security-events/${eventId}/forces/allocation`
+      const split = await call('POST', `${base}/`, {
+        rows: [{ departmentId: String(department.id), need: 1 }],
+      })
+      expect(split.forceAllocation).toHaveLength(1)
+      expect(split.forceAllocation[0]).toMatchObject({ departmentId: String(department.id), need: 1 })
+      const allocationId = split.forceAllocation[0].id as string
+      const allocationBase = `${base}/${encodeURIComponent(allocationId)}`
+      const directorateSplit = await call('POST', `${allocationBase}/split/`, {
+        rows: [{ divisionId: String(directorate!.id), need: 1 }],
+      })
+      expect(directorateSplit.forceAllocation.find((row: any) => row.id === allocationId)?.directorates.filter((row: any) => row.need > 0))
+        .toEqual([expect.objectContaining({ divisionId: String(directorate!.id), need: 1 })])
+      const notified = await call('POST', `${allocationBase}/notify/`)
+      const notifiedAllocation = notified.forceAllocation.find((row: any) => row.id === allocationId)
+      expect(notifiedAllocation?.status, 'заявка не дошла до NOTIFIED').toBe('NOTIFIED')
+      expect(notifiedAllocation.directorates.find((row: any) => row.divisionId === String(directorate!.id))?.notifiedAt,
+        'управлению не отправлен запрос').toBeTruthy()
+      const added = await call('POST', `${allocationBase}/members/`, { employeeId: person.id })
+      expect(added.forceAllocation.find((row: any) => row.id === allocationId)?.members.map((member: any) => member.employeeId))
+        .toEqual([String(person.id)])
+      const submitted = await call('POST', `${allocationBase}/submit/`)
+      expect(submitted.forceAllocation.find((row: any) => row.id === allocationId)?.status, 'список не отправлен штабу').toBe('SUBMITTED')
+      expect(submitted.forceRoster.map((member: any) => member.employeeId)).toEqual([String(person.id)])
+      const accepted = await call('POST', `${allocationBase}/accept/`)
+      expect(accepted.forceAllocation.find((row: any) => row.id === allocationId)?.status, 'штаб не принял список').toBe('ACCEPTED')
+      expect(accepted.forceRoster.map((member: any) => member.employeeId)).toEqual([String(person.id)])
+
       await signIn(page)
       await page.goto(`${APP}/employees?view=forces`)
       await page.getByRole('tab', { name: 'Сборы', exact: true }).click()
@@ -472,7 +510,7 @@ test.describe('сборы сил (вид штаба)', () => {
       expect(fresh.handover.comment).toBe('Остальных доберём к среде')
       expect(fresh.roster[0].visitObjectId).toBe(objectId)
     } finally {
-      await fetch(`${API}/api/ops/security-events/${eventId}/`, { method: 'DELETE', headers })
+      await call('DELETE', `/api/ops/security-events/${eventId}/`)
     }
   })
 })

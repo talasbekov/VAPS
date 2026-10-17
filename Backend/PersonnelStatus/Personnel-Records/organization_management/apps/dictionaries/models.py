@@ -5,6 +5,10 @@ from django.utils.translation import gettext_lazy as _
 class Position(models.Model):
     """Справочник должностей согласно ТЗ"""
     name = models.CharField(max_length=255, verbose_name=_("Название должности"))
+    name_kk = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name=_("Название должности (kk)"),
+    )
     # Код справочника: им контракт нового бэка идентифицирует должность
     # (`position_code`). Отдавать вместо кода `name` нельзя — клиент считал бы
     # строку стабильным ключом, а она меняется при переименовании.
@@ -12,6 +16,16 @@ class Position(models.Model):
     level = models.SmallIntegerField(
         verbose_name=_("Уровень"),
         help_text=_("Чем меньше число, тем выше должность")
+    )
+    # Жизненный цикл значения (UC-REF-001, подпроект 2): активность, дата
+    # неактуальности и ссылка на прежнюю запись при замене. PROTECT на
+    # `supersedes`: цепь «взамен» рваться не должна — прежняя запись с
+    # преемником остаётся историей и не удаляется.
+    is_active = models.BooleanField(default=True, db_index=True)
+    inactive_since = models.DateField(null=True, blank=True)
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="superseded_by",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -158,12 +172,25 @@ class SystemSetting(models.Model):
 class Rank(models.Model):
     """Справочник: Звание согласно ТЗ"""
     name = models.CharField(max_length=50, unique=True, verbose_name=_("Звание"))
+    name_kk = models.CharField(
+        max_length=255, blank=True, default="", verbose_name=_("Звание (kk)")
+    )
     # Код справочника: им контракт нового бэка идентифицирует звание
     # (`rank_code`). См. довод у Position.code.
     code = models.CharField(max_length=100, unique=True, verbose_name=_("Код"))
     level = models.SmallIntegerField(
         verbose_name=_("Уровень"),
         help_text=_("Чем меньше число, тем выше звание")
+    )
+    # Жизненный цикл значения (UC-REF-001, подпроект 2): активность, дата
+    # неактуальности и ссылка на прежнюю запись при замене. PROTECT на
+    # `supersedes`: цепь «взамен» рваться не должна — прежняя запись с
+    # преемником остаётся историей и не удаляется.
+    is_active = models.BooleanField(default=True, db_index=True)
+    inactive_since = models.DateField(null=True, blank=True)
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="superseded_by",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

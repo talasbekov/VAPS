@@ -18,6 +18,38 @@ import { EMPLOYEES, REMARKS, ruCount, ruPlural } from '../lib/ru-plural'
 import { describeOpsNotification } from '../features/notifications/api/notifications-api'
 import type { OpsNotification } from '../lib/api'
 
+test.describe('напоминания о сроке сдачи', () => {
+  const reminder = (phase?: 'before_deadline' | 'overdue'): OpsNotification => ({
+    id: 42, recipient: '7', kind: 'SUBMISSION_LAGGING',
+    business_date: '2026-10-07', read_at: null, created_at: '2026-10-07T11:00:00Z',
+    payload: {
+      laggard_division_ids: [12, 13], phase, deadline_at: '2026-10-07T17:00:00+05:00',
+    } as OpsNotification['payload'] & { phase?: string; deadline_at?: string },
+  })
+
+  test('до срока просит сдать расход и показывает местный срок', () => {
+    const shown = describeOpsNotification(reminder('before_deadline'))
+    expect(shown.title).toBe('Напоминание о сдаче расхода')
+    expect(shown.message).toContain('07.10.2026')
+    expect(shown.message).toContain('17:00')
+    expect(shown.message).toContain('Подразделений без сдачи: 2')
+    expect(shown.link).toBe('/statuses?businessDate=2026-10-07')
+  })
+
+  test('после срока называет просрочку и открывает расход на деловую дату', () => {
+    const shown = describeOpsNotification(reminder('overdue'))
+    expect(shown.title).toBe('Срок сдачи расхода истёк')
+    expect(shown.message).toContain('17:00')
+    expect(shown.link).toBe('/statuses?businessDate=2026-10-07')
+  })
+
+  test('старое уведомление сохраняет прежний заголовок и получает ссылку', () => {
+    const shown = describeOpsNotification(reminder())
+    expect(shown.title).toBe('Отставание по сдаче')
+    expect(shown.link).toBe('/statuses?businessDate=2026-10-07')
+  })
+})
+
 test.describe('склонение по числу', () => {
   test('второй десяток не путается с хвостом: 11-14 отдельно от 1-4', () => {
     // Ровно те числа, на которых ломается тернарник без `% 100`.

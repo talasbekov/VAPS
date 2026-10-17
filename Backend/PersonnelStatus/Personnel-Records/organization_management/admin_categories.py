@@ -77,12 +77,13 @@ MODEL_CATEGORY: dict[str, str] = {
         "OpsCombatRoute", "OpsServiceReportType",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle",
-        "OpsCountry", "OpsCity", "OpsRatingGroup",
+        "OpsCountry", "OpsCity", "OpsRatingGroup", "OpsProtectedPerson",
     ),
     # Настройки и политики: меняются редко, действуют на весь раздел.
     **_spread(
         "Служебное", "operations",
-        "OpsPolicySetting", "OpsPolicySectionVersion", "OpsSettingChangeEvent",
+        "OpsE2EFixtureDateCursor", "OpsPolicySetting", "OpsPolicySectionVersion",
+        "OpsRatingDynamicsPoint", "OpsSettingChangeEvent",
         "OpsSubmissionControlSettings", "OpsPassportFreshnessPolicy",
         "OpsDutyConflictPolicy", "OpsRatingFeatureFlags", "OpsDocumentSequence",
         "OpsDivisionNotifyRecipient",
@@ -90,7 +91,7 @@ MODEL_CATEGORY: dict[str, str] = {
     # Всё, что порождает файл или его хранит.
     **_spread(
         "Документы и отчёты", "operations",
-        "OpsIssuedDocument", "OpsAttachment", "OpsServiceReportJob",
+        "OpsIssuedDocument", "OpsAttachment", "OpsLegalDocumentFile", "OpsServiceReportJob",
         "OpsServiceReportArtifact", "OpsRatingExportJob", "OpsRatingExportArtifact",
         "OpsWatermark",
     ),
@@ -104,6 +105,11 @@ MODEL_CATEGORY: dict[str, str] = {
         "OpsAuditLog", "OpsRatingAuditEntry", "OpsNotification",
         "OpsRatingNotification", "OpsRatingIdempotencyRecord",
     ),
+    **_spread(
+        "Охранные мероприятия", "operations",
+        "OpsEventVehicle", "OpsPassportVersion", "OpsPlacementDocumentVersion",
+        "OpsSecurityEventPerson", "OpsStatusParticipation",
+    ),
     # Состояния людей: они про сотрудника, а не про мероприятие.
     **_spread(
         # Реестр заявки на сбор сил (`[МД-06]`, Plane №425) — своя категория:
@@ -116,7 +122,7 @@ MODEL_CATEGORY: dict[str, str] = {
     ),
     **_spread(
         "Сотрудники и статусы", "operations",
-        "OpsEmployeeStatus", "Secondment", "StatusOverride", "OpsProtectedPerson",
+        "OpsEmployeeStatus", "Secondment", "StatusOverride",
     ),
 }
 

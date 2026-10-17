@@ -1,7 +1,8 @@
 "use client";
 
 // «Кто я» и справочники, которыми карточка расшифровывает свои коды.
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isReadAccessBlocked, readWithAccessCheck } from "@/lib/query-read-access";
 import {
   apiClient,
   type CoreDivision,
@@ -32,20 +33,23 @@ export function useMyEmployee() {
  * КОДОМ, а на подразделение — идентификатором. Справочники маленькие и
  * меняются редко, поэтому берутся целиком и надолго.
  */
-export function useCoreDirectories() {
+export function useCoreDirectories(enabled = true) {
   const ranks = useQuery<CoreRank[]>({
     queryKey: ["core-ranks"],
     queryFn: () => apiClient.getCoreRanks(),
+    enabled,
     staleTime: 10 * 60_000,
   });
   const positions = useQuery<CorePosition[]>({
     queryKey: ["core-positions"],
     queryFn: () => apiClient.getCorePositions(),
+    enabled,
     staleTime: 10 * 60_000,
   });
   const divisions = useQuery<CoreDivision[]>({
     queryKey: ["core-divisions"],
     queryFn: () => apiClient.getCoreDivisions(),
+    enabled,
     staleTime: 10 * 60_000,
   });
 
@@ -64,7 +68,7 @@ export function useCoreDirectories() {
         ? null
         : (divisions.data?.find((item) => item.id === id)?.name ??
           `подразделение №${id}`),
-    isLoading: ranks.isPending || positions.isPending || divisions.isPending,
+    isLoading: enabled && (ranks.isPending || positions.isPending || divisions.isPending),
   };
 }
 
@@ -73,10 +77,13 @@ export function useCoreDirectories() {
  * на клиенте значило бы сначала получить чужие строки, а потом надеяться, что
  * их никто не покажет.
  */
-export function useEmployeeStatuses(employeeId: number | null) {
-  return useQuery<OpsEmployeeStatusRow[]>({
+export function useEmployeeStatuses(employeeId: number | null, enabled = true) {
+  const client = useQueryClient();
+  const key = ["ops-statuses", "employee", employeeId ?? 0] as const;
+  const query = useQuery<OpsEmployeeStatusRow[]>({
     queryKey: ["ops-statuses", "employee", employeeId ?? 0],
-    queryFn: () => apiClient.getOpsStatusesFor(employeeId as number),
-    enabled: employeeId !== null,
+    queryFn: ({ signal, queryKey }) => readWithAccessCheck(client, queryKey, signal, () => apiClient.getOpsStatusesFor(employeeId as number)),
+    enabled: enabled && employeeId !== null,
   });
+  return { ...query, readAccessBlocked: isReadAccessBlocked(client, key) };
 }

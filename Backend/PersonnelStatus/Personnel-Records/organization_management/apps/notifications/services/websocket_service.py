@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.urls import reverse
 
 from organization_management.apps.notifications.groups import NOTIFY_MESSAGE_TYPE, group_name_for
 from organization_management.apps.notifications.models import Notification
@@ -18,7 +19,7 @@ def send_report_ready_notification(report):
         notification_type=Notification.NotificationType.REPORT_READY,
         title="Отчет готов",
         message=f"Ваш отчет #{report.id} готов к скачиванию.",
-        link=f"/api/reports/{report.id}/download/",
+        link=reverse('report-download', kwargs={'pk': report.pk}),
     )
 
     channel_layer = get_channel_layer()

@@ -134,7 +134,11 @@ class OpsEventEvaluation(TimeStampedModel):
 
     evaluation_code = models.CharField(max_length=100, unique=True)
     event_code = models.CharField(max_length=100)
-    participant_code = models.CharField(max_length=100)
+    participant_code = models.CharField(max_length=100, null=True)
+    target_group_code = models.CharField(max_length=100, null=True)
+    # Collective evidence belongs to the evaluation, so corrections cannot
+    # rewrite the original membership, post or object after the event changes.
+    group_snapshot = models.JSONField(null=True)
     evaluator_user_id = models.CharField(max_length=255, null=True)
     score = models.IntegerField()
     comment = models.TextField(null=True)
@@ -159,6 +163,20 @@ class OpsEventEvaluation(TimeStampedModel):
         verbose_name_plural = "Оценки мероприятий"
         ordering = ["evaluated_at", "id"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(participant_code__isnull=False, target_group_code__isnull=True)
+                    | models.Q(participant_code__isnull=True, target_group_code__isnull=False)
+                ),
+                name="chk_ops_evaluation_one_target",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(target_group_code__isnull=True, group_snapshot__isnull=True)
+                    | models.Q(target_group_code__isnull=False, group_snapshot__isnull=False)
+                ),
+                name="chk_ops_evaluation_group_evidence",
+            ),
             models.CheckConstraint(
                 condition=models.Q(score__gte=1, score__lte=10),
                 name="chk_ops_evaluation_score_scale",
@@ -199,6 +217,7 @@ class OpsEvaluationWorkItem(TimeStampedModel):
     evaluator_user_id = models.CharField(max_length=255)
     target_participant_code = models.CharField(max_length=100, null=True)
     target_group_code = models.CharField(max_length=100, null=True)
+    group_planned_snapshot = models.JSONField(null=True)
     target_safe_label = models.CharField(max_length=255)
     target_safe_unit_label = models.CharField(max_length=255)
     post_label = models.CharField(max_length=255)
@@ -272,6 +291,8 @@ class OpsEvaluationCorrection(TimeStampedModel):
 class OpsRatingIdempotencyRecord(TimeStampedModel):
     """§19.26: выполненная операция по ключу. Хранится РЕЗУЛЬТАТ
     (идентификаторы, не значения: снимок ответа нёс бы закрытый комментарий)."""
+
+    admin_readonly = True
 
     key = models.CharField(max_length=255)
     operation = models.CharField(max_length=20)
@@ -437,6 +458,8 @@ class OpsRatingExportArtifact(TimeStampedModel):
 class OpsRatingDynamicsPoint(TimeStampedModel):
     """Точка динамики (§19.20): ЗАПИСАННЫЙ агрегат закрытого периода со своей
     версией методики. NULL-агрегат — «за период агрегата нет», не ноль."""
+
+    admin_readonly = True
 
     participant_code = models.CharField(max_length=100)
     period = models.CharField(max_length=10)

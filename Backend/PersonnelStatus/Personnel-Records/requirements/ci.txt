@@ -1,0 +1,4 @@
+# Full pinned test environment, plus isolated parallel workers.
+-r ../requirements.txt
+pytest-xdist==3.8.0
+execnet==2.1.2

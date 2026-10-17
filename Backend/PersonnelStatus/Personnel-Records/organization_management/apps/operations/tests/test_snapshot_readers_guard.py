@@ -34,6 +34,8 @@ APP = pathlib.Path(__file__).resolve().parent.parent
 
 # 1. Снимок читается, но живого рядом НЕТ — смешивать нечего.
 NO_LIVE_DATA = {
+    "expense_release.branch_documents",  # Traverses only pinned snapshots.
+    "expense_release.own_document",  # Passes already supplied fallback into the frozen builder.
     "day_submission_service._diff_key",
     "day_submission_service._compute_event",
     "day_submission_service.submit_day",

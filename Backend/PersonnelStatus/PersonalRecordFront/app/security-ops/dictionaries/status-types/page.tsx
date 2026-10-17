@@ -21,7 +21,7 @@
  * справочник как раз затем, чтобы увидеть, что тип выключен, а не исчез.
  */
 import Link from "next/link";
-import { DashboardLayout } from "@/components/dashboard-layout";
+import { DictionariesWorkspace } from "@/features/dictionaries-workspace/ui/DictionariesWorkspace";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,7 +63,7 @@ export default function StatusTypesDictionaryPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DictionariesWorkspace>
       <div className="space-y-4">
         <PageHeader
           eyebrow="Система · Справочники"
@@ -185,6 +185,6 @@ export default function StatusTypesDictionaryPage() {
           </>
         )}
       </div>
-    </DashboardLayout>
+    </DictionariesWorkspace>
   );
 }

@@ -1,5 +1,6 @@
 """Собранные → объекты → расстановка (Plane №390, `[СБС-13]`)."""
 import pytest
+from .test_ops_forces_gathering import notify_after_split
 
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 
@@ -23,7 +24,7 @@ def _accepted_event(manager):  # noqa: F811
     directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("fc-dept", "FC_DEPT", own.pk)
-    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(dept_lead, base, allocation_id)
     make_assignment_status_type()
     people = [employee_of(directorate, name) for name in ("Первов", "Второв")]
     for person in people:

@@ -14,9 +14,9 @@
  * ПОЧЕМУ ЗДЕСЬ, А НЕ РЯДОМ С «НА ДЕЖУРСТВЕ». Заказчик писал «этот статус как
  * статус На дежурстве», и буквальное прочтение ведёт не туда: «На дежурстве»
  * живёт на экране «Статусы сотрудников» и пишет в КАДРОВУЮ модель статусов, а
- * расход считается по модели раздела ОМ. Эти две модели не связаны ничем —
- * ни сигналом, ни синком. Статус, записанный рядом с «На дежурстве», расход
- * не увидел бы, и ответственный по департаменту не увидел бы тоже.
+ * расход считается по модели раздела ОМ. Кадровые статусы проецируются
+ * в ОМ сервером (personnel_mirror.py). Обратной проекции нет: эта короткая
+ * форма изменяет только статус расхода ОМ.
  *
  * УЧАСТИЕ В ОМ — не отдельный статус, а дополнение к нему: несколько
  * мероприятий, у каждого свой вид участия (физнаряд либо группа) и роль
@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { formatIsoDateLong } from "@/shared/lib/date";
 // Блок мероприятий — ОБЩИЙ с портальным окном статуса (Plane №367): те же
 // три списка и те же правила («роль принадлежит своей группе», «у физнаряда
 // ролей нет») понадобились там дословно, и вторая копия разошлась бы с этой.
@@ -64,6 +65,8 @@ export interface SetStatusDialogProps {
     participations: { event_id: number; kind_code: string; role_code?: string }[];
   }) => Promise<void>;
   isSaving: boolean;
+  canSubmit?: boolean;
+  permissionMessage?: string;
   /** Отказ сервера — показывается ЗДЕСЬ, а не тостом за окном. */
   failure: string | null;
 }
@@ -76,14 +79,17 @@ export function SetStatusDialog({
   businessDate,
   onSubmit,
   isSaving,
+  canSubmit = true,
+  permissionMessage = "Недостаточно прав для изменения статуса.",
   failure,
 }: SetStatusDialogProps) {
-  const [statusCode, setStatusCode] = useState("");
+  const [selection, setSelection] = useState<{ code: string; label: string } | null>(null);
+  const statusCode = selection?.code ?? "";
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setStatusCode("");
+      setSelection(null);
       setFormError(null);
     }
   }, [open]);
@@ -105,10 +111,18 @@ export function SetStatusDialog({
         .map((type) => ({ code: type.code, label: type.name })),
     [catalogTypes.types]
   );
+  const catalogReady = !catalogTypes.isLoading && !catalogTypes.isFetching && !catalogTypes.isError;
+  const selectedType = statuses.find(type => type.code === statusCode);
+  const selectionAvailable = selectedType !== undefined;
 
   async function save(): Promise<void> {
-    if (statusCode === "") {
-      setFormError("Выберите статус.");
+    if (isSaving || !canSubmit) return;
+    if (!catalogReady) {
+      setFormError("Дождитесь загрузки доступных типов статусов.");
+      return;
+    }
+    if (!selectionAvailable) {
+      setFormError("Выберите доступный активный статус.");
       return;
     }
     setFormError(null);
@@ -126,11 +140,18 @@ export function SetStatusDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">Статус будет действовать один день: {formatIsoDateLong(businessDate)}</p>
           <div className="space-y-1">
             <Label htmlFor={`status-${employeeId}`}>Статус</Label>
-            <Select value={statusCode} onValueChange={setStatusCode}>
+            <Select value={statusCode} onValueChange={(value) => {
+              const type = statuses.find(item => item.code === value);
+              if (type) {
+                setSelection(type);
+                setFormError(null);
+              }
+            }} disabled={isSaving || !catalogReady}>
               <SelectTrigger id={`status-${employeeId}`} aria-label="Статус">
-                <SelectValue placeholder="Выберите статус" />
+                <SelectValue placeholder="Выберите статус">{selectedType?.label ?? selection?.label}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {/* ЗАГРУЗКА, ПУСТОТА И ОТКАЗ — ТРИ РАЗНЫХ СОСТОЯНИЯ, и
@@ -146,7 +167,7 @@ export function SetStatusDialog({
                   !catalogTypes.isError &&
                   statuses.length === 0 && (
                     <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      Активных типов в справочнике нет
+                      Нет доступных статусов для ручной простановки
                     </div>
                   )}
                 {statuses.map((row) => (
@@ -156,14 +177,20 @@ export function SetStatusDialog({
                 ))}
               </SelectContent>
             </Select>
+            {(catalogTypes.isLoading || catalogTypes.isFetching) && (
+              <p role="status" className="text-sm text-muted-foreground">Обновляем справочник статусов…</p>
+            )}
+            {catalogReady && selection !== null && !selectionAvailable && (
+              <p role="alert" className="text-sm text-destructive-ink">Выбранный тип больше недоступен. Выберите другой активный статус.</p>
+            )}
             {catalogTypes.isError && (
               <p className="text-sm text-destructive-ink" role="alert">
-                Справочник статусов не ответил — выбирать не из чего.{" "}
+                Не удалось подтвердить доступные типы статусов.{" "}
                 <button
                   type="button"
                   className="underline underline-offset-2"
                   onClick={catalogTypes.refetch}
-                  disabled={catalogTypes.isFetching}
+                  disabled={catalogTypes.isFetching || isSaving}
                 >
                   {catalogTypes.isFetching ? "Повторяем…" : "Повторить"}
                 </button>
@@ -171,6 +198,7 @@ export function SetStatusDialog({
             )}
           </div>
 
+          {!canSubmit && <Alert><AlertDescription>{permissionMessage}</AlertDescription></Alert>}
           {(formError !== null || failure !== null) && (
             <Alert variant="destructive">
               <AlertDescription>{formError ?? failure}</AlertDescription>
@@ -187,7 +215,7 @@ export function SetStatusDialog({
           >
             Отмена
           </Button>
-          <Button type="button" onClick={() => void save()} disabled={isSaving}>
+          <Button type="button" onClick={() => void save()} disabled={isSaving || !canSubmit || !catalogReady || !selectionAvailable}>
             {isSaving ? "Сохранение…" : "Проставить"}
           </Button>
         </DialogFooter>

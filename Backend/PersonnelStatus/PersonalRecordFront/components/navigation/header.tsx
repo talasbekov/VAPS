@@ -16,6 +16,8 @@ import { Menu, Settings, LogOut, User } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { NotificationsDropdown } from "@/features/notifications/ui/NotificationsDropdown";
 import { EditProfileDialog } from "@/features/edit-profile";
+import { useAccountProfile } from "@/features/edit-profile/model/use-account-profile";
+import Link from "next/link";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -38,6 +40,7 @@ export function Header({
   // всегда стояло «Роль-1: Просмотр организации», то есть не та роль, под
   // которой человек работает.
   const { roles: sectionRoles, hasPermission } = useOpsPermissions();
+  const accountProfile = useAccountProfile();
   const sectionRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
@@ -145,7 +148,7 @@ export function Header({
                     {user?.name}
                   </p>
                   <p className="text-sm leading-none text-muted-foreground">
-                    {user?.email}
+                    {accountProfile.data?.email ?? user?.email}
                   </p>
                   {/* СОСТАВ РОЛЕЙ ЦЕЛИКОМ (Plane №353). Ролей у человека
                       может быть несколько — это прямое требование заказчика,
@@ -187,14 +190,12 @@ export function Header({
                 <User className="mr-3 h-4 w-4" />
                 <span>Редактировать профиль</span>
               </DropdownMenuItem>
-              {/* «Система» открыта правом раздела `admin.roles` — тем же,
-                  которым открыты сами экраны настроек (см.
-                  `entities/portal-access`). Раньше пункт спрашивал ресурс
-                  зашитой портальной роли и расходился с ними. */}
-              {hasPermission("admin.roles") && (
-                <DropdownMenuItem className="text-base py-2">
+              {hasPermission("settings.view") && (
+                <DropdownMenuItem asChild className="text-base py-2">
+                  <Link href="/settings">
                   <Settings className="mr-3 h-4 w-4" />
                   <span>Настройки</span>
+                  </Link>
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem

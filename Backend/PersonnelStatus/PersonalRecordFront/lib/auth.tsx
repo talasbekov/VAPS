@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Fragment,
   useContext,
   useEffect,
   useRef,
@@ -65,6 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionExpired = (session as { error?: string } | null)?.error !== undefined;
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const backendIdentity = (session?.user as { userData?: { id?: string | number }; id?: string } | undefined);
+  const principal = status === "authenticated" && !sessionExpired
+    ? String(backendIdentity?.userData?.id ?? backendIdentity?.id ?? session?.user?.email ?? session?.user?.name ?? "authenticated")
+    : null;
+  const [cachePrincipal, setCachePrincipal] = useState<string | null | undefined>(undefined);
+
+  // NextAuth broadcasts sign-in/out across tabs, but each tab owns its token,
+  // query cache and page state. Remove the previous actor's data before the
+  // next actor can mount a screen, including a direct authenticated switch.
+  useEffect(() => {
+    if (status === "loading" || principal === cachePrincipal) return;
+    resetAccessToken();
+    queryClient.clear();
+    setCachePrincipal(principal);
+  }, [cachePrincipal, principal, queryClient, status]);
 
   /**
    * ПРОДЛИТЬ НЕ УДАЛОСЬ — УВОДИМ НА ФОРМУ ВХОДА (Plane №383).
@@ -114,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (status === "unauthenticated" || !session || sessionExpired) {
-        queryClient.removeQueries({ queryKey: ["ops-me"] });
+        queryClient.clear();
         setUser(null);
         setIsLoading(false);
         return;
@@ -183,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // До submit `useOpsPermissions` мог читать отсутствие сессии. Смена
         // учётной записи обязана забыть и токен, и результат/ошибку прав.
         resetAccessToken();
-        queryClient.removeQueries({ queryKey: ["ops-me"] });
+        queryClient.clear();
         return true;
       }
 
@@ -219,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // следующие 15 секунд любой запрос подписывался бы токеном ушедшего
     // человека — а это уже не медлительность, а чужие права.
     resetAccessToken();
-    queryClient.removeQueries({ queryKey: ["ops-me"] });
+    queryClient.clear();
     try {
       await signOut({ redirect: false });
     } catch (error) {
@@ -240,7 +256,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: sessionExpired ? false : isLoading,
       }}
     >
-      {sessionExpired && pathname !== "/" ? null : children}
+      {status !== "loading" && cachePrincipal === principal && !(sessionExpired && pathname !== "/")
+        ? <Fragment key={principal ?? "anonymous"}>{children}</Fragment>
+        : null}
     </AuthContext.Provider>
   );
 }

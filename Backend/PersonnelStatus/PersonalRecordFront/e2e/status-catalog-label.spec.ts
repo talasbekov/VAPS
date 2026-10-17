@@ -129,7 +129,7 @@ async function catalogLabel(token: string, code: string): Promise<string> {
  */
 async function seedCatalogStatus(
   token: string,
-): Promise<{ fullName: string }> {
+): Promise<{ employeeId: number; fullName: string }> {
   const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/?page=1&page_size=50`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -175,7 +175,7 @@ async function seedCatalogStatus(
       `сотруднику ${employee.id} без чужих статусов сервер отказал завести ` +
         `${CATALOG_ONLY_CODE}: ${payload}`,
     ).toBe(201)
-    return { fullName: `${employee.last_name} ${employee.first_name}` }
+    return { employeeId: employee.id, fullName: `${employee.last_name} ${employee.first_name}` }
   }
 
   throw new Error(
@@ -202,8 +202,8 @@ test.describe(
 
       // Поиск по фамилии: порядок строк меняют соседние пробы, и «первая
       // страница» — не адрес.
-      await page.getByPlaceholder('Поиск по ФИО, отделу, должности...').fill(seeded.fullName)
-      const row = page.locator('table tbody tr', { hasText: seeded.fullName }).first()
+      await page.getByPlaceholder('Поиск по ФИО, подразделению, должности...').fill(seeded.fullName)
+      const row = page.locator(`table tbody tr[data-employee-id="${seeded.employeeId}"]`)
       await expect(row, `сотрудника ${seeded.fullName} не нашлось поиском`).toBeVisible({
         timeout: 20_000,
       })
