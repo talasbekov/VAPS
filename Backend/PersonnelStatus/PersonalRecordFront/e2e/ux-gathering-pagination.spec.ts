@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { test, expect, signIn } from './ux-fixture';
 import type { Page } from '@playwright/test';
 
@@ -32,7 +31,7 @@ async function prepare(page: Page, query = '') {
   return { fullReads: () => fullReads };
 }
 
-test('a gathering list renders 50 rows per page and exports its complete selection from the last page', async ({ page, businessWrites }) => {
+test('a gathering list renders 50 rows per page and keeps navigation without CSV controls', async ({ page, businessWrites }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await prepare(page);
   const panel = page.getByRole('tabpanel');
@@ -47,13 +46,7 @@ test('a gathering list renders 50 rows per page and exports its complete selecti
   await expect(panel.getByRole('button', { name: 'Далее', exact: true })).toBeDisabled();
   expect(new URL(page.url()).searchParams.get('page')).toBe('4');
   expect(state.fullReads()).toBe(1);
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  const csv = await readFile((await (await downloadPromise).path())!, 'utf8');
-  expect(csv.trim().split('\r\n')).toHaveLength(152);
-  expect(csv).toContain('Участник №1');
-  expect(csv).toContain('Участник №151');
-  expect(state.fullReads()).toBe(2);
+  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
   await page.reload();
   await expect(panel.getByText('151–151 из 151', { exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'Поиск по сотрудникам', exact: true }).fill('№1');

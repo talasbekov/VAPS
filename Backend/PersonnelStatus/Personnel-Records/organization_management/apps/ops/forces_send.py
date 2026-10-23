@@ -160,6 +160,13 @@ def split_and_send(event_id, *, rows, draft=False, actor):
     # разборщик читает `rows` РАНЬШЕ него.
     if rows is not None and not isinstance(rows, list):
         raise events._validation({"rows": ["Ожидается список строк."]})
+    malformed = {
+        f"rows.{index}": ["Ожидается объект строки."]
+        for index, row in enumerate(rows or [])
+        if not isinstance(row, dict)
+    }
+    if malformed:
+        raise events._validation(malformed)
     current = events.lock_event(event_id)
     errors = _frozen_rows_changed(current, rows)
     if errors:

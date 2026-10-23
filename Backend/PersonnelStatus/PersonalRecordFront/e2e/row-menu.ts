@@ -6,9 +6,9 @@ import { expect, type Locator, type Page } from '@playwright/test'
  * 🔴 ЧТО ЛЕЧИМ. В полном смоуке пробы экрана «Статусы» падали пачкой и всегда
  * одинаково, поодиночке — зелены всегда. Дефект ВОСПРОИЗВЕДЁН 06.09.2026:
  * полный смоук по прод-стенду со СТАРЫМ кодом уронил
- * `forms-validation.spec.ts:173` с тем самым логом —
+ * открытие меню строки с тем самым логом —
  *
- *     waiting for getByRole('menuitem', { name: 'Откомандировать сотрудника' })
+ *     waiting for getByRole('menuitem')
  *     2 × waiting for element to be visible, enabled and stable
  *       - element is not stable
  *     ...

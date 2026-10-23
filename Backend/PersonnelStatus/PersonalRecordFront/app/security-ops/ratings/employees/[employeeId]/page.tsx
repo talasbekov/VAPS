@@ -21,7 +21,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
-import { LoadFailure } from "@/components/load-failure";
+import { isRatingScopeUnavailable, RatingReadFailure } from "@/features/ops-ratings/rating-read-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useRatingEmployeeDetail } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
@@ -40,7 +40,7 @@ function RatingEmployeeDetailScreen() {
   const searchParams = useSearchParams();
   const employeeId = params.employeeId ?? null;
   const query = useRatingEmployeeDetail(employeeId);
-  const data = query.data;
+  const data = isRatingScopeUnavailable(query.error) ? undefined : query.data;
   const back = searchParams.get("back") ?? "";
   const backTo =
     back === ""
@@ -73,7 +73,8 @@ function RatingEmployeeDetailScreen() {
           <p className="text-sm text-muted-foreground">Загрузка карточки…</p>
         )}
         {query.error !== null && (
-          <LoadFailure
+          <RatingReadFailure
+            error={query.error}
             what="карточку участника"
             onRetry={() => void query.refetch()}
             isRetrying={query.isFetching}

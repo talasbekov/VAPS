@@ -2,15 +2,16 @@ export const DUTY_REGISTER_PATH = '/api/ops/duty-register/';
 export const DUTY_REGISTER_HREF = '/security-ops/duty-register/';
 export const DUTY_REGISTER_FILTERS = ['from', 'to', 'kind', 'state', 'source', 'attention', 'division_id', 'employee_id', 'search', 'page', 'page_size'] as const;
 export type DutyIdentifier = number | string;
-export type DutyRecordSource = 'LOG' | 'PLAN' | 'DISPATCH';
+export type DutyRecordSource = 'LOG' | 'PLAN' | 'DISPATCH' | 'STATUS';
 export type DutyRecordState = 'PLANNED' | 'ACKNOWLEDGED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 export type DutyRecordAction = 'acknowledge' | 'start' | 'complete' | 'cancel' | 'classify' | 'edit';
-export const DUTY_SOURCE_LABELS: Record<DutyRecordSource, string> = { LOG: 'Журнал', PLAN: 'План дежурств', DISPATCH: 'Расстановка' };
-export const DUTY_STATE_LABELS: Record<DutyRecordState, string> = { PLANNED: 'Запланировано', ACKNOWLEDGED: 'Подтверждено', ACTIVE: 'Начато', COMPLETED: 'Завершено', CANCELLED: 'Отменено' };
+export const DUTY_SOURCE_LABELS: Record<DutyRecordSource, string> = { LOG: 'Журнал', PLAN: 'План дежурств', DISPATCH: 'Расстановка', STATUS: 'Выход из статуса сотрудника' };
+export const DUTY_STATE_LABELS: Record<DutyRecordState, string> = { PLANNED: 'Назначен', ACKNOWLEDGED: 'Ознакомлен', ACTIVE: 'Заступил', COMPLETED: 'Завершено', CANCELLED: 'Отменено' };
 export const DUTY_ATTENTION_LABELS: Record<string, string> = {
   MISSING_KIND: 'Вид не указан', MISSING_ACKNOWLEDGEMENT: 'Подтверждение не отмечено', MISSING_START: 'Начало не отмечено',
   MISSING_END: 'Завершение не отмечено', INVALID_ACTUAL_FACTS: 'Неполные фактические отметки', SOURCE_CHANGED: 'Исходная запись изменилась',
   OVERLAP: 'Пересечение записей', EMPLOYEE_UNKNOWN: 'Сотрудник не найден в кадровом учёте',
+  LATE_START: 'Заступление отмечено позже планового начала',
 };
 export interface DutyKind { code: string; label: string; label_kk: string; description: string; is_active: boolean }
 export interface DutyEmployeeChoice { employee_id: DutyIdentifier; employee_name: string; division_id: DutyIdentifier | null; division_name: string; position_name: string }
@@ -26,9 +27,11 @@ export interface DutyRecord {
   cancelled_at?: string | null; cancelled_reason?: string; execution_mode?: 'SERVER_TIME' | 'RECORDED_TIME'; time_zone?: string;
   planning_locked?: boolean;
   history?: { at: string; action: string; label: string; actor: string; reason: string }[];
+  generated_at?: string;
 }
 export interface DutyRegisterSnapshot {
   rows: DutyRecord[]; period: { from: string; to: string }; generated_at: string; time_zone: string;
+  control?: { assigned: number; acknowledged: number; started: number; missing_start: number; late_start: number; missing_end: number };
   summary: { record_count: number; employee_count: number; completed_count: number; active_count: number; cancelled_count: number;
     unconfirmed_count: number; attention_count: number; overlap_count: number; missing_kind_count: number;
     unknown_planned_count: number; unknown_actual_count: number; confirmed_actual_count: number;
@@ -50,8 +53,12 @@ export function dutyRegisterQuery(params: URLSearchParams, exportAll = false) {
   }
   return result.toString();
 }
+export function isDutyRecordKey(id: string): boolean {
+  const match = /^(?:(?:LOG|PLAN|DISPATCH):([1-9]\d{0,18})|STATUS:([1-9]\d{0,18}):[a-f0-9]{64})$/.exec(id);
+  return Boolean(match && BigInt(match[1] ?? match[2]) <= BigInt('9223372036854775807'));
+}
 export function dutyRecordPath(id: string) {
-  if (!/^(LOG|PLAN|DISPATCH):[1-9]\d{0,18}$/.test(id)) throw new Error('Неверный адрес записи');
+  if (!isDutyRecordKey(id)) throw new Error('Неверный адрес записи');
   return DUTY_REGISTER_PATH + id + '/';
 }
 export function dutyHours(minutes: number | null | undefined) {

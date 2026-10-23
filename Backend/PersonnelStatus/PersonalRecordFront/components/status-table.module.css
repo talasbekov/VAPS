@@ -1,0 +1,78 @@
+/* One roster DOM keeps the same selection, status and action handlers at every width. */
+@media (max-width: 767px) {
+  .roster,
+  .roster tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .roster thead {
+    display: none;
+  }
+
+  .roster tbody tr[data-directorate-id] {
+    display: block;
+  }
+
+  .roster tbody tr[data-directorate-id] td {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .roster tbody tr:not([data-directorate-id]) {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 44px;
+    align-items: start;
+    padding: 8px;
+  }
+
+  .roster [data-status-cell] {
+    min-width: 0;
+    padding: 6px 0;
+    white-space: normal;
+  }
+
+  .roster [data-status-cell="select"] {
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 14px;
+  }
+
+  .roster [data-status-cell="name"] {
+    grid-column: 2;
+    grid-row: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .roster [data-status-cell="actions"] {
+    grid-column: 3;
+    grid-row: 1;
+    padding-top: 0;
+  }
+
+  .roster [data-status-cell="status"],
+  .roster [data-status-cell="ops"] {
+    grid-column: 2 / -1;
+  }
+
+  .roster [data-status-cell="status"] { grid-row: 2; }
+  .roster [data-status-cell="ops"] { grid-row: 3; }
+
+  .roster[data-can-select="false"] [data-status-cell="name"] {
+    grid-column: 1 / 3;
+  }
+
+  .roster[data-can-select="false"] [data-status-cell="status"],
+  .roster[data-can-select="false"] [data-status-cell="ops"] {
+    grid-column: 1 / -1;
+  }
+
+  .roster [data-status-cell="number"],
+  .roster [data-status-cell="directorate"],
+  .roster [data-status-cell="position"],
+  .roster [data-status-cell="updated"],
+  .roster [data-status-cell="next"] {
+    display: none;
+  }
+}

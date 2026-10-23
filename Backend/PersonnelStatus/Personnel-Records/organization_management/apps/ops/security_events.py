@@ -2801,19 +2801,21 @@ def _physical_need(rows):
     )
 
 
-def _sync_auto_force_request(event):
-    """Свести числа автозаявки с фактом цепочки «Сбор сил».
+def project_auto_force_requests(event):
+    """Чистая проекция автозаявки по уже загруженному составу «Сбора сил».
 
     Заявку на силы правил человек в снятом боксе «выделение сил» (Plane №110);
     без него `allocatedCount` остался бы нулём навсегда, и лента штаба
     показывала бы вечный недобор при полностью собранном составе.
 
-    Трогается ТОЛЬКО автозаявка: у мероприятий, которые вели числами по
+    Пересчитывается ТОЛЬКО автозаявка: у мероприятий, которые вели числами по
     группам, эти строки заполнял человек, и пересчёт затёр бы его работу.
+    Не меняет входной JSON/атрибуты и не обращается к БД: старые снимки можно
+    показать на чтении, не переписывая историю и согласованный документ.
     """
     requests = event.force_requests or []
     if len(requests) != 1 or requests[0].get("group") != AUTO_FORCE_REQUEST_GROUP:
-        return
+        return event.force_requests
     accepted = len(event.force_roster or [])
     requested = int(requests[0].get("requestedCount") or 0)
     status = "NOT_SENT"
@@ -2823,9 +2825,14 @@ def _sync_auto_force_request(event):
         status = "PARTIALLY_ALLOCATED"
     elif event.force_allocation:
         status = "SENT"
-    event.force_requests = [
+    return [
         {**requests[0], "allocatedCount": accepted, "status": status}
     ]
+
+
+def _sync_auto_force_request(event):
+    """Записать ту же проекцию в существующем разрешённом write path."""
+    event.force_requests = project_auto_force_requests(event)
 
 
 def recompute_visit_needs(event):
@@ -7317,7 +7324,7 @@ def approval_candidates(*, actor):
 
     user_ids = set(
         UserRole.objects.filter(
-            role_code_id="HEAD_OPS_UNIT", is_active=True
+            role_code_id="HEAD_OPS_UNIT", is_active=True, role_code__is_active=True
         ).values_list("user_id", flat=True)
     )
     user_ids.discard(str(getattr(actor, "pk", "") or ""))

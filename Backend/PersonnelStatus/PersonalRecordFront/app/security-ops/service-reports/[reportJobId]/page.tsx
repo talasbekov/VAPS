@@ -14,25 +14,13 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
-  useDownloadArtifact,
   useReportJob,
-  useRerunReportJob,
 } from "@/hooks/use-ops-reports";
 import {
-  ACTION_LABEL,
   JOB_STATE_LABEL,
   formatMoment,
   formatSize,
-  saveFile,
 } from "@/features/ops-reports/report-shared";
-import type { ReportJobAction } from "@/entities/service-report";
-
-/** Действия, которые на карточке ничего не открывают: параметры и ошибка уже
- * развёрнуты — карточка и есть развёрнутая строка. */
-const INLINE_ACTIONS: readonly ReportJobAction["code"][] = [
-  "OPEN_PARAMETERS",
-  "VIEW_ERROR",
-];
 
 export default function ReportJobPage() {
   const queryClient = useQueryClient();
@@ -40,8 +28,6 @@ export default function ReportJobPage() {
   const reportJobId = params.reportJobId ?? "";
   const jobQuery = useReportJob(reportJobId);
 
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobQuery.readKey);
-  const rerun = useRerunReportJob(() => undefined, jobQuery.readKey);
   const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
 
   // Выше ветки jobQuery.error: без гварда отказ по правам приезжал сюда как
@@ -90,7 +76,6 @@ export default function ReportJobPage() {
   }
 
   const { job, artifact } = data;
-  const rerunResult = rerun.data;
 
   return (
     <DashboardLayout>
@@ -197,73 +182,6 @@ export default function ReportJobPage() {
               </dt>
               <dd>{artifact.maskingPolicyVersion}</dd>
             </dl>
-          )}
-        </section>
-
-        <section role="group" aria-label="Действия работы">
-          <div className="flex flex-wrap gap-2">
-            {data.actions
-              .filter((action) => !INLINE_ACTIONS.includes(action.code))
-              .map((action) => (
-                <button
-                  key={action.code}
-                  type="button"
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                  disabled={!action.available || download.isPending || rerun.isPending || jobQuery.canAct === false}
-                  onClick={() => {
-                    if (jobQuery.canAct === false) return;
-                    if (action.code === "DOWNLOAD" && artifact !== null) {
-                      download.mutate({ artifactId: artifact.artifactId });
-                    } else if (
-                      action.code === "RETRY" ||
-                      action.code === "NEW_REVISION"
-                    ) {
-                      rerun.mutate({ reportJobId: job.reportJobId, mode: action.code });
-                    }
-                  }}
-                >
-                  {ACTION_LABEL[action.code]}
-                </button>
-              ))}
-          </div>
-          {/* Причины отказа — не только в title: подсказка мыши недоступна с
-              клавиатуры и скринридеру у выключенной кнопки. */}
-          <ul className="mt-2 flex flex-col gap-1">
-            {data.actions
-              .filter((action) => !action.available && action.reason !== null)
-              .map((action) => (
-                <li key={action.code} className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {ACTION_LABEL[action.code]}
-                  </span>{" "}
-                  — {action.reason}
-                </li>
-              ))}
-          </ul>
-          {rerun.error !== null && (
-            <p className="mt-2 text-sm text-destructive-ink">{rerun.error.message}</p>
-          )}
-          {download.error !== null && (
-            <p className="mt-2 text-sm text-destructive-ink">
-              {download.error.message}
-            </p>
-          )}
-          {rerunResult !== undefined && (
-            <p role="status" className="mt-2 text-sm font-semibold text-primary-ink">
-              {rerunResult.reused ? (
-                "Готовый артефакт с теми же параметрами уже есть — новая работа не запускалась."
-              ) : (
-                <>
-                  Запущена новая работа.{" "}
-                  <Link
-                    className="underline"
-                    href={`/security-ops/service-reports/${rerunResult.reportJobId}`}
-                  >
-                    Открыть её карточку
-                  </Link>
-                </>
-              )}
-            </p>
           )}
         </section>
 

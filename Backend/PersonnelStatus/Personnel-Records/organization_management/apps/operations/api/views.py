@@ -26,6 +26,9 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
+from organization_management.apps.statuses.retirement import (
+    RetiredSecondmentWritesMixin, refuse_retired_secondment_amendment,
+)
 
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
@@ -1085,12 +1088,7 @@ class MyEmployeeViewSet(viewsets.ViewSet):
     строки общих справочников ради расшифровки уже разрешённых ему кодов.
     """
 
-    UNLINKED_REASON = (
-        "Учётная запись не связана с кадровой: поле «пользователь» в карточке "
-        "сотрудника заполняется вручную, и у этой учётки оно пусто. Пока связи "
-        "нет, показывать нечего — подставить сюда однофамильца значило бы выдать "
-        "чужую службу за свою."
-    )
+    UNLINKED_REASON = "Учётная запись не связана с кадровой карточкой сотрудника."
 
     @extend_schema(
         responses=extend_schema_serializer(many=False)(
@@ -1435,10 +1433,13 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         ),
     )
     def partial_update(self, request, pk=None, *args, **kwargs):
-        form = StatusUpdateSerializer(data=request.data)
-        form.is_valid(raise_exception=True)
         status_row = self._get_status_or_404(pk)
         self._assert_status_in_scope(request, status_row)
+        refuse_retired_secondment_amendment(
+            status_row, request.data, type_field="status_type_code", end_field="date_end",
+        )
+        form = StatusUpdateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
         updated = update_status(
             status_row,
             # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
@@ -1604,6 +1605,10 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         form.is_valid(raise_exception=True)
         status_row = self._get_status_or_404(pk)
         self._assert_status_in_scope(request, status_row)
+        refuse_retired_secondment_amendment(
+            status_row, {"date_end": form.validated_data["new_date_end"]},
+            type_field="status_type_code", end_field="date_end",
+        )
         extended = extend_status(
             status_row,
             actor=resolve_actor_id(request),
@@ -1696,7 +1701,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
 
 
-class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
+class SecondmentViewSet(RetiredSecondmentWritesMixin, RequirePermissionMixin, viewsets.ViewSet):
     """Прикомандирование: откомандировать, вернуть и прочитать.
 
     GET   /api/operations/secondments/                       — список

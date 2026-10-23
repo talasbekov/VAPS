@@ -1,6 +1,9 @@
+import type { DutyInterval } from '@/entities/duty-assignment';
+
 export interface RosterPlacement {
   source: 'STATUS' | 'DISPATCH'; source_id: number | string; label: string;
   start_at: string | null; end_at: string | null; record_id: string | null;
+  intervals?: DutyInterval[]; time_zone?: string;
 }
 export interface RosterPerson {
   employee_id: number | string; full_name: string; position_name: string; status_label: string;

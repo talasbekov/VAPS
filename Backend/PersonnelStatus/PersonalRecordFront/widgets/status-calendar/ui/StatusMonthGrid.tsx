@@ -9,9 +9,7 @@
 //
 // Цвет — не единственный носитель смысла: рядом с каждой точкой стоит ЧИСЛО,
 // у ячейки есть подпись для чтения с экрана, а под сеткой — легенда.
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
 import { LoadFailure } from "@/components/load-failure";
 import { STATUS_CALENDAR_GROUPS } from "@/entities/status-calendar";
 import type { StatusCalendarDaySummary } from "@/entities/status-calendar";
@@ -19,7 +17,7 @@ import { useStatusCalendarMonth } from "@/hooks/use-status-calendar";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "Январь",
   "Февраль",
   "Март",
@@ -53,6 +51,8 @@ function leadingBlanks(monthValue: string): number {
 }
 
 interface Props {
+  month: string;
+  search?: string;
   /** Подразделение; не задано — вся область пользователя. */
   divisionId?: string | null;
   /** Выбранный день — им живёт панель занятости (Ш-4). */
@@ -61,13 +61,14 @@ interface Props {
 }
 
 export function StatusMonthGrid({
+  month,
+  search = "",
   divisionId = null,
   selectedDate,
   onSelectDate,
 }: Props) {
-  const [month, setMonth] = useState(() => isoMonth(new Date()));
   const { data, isLoading, isError, refetch, isFetching } =
-    useStatusCalendarMonth({ month, divisionId });
+    useStatusCalendarMonth({ month, divisionId, search });
 
   const today = isoDate(new Date());
   const summaryByDate = useMemo(() => {
@@ -75,12 +76,6 @@ export function StatusMonthGrid({
     (data?.summary ?? []).forEach((row) => map.set(row.date, row));
     return map;
   }, [data?.summary]);
-
-  const shiftMonth = (step: number) => {
-    const cursor = new Date(`${month}-01T00:00:00`);
-    cursor.setMonth(cursor.getMonth() + step);
-    setMonth(isoMonth(cursor));
-  };
 
   const [year, monthIndex] = month.split("-");
   const title = `${MONTH_NAMES[Number(monthIndex) - 1]} ${year}`;
@@ -96,39 +91,9 @@ export function StatusMonthGrid({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Предыдущий месяц"
-            onClick={() => shiftMonth(-1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="min-w-[10rem] text-center text-base font-semibold">
-            {title}
-          </div>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Следующий месяц"
-            onClick={() => shiftMonth(1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setMonth(isoMonth(new Date()));
-              onSelectDate(today);
-            }}
-          >
-            Сегодня
-          </Button>
-        </div>
+        <h3 className="font-semibold">{title}</h3>
         <div className="text-sm text-muted-foreground">
           {/* Число названо СВОИМИ словами: шапка экрана считает занятые
               штатные единицы директората (436 на стенде), а сводка календаря —
@@ -194,7 +159,7 @@ export function StatusMonthGrid({
                         Number(monthIndex) - 1
                       ].toLowerCase()}: ${label}`}
                       className={[
-                        "flex h-24 flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors",
+                        "flex h-24 min-w-0 flex-col items-start gap-1 rounded-md border p-1 text-left transition-colors sm:p-2",
                         "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         isSelected ? "border-primary ring-2 ring-primary" : "border-border",
                       ].join(" ")}

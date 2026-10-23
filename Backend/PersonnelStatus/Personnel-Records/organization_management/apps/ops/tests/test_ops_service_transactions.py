@@ -69,7 +69,7 @@ APPS = pathlib.Path(__file__).resolve().parents[2]
 #: Разделы, чьи сервисы читаются. Не весь проект: у моделей, миграций и
 #: сериализаторов замков нет, а обход всего дерева стоил бы секунд на каждом
 #: прогоне ради тех же файлов.
-SERVICE_PACKAGES = ("ops", "operations", "statuses", "employees", "dictionaries", "staff_unit", "secondments")
+SERVICE_PACKAGES = ("ops", "operations", "statuses", "employees", "dictionaries", "staff_unit", "secondments", "core")
 
 #: Как в коде берут построчный замок. `pg_advisory_xact_lock` — второй способ
 #: (`operations/locks.py`), и он тоже живёт ровно до конца транзакции.
@@ -358,6 +358,15 @@ def test_no_lock_lives_outside_the_packages_the_guard_reads():
         f"{sorted(owners - set(SERVICE_PACKAGES))}. Допишите их в "
         "SERVICE_PACKAGES — иначе проверка молча их пропускает."
     )
+
+
+def test_the_guard_scans_the_real_core_service_profile_lock():
+    """The personnel profile lock is covered, including its atomic block."""
+    functions, _helpers = _scan()
+    key = (APPS / "core" / "api" / "employee_service_profile.py", "employee_service_profile")
+    assert key in functions, "core personnel profile is outside transaction coverage"
+    assert functions[key]["locks_directly"]
+    assert not functions[key]["naked_locks"]
 
 
 def test_no_function_carries_the_atomic_decorator_twice():

@@ -27,7 +27,6 @@ import {
 import {
   Users,
   Search,
-  Download,
   RefreshCw,
   Building2,
   Calendar,
@@ -764,82 +763,6 @@ function EmployeesScreen() {
   }, [opsTabOpen, opsReady, pageParam, opsPage, setFilter]);
   const handleOpsPageChange = (next: number) => setFilter("page", String(next), "1");
 
-  // Выгружается ВЕСЬ ОТБОР, а не показанная страница (Plane №228). Экран
-  // теперь листает по пятьдесят строк, и файл «сотрудники.csv» с полусотней
-  // человек из пяти тысяч был бы обманом: кнопка обещает выгрузку отбора.
-  //
-  // Поэтому здесь ОТДЕЛЬНЫЙ запрос — тот же отбор, но без страниц: ручка без
-  // `page` отдаёт всё, что отвечает условиям. Он делается по нажатию, а не при
-  // открытии экрана, и в этом вся разница: 2,7 МБ за файл, который человек
-  // попросил, против 2,7 МБ за каждое открытие реестра.
-  //
-  // ИИН уходит в файл ХВОСТОМ: полных двенадцати цифр во фронте нет.
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const exportRows = opsTabOpen ? opsEmployees : filteredEmployees;
-  const exportAvailable = canSeeAll && canReadStatuses && exportRows.length > 0 &&
-    (opsTabOpen ? opsReady : !loading && !refreshing && !queryError);
-  const exportCsv = useCallback(async () => {
-    if (exporting || !exportAvailable) return;
-    setExportError(null);
-    setExporting(true);
-    let selection: Employee[] = [];
-    try {
-      const whole = await apiClient.getStaffUnitsByDirectorate({
-        search: searchQuery || undefined,
-        divisionId: departmentId,
-        status: opsTabOpen || statusFilter === "all" ? undefined : statusFilter,
-      });
-      selection = toEmployees(whole.staff_units, naming).filter(visible);
-      if (activeTab === "assigned") selection = selection.filter(employee => assignedIds.has(employee.id)).map(withOpsStatus);
-      else if (activeTab === "in-service") selection = selection.filter(employee => inServiceIds.has(employee.id)).map(withOpsStatus);
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : "Не удалось получить данные для экспорта.");
-      return;
-    } finally {
-      setExporting(false);
-    }
-    const head = [
-      "№",
-      "ФИО",
-      "Звание",
-      "ИИН",
-      "Должность",
-      "Отдел",
-      "Статус",
-      "Статус с",
-      "Дата найма",
-      "Табельный номер",
-    ];
-    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    const rows = selection.map((employee) =>
-      [
-        String(employee.number),
-        employee.name,
-        employee.rank,
-        employee.iinMasked,
-        employee.position,
-        employee.department,
-        employee.status,
-        formatIsoDate(employee.statusSince, ""),
-        formatIsoDate(employee.hireDate, ""),
-        employee.personnelNumber,
-      ]
-        .map(cell)
-        .join(";")
-    );
-    // BOM — иначе Excel читает кириллицу как мусор.
-    const csv = `﻿${[head.map(cell).join(";"), ...rows].join("\r\n")}`;
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" })
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "сотрудники.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-  }, [exporting, exportAvailable, searchQuery, departmentId, statusFilter, naming, visible, activeTab, opsTabOpen, assignedIds, inServiceIds, withOpsStatus]);
-
   const fullListFailure = fullDirectorate.isError && (
     <div role="alert" className="space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
       <p className="font-medium">Не удалось загрузить состав для выбранного отбора.</p>
@@ -1105,37 +1028,6 @@ function EmployeesScreen() {
               </>}
             </TabsList>
 
-            {/* CSV получает полный серверный отбор по явному нажатию. */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Выгрузка — ТОГО ОТБОРА, что показан в реестре. На вкладке
-                  «Заявки» она выгрузила бы список людей, которого человек в
-                  этот момент не видит. */}
-              {activeTab !== "requests" &&
-                activeTab !== "collections" &&
-                !profileOpen &&
-                canSeeAll && canReadStatuses && (
-                  <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportCsv}
-                    disabled={!exportAvailable || exporting}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {exporting ? "Собираем файл…" : "Экспорт CSV"}
-                  </Button>
-                  {exportError && (
-                    <div role="alert" className="basis-full space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
-                      <p className="font-medium">Не удалось выгрузить весь отбор. Файл не создан.</p>
-                      <p className="break-words text-muted-foreground">{exportError}</p>
-                      <Button type="button" variant="outline" size="sm" disabled={!exportAvailable || exporting} onClick={exportCsv}>
-                        {exporting ? "Собираем файл…" : "Повторить экспорт"}
-                      </Button>
-                    </div>
-                  )}
-                  </>
-                )}
-            </div>
           </div>
 
           {/* Отбор и оговорка про рейтинг — ПРО СПИСОК ЛЮДЕЙ. На вкладке

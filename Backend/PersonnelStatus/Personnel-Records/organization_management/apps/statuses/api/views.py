@@ -2,11 +2,14 @@
 API Views для управления статусами сотрудников
 """
 from datetime import date
+from pathlib import PurePosixPath
+from django.http import FileResponse
+from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError as APIValidationError
+from rest_framework.exceptions import NotFound, ValidationError as APIValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -47,6 +50,11 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.selectors import StaffUnitSelector
 from organization_management.apps.operations.services import PermissionService
 from organization_management.apps.statuses.duty_assignments import DUTY_CODES, identifier
+from organization_management.apps.statuses.duty_intervals import placement_for_roster
+from organization_management.apps.statuses.retirement import (
+    is_retired_secondment_type, refuse_retired_secondment_type,
+    refuse_retired_secondment_amendment,
+)
 
 _READ_STATUS_PERMISSION = "status.view"
 _WRITE_STATUS_PERMISSION = "status.manage"
@@ -100,7 +108,7 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     READ_ACTIONS = frozenset(
         {
             "list", "retrieve", "history", "planned", "duty_assignments",
-            "division_headcount", "absence_statistics",
+            "division_headcount", "absence_statistics", "document_content",
         }
     )
     # Plane №953: факт входа не является правом читать кадровые статусы.
@@ -309,6 +317,16 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
                 filters[key] = value
         if not filters:
             raise APIValidationError({"object_id": ["Укажите объект или сотрудника."]})
+        from organization_management.apps.statuses.department_duty_assignments import department_scope, department_assignments
+        from organization_management.apps.core.api.employee_service_profile import attach_service_profiles
+        department = department_scope(request.query_params)
+        if department is not None:
+            if "object_id" not in filters:
+                raise APIValidationError({"object_id": ["Для наряда департамента укажите объект."]})
+            require_permission(request, "object.view")
+            payload = department_assignments(self.get_queryset(), department, on_date, filters)
+            payload["results"] = attach_service_profiles(request, payload["results"])
+            return Response(payload)
         # Personnel readers may inspect their own employee's saved placements
         # without access to the object registry or its full roster. Both legacy
         # and dispatch selectors retain the status.view employee scope.
@@ -342,7 +360,7 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
                 "rank_name": employee.rank.name if employee.rank else "",
                 "position_name": unit.position.name if unit and unit.position else "",
                 "department_name": departments.get(division.pk, "") if division else "",
-                "placement": row.duty_assignment,
+                "placement": placement_for_roster(row.duty_assignment, row.start_date, row.actual_end_date or row.end_date),
                 "start_date": row.start_date.isoformat(),
                 "end_date": (row.actual_end_date or row.end_date).isoformat(),
                 "assigned_at": row.created_at.isoformat(),
@@ -356,7 +374,7 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         elif "object_id" in filters:
             from organization_management.apps.ops.duty_dispatch import object_roster
             results.extend(object_roster(filters["object_id"], on_date, actor=resolve_actor_id(request)))
-        return Response({"results": results})
+        return Response({"results": attach_service_profiles(request, results)})
 
     def update(self, request, *args, **kwargs):
         """
@@ -368,6 +386,10 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         """
         instance = self.get_object()
         self._assert_target_employee_in_scope(request)
+
+        if is_retired_secondment_type(instance.status_type):
+            refuse_retired_secondment_amendment(instance, request.data)
+            return super().update(request, *args, **kwargs)
 
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:
@@ -408,6 +430,10 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         self._assert_target_employee_in_scope(request)
 
+        if is_retired_secondment_type(instance.status_type):
+            kwargs['partial'] = True
+            return self.update(request, *args, **kwargs)
+
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:
             return Response(
@@ -447,6 +473,7 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         - Активные, завершенные и отмененные статусы удалить нельзя
         """
         instance = self.get_object()
+        refuse_retired_secondment_type(instance.status_type)
 
         if instance.state != EmployeeStatus.StatusState.PLANNED:
             return Response(
@@ -475,6 +502,9 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
         status_obj = self.get_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        refuse_retired_secondment_amendment(
+            status_obj, {'end_date': serializer.validated_data['new_end_date']},
+        )
 
         try:
             updated_status = self.service.extend_status(
@@ -564,6 +594,27 @@ class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
         except ValidationError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path=r'documents/(?P<document_id>[0-9]+)/content', url_name='document-content')
+    def document_content(self, request, pk=None, document_id=None):
+        """Existing stored bytes inherit the parent status's read permission and scope."""
+        status_obj = self.get_object()
+        document = get_object_or_404(status_obj.documents, pk=document_id)
+        name = document.file.name or ''
+        stored_path = PurePosixPath(name)
+        # The URL accepts IDs only. Reject invalid historical storage names too,
+        # so a malformed DB value cannot turn this route into a general file read.
+        if (not name or '\\' in name or stored_path.is_absolute()
+                or '..' in stored_path.parts or not name.startswith('status_documents/')):
+            raise NotFound('Файл документа не найден')
+        try:
+            stream = document.file.open('rb')
+        except (FileNotFoundError, IsADirectoryError):
+            raise NotFound('Файл документа не найден')
+        response = FileResponse(stream, as_attachment=True, filename=stored_path.name)
+        response['Cache-Control'] = 'private, no-store'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
 
     @extend_schema(
         parameters=[

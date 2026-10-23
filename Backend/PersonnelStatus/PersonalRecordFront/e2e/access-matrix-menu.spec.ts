@@ -132,10 +132,10 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
     await expect(page.getByRole('tab', { name: 'Массовое обновление' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Импорт' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Прикомандировать' })).toHaveCount(0)
-    // Выбор строк живёт только ради массовых действий — без них он лишний.
+    // Сотруднику без права изменения выбор строк для ответа на запрос сил закрыт.
     await expect(page.getByRole('checkbox')).toHaveCount(0)
-    // Чтение остаётся: «Экспорт» — не правка.
-    await expect(page.getByRole('button', { name: 'Экспорт' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Экспорт', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: 'Календарь статусов', exact: true })).toBeVisible()
   })
 
   test('acc_employee: сервер отбивает запись статуса, а не только экран (Plane №938)', async () => {
@@ -164,15 +164,17 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
     expect(allowed.status, 'начальник управления: правку не закрыли всем разом').toBe(400)
   })
 
-  test('acc_dir_head: те же элементы на месте — правку сняли не у всех', async ({ page }) => {
+  test('acc_dir_head: таблица и календарь доступны без снятых массовых действий и командировок', async ({ page }) => {
     await signIn(page, 'acc_dir_head')
     await page.goto(`${APP}/statuses`)
 
     await expect(page.getByRole('heading', { name: 'Управление статусами' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Массовое обновление' })).toBeVisible()
-    // The inactive import button had no handler and was removed in 48aab6d9;
-    // docs/api-gaps.md records that the import UI has no backing endpoint.
-    // Verify a functioning control still reserved for an editable role.
-    await expect(page.getByRole('button', { name: 'Прикомандировать', exact: true })).toBeVisible()
+    await expect(page.getByRole('table')).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Таблица сотрудников', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Массовое обновление', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Прикомандировать', exact: true })).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Календарь статусов', exact: true }).click()
+    await expect(page.getByLabel('Календарь занятости сотрудников', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Месяц календаря', { exact: true })).toBeEnabled()
   })
 })

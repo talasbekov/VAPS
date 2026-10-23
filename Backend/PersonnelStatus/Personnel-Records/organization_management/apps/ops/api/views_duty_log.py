@@ -35,6 +35,7 @@ class ChoiceQuerySerializer(serializers.Serializer):
 
 
 class RegisterQuerySerializer(ChoiceQuerySerializer):
+    preset = serializers.ChoiceField(choices=("TODAY",), required=False)
     kind = serializers.CharField(max_length=100, allow_blank=True, default="")
     state = serializers.ChoiceField(choices=tuple(duty_register.STATE_LABELS) + ("",), default="")
     source = serializers.ChoiceField(choices=tuple(duty_register.SOURCE_LABELS) + ("",), default="")
@@ -51,6 +52,10 @@ class RegisterQuerySerializer(ChoiceQuerySerializer):
     def validate(self, attrs):
         if set(self.initial_data) - set(self.fields):
             raise serializers.ValidationError("Неизвестный фильтр журнала.")
+        if attrs.get("preset") == "TODAY":
+            if "from" in attrs or "to" in attrs:
+                raise serializers.ValidationError("Для сегодняшнего дня не задавайте отдельные границы периода.")
+            attrs["from"] = attrs["to"] = Clock.today_local()
         if ("from" in attrs) != ("to" in attrs):
             raise serializers.ValidationError("Укажите обе границы периода.")
         attrs.setdefault("to", Clock.today_local())

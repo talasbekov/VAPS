@@ -4,7 +4,11 @@ const fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
 const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../../hooks/use-all-security-events.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 function query(get,enabled=true){
  const module={exports:{}};
- const deps={'@tanstack/react-query':{useQuery:options=>options},'@/lib/ops-api':{opsApiClient:{get}},'@/entities/security-event':{SECURITY_EVENTS_PATH:'/api/ops/security-events/'}};
+ const deps={'@/hooks/use-ops-protected-read':{
+   useOpsReadAccess:()=>({allowed:true,scope:'test'}),
+   useOpsProtectedRead:(prefix,parts,access,read,options)=>({queryKey:[...prefix,access.scope,...parts],
+     enabled:access.allowed&&options.enabled!==false,queryFn:({signal})=>read(signal)}),
+ },'@/lib/ops-api':{opsApiClient:{get}},'@/entities/security-event':{SECURITY_EVENTS_PATH:'/api/ops/security-events/'}};
  new Function('require','module','exports',code)(name=>{assert(name in deps);return deps[name]},module,module.exports);
  return module.exports.useAllSecurityEvents({enabled});
 }
@@ -25,7 +29,7 @@ test('a repeating page cannot leave an infinite request loop',async()=>{
 });
 test('disabled catalog queries preserve the common invalidation prefix',()=>{
  const options=query(()=>{throw Error('must not fetch')},false);
- assert.equal(options.enabled,false);assert.deepEqual(options.queryKey,['ops-security-events','all-person-links']);
+ assert.equal(options.enabled,false);assert.deepEqual(options.queryKey.slice(0,2),['ops-security-events','all-person-links']);
 });
 test('cancellation stops before requesting another page',async()=>{
  const controller=new AbortController();let reads=0;

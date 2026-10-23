@@ -156,6 +156,64 @@ test.describe('server duty placement', () => {
     } finally { release(); }
   });
 
+  test('a current replacement copies remaining exits and clips an overnight exit with an explicit history notice', async ({ page }) => {
+    await setup(page);
+    await page.route('**/api/statuses/statuses/duty-assignments/**', route => route.fulfill({ json: { results: [{ ...assignment,
+      placement: { ...assignment.placement, time_zone: 'Asia/Almaty', intervals: [
+        { start_at: '2026-10-08T08:00:00+05:00', end_at: '2026-10-08T12:00:00+05:00' },
+        { start_at: '2026-10-08T22:00:00+05:00', end_at: '2026-10-09T04:00:00+05:00' },
+        { start_at: '2026-10-09T08:00:00+05:00', end_at: '2026-10-09T12:00:00+05:00' },
+      ] },
+    }] } }));
+    const writes: Record<string, unknown>[] = [];
+    await page.route(url => url.pathname === '/api/statuses/statuses/', route => {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id: 502 } });
+    });
+    const dialog = await openStatus(page);
+    await expect(dialog.getByLabel(/^Начало выхода/)).toHaveCount(2);
+    await expect(dialog.getByLabel(/^Начало выхода/).nth(0)).toHaveValue(/^2026-10-09T00:00(?::00)?$/);
+    await expect(dialog).toContainText('Для нового назначения оставлены выходы с 2026-10-09; прежний график сохранён в истории.');
+    await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({ start_date: '2026-10-09', duty_assignment: { intervals: [
+      { start_at: '2026-10-09T00:00:00+05:00', end_at: '2026-10-09T04:00:00+05:00' },
+      { start_at: '2026-10-09T08:00:00+05:00', end_at: '2026-10-09T12:00:00+05:00' },
+    ] } });
+  });
+
+  test('a delayed old placement never supplies hours for a newly selected post', async ({ page }) => {
+    await setup(page);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/statuses/statuses/duty-assignments/**', async route => {
+      await gate;
+      await route.fulfill({ json: { results: [{ ...assignment, placement: { ...assignment.placement,
+        time_zone: 'Asia/Almaty', intervals: [{ start_at: '2026-10-09T08:00:00+05:00', end_at: '2026-10-09T12:00:00+05:00' }],
+      } }] } });
+    });
+    const writes: Record<string, unknown>[] = [];
+    await page.route(url => url.pathname === '/api/statuses/statuses/', route => {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id: 502 } });
+    });
+    try {
+      const dialog = await openStatus(page);
+      await dialog.getByRole('combobox', { name: /Тип дежурства/ }).click();
+      await page.getByRole('option', { name: 'Постовое', exact: true }).click();
+      await dialog.getByRole('combobox', { name: /^Объект/ }).click();
+      await page.getByRole('option', { name: `${object.name} (${object.code})`, exact: true }).click();
+      await dialog.getByRole('combobox', { name: /^Пост/ }).click();
+      await page.getByRole('option', { name: 'Пост черновика (Сектор проверки)', exact: true }).click();
+      release();
+      await expect(dialog.getByText('Загружаем текущее назначение и выходы…', { exact: true })).toHaveCount(0);
+      await expect(dialog.getByLabel(/^Начало выхода/)).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+      await expect.poll(() => writes.length).toBe(1);
+      expect(writes[0].duty_assignment).toEqual({ kind: 'POST', object_id: object.id, post_id: 'post-2' });
+    } finally { release(); }
+  });
+
   test('placement and status are one atomic request and pending save cannot be edited or dismissed', async ({ page }) => {
     await setup(page);
     await page.route('**/api/statuses/statuses/duty-assignments/**', route => route.fulfill({ json: { results: [] } }));

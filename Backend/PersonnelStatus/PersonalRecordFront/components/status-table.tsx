@@ -46,7 +46,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Search,
-  Download,
   MoreHorizontal,
   Edit,
   Calendar,
@@ -54,14 +53,12 @@ import {
   CheckCircle,
   Clock,
   Eye,
-  ArrowRightLeft,
   UserX,
 } from "lucide-react";
 import { formatIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
 import { canManageStatusInDivision } from "@/entities/status/access";
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
-import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import {
   participationLabelKey,
@@ -77,7 +74,7 @@ import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
 import { LoadFailure } from "@/components/load-failure";
 import { EmployeeDutyPlacementDialog } from "@/components/employee-duty-placement-dialog";
-import { saveFile } from "@/features/ops-reports/report-shared";
+import styles from "./status-table.module.css";
 
 interface Employee {
   divisionId: number | null;
@@ -345,9 +342,6 @@ export function StatusTable({
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [selectedEmployeeForProfile, setSelectedEmployeeForProfile] =
     useState<EmployeeType | null>(null);
-  const [secondDialogOpen, setSecondDialogOpen] = useState(false);
-  const [selectedEmployeeForSecond, setSelectedEmployeeForSecond] =
-    useState<Employee | null>(null);
 
   // ── Страница вместо всего состава (Plane №231) ──────────────────────
   //
@@ -582,13 +576,6 @@ export function StatusTable({
     setScheduleDialogOpen(true);
   };
 
-  // Функция для открытия диалога откомандирования
-  const handleSecondEmployee = (employee: Employee) => {
-    if (!canEditEmployee(employee)) return;
-    setSelectedEmployeeForSecond(employee);
-    setSecondDialogOpen(true);
-  };
-
   // Функция для открытия профиля сотрудника
   const handleViewProfile = (employee: Employee) => {
     if (!data || !data.staff_units || !Array.isArray(data.staff_units)) return;
@@ -761,35 +748,6 @@ export function StatusTable({
     return [...groups.values()];
   }, [filteredEmployees]);
 
-  // Экспортирует ровно текущую серверную страницу, без обхода всего состава
-  // и без объединения чужих/прежних фильтров из query cache (Plane №1157).
-  const exportUnavailable =
-    loading || queryFetching || isPlaceholderData || queryFailed || filteredEmployees.length === 0;
-  const exportPage = () => {
-    if (exportUnavailable) return;
-    const cell = (raw: string) => {
-      // Значения из ФИО/справочников остаются текстом даже при открытии в Excel.
-      const value = /^[\s]*[=+@-]/.test(raw) || /^[\t\r\n]/.test(raw) ? `'${raw}` : raw;
-      return `"${value.replace(/"/g, '""')}"`;
-    };
-    const rows = [
-      ["№", "ФИО", "Отдел", "Должность", "Статус (кадровый)", "Обновлён", "Следующий"],
-      ...filteredEmployees.map((employee) => [
-        String(employee.number),
-        employee.name,
-        employee.department,
-        employee.position,
-        employee.status,
-        formatIsoDate(employee.startDate, "Не обновлено"),
-        formatIsoDate(employee.endDate, "Не указано"),
-      ]),
-    ];
-    saveFile(
-      `кадровые-статусы-страница-${data?.page ?? page}.csv`,
-      `\uFEFF${rows.map((row) => row.map(cell).join(";")).join("\r\n")}`
-    );
-  };
-
   const selectableIds = filteredEmployees.filter(canEditEmployee).map(employee => employee.id);
   const selectedIds = new Set(selectedEmployees);
   const selectedOnPage = selectableIds.filter(id => selectedIds.has(id)).length;
@@ -845,15 +803,15 @@ export function StatusTable({
           </div>
         </div>
         {canEdit && <p className="text-xs text-muted-foreground">Флажок в заголовке выбирает доступных сотрудников этой страницы. Выбор сохраняется при поиске и переходе по страницам.</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportPage} disabled={exportUnavailable}>
-            <Download className="mr-2 h-4 w-4" aria-hidden="true" />
-            Экспорт страницы CSV
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Кадровые статусы только показанных строк с учётом фильтров.
-          </p>
-        </div>
+        {canEdit && <label className="flex min-h-11 items-center gap-2 text-sm md:hidden">
+          <Checkbox
+            aria-label="Выбрать доступных сотрудников страницы"
+            disabled={selectionUnavailable || selectableIds.length === 0}
+            checked={selectedOnPage === 0 ? false : selectedOnPage === selectableIds.length ? true : "indeterminate"}
+            onCheckedChange={checked => handleSelectAll(checked === true)}
+          />
+          Выбрать на этой странице
+        </label>}
       </CardHeader>
       <CardContent>
         {/* Filters */}
@@ -896,7 +854,7 @@ export function StatusTable({
 
         {/* Table */}
         <div className="rounded-md border">
-          <Table>
+          <Table className={styles.roster} aria-label="Сотрудники и статусы" data-can-select={canEdit}>
             <TableHeader>
               <TableRow>
                 {canEdit && (
@@ -963,7 +921,7 @@ export function StatusTable({
                   }`}
                 >
                   {canEdit && (
-                    <TableCell>
+                    <TableCell data-status-cell="select">
                       <Checkbox
                         aria-label={isVacancyRow(employee) ? "Выбор вакансии недоступен" : `Выбрать сотрудника: ${employee.name}`}
                         disabled={selectionUnavailable || !canEditEmployee(employee)}
@@ -974,22 +932,30 @@ export function StatusTable({
                       />
                     </TableCell>
                   )}
-                  <TableCell className="font-medium">
+                  <TableCell className="font-medium" data-status-cell="number">
                     {employee.number}
                   </TableCell>
                   {/* Подстрока телефона снята: ручка штатки телефон не
                       отдаёт вовсе (`employee.phone` — всегда пустая строка),
                       и пустая строка держала лишнюю строку высоты в КАЖДОЙ
                       строке таблицы без единого символа текста. */}
-                  <TableCell>
+                  <TableCell data-status-cell="name">
                     <div className="font-medium">{employee.name}</div>
+                    <details className="mt-1 text-xs text-muted-foreground md:hidden">
+                      <summary className="min-h-9 cursor-pointer py-2">Должность и даты</summary>
+                      <dl className="space-y-2 pb-2">
+                        <div><dt className="font-medium">Должность</dt><dd>{employee.position}</dd></div>
+                        <div><dt className="font-medium">Обновлён</dt><dd>{formatIsoDate(employee.startDate, "Не обновлено")}</dd></div>
+                        <div><dt className="font-medium">Следующий</dt><dd className={isOverdue(employee.endDate) ? "text-destructive-ink font-medium" : ""}>{formatIsoDate(employee.endDate, "Не указано")}{isOverdue(employee.endDate) && <AlertCircle className="ml-1 inline h-4 w-4" aria-label="Срок прошёл" />}</dd></div>
+                      </dl>
+                    </details>
                   </TableCell>
                   {/* Отдел и должность — с ПРЕДЕЛОМ ширины и полным текстом
                       в подсказке (Plane №331). Они были вторыми и первыми по
                       ширине (210 и 295 px из 1367): длинные названия вроде
                       «Заместитель начальника управления» растягивали колонку
                       на всех, а читают её по началу строки. */}
-                  <TableCell className="text-sm">
+                  <TableCell className="text-sm" data-status-cell="directorate">
                     <span
                       className="block max-w-[130px] truncate"
                       title={employee.directorateName}
@@ -997,7 +963,7 @@ export function StatusTable({
                       {employee.directorateName}
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="text-sm" data-status-cell="position">
                     <span
                       className="block max-w-[150px] truncate"
                       title={employee.position}
@@ -1018,7 +984,8 @@ export function StatusTable({
                       известной ширины), а подпись под ссылкой — фраза на
                       два-три слова короче своей ширины, и nowrap растянул бы
                       её в одну строку через всю таблицу вместо переноса. */}
-                  <TableCell className="whitespace-normal">
+                  <TableCell className="whitespace-normal" data-status-cell="status">
+                    <span className="mb-1 block text-xs text-muted-foreground md:hidden">Статус (кадровый)</span>
                     {!canEditEmployee(employee) ? (
                       getStatusBadge(employee.status, employee.statusCode)
                     ) : (
@@ -1043,7 +1010,8 @@ export function StatusTable({
                       самое, что «данные ещё едут»: пока идёт запрос, колонка
                       не вправе утверждать, что человек ни на что не привлечён
                       (`sectionStatuses.loading` различает эти два случая). */}
-                  <TableCell className="whitespace-normal">
+                  <TableCell className="whitespace-normal" data-status-cell="ops">
+                    <span className="mb-1 block text-xs text-muted-foreground md:hidden">По разделу ОМ</span>
                     {isVacancyRow(employee) ? (
                       <span className="text-muted-foreground text-xs">—</span>
                     ) : (
@@ -1060,10 +1028,10 @@ export function StatusTable({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="text-sm tabular-nums">
+                  <TableCell className="text-sm tabular-nums" data-status-cell="updated">
                     {formatIsoDate(employee.startDate, "Не обновлено")}
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="text-sm" data-status-cell="next">
                     <div
                       className={
                         isOverdue(employee.endDate)
@@ -1077,12 +1045,12 @@ export function StatusTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-status-cell="actions">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
-                          className="h-8 w-8 p-0"
+                          className="h-11 w-11 p-0 md:h-8 md:w-8"
                           // Имя с фамилией: в таблице таких кнопок столько же,
                           // сколько строк, и «Действия» без адресата не
                           // отличает одну от другой.
@@ -1147,12 +1115,6 @@ export function StatusTable({
                             >
                               <Calendar className="mr-2 h-4 w-4" />
                               Запланированные статусы
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleSecondEmployee(employee)}
-                            >
-                              <ArrowRightLeft className="mr-2 h-4 w-4" />
-                              Откомандировать сотрудника
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -1246,15 +1208,6 @@ export function StatusTable({
           setScheduleDialogOpen(false);
           handleEditStatus(employee, "schedule");
         }}
-      />
-
-      {/* Диалог откомандирования сотрудника */}
-      <SecondEmployeeDialog
-        open={secondDialogOpen && selectedEmployeeForSecond !== null && canEditEmployee(selectedEmployeeForSecond)}
-        onOpenChange={setSecondDialogOpen}
-        employeeId={selectedEmployeeForSecond?.id || null}
-        employeeName={selectedEmployeeForSecond?.name}
-        onSuccess={handleEditSuccess}
       />
 
       {/* Диалог просмотра профиля */}

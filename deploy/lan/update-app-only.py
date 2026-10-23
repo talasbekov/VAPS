@@ -30,6 +30,9 @@ with connection.cursor() as read_only_cursor:
     read_only_cursor.execute('SHOW transaction_read_only')
     assert read_only_cursor.fetchone()[0] == 'on', 'Read-only database session required'
 '''
+PROXY_FILES = ('find /etc/nginx /docker-entrypoint.d /docker-entrypoint.sh '
+               '/usr/local/bin/contour-proxy-entrypoint /usr/local/lib/nginx-error-filter.awk '
+               '-type f -exec sha256sum {} \\;')
 FULL_FINGERPRINT = base.FINGERPRINT.replace(
     "skip={'django_migrations','ops_permissions','ops_role_permissions'}", 'skip=set()'
 ).replace('if col in added.get(table,set()) or [table,col] in extra_ignored:', 'if False:').replace(
@@ -64,9 +67,25 @@ def locate_stack():
 class ApplicationUpdate(base.Update):
     def load(self):
         required = {'application-images.tar', 'update.py', 'update-app-only.py', 'update-offline.py'}
-        if not required.issubset(self.manifest.get('files', {})) or set(self.manifest.get('images', {})) != {'backend', 'frontend'}:
+        if not required.issubset(self.manifest.get('files', {})) or set(self.manifest.get('images', {})) not in (
+                {'backend', 'frontend'}, {'backend', 'frontend', 'proxy'}):
             raise RuntimeError('Incomplete release manifest; use the complete new update package')
         super().load()
+        if 'proxy' in self.manifest['images']:
+            self.verify_proxy_configuration()
+
+    def verify_proxy_configuration(self):
+        """Hash configured nginx/startup files without starting nginx or publishing ports."""
+        base.validate_proxy_layout(self.services['proxy'])
+        expected = base.run(['docker', 'run', '--rm', '--pull', 'never', '--network', 'none',
+            '--read-only', '--entrypoint', 'sh', self.new_proxy, '-ec', PROXY_FILES])
+        actual = base.run(self.base + ['run', '--rm', '--no-deps', '-T', '--entrypoint', 'sh',
+            'proxy', '-ec', PROXY_FILES], env={**os.environ, 'PROXY_IMAGE': self.new_proxy})
+        expected, actual = sorted(expected.splitlines()), sorted(actual.splitlines())
+        if not expected or expected != actual:
+            raise RuntimeError('Configured proxy configuration differs from the reviewed image; no services stopped')
+        self.proxy_configuration_sha256 = base.hashlib.sha256('\n'.join(expected).encode('utf-8')).hexdigest()
+        print('Reviewed proxy configuration verified: ' + self.proxy_configuration_sha256, flush=True)
 
     def check_space(self, folder):
         """Conservative capacity check before downtime or the temporary restore."""
@@ -150,10 +169,13 @@ class ApplicationUpdate(base.Update):
         built = base.inspect(tag)
         return validate_wrapper(built)
 
-    def set_images(self, backend, frontend):
+    def set_images(self, backend, frontend, proxy=None):
         path = self.stack / 'images.env'
         lines = path.read_text(encoding='utf-8-sig').splitlines()
-        for key, value in [('BACKEND_IMAGE', backend), ('FRONTEND_IMAGE', frontend)]:
+        replacements = [('BACKEND_IMAGE', backend), ('FRONTEND_IMAGE', frontend)]
+        if proxy is not None:
+            replacements.append(('PROXY_IMAGE', proxy))
+        for key, value in replacements:
             lines = [line for line in lines if line.split('=', 1)[0].strip() != key]
             lines.append(key + '=' + value)
         temporary = self.stack / 'images.env.app-only-tmp'
@@ -168,7 +190,8 @@ class ApplicationUpdate(base.Update):
     def start_writers(self):
         base.run(self.base + ['up', '-d', '--no-deps', '--pull', 'never', '--no-build',
             '--wait', '--wait-timeout', '180', 'worker', *self.schedulers], capture=False)
-        base.run(self.base + ['start', 'proxy'])
+        base.run(self.base + ['up', '-d', '--no-deps', '--pull', 'never', '--no-build',
+            '--wait', '--wait-timeout', '180', 'proxy'], capture=False)
 
     def apply_without_database_changes(self, folder):
         self.recovery_required = False
@@ -197,7 +220,7 @@ class ApplicationUpdate(base.Update):
             if restored != before:
                 database_uncertain = True
                 raise RuntimeError('Restored backup differs from paused database; inspect external writers')
-            self.set_images(new_backend, self.new_frontend)
+            self.set_images(new_backend, self.new_frontend, self.new_proxy)
             self.start_application()
             after = self.readonly(FULL_FINGERPRINT)
             base.save_json(folder / 'database-after.json', after)
@@ -214,6 +237,8 @@ class ApplicationUpdate(base.Update):
                 'all_database_tables_schema_and_sequences_match': True,
                 'database_container_unchanged': True, 'database_volume': self.volume,
                 'backend_image': new_backend, 'frontend_image': self.new_frontend,
+                'proxy_image': self.new_proxy,
+                'proxy_configuration_sha256': self.proxy_configuration_sha256,
                 'verified_before_resuming_background_jobs': True,
                 'backup_restored_and_compared': True,
             })
@@ -231,7 +256,7 @@ class ApplicationUpdate(base.Update):
                         raise RuntimeError('Database identity changed; application remains stopped')
                     print('Restoring previous application images without database migration/restore.', flush=True)
                     (self.stack / 'images.env').write_bytes(old_images)
-                    self.set_images(rollback_backend, old_frontend)
+                    self.set_images(rollback_backend, old_frontend, self.old_proxy)
                     self.start_application()
                     if before is not None and self.readonly(FULL_FINGERPRINT, image=rollback_backend) != before:
                         raise RuntimeError('Database changed during rollback startup; keep application stopped')
@@ -239,7 +264,8 @@ class ApplicationUpdate(base.Update):
                     self.recovery_required = False
                     if folder.exists():
                         base.save_json(folder / 'ROLLED_BACK.json', {'database_restored': False,
-                            'backend_image': rollback_backend, 'frontend_image': old_frontend})
+                            'backend_image': rollback_backend, 'frontend_image': old_frontend,
+                            'proxy_image': self.old_proxy})
                 finally:
                     if self.recovery_required:
                         stop_confirmed = False

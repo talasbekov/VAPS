@@ -35,6 +35,10 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
     }
 }
+CACHES['auth_throttle'] = {
+    'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    'LOCATION': 'smart-login-development',
+}
 
 # Ограничение частоты смены пароля на СТЕНДЕ — выше боевого (Plane №180).
 #

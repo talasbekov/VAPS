@@ -9,6 +9,7 @@ from organization_management.apps.operations.models_object import OpsSecurityObj
 from organization_management.apps.ops import duty_roster, map_locations, security_events
 from organization_management.apps.ops.api.serializers import _visit_placement as canonical_visit_placement
 from organization_management.apps.statuses.duty_assignments import identifier
+from organization_management.apps.statuses.duty_intervals import scheduled_on_date
 
 
 def _wire_id(value):
@@ -123,6 +124,8 @@ def _duty_headcounts(day):
             for assignment in person["placements"]:
                 place = assignment.get("_placement")
                 if not isinstance(place, dict):
+                    continue
+                if assignment["source"] == "STATUS" and not scheduled_on_date(place, day):
                     continue
                 object_id = identifier(place.get("object_id"))
                 kind = place.get("kind")

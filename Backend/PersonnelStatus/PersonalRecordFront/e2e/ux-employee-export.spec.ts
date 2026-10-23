@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { test, expect, signIn } from './ux-fixture';
 import type { Page } from '@playwright/test';
 
@@ -32,49 +31,21 @@ async function prepare(page: Page, fail = false) {
   await signIn(page);
   await page.goto('/employees/?view=forces&search=Экспорт');
   await expect(page.getByText('Проверка Экспорт1', { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
   return state;
 }
 
-test('a failed full employee export creates no partial file and can be retried without losing filters', async ({ page, businessWrites }) => {
+test('employee filters remain usable on mobile without CSV controls or extra full-list reads', async ({ page, businessWrites }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await prepare(page, true);
-  await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  await expect(page.getByText('Не удалось выгрузить весь отбор. Файл не создан.', { exact: true })).toBeVisible();
-  await expect(page.getByText('Полный отбор временно недоступен', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Экспорт CSV|Повторить экспорт/ })).toHaveCount(0);
   expect(state.downloads).toBe(0);
   expect(state.dialogs).toEqual([]);
   await expect(page.getByRole('textbox', { name: 'Поиск по сотрудникам', exact: true })).toHaveValue('Экспорт');
   expect(new URL(page.url()).searchParams.get('search')).toBe('Экспорт');
-  state.fail = false;
-  const downloadPromise = page.waitForEvent('download');
-  const retry = page.getByRole('button', { name: 'Повторить экспорт', exact: true });
-  await retry.focus();
-  await retry.press('Enter');
-  const download = await downloadPromise;
-  const csv = await readFile((await download.path())!, 'utf8');
-  expect(csv.charCodeAt(0)).toBe(0xfeff);
-  expect(csv.trim().split('\r\n')).toHaveLength(52);
-  expect(csv).toContain('Проверка Экспорт51');
-  expect(state.downloads).toBe(1);
-  expect(state.wholeReads).toHaveLength(2);
-  for (const query of state.wholeReads) expect(new URLSearchParams(query).get('search')).toBe('Экспорт');
-  await expect(page.getByText('Не удалось выгрузить весь отбор. Файл не создан.', { exact: true })).toHaveCount(0);
+  expect(state.wholeReads).toHaveLength(0);
+  await expect(page.getByRole('tabpanel').locator('tr[data-employee-id]')).toHaveCount(50);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-  expect(businessWrites).toEqual([]);
-});
-
-test('a successful employee CSV contains the complete filtered selection rather than the displayed page', async ({ page, businessWrites }) => {
-  const state = await prepare(page);
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  const download = await downloadPromise;
-  const csv = await readFile((await download.path())!, 'utf8');
-  expect(download.suggestedFilename()).toBe('сотрудники.csv');
-  expect(csv.trim().split('\r\n')).toHaveLength(52);
-  expect(csv).toContain('Проверка Экспорт51');
-  expect(state.wholeReads).toHaveLength(1);
-  expect(state.dialogs).toEqual([]);
   expect(businessWrites).toEqual([]);
 });
 
@@ -100,35 +71,16 @@ for (const [tab, caption, expectedNames, statusLabel] of [
   ['assigned', 'Участие в ОМ (2)', ['Проверка Экспорт1', 'Проверка Экспорт2'], 'Участие в ОМ'],
   ['in-service', 'В строю (1)', ['Проверка Экспорт3'], 'В строю'],
 ] as const) {
-  test(`the ${tab} CSV contains only its displayed gathering group and its operational status`, async ({ page, businessWrites }) => {
+  test(`the ${tab} view retains its gathering group and operational status without CSV controls`, async ({ page, businessWrites }) => {
     await prepareGathering(page);
     await page.getByRole('tab', { name: caption, exact: true }).click();
     await expect(page.getByRole('tabpanel').locator('tr[data-employee-id]')).toHaveCount(expectedNames.length);
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-    const csv = await readFile((await (await downloadPromise).path())!, 'utf8');
-    expect(csv.trim().split('\r\n')).toHaveLength(expectedNames.length + 1);
-    for (const name of expectedNames) expect(csv).toContain(name);
-    expect(csv).toContain(statusLabel);
-    expect(csv).toContain('13.10.2026');
-    expect(csv).not.toContain('01.10.2026');
+    for (const name of expectedNames) await expect(page.getByRole('tabpanel').getByText(name, { exact: true })).toBeVisible();
+    await expect(page.getByRole('tabpanel').getByText(statusLabel, { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
     expect(businessWrites).toEqual([]);
   });
 }
-
-test('the in-service CSV leaves the operational start date blank when no operational status exists', async ({ page, businessWrites }) => {
-  await prepareGathering(page, true);
-  await page.getByRole('tab', { name: 'В строю (3)', exact: true }).click();
-  await expect(page.getByRole('tabpanel').locator('tr[data-employee-id]')).toHaveCount(3);
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  const csv = await readFile((await (await downloadPromise).path())!, 'utf8');
-  expect(csv.trim().split('\r\n')).toHaveLength(4);
-  expect(csv).not.toContain('01.10.2026');
-  expect(csv).not.toContain('13.10.2026');
-  expect(csv.match(/;"В строю";"";/g)).toHaveLength(3);
-  expect(businessWrites).toEqual([]);
-});
 
 test('opening a gathering employee profile displays the inclusive last day of its operational status', async ({ page, businessWrites }) => {
   await prepareGathering(page);
@@ -148,10 +100,7 @@ test('a linked personnel status filter cannot remove the operational gathering g
   const panel = page.getByRole('tabpanel');
   await expect(panel.locator('tr[data-employee-id]')).toHaveCount(2);
   await expect(page.getByRole('combobox', { name: 'Фильтр по статусу', exact: true })).toHaveCount(0);
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  const csv = await readFile((await (await downloadPromise).path())!, 'utf8');
-  expect(csv.trim().split('\r\n')).toHaveLength(3);
+  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
   for (const query of state.wholeReads) expect(new URLSearchParams(query).has('status')).toBe(false);
   expect(businessWrites).toEqual([]);
 });
@@ -182,11 +131,11 @@ test('a failed gathering list offers a retry and does not present the failure as
   const panel = page.getByRole('tabpanel');
   await expect(panel.getByText('Не удалось загрузить состав для выбранного отбора.', { exact: true })).toBeVisible();
   await expect(panel.getByText('Ничего не найдено', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
   state.fail = false;
   await panel.getByRole('button', { name: 'Повторить загрузку состава', exact: true }).click();
   await expect(panel.locator('tr[data-employee-id]')).toHaveCount(2);
-  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toHaveCount(0);
   expect(businessWrites).toEqual([]);
 });
 

@@ -28,6 +28,17 @@ async function setup(page: Page, options: { foreign?: boolean; failShifts?: bool
 }
 const marker = (page: Page, value: string) => page.locator('[data-slot="profile-assignments"]').getByText(value, { exact: false }).first();
 const failure = (page: Page) => page.getByRole('alert').filter({ hasText: 'Не удалось загрузить смены дежурств.' });
+async function retryShiftsSuccessfully(page: Page, state: { failure: { shifts: number } }) {
+  // Keep queued automatic retries unsuccessful until the actual retry click.
+  await page.exposeFunction('allowProfileShiftRetry', () => { state.failure.shifts = 0; });
+  const retry = failure(page).getByRole('button', { name: 'Повторить', exact: true });
+  await retry.evaluate(button => {
+    button.addEventListener('click', () => {
+      void (window as unknown as { allowProfileShiftRetry: () => Promise<void> }).allowProfileShiftRetry();
+    }, { capture: true, once: true });
+  });
+  await retry.click();
+}
 
 test('profile filters separate current and upcoming events and duty shifts', async ({ page, businessWrites }) => {
   await setup(page); await page.getByLabel('Период назначений', { exact: true }).selectOption('current');
@@ -61,7 +72,7 @@ for (const width of [1440, 390, 320]) test('assignment filters survive a calenda
 test('duty read failure retries in place with both selected filters', async ({ page, businessWrites }) => {
   const state = await setup(page, { failShifts: true }); await page.getByLabel('Тип назначений', { exact: true }).selectOption('shifts'); await page.getByLabel('Период назначений', { exact: true }).selectOption('upcoming');
   await expect(failure(page)).toBeVisible(); await expect(page.getByText('Дежурств по выбранным условиям нет.', { exact: true })).toBeHidden();
-  state.failure.shifts = 0; await failure(page).getByRole('button', { name: 'Повторить', exact: true }).click();
+  await retryShiftsSuccessfully(page, state);
   await expect(marker(page, 'Дежурство завтра')).toBeVisible(); await expect(page.getByLabel('Тип назначений', { exact: true })).toHaveValue('shifts'); await expect(page.getByLabel('Период назначений', { exact: true })).toHaveValue('upcoming');
   expect(businessWrites).toEqual([]);
 });
@@ -71,7 +82,7 @@ test('denied duty data remains hidden through a transient retry until a successf
   state.failure.shifts = 403; const reads = state.reads.shifts; await page.clock.fastForward(61000); await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')); });
   await expect.poll(() => state.reads.shifts).toBeGreaterThan(reads); await expect(failure(page)).toBeVisible(); await expect(marker(page, 'Дежурство сегодня')).toBeHidden();
   state.failure.shifts = 503; await failure(page).getByRole('button', { name: 'Повторить', exact: true }).click(); await expect(failure(page).getByRole('button', { name: 'Повторить', exact: true })).toBeEnabled(); await expect(marker(page, 'Дежурство сегодня')).toBeHidden();
-  state.failure.shifts = 0; await failure(page).getByRole('button', { name: 'Повторить', exact: true }).click(); await expect(marker(page, 'Дежурство сегодня')).toBeVisible(); expect(businessWrites).toEqual([]);
+  await retryShiftsSuccessfully(page, state); await expect(marker(page, 'Дежурство сегодня')).toBeVisible(); expect(businessWrites).toEqual([]);
 });
 
 test('foreign profile does not request or present the viewers own duty shifts', async ({ page, businessWrites }) => {

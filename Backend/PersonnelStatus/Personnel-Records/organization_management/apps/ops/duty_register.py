@@ -12,8 +12,9 @@ from django.http import StreamingHttpResponse
 
 from organization_management.apps.operations.clock import Clock, _local_tz
 from organization_management.apps.ops.duty_register_query import ROW_COLUMNS, register_cte, snapshot_sql
+from organization_management.apps.ops.duty_read_snapshot import read_snapshot
 
-SOURCE_LABELS = {"LOG": "Журнал", "PLAN": "План дежурств", "DISPATCH": "Расстановка"}
+SOURCE_LABELS = {"LOG": "Журнал", "PLAN": "План дежурств", "DISPATCH": "Расстановка", "STATUS": "Кадровый статус"}
 STATE_LABELS = {"PLANNED": "Запланировано", "ACKNOWLEDGED": "Подтверждено", "ACTIVE": "Начато",
                 "COMPLETED": "Завершено", "CANCELLED": "Отменено"}
 ATTENTION_LABELS = {
@@ -22,9 +23,11 @@ ATTENTION_LABELS = {
     "INVALID_ACTUAL_FACTS": "Неполные или противоречивые фактические отметки",
     "SOURCE_CHANGED": "Исходная запись изменилась", "OVERLAP": "Пересечение записей сотрудника",
     "EMPLOYEE_UNKNOWN": "Сотрудник не найден в кадровом учёте",
+    "LATE_START": "Фактическое начало позже планового",
 }
 
 
+@read_snapshot()
 def snapshot(actor, query):
     cte, params = register_cte(actor, query)
     with connection.cursor() as cursor:
@@ -71,6 +74,7 @@ class CsvDownload:
         self.file.close()
 
 
+@read_snapshot()
 def export_csv(actor, query):
     cte, params = register_cte(actor, query)
     file = tempfile.TemporaryFile(mode="w+b")

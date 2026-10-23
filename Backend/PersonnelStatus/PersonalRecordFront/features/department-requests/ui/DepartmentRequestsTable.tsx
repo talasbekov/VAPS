@@ -47,6 +47,7 @@ import type {
 import { useDepartmentRequests } from "@/hooks/use-department-requests";
 import { DepartmentRequestCard } from "./DepartmentRequestCard";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import styles from "./DepartmentRequestsTable.module.css";
 
 /** Подписи те же, что у ленты штаба: одно состояние — одно слово в системе. */
 const STATUS_LABEL: Record<ForceAllocationStatus, string> = {
@@ -68,7 +69,7 @@ function Progress({ assigned, need }: { assigned: number; need: number }) {
   // вспомогательными технологиями.
   const over = need > 0 && assigned > need;
   return (
-    <div className="min-w-[120px]">
+    <div className={styles.progress}>
       <p className="text-sm tabular-nums">
         {assigned} из {need}
         {/* Тем же цветом, которым перебор красит лента штаба
@@ -148,10 +149,8 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
         </p>
       </div>
 
-      {/* Таблица шире экрана прокручивается ВНУТРИ себя: страница вбок
-          ездить не должна. */}
-      {requests.isError ? <LoadFailure what="список заявок на силы" description={requests.error?.message} onRetry={() => void requests.refetch()} isRetrying={requests.isFetching} /> : <div className="overflow-x-auto rounded-lg border">
-        <Table>
+      {requests.isError ? <LoadFailure what="список заявок на силы" description={requests.error?.message} onRetry={() => void requests.refetch()} isRetrying={requests.isFetching} /> : <div className={`${styles.wrap} rounded-lg border`}>
+        <Table className={styles.table} role="table" aria-label="Заявки департаменту">
           <TableHeader>
             <TableRow>
               <TableHead>Мероприятие</TableHead>
@@ -195,7 +194,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
             {!requests.isPending &&
               !requests.isError &&
               rows.map((row: DepartmentRequestRow) => (
-                <TableRow key={`${row.eventId}-${row.allocationId}`}>
+                <TableRow key={`${row.eventId}-${row.allocationId}`} data-slot="department-request-row">
                   <TableCell>
                     {/* Иерархия ячейки: код — метка, название — то, что
                         читают, место и время — уточнение. Три уровня, а не
@@ -222,13 +221,16 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                     </p>
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Запрошено</span>
                     {row.need}
                   </TableCell>
                   {/* «Выделяем» — ответ департамента (№391): отказ нулём
                       назван словом, пустой ответ — прочерком, а не нулём: ноль
                       здесь значит «отказ», и молчание за отказ выдавать
                       нельзя. */}
-                  <TableCell className="text-right tabular-nums" data-slot="allocating">
+                  <TableCell className="text-right tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Выделяем</span>
+                    <div data-slot="allocating">
                     {row.allocating === null ? (
                       <span className="text-muted-foreground">—</span>
                     ) : row.allocating === 0 ? (
@@ -236,8 +238,10 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                     ) : (
                       <span className="font-semibold">{row.allocating}</span>
                     )}
+                    </div>
                   </TableCell>
                   <TableCell>
+                    <span className={styles.label} aria-hidden="true">Собрано</span>
                     <Progress assigned={row.assigned} need={row.need} />
                   </TableCell>
                   {/* СРОК И ОПОЗДАНИЕ — В ОДНОЙ ЯЧЕЙКЕ, словом и цветом.
@@ -247,6 +251,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                       список тоже назван: штабу важно, что он пришёл поздно,
                       даже когда уже пришёл. */}
                   <TableCell className="whitespace-nowrap tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Срок</span>
                     <span className={row.overdue ? "text-destructive-ink font-medium" : ""}>
                       {row.dueAt === null ? "не задан" : formatIsoDateTime(row.dueAt)}
                     </span>
@@ -262,6 +267,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                     )}
                   </TableCell>
                   <TableCell>
+                    <span className={styles.label} aria-hidden="true">Статус</span>
                     <Badge variant="outline">{STATUS_LABEL[row.status]}</Badge>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
@@ -271,7 +277,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                       type="button"
                       onClick={() => setOpened(row.allocationId)}
                       aria-label={`Открыть заявку ${row.code} для «${row.departmentName}»`}
-                      className="text-primary-ink hover:bg-muted inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-semibold"
+                      className="text-primary-ink hover:bg-muted inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs font-semibold"
                     >
                       Открыть
                       <ChevronRight className="size-4" aria-hidden="true" />

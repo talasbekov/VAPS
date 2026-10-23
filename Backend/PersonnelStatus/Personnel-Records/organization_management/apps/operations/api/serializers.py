@@ -34,6 +34,7 @@ from organization_management.apps.operations.models_submission import (
     OpsTomorrowBlockOverride,
 )
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
+from organization_management.apps.statuses.retirement import refuse_retired_secondment_type
 
 
 class StatusParticipationSerializer(serializers.Serializer):
@@ -466,6 +467,9 @@ class BulkStatusCreateRowSerializer(serializers.Serializer):
     document_basis = serializers.CharField(required=False, allow_blank=True)
     source_ref = serializers.CharField(required=False, allow_blank=True)
 
+    def validate_status_type_code(self, value):
+        return refuse_retired_secondment_type(value)
+
 
 class StatusResolveSerializer(serializers.Serializer):
     """Тело разрешения строки-заглушки: чем заменить, за какой период и на
@@ -479,6 +483,9 @@ class StatusResolveSerializer(serializers.Serializer):
     """
 
     resolved_type_code = serializers.CharField(max_length=50)
+
+    def validate_resolved_type_code(self, value):
+        return refuse_retired_secondment_type(value)
     date_start = serializers.DateField()
     date_end = serializers.DateField()
     reason = serializers.CharField(allow_blank=False, max_length=1000)
@@ -670,6 +677,7 @@ class StatusUpdateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         raw = self.initial_data if isinstance(self.initial_data, dict) else {}
+        refuse_retired_secondment_type(raw.get("status_type_code"))
         forbidden = [name for name in self.IMMUTABLE_FIELDS if name in raw]
         if forbidden:
             raise serializers.ValidationError(
@@ -1152,6 +1160,9 @@ class StatusCreateSerializer(serializers.Serializer):
 
     employee_id = serializers.IntegerField()
     status_type_code = serializers.CharField(max_length=50)
+
+    def validate_status_type_code(self, value):
+        return refuse_retired_secondment_type(value)
     date_start = serializers.DateField()
     date_end = serializers.DateField()
     # Мероприятия статуса (Plane №274). НЕОБЯЗАТЕЛЬНО и БЕЗ значения по

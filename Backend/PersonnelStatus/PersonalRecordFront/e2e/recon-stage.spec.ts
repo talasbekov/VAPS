@@ -599,12 +599,11 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
   test.describe('подвал на ОМ с двумя объектами', () => {
     test.use({ serviceWorkers: 'block' })
 
-    test('подвал называет и число объекта, и то, что уйдёт штабу', async ({
+    test('подвал публикует выбранный объект без черновика соседнего', async ({
       page,
     }) => {
-      // Подвал печатал потребность ПОКАЗАННОГО объекта, а `complete_recon`
-      // отправляет штабу сумму по ВСЕМ постам мероприятия (Plane №708): на ОМ
-      // с двумя объектами человек подтверждал «5 сотрудников», а уходило 12.
+      // Завершение объекта публикует только готовую потребность: соседний
+      // черновик остаётся на рекогносцировке и в отправляемое число не входит.
       const token = await apiToken()
       // ОМ обязан СТОЯТЬ на «Рекогносцировке»: стадию отдаёт и серверный
       // рендер, подменой в ответе её не сдвинуть (проверено — панель не
@@ -638,8 +637,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       await expect(footer).toBeVisible({ timeout: 15_000 })
 
       await expect(footer.locator('[data-slot="recon-need"]')).toHaveText('2')
-      // И число, которое ДЕЙСТВИТЕЛЬНО уйдёт штабу, названо рядом.
-      await expect(footer.locator('[data-slot="recon-need-event"]')).toHaveText('5')
+      await expect(footer.locator('[data-slot="recon-need-event"]')).toHaveCount(0)
+      await expect(footer.locator('[data-slot="recon-publication-scope"]')).toContainText('только этот объект')
     })
 
     test('на объекте без постов завершение заблокировано', async ({

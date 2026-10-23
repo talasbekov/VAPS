@@ -3,6 +3,7 @@
 import argparse
 import gzip
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -27,8 +28,42 @@ BUNDLE_FILES = (
     "prepare-assets.py", "ui-assets.lock.json", "redoc.html", "INSTALL-RU.md",
     "UPDATE-RU.md", "update.py", "update-offline.py", "update-app-only.py", "obnovit-bez-bazy.py",
     "cleanup-old-releases.py",
+    "update-with-migrations.py", "schema-transition-checks.py", "import-smart-data.py",
+    "SCHEMA-TRANSITION-RU.md", "SMART-UPDATE-RU.md",
     "build.py", "build.sh",
 )
+APPLICATION_FILES = (
+    "application-images.tar", "source-revision.txt", "update.py", "update-offline.py",
+    "update-app-only.py", "obnovit-bez-bazy.py", "cleanup-old-releases.py", "UPDATE-RU.md",
+    "update-with-migrations.py", "schema-transition-checks.py", "schema-transition.json",
+    "migration-graph.json", "SCHEMA-TRANSITION-RU.md", "SMART-UPDATE-RU.md", "import-smart-data.py",
+)
+
+
+def transition_module():
+    spec = importlib.util.spec_from_file_location('release_schema_transition', HERE / 'update-with-migrations.py')
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+def write_application_manifest(output, revision, images, graph):
+    """Bind the current graph, transition policy and exact image contents together."""
+    transition = transition_module()
+    transition.checks.require_graph(graph, graph)
+    def save(name, value):
+        (output / name).write_text(json.dumps(value, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+    save('migration-graph.json', graph)
+    selected = {key: images[key] for key in ('backend', 'frontend', 'proxy')}
+    save('schema-transition.json', {
+        'source_revision': revision, 'policy': transition.checks.RELEASE_POLICY, 'images': selected,
+        'reviewed_migrations': [list(item) for item in transition.checks.APPROVED_PLAN],
+        'graph_sha256': sha(output / 'migration-graph.json'),
+        'files': {name: sha(output / name) for name in ('update-with-migrations.py', 'schema-transition-checks.py')},
+    })
+    release = {'source_revision': revision, 'compatibility_overlay': False,
+               'images': selected, 'files': {name: sha(output / name) for name in APPLICATION_FILES}}
+    save('release.json', release)
 
 def run(args, *, capture=False):
     return subprocess.check_output(args).decode("utf-8").strip() if capture else subprocess.run(args, check=True)
@@ -67,7 +102,7 @@ def validate_output(output):
         raise ValueError("Use a new output directory outside this repository")
     return output
 
-def build(output):
+def build(output, *, update_only=False):
     output = validate_output(output)
     if run(["git", "-C", str(ROOT), "status", "--porcelain"], capture=True):
         raise ValueError("Commit reviewed source before building a traceable release")
@@ -127,13 +162,21 @@ def build(output):
         for item in metadata.values()), encoding="utf-8")
     # Portable application updater: complete reviewed images, no legacy overlay.
     with (output / "application-images.tar").open("wb") as archive:
-        subprocess.run(["docker", "save", images["backend"], images["frontend"]], stdout=archive, check=True)
-    application_files = ("application-images.tar", "update.py", "update-offline.py", "update-app-only.py", "obnovit-bez-bazy.py", "cleanup-old-releases.py", "UPDATE-RU.md")
-    release = {"source_revision": revision, "compatibility_overlay": False,
-               "images": {key: metadata[key] for key in ("backend", "frontend")},
-               "files": {name: sha(output / name) for name in application_files}}
-    (output / "release.json").write_text(json.dumps(release, indent=2) + "\n", encoding="utf-8")
+        subprocess.run(["docker", "save", images["backend"], images["frontend"], images["proxy"]], stdout=archive, check=True)
+    transition = transition_module()
+    graph = transition.run_json(transition.graph_command(images['backend']), 'graph')
+    write_application_manifest(output, revision, metadata, graph)
     # The full install archive includes the application and infrastructure images.
+    if not update_only:
+        export_runtime_images(output, images)
+    (output / "source-sha256sums.txt").write_text("".join(
+        f"{sha(file)}  {file.relative_to(output).as_posix()}\n" for file in sorted(snapshot.rglob("*")) if file.is_file()), encoding="utf-8")
+    (output / "sha256sums.txt").write_text("".join(
+        f"{sha(file)}  {file.name}\n" for file in sorted(output.iterdir()) if file.is_file() and file.name != "sha256sums.txt"), encoding="utf-8")
+    print("Offline release ready: " + str(output), flush=True)
+
+
+def export_runtime_images(output, images):
     with (output / "runtime-images.tar.gz").open("wb") as destination:
         with gzip.GzipFile(fileobj=destination, mode="wb", compresslevel=1, mtime=0) as compressed:
             process = subprocess.Popen(["docker", "save", *images.values()], stdout=subprocess.PIPE)
@@ -143,16 +186,12 @@ def build(output):
                 process.stdout.close()
             if process.wait():
                 raise RuntimeError("Docker runtime image export failed")
-    (output / "source-sha256sums.txt").write_text("".join(
-        f"{sha(file)}  {file.relative_to(output).as_posix()}\n" for file in sorted(snapshot.rglob("*")) if file.is_file()), encoding="utf-8")
-    (output / "sha256sums.txt").write_text("".join(
-        f"{sha(file)}  {file.name}\n" for file in sorted(output.iterdir()) if file.is_file() and file.name != "sha256sums.txt"), encoding="utf-8")
-    print("Offline release ready: " + str(output), flush=True)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("prepare", "build"))
     parser.add_argument("output", nargs="?", type=Path)
+    parser.add_argument('--update-only', action='store_true', help='Export only application images; omit the full-install infrastructure archive')
     args = parser.parse_args()
     try:
         if args.mode == "prepare":
@@ -160,8 +199,8 @@ def main():
         elif args.output is None:
             parser.error("build requires a new output directory")
         else:
-            build(args.output)
-    except (ValueError, subprocess.CalledProcessError, OSError) as error:
+            build(args.output, update_only=args.update_only)
+    except (ValueError, RuntimeError, subprocess.CalledProcessError, OSError) as error:
         raise SystemExit(str(error)) from error
 
 if __name__ == "__main__":

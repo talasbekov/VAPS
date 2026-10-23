@@ -6,20 +6,20 @@
 // распределение по lifecycle, воронку, breadcrumb и карточку ОМ присылает
 // сервер одним снимком. Всё, что делает страница поверх ответа, — складывает
 // колонки строк ТОГО ЖЕ снимка и делит одно серверное число на другое
-// (обеспеченность, конверсия, доли доната). Своего источника у неё нет.
+// (обеспеченность, доли доната). Своего источника у неё нет.
 //
 // Перенесено из прототипа только то, чему источник нашёлся: показатели шапки,
 // структура мероприятий, воронка этапов, обеспеченность личным составом,
 // таблица объектов с детализацией и карточка ОМ. Остальные блоки прототипа
 // (динамика по дням, участие департаментов, замены, план/факт, нагрузка,
-// инциденты в разрезе тяжести, «требует внимания», экспорт) названы вслух
-// внизу экрана — рисовать их пустыми ячейками значило бы выдать отсутствие
+// инциденты в разрезе тяжести, «требует внимания», экспорт) кратко названы
+// в разделе «О данных» — пустые ячейки выдавали бы отсутствие
 // данных за нули.
 import { Suspense, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { AnalyticsNavigation } from "@/components/analytics/analytics-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -177,7 +177,7 @@ function OperationsAnalyticsScreen() {
         <PageHeader
           eyebrow="Охранные мероприятия"
           title="Аналитика мероприятий"
-          description="Подготовка, обеспеченность, расстановка, проведение, конфликты и результаты охранных мероприятий"
+          description="Состояние охранных мероприятий, подготовка и обеспеченность силами"
           actions={
             <>
               {freshness !== null && (
@@ -194,23 +194,7 @@ function OperationsAnalyticsScreen() {
           }
         />
 
-        <nav className="flex flex-wrap gap-2" aria-label="Разделы аналитики">
-          <Link
-            href="/security-ops/analytics"
-            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            Аналитика службы
-          </Link>
-          <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
-            Аналитика мероприятий
-          </span>
-          <Link
-            href="/security-ops/ratings/analytics"
-            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            Аналитика рейтинга
-          </Link>
-        </nav>
+        <AnalyticsNavigation current="operations" />
 
         {data !== undefined && (
           <div className="flex flex-wrap items-center gap-2">
@@ -250,18 +234,23 @@ function OperationsAnalyticsScreen() {
 
         {snapshot !== undefined && (
           <p className="text-[11px] text-muted-foreground">
-            Дата раздела — {snapshot.businessDate} ({snapshot.timezone}). Период
-            снимка: {snapshot.period.from} — {snapshot.period.to}. Расчёт{" "}
-            {snapshot.calculationVersion}.
+            Состояние на {snapshot.businessDate} ({snapshot.timezone}).
           </p>
         )}
 
-        {query.error !== null && (
+        {query.error !== null && "errorCode" in query.error && query.error.errorCode === "ANALYTICS_SCOPE_UNAVAILABLE" ? (
+          <section role="status" className="rounded-xl border bg-card p-4 text-sm">
+            <h2 className="mb-1 font-semibold">Аналитика ограниченной области пока недоступна</h2>
+            <p className="text-muted-foreground">
+              Срез по вашему подразделению пока не поддерживается: у мероприятий не определено ответственное подразделение.
+            </p>
+          </section>
+        ) : query.error !== null && (
           /* Сырое серверное сообщение человеку не адресовано: у мутаций
              5xx уже обезличивается (use-ops-mutation), у запросов такой
              развилки не было. Плюс повтор — раньше это был тупик. */
           <LoadFailure
-            what="аналитику по подразделениям"
+            what="аналитику мероприятий"
             onRetry={() => void query.refetch()}
             isRetrying={query.isFetching}
           />
@@ -293,7 +282,7 @@ function OperationsAnalyticsScreen() {
               onDrill={goTo}
             />
 
-            <MissingSection data={data} />
+            <DataNotesSection data={data} />
           </>
         )}
       </div>
@@ -354,7 +343,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
         value: numberOrDash(inPreparation),
         hint:
           inPreparation === null
-            ? "в реестре состояний нет терминальных этапов"
+            ? "нет данных об этапах подготовки"
             : "этапы до проведения",
         icon: Activity,
         iconClass: "text-primary-ink",
@@ -365,7 +354,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
         value: conduct === null ? "—" : formatNumber(conduct.count),
         hint:
           conduct === null
-            ? "состояния «проведение» нет в реестре"
+            ? "нет данных об этапе проведения"
             : conduct.safeLabel,
         icon: PlayCircle,
         iconClass: "text-green-600",
@@ -375,7 +364,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
         label: "Закрыто",
         value: closed === null ? "—" : formatNumber(closed.count),
         hint:
-          closed === null ? "состояния «закрыто» нет в реестре" : closed.safeLabel,
+          closed === null ? "нет данных о закрытых мероприятиях" : closed.safeLabel,
         icon: CheckCircle2,
         iconClass: "text-muted-foreground",
       },
@@ -435,7 +424,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
 /* ------------------------------------------------------------------ */
 
 /** Донат прототипа построен по СОСТОЯНИЯМ жизненного цикла, а не по типам ОМ:
- * типа у мероприятия модель не хранит (см. раздел «чего нет»). Заголовок
+ * типа у мероприятия модель не хранит (см. раздел «О данных»). Заголовок
  * прототипа сохранён, подпись называет ось честно. */
 function StructureSection({ data }: { data: OperationsAnalyticsData }) {
   const buckets = data.lifecycleDistribution;
@@ -463,8 +452,7 @@ function StructureSection({ data }: { data: OperationsAnalyticsData }) {
       <CardHeader>
         <CardTitle>Структура мероприятий</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Распределение по состояниям жизненного цикла — типа мероприятия модель
-          не хранит
+          Распределение по текущим этапам подготовки и проведения
         </p>
       </CardHeader>
       <CardContent>
@@ -514,7 +502,7 @@ function StructureSection({ data }: { data: OperationsAnalyticsData }) {
         {data.unknownLifecycleCodes.length > 0 && (
           // §22.13: код вне реестра назван, а не разложен по корзинам.
           <p className="mt-2 text-xs text-destructive-ink">
-            Состояния вне Lifecycle Registry (не разложены по корзинам):{" "}
+            Неизвестные состояния (не учтены в распределении):{" "}
             {data.unknownLifecycleCodes.join(", ")}
           </p>
         )}
@@ -557,6 +545,11 @@ function FunnelCard({ data }: { data: OperationsAnalyticsData }) {
  * Режим «Воронка» показывает выбранный показатель полосами, режим «Таблица» —
  * все шесть столбцами: складывать часы с мероприятиями нельзя, а читать
  * рядом можно. */
+const LEGACY_FUNNEL_EXCLUSION_NOTE =
+  "Состояний «отменено» и «приостановлено» в модели ОМ нет: " +
+  "исключать из конверсии нечего. Появятся — исключение обязано " +
+  "считаться здесь, а не на экране.";
+
 function FunnelSection({ funnel }: { funnel: FunnelView }) {
   const [measureCode, setMeasureCode] = useState(funnel.measures[0]?.code ?? "");
   const [asTable, setAsTable] = useState(false);
@@ -570,11 +563,6 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
     (max, value) => (value === null || value === undefined ? max : Math.max(max, value)),
     0
   );
-  // Конверсия — доля от ПЕРВОГО этапа воронки, а не от соседнего: у прототипа
-  // столбец называется «Конверсия», и считать её от предыдущего этапа значило
-  // бы показать другое число под тем же заголовком.
-  const baseReached = funnel.stages[0]?.values.REACHED ?? null;
-
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -604,7 +592,7 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
             }
             onClick={() => setAsTable(false)}
           >
-            Воронка
+            Диаграмма
           </button>
           <button
             type="button"
@@ -625,7 +613,6 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
           <TableHeader>
             <TableRow>
               <TableHead>Этап</TableHead>
-              <TableHead>Конверсия</TableHead>
               {funnel.measures.map((item) => (
                 <TableHead key={item.code}>{item.safeLabel}</TableHead>
               ))}
@@ -635,16 +622,13 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
             {funnel.stages.map((stage) => (
               <TableRow key={stage.stateCode}>
                 <TableCell>{stage.safeLabel}</TableCell>
-                <TableCell className="tabular-nums">
-                  {percentOrDash(stage.values.REACHED ?? null, baseReached)}
-                </TableCell>
                 {funnel.measures.map((item) => {
                   const value = stage.values[item.code];
                   return (
                     <TableCell key={item.code} className="tabular-nums">
                       {value === null || value === undefined ? (
                         <span className="text-xs text-muted-foreground">
-                          нет готового значения
+                          нет данных
                         </span>
                       ) : (
                         formatNumber(value)
@@ -669,14 +653,10 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span>{stage.safeLabel}</span>
                   <span className="flex items-baseline gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      конверсия{" "}
-                      {percentOrDash(stage.values.REACHED ?? null, baseReached)}
-                    </span>
                     <span className="tabular-nums">
                       {value === null || value === undefined ? (
                         <span className="text-xs text-muted-foreground">
-                          нет готового значения
+                          нет данных
                         </span>
                       ) : (
                         `${formatNumber(value)} ${measure?.unit ?? ""}`
@@ -697,13 +677,18 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
       )}
 
       <p className="mt-3 text-[11px] text-muted-foreground">
-        Построено по журналу переходов: событий — {funnel.transitionCount}.{" "}
-        {funnel.exclusionNote}
+        Учтено переходов между этапами: {funnel.transitionCount}.{" "}
+        {funnel.exclusionNote === LEGACY_FUNNEL_EXCLUSION_NOTE
+          ? "Отменённые и приостановленные мероприятия отдельно не учитываются."
+          : funnel.exclusionNote}
       </p>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Столбцов прототипа «Просрочено» и «Ответственный» здесь нет: плановых
-        сроков у этапов модель не хранит, а исполнителя перехода журнал пишет
-        как учётную запись, не как роль этапа.
+        Показаны входы в этапы по журналу. Мероприятие с объектом может
+        начинаться с рекогносцировки, без объекта — с бюллетеня. Эти группы не
+        образуют единую конверсию.
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Просрочка и ответственные по этапам здесь не определяются.
       </p>
     </>
   );
@@ -715,7 +700,7 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
 
 /** Цепочка прототипа «Запрошено / Выделено / Подтверждено / Прибыло» на живых
  * данных короче и называется точнее: подтверждения и прибытия модель не ведёт
- * (см. «чего нет»), зато перед запросом стоит утверждённая потребность, а
+ * (см. «О данных»), зато перед запросом стоит утверждённая потребность, а
  * после назначения — ознакомление. */
 const PROVISION_STEPS: readonly { code: string; label: string }[] = [
   { code: "DEMAND_NEED", label: "Утверждённая потребность" },
@@ -844,8 +829,7 @@ function EventCardSection({ card }: { card: OpsEventCard }) {
           {card.code} — {card.safeLabel}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Факты мероприятия из его карточки; чего в модели нет — названо на самом
-          факте
+          Основные сведения о мероприятии. Для недоступных данных указана причина.
         </p>
       </CardHeader>
       <CardContent>
@@ -931,8 +915,7 @@ function DetailSection({
           <div>
             <CardTitle>{DETAIL_TITLE[data.level]}</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Строки и колонки задаёт сервер; поиск и порядок применяются к уже
-              полученному снимку
+              Поиск и сортировка применяются к текущей таблице
             </p>
           </div>
           <Input
@@ -1034,109 +1017,60 @@ function DetailSection({
 }
 
 /* ------------------------------------------------------------------ */
-/* Чего в этой аналитике нет                                           */
+/* Пояснения о данных                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Блоки прототипа, которым источника нет. Список статический намеренно: это
- * не данные сервера, а решение переноса — почему блок не нарисован. Причины,
- * которые знает сервер (`unavailableMeasures`), печатаются рядом, из ответа. */
-const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
-  {
-    title: "Период и фильтры (статус, тип, департамент, риск, ответственный)",
-    reason:
-      "Аналитика ОМ считает снимок на дату раздела и параметров периода не принимает; отфильтровать уже посчитанный снимок на экране значило бы показать долю под подписью целого.",
-  },
-  {
-    title: "Динамика мероприятий по дням, неделям и месяцам",
-    reason:
-      "Время каждого перехода журнал хранит, но рядами по датам сервер их не отдаёт. Построить ряд здесь из выгруженного реестра — вторая методика рядом с воронкой, считающей по тому же журналу.",
-  },
-  {
-    title: "Структура по типам мероприятий",
-    reason:
-      "Типа у ОМ модель не хранит — в карточке мероприятия этого поля нет. Донат «Структура мероприятий» построен по состояниям жизненного цикла и назван так же.",
-  },
-  {
-    title: "Участие департаментов",
-    reason:
-      "Группа в потребности и запросе сил — свободная строка расчёта («ГР-1»), а не подразделение оргструктуры; сложить по ней департаменты нельзя. Назначения расстановки указывают пост и сотрудника, но не его подразделение.",
-  },
-  {
-    title: "Дефицит по мероприятиям",
-    reason:
-      "Аналитика отдаёт суммы запрошенного и выделенного, а дефицит командный центр считает по КАЖДОМУ запросу сил отдельно: перевыдача в одном запросе не гасит нехватку в другом. Вычесть здесь сумму из суммы значило бы показать под тем же словом другое число.",
-  },
-  {
-    title: "Укомплектованность постов по всем мероприятиям",
-    reason:
-      "Посты и расчёт живут внутри мероприятия: своды по постам сервер отдаёт с уровня мероприятия и ниже — они в таблице детализации. Сводного по всем ОМ у него нет.",
-  },
-  {
-    title:
-      "Столбцы объектов «постов», «сотрудников», «часов», «инцидентов на 100 часов», «средняя подготовка»",
-    reason:
-      "Часов у назначений расстановки нет вовсе; посты и сотрудники считаются внутри мероприятия, а не по объекту. Средний срок подготовки требует плановых сроков этапов — их модель не хранит.",
-  },
-  {
-    title: "Конфликты по видам и журнал ручных разрешений",
-    reason:
-      "У мероприятия один счётчик конфликтов; вида конфликта и решения по нему он не несёт, а отдельного журнала разрешений в модели нет.",
-  },
-  {
-    title: "Хронология мероприятия",
-    reason:
-      "Время каждого перехода журнал хранит, но по отдельному ОМ сервер отдаёт его сводно — этапами и часами в воронке уровня мероприятия, а не строками с датами и исполнителями.",
-  },
-  {
-    title: "Изменения после утверждения (замены) и их причины",
-    reason:
-      "Замену расстановки модель не отличает от обычной правки: назначения перезаписываются, а история правок для них не ведётся. Причин замены поля нет вовсе.",
-  },
-  {
-    title: "План и факт участия, человеко-часы, нагрузка в ОМ",
-    reason:
-      "Назначение расстановки — строка без часов: интервалов у постов ОМ нет, и складывать часы не из чего. Нагрузку по сменам считает аналитика службы по своей политике, и её числа не про мероприятия.",
-  },
-  {
-    title: "Требует внимания",
-    reason:
-      "Детекторы §22.11 живут в аналитике службы, у них своя политика и свои пороги из «Настроек». Второй набор наблюдений здесь спорил бы с ними.",
-  },
-  {
-    title: "Экспорт (PDF, XLSX, изображение дэшборда)",
-    reason:
-      "Выгрузки у аналитики ОМ нет; служебные отчёты собираются на своём экране, где у файла есть тип, период, ревизия и срок хранения.",
-  },
-];
+/** Known measure codes get concise business copy; unknown limitations remain visible as supplied. */
+const UNAVAILABLE_MEASURE_COPY: Readonly<Record<string, { label: string; reason: string }>> = {
+  OVERDUE_ACTIONS: { label: "Просроченные действия", reason: "Сроки этапов не учитываются." },
+  CANCELLED_COUNT: { label: "Отменённые мероприятия", reason: "Отмена отдельно не учитывается." },
+  OPEN_INCIDENTS: { label: "Открытые инциденты", reason: "Записи не разделены на открытые и закрытые." },
+  ACTUAL_PARTICIPATION: { label: "Фактическое участие", reason: "Фиксируется ознакомление, а факт выхода не подтверждается." },
+};
 
-function MissingSection({ data }: { data: OperationsAnalyticsData }) {
+function DataNotesSection({ data }: { data: OperationsAnalyticsData }) {
   return (
     <Card className="border-dashed bg-muted/30">
       <CardHeader>
-        <CardTitle>Чего в этой аналитике нет</CardTitle>
+        <CardTitle>О данных</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Показатели — со слов сервера, блоки прототипа — решение переноса
+          Сводка показывает состояние мероприятий на указанную дату, а не
+          мероприятия за один день. Период и фильтры по статусу, типу,
+          подразделению, риску и ответственному здесь не выбираются.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ul className="flex flex-col gap-2">
-          {data.unavailableMeasures.map((measure) => (
-            <li key={measure.code} className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">
-                {measure.label}
-              </span>{" "}
-              — {measure.reason}
-            </li>
-          ))}
-        </ul>
-        <ul className="flex flex-col gap-2 border-t pt-3">
-          {MISSING_BLOCKS.map((block) => (
-            <li key={block.title} className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">{block.title}</span>{" "}
-              — {block.reason}
-            </li>
-          ))}
-        </ul>
+        {data.unavailableMeasures.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-semibold">Не рассчитываются:</p>
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              {data.unavailableMeasures.map((measure) => {
+                const copy = Object.hasOwn(UNAVAILABLE_MEASURE_COPY, measure.code)
+                  ? UNAVAILABLE_MEASURE_COPY[measure.code] : measure;
+                return (
+                  <li key={measure.code} data-unavailable-measure={measure.code}>
+                    <span className="font-semibold text-foreground">{copy.label}</span>
+                    {" — "}<span data-unavailable-reason>{copy.reason}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Отсутствие показателя не означает ноль.
+          {data.rows.some((row) => row.childLevel !== null) &&
+            " Для подробностей нажмите «Детализировать» в нужной строке."}
+        </p>
+        <details className="border-t pt-3 text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-semibold text-foreground">Другие ограничения</summary>
+          <ul className="mt-2 list-disc space-y-2 pl-4">
+            <li>Нет динамики по датам и сравнения по типам мероприятий или подразделениям.</li>
+            <li>Не рассчитываются человеко-часы, нагрузка, план/факт участия и средний срок подготовки. Подробная хронология и история замен с причинами не показываются.</li>
+            <li>Нет разбивки конфликтов по видам, истории их разрешения и списка «Требует внимания». Суммарная обеспеченность не показывает дефицит каждого запроса.</li>
+            <li>Экспорт этой сводки недоступен. Посты и их укомплектованность доступны внутри мероприятия; общего итога по всем постам нет.</li>
+          </ul>
+        </details>
       </CardContent>
     </Card>
   );

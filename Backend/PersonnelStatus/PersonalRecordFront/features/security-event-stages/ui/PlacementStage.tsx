@@ -34,6 +34,7 @@ import {
   VisitObjectPicker,
 } from "./useVisitObjectScope";
 import Link from "next/link";
+import { EventForcesLink } from "@/features/forces-workspace/ui/EventForcesLink";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
@@ -369,7 +370,14 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
   const removePost = useRemovePlacementPost(event.id);
   const [postToRemove, setPostToRemove] = useState<ReconSectorPost | null>(null);
   const updatePostComment = useUpdatePlacementPostComment(event.id);
-  const { hasPermission } = useOpsPermissions();
+  const authority = useOpsPermissions();
+  const { hasPermission } = authority;
+  const canOpenPassport = authority.permissions !== undefined && !authority.isLoading &&
+    authority.error === null && moduleOpenFor(
+      "/security-ops/objects",
+      hasPermission,
+      code => authority.roles.some(role => role.code === code),
+    );
   // Роли наряда — из справочника раздела (Plane №239). Пустой справочник не
   // ломает экран: выбор просто не показывается, и это честно — назначать
   // нечего, пока роли не завели.
@@ -504,6 +512,9 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
       ? (returnedFrom.approvalComment ?? "")
       : "";
   const posts = scope.rows;
+  const postPassport = scope.visit?.passportBinding ??
+    (scope.visit !== null && scope.visit.objectId !== null && scope.visit.objectId === event.objectId
+      ? event.passportBinding : null);
   const { selected, selectPost: setSelectedPostId, isSelecting: postSelectionPending } = usePlacementPostSelection(
     posts, event.visitObjects.length > 0 ? scope.shown : undefined,
   );
@@ -1414,14 +1425,18 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                         : ""}
                     </p>
                   </div>
-                  {event.passportBinding !== null && (
+                  {postPassport !== null && (canOpenPassport ? (
                     <Link
-                      href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
+                      href={`/security-ops/objects/${postPassport.objectId}/passports/${postPassport.versionId}/`}
                       className="text-xs font-semibold text-primary-ink"
                     >
                       Паспорт поста →
                     </Link>
-                  )}
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      Паспорт поста · вер. {postPassport.versionNumber}
+                    </span>
+                  ))}
                 </div>
                 <p className="mb-2 text-xs">
                   <b>Задача поста:</b> {selected.task === "" ? "—" : selected.task}
@@ -1815,19 +1830,12 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                     дважды: две одинаковые ссылки в одной колонке — шум, и
                     пробы карточки читают её как одну. */}
                 {fromRoster && forcesOpen && (
-                  <Link
-                    // 🔴 ВКЛАДКА НАЗВАНА В АДРЕСЕ (Plane №931). До №928 по
-                    // `?view=forces` открывался экран, где лента входящих
-                    // была видна сразу; теперь того блока нет, и адрес без
-                    // вкладки приводит на «Список сотрудников» — кадровый
-                    // реестр вместо сбора сил. Ошибки при этом нет: экран
-                    // открылся, просто не тот, и человек доклацывает сам.
-                    // Адрес вкладок заведён №779 (`KNOWN_TABS`).
-                    href="/employees?view=forces&tab=collections"
+                  <EventForcesLink
+                    eventId={event.id}
                     className="mt-0.5 inline-block text-[11px] font-semibold text-primary-ink"
                   >
                     Открыть «Сбор сил на ОМ» →
-                  </Link>
+                  </EventForcesLink>
                 )}
               </div>
               {!fromRoster ? (
@@ -1854,14 +1862,12 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                       : `Заявка ${event.code}: запрошено ${requestedTotal} чел. В состав штаб пока никого не принял.`}
                   </p>
                   {forcesOpen && (
-                    <Link
-                      // Та же вкладка, что и у ссылки выше (Plane №931): обе
-                      // отвечают на вопрос «сколько выделили департаменты».
-                      href="/employees?view=forces&tab=collections"
+                    <EventForcesLink
+                      eventId={event.id}
                       className="mt-1.5 inline-block font-semibold text-primary-ink"
                     >
                       Сбор сил на ОМ →
-                    </Link>
+                    </EventForcesLink>
                   )}
                 </div>
               ) : (

@@ -17,6 +17,7 @@ from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_duty_log import OpsDutyCreationClosure, OpsDutyLogEntry, OpsDutyRecordSupplement
 from organization_management.apps.operations.models_duty import OpsDutyMonthlyPlan
 from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+from organization_management.apps.ops.duty_read_snapshot import read_snapshot
 from organization_management.apps.ops.duty_record_access import (
     can_read, can_write, division_scope, employee_data, in_scope, people_query, resolve_record,
     WRITE_PERMISSIONS, parse_key,
@@ -77,26 +78,27 @@ def serialize_record(source, row, supplement, metadata, *, actor=None):
     acknowledged = facts.acknowledged_at if facts is not None else None
     actual_start = facts.actual_start if facts is not None else None
     actual_end = facts.actual_end if facts is not None else None
-    cancelled = row.state_code == "CANCELLED" if source == "PLAN" else row.cancelled_at is not None
+    cancelled = row.state_code == "CANCELLED" if source == "PLAN" else row.source_changed if source == "STATUS" else row.cancelled_at is not None
     state = row.state_code if source == "PLAN" else execution_state(acknowledged, actual_start, actual_end, cancelled)
-    planned_start = row.planned_start if source == "LOG" else row.start_at if source == "DISPATCH" else None
-    planned_end = row.planned_end if source == "LOG" else row.end_at if source == "DISPATCH" else None
+    planned_start = row.planned_start if source == "LOG" else row.start_at if source in ("DISPATCH", "STATUS") else None
+    planned_end = row.planned_end if source == "LOG" else row.end_at if source in ("DISPATCH", "STATUS") else None
     kind = row if source == "LOG" else supplement
     code = kind.service_duty_code if kind is not None else ""
     label = kind.service_duty_label if kind is not None and code else "Вид не указан"
     now = Clock.now()
-    valid_actual = state == "COMPLETED" and actual_start is not None and actual_end is not None and actual_start <= actual_end <= now
+    historical_completion = source == "STATUS" and row.source_changed and actual_end is not None
+    valid_actual = (state == "COMPLETED" or historical_completion) and actual_start is not None and actual_end is not None and actual_start <= actual_end <= now
     planning_locked = source == "PLAN" and OpsDutyMonthlyPlan.objects.filter(month=row.business_date.isoformat()[:7], state_code="APPROVED").exists()
     if source == "LOG":
         location = row.location_label
-    elif source == "DISPATCH":
+    elif source in ("DISPATCH", "STATUS"):
         location = " · ".join(str(row.placement.get(key) or "") for key in ("object_name", "post_name", "group_name") if row.placement.get(key))
     else:
         location = str((row.target or {}).get("safeLabel") or "")
     result = {
-        "id": f"{source}:{row.pk}", "source": source, "source_id": public_identifier(row.pk), **public_metadata(metadata),
+        "id": f"{source}:{row.pk}" + (f":{row.source_key}" if source == "STATUS" else ""), "source": source, "source_id": public_identifier(row.pk), **public_metadata(metadata),
         "service_duty_code": code or None, "service_duty_label": label,
-        "business_date": row.business_date.isoformat() if source == "PLAN" else Clock.to_local(planned_start).date().isoformat(),
+        "business_date": row.business_date.isoformat() if source in ("PLAN", "STATUS") else Clock.to_local(planned_start).date().isoformat(),
         "state": state, "planned_start": local_stamp(planned_start), "planned_end": local_stamp(planned_end),
         "planned_minutes": interval_minutes(planned_start, planned_end),
         "acknowledged_at": local_stamp(acknowledged), "acknowledged_by": getattr(facts, "acknowledged_by", "") or None,
@@ -107,14 +109,24 @@ def serialize_record(source, row, supplement, metadata, *, actor=None):
         "location_label": location, "document_basis": row.document_basis if source == "LOG" else "",
         "note": (row.note or "") if source in ("LOG", "PLAN") else "",
         "created_at": local_stamp(row.created_at), "created_by": getattr(row, "created_by", "") or None,
-        "updated_at": local_stamp(getattr(supplement if source == "DISPATCH" and supplement else row, "updated_at", None)),
+        "updated_at": local_stamp(getattr(supplement if source in ("DISPATCH", "STATUS") and supplement else row, "updated_at", None)),
         "revision": row.revision if source == "LOG" else None,
-        "cancelled_at": (row.cancellation or {}).get("cancelledAt") if source == "PLAN" else local_stamp(row.cancelled_at),
+        "cancelled_at": (row.cancellation or {}).get("cancelledAt") if source == "PLAN" else None if source == "STATUS" else local_stamp(row.cancelled_at),
         "cancelled_reason": getattr(row, "cancelled_reason", "") or ((row.cancellation or {}).get("reason", "") if source == "PLAN" else ""),
         "execution_mode": "SERVER_TIME" if source == "PLAN" else "RECORDED_TIME",
-        "time_zone": str(_local_tz()),
+        "time_zone": str(_local_tz()), "generated_at": local_stamp(now),
     }
+    if source == "STATUS":
+        result.update(source_key=row.source_key, source_changed=row.source_changed,
+            date_start=row.snapshot["date_start"], date_end=row.snapshot["date_end"],
+            attention_codes=["SOURCE_CHANGED"] if row.source_changed else [])
+    attention = result.setdefault("attention_codes", [])
+    if ((state == "COMPLETED" and not valid_actual)
+            or (state == "ACTIVE" and (actual_start is None or actual_start > now or actual_end is not None))):
+        attention.append("INVALID_ACTUAL_FACTS")
     allowed = actor is not None and can_write(actor, source, row, metadata)
+    if source == "STATUS":
+        allowed = allowed and not row.source_changed and planned_start is not None
     actions = []
     execution_allowed = source != "PLAN" or row.business_date <= Clock.today_local()
     if allowed:
@@ -126,19 +138,21 @@ def serialize_record(source, row, supplement, metadata, *, actor=None):
             actions.append("complete")
         if state in ("PLANNED", "ACKNOWLEDGED"):
             if not planning_locked:
-                actions.append("cancel")
+                if source != "STATUS":
+                    actions.append("cancel")
             if source == "LOG":
                 actions.append("edit")
-        if state != "CANCELLED":
+        if state != "CANCELLED" and (source != "STATUS" or can_write(actor, source, row, metadata, operation="classify")):
             actions.append("classify")
     result["actions"] = actions
     return result
 
 
+@read_snapshot()
 def record_detail(actor, key):
     source, row, supplement, metadata = resolve_record(actor, key)
     result = serialize_record(source, row, supplement, metadata, actor=actor)
-    query = Q(entity_type={"LOG": "duty_log", "PLAN": "duty_shift", "DISPATCH": "duty_dispatch"}[source], entity_id=row.pk)
+    query = Q(entity_type={"LOG": "duty_log", "PLAN": "duty_shift", "DISPATCH": "duty_dispatch", "STATUS": "personnel_status"}[source], entity_id=row.pk)
     if supplement is not None:
         query |= Q(entity_type="duty_record_supplement", entity_id=supplement.pk)
     history = list(reversed(OpsAuditLog.objects.filter(query).order_by("-created_at", "-pk")[:100]))
@@ -265,12 +279,13 @@ def ensure_supplement(source, row, supplement, metadata, actor):
     if supplement is not None:
         return supplement
     return OpsDutyRecordSupplement.objects.create(source_type=source, source_id=row.pk,
+        **({"source_key": row.source_key, "source_snapshot": row.snapshot} if source == "STATUS" else {}),
         **{key: metadata[key] for key in ("employee_id", "employee_name", "division_id", "division_name")}, created_by=actor, updated_by=actor)
 
 
 @transaction.atomic
 def classify_record(actor, key, code, reason):
-    source, row, supplement, metadata = resolve_record(actor, key, write=True, lock=True)
+    source, row, supplement, metadata = resolve_record(actor, key, write=True, lock=True, operation="classify")
     old = serialize_record(source, row, supplement, metadata)
     if old["state"] == "CANCELLED":
         raise DomainError("INVALID_STATE_TRANSITION", 422, message="Отменённая запись сохраняется без изменения вида.")
@@ -328,6 +343,9 @@ def mark_execution(actor, key, operation, *, at=None):
         if source == "LOG":
             holder.revision += 1
             fields.append("revision")
+        else:
+            holder.updated_by = actor
+            fields.append("updated_by")
         holder.save(update_fields=fields)
         if source != "LOG":
             supplement = holder
@@ -338,6 +356,9 @@ def mark_execution(actor, key, operation, *, at=None):
 @transaction.atomic
 def cancel_record(actor, key, reason):
     source, _ = parse_key(key)
+    if source == "STATUS":
+        resolve_record(actor, key, write=True, lock=True)
+        raise DomainError("INVALID_STATE_TRANSITION", 422, message="Кадровый выход изменяется или отменяется через исходный статус сотрудника.")
     if source == "DISPATCH":
         # Same order as the legacy writer: config before assignment.
         from organization_management.apps.operations.models_duty_dispatch import OpsDutyDispatchConfig
@@ -377,11 +398,18 @@ def update_record(actor, key, data):
         data["planned_start"] = first
     if "planned_end" in data:
         data["planned_end"] = last
+    assignment_fields = ("planned_start", "planned_end", "location_label", "document_basis", "note")
+    assignment_changed = any(name in data and data[name] != getattr(row, name) for name in assignment_fields)
     fields = []
-    for name in ("planned_start", "planned_end", "location_label", "document_basis", "note"):
+    for name in assignment_fields:
         if name in data:
             setattr(row, name, data[name])
             fields.append(name)
+    if row.acknowledged_at is not None and assignment_changed:
+        # Intent belongs to the planned content shown to the employee.
+        # The update audit retains the previous acknowledgement.
+        row.acknowledged_at, row.acknowledged_by = None, ""
+        fields.extend(["acknowledged_at", "acknowledged_by"])
     row.revision += 1
     row.updated_at = Clock.now()
     row.save(update_fields=[*fields, "revision", "updated_at"])

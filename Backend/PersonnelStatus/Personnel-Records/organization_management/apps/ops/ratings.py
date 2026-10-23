@@ -690,7 +690,26 @@ def _all_summaries(flags, policy):
 # ── Сводка, динамика, карточка, аналитика ───────────────────────────────────
 
 
-def list_operational_ratings():
+def _require_aggregate_read_scope(actor):
+    from organization_management.apps.operations.services import PermissionService
+
+    allowed = (
+        PermissionService.visible_division_ids(str(actor), VIEW_AGGREGATE_PERMISSION)
+        if actor is not None and str(actor) else set()
+    )
+    if allowed is not None:
+        # Nullable personnel links, historical points and collective snapshots
+        # do not establish authoritative division ownership for every source.
+        raise DomainError(
+            "ANALYTICS_SCOPE_UNAVAILABLE", 403,
+            message="Агрегаты рейтинга недоступны для ограниченной области: "
+                    "принадлежность всех исторических участников и групп "
+                    "подразделениям не задана. Обратитесь к администратору.",
+        )
+
+
+def list_operational_ratings(*, actor):
+    _require_aggregate_read_scope(actor)
     flags = read_feature_flags()
     policy = read_rating_policy()
     return {
@@ -733,9 +752,10 @@ def policy_boundaries(points):
     return boundaries
 
 
-def rating_dynamics(employee_id):
+def rating_dynamics(employee_id, *, actor):
     """Динамика (§19.20): точки отдаются КАК ЕСТЬ — ни одно поле не
     пересчитывается. Серверная работа — отбор, порядок и границы методики."""
+    _require_aggregate_read_scope(actor)
     flags = read_feature_flags()
     policy = read_rating_policy()
     # Порядок сида, не подписи: участник по умолчанию — первый заведённый,
@@ -781,7 +801,7 @@ def rating_dynamics(employee_id):
     }
 
 
-def rating_employee_detail(employee_id):
+def rating_employee_detail(employee_id, *, actor):
     """Карточка при праве только на агрегат (§19.17): ни одного поля
     отдельных оценок и оценщиков.
 
@@ -791,6 +811,7 @@ def rating_employee_detail(employee_id):
     запроса, и отвечать на неё надо так же, как соседние ручки отвечают на
     неуказанный период или подразделение.
     """
+    _require_aggregate_read_scope(actor)
     if not str(employee_id or "").strip():
         raise DomainError(
             "VALIDATION_ERROR", 400,
@@ -830,9 +851,24 @@ def rating_employee_detail(employee_id):
     }
 
 
-def rating_analytics():
+def rating_analytics(*, actor):
     """Отчёт §22.16-22.17. Порядок причин непубликации значим: выключенная
     функция → отсутствующая методика → незаданный порог приватности."""
+    from organization_management.apps.operations.services import PermissionService
+
+    allowed = (
+        PermissionService.visible_division_ids(str(actor), VIEW_ANALYTICS_PERMISSION)
+        if actor is not None and str(actor) else set()
+    )
+    if allowed is not None:
+        # Rating groups/participants carry labels and optional personnel links,
+        # but no authoritative division ownership for all rating sources.
+        raise DomainError(
+            "ANALYTICS_SCOPE_UNAVAILABLE", 403,
+            message="Аналитика рейтинга недоступна для ограниченной области: "
+                    "подразделение-владелец рейтинговой группы не задано. "
+                    "Обратитесь к администратору.",
+        )
     flags = read_feature_flags()
     policy = read_rating_policy()
     suppression = read_suppression_min_group()
@@ -2040,10 +2076,11 @@ def correct_evaluation(actor, perms, work_item_code, body):
 # ── Реестр итоговых оценок (§19.15-19.16) ───────────────────────────────────
 
 
-def evaluation_registry(filters):
+def evaluation_registry(filters, *, actor):
     """Строка собирается ПОЛЕМ ЗА ПОЛЕМ из закрытой записи: ни score, ни
     комментарий, ни основание, ни оценщик в неё не попадают (§19.16, §19.21).
     Отбор и страница считаются здесь же."""
+    _require_aggregate_read_scope(actor)
     flags = read_feature_flags()
     policy = read_rating_policy()
     business_date = Clock.today_local()

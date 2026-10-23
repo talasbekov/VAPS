@@ -11,6 +11,48 @@ vm.runInNewContext(compiled, { exports: exported });
 const { defaultPortalRoute, moduleOpenFor } = exported;
 const granted = (...codes) => (code) => codes.includes('*') || codes.includes(code);
 
+test('every canonical rating destination keeps its own independent grant and rejects other single grants', () => {
+  const destinations = [
+    ['/security-ops/ratings', 'rating.view_aggregate'],
+    ['/security-ops/ratings/workspace', 'rating.evaluate'],
+    ['/security-ops/ratings/evaluations', 'rating.view_aggregate'],
+    ['/security-ops/ratings/export', 'rating.export'],
+    ['/security-ops/ratings/audit', 'rating.view_audit'],
+    ['/security-ops/ratings/analytics', 'analytics.view'],
+  ];
+  const permissions = [...new Set(destinations.map(([, permission]) => permission)), 'analytics.operations', 'event.view'];
+  for (const [href, permission] of destinations) {
+    assert.equal(moduleOpenFor(href, granted(permission)), true, `${href}: own grant`);
+    assert.equal(moduleOpenFor(href, granted('*')), true, `${href}: wildcard`);
+    assert.equal(moduleOpenFor(href, granted()), false, `${href}: no grant must not fall through unknown-route policy`);
+    for (const other of permissions.filter(code => code !== permission)) {
+      assert.equal(moduleOpenFor(href, granted(other)), false, `${href}: unrelated ${other}`);
+    }
+  }
+});
+
+test('navigation map keeps global unknown-route compatibility plus existing OR and all-of semantics', () => {
+  assert.equal(moduleOpenFor('/unregistered-module', granted()), true);
+  for (const permission of ['forces.command', 'forces.allocate', 'forces.select']) {
+    assert.equal(moduleOpenFor('/employees', granted(permission)), true);
+  }
+  for (const permissions of [[], ['status.view'], ['status.workspace']]) {
+    assert.equal(moduleOpenFor('/statuses', granted(...permissions)), false);
+  }
+  assert.equal(moduleOpenFor('/statuses', granted('status.view', 'status.workspace')), true);
+});
+
+test('OM assistant requires a real initiating or headquarters capability', () => {
+  for (const permission of ['event.create', 'event.manage', 'forces.command', '*']) {
+    assert.equal(moduleOpenFor('/security-ops/assistant', granted(permission)), true);
+  }
+  for (const permission of ['status.view', 'event.view', 'forces.allocate', 'forces.select']) {
+    assert.equal(moduleOpenFor('/security-ops/assistant', granted(permission)), false);
+  }
+  assert.equal(moduleOpenFor('/security-ops/assistant', granted()), false);
+  assert.equal(defaultPortalRoute(granted('event.create')), '/security-ops/assistant');
+});
+
 test('head starts with personnel statuses even when object and event registers are available', () => {
   assert.equal(defaultPortalRoute(granted('status.view', 'status.workspace', 'object.view', 'event.view')), '/statuses');
 });
@@ -67,6 +109,23 @@ test('duty management can start in its journal while a general analyst keeps ana
 test('admin keeps overview; no permissions and unrecognised roles fall back to profile', () => {
   assert.equal(defaultPortalRoute(granted('*')), '/dashboard');
   assert.equal(defaultPortalRoute(granted(), granted('DIRECTORATE_HEAD')), '/security-ops/profile');
+});
+
+test('ordinary employee starts in personal profile with every subset of their read and feedback grants', () => {
+  const codes = ['catalog.view', 'document.view', 'feedback.create', 'feedback.view', 'object.view', 'status.view', 'status.workspace'];
+  for (let mask = 0; mask < 2 ** codes.length; mask++) {
+    const permissions = codes.filter((_, index) => mask & (1 << index));
+    assert.equal(defaultPortalRoute(granted(...permissions), granted('EMPLOYEE'), new Set(permissions)), '/security-ops/profile');
+  }
+});
+
+test('employee base role does not override additional expense, duty or administration work', () => {
+  for (const [roles, permissions, route] of [
+    [['EMPLOYEE', 'DEPARTMENT_EXPENSE_OFFICER'], ['status.view', 'forces.allocate', 'analytics.view'], '/employees'],
+    [['EMPLOYEE', 'DUTY_OFFICER'], ['status.view', 'service_summary.view', 'duty.view'], '/security-ops/service-summary'],
+    [['EMPLOYEE', 'ADMIN'], ['*'], '/dashboard'],
+    [['EMPLOYEE', 'DIRECTORATE_HEAD'], ['status.view', 'status.workspace', 'status.manage', 'forces.select'], '/statuses'],
+  ]) assert.equal(defaultPortalRoute(granted(...permissions), granted(...roles), new Set(permissions)), route);
 });
 test('every combination routes only to a module open under the same permissions and role gate', () => {
   const codes = ['service_summary.view', 'status.view', 'status.workspace', 'status.manage', 'forces.select', 'forces.allocate', 'forces.command', 'duty.view', 'object.view', 'event.view', 'daily_report.generate', 'analytics.view'];

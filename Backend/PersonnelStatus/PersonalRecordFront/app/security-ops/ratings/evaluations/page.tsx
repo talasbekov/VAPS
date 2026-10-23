@@ -30,7 +30,7 @@ import {
 } from "@/entities/operational-rating";
 import type { RegistryFilters } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
-import { LoadFailure } from "@/components/load-failure";
+import { isRatingScopeUnavailable, RatingReadFailure } from "@/features/ops-ratings/rating-read-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
@@ -81,7 +81,7 @@ function EvaluationRegistryScreen() {
   const searchParams = useSearchParams();
   const filters = readFilters(searchParams);
   const query = useEvaluationRegistry(filters);
-  const data = query.data;
+  const data = isRatingScopeUnavailable(query.error) ? undefined : query.data;
 
   /** Любая правка фильтра сбрасывает страницу: третья страница прежнего
    * отбора показала бы пустоту как «ничего не найдено». */
@@ -120,7 +120,8 @@ function EvaluationRegistryScreen() {
           <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
         )}
         {query.error !== null && (
-          <LoadFailure
+          <RatingReadFailure
+            error={query.error}
             what="реестр оценок"
             onRetry={() => void query.refetch()}
             isRetrying={query.isFetching}

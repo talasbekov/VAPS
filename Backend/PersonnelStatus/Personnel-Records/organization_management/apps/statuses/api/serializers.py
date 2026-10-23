@@ -2,6 +2,7 @@
 Сериализаторы для API управления статусами сотрудников
 """
 from rest_framework import serializers
+from django.urls import reverse
 from django.core.exceptions import ValidationError as DjangoValidationError
 from organization_management.apps.operations.api.permissions import effective_permissions, require_permission
 from organization_management.apps.statuses.duty_assignments import assignment_for_update, assignment_location
@@ -14,18 +15,22 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.divisions.models import Division
 
 from organization_management.apps.statuses import catalog
+from organization_management.apps.statuses.retirement import (
+    refuse_retired_secondment_type, refuse_retired_secondment_amendment,
+)
 from organization_management.apps.statuses.participation_guard import (
     refuse_manual_participation,
 )
 
 
-def validate_status_type_code(value: str) -> str:
+def validate_status_type_code(value: str, *, current=None) -> str:
     """Код типа обязан быть в СПРАВОЧНИКЕ, а не в списке внутри кода.
 
     Отказ называет причину словами администратора: «типа нет в справочнике или
     он выключен» — иначе человек, только что заведший тип и получивший отказ,
     не поймёт, где искать (Plane №354).
     """
+    refuse_retired_secondment_type(value, current=current)
     known = catalog.known_codes()
     if value not in known:
         raise serializers.ValidationError(
@@ -78,6 +83,7 @@ class StatusChangeHistorySerializer(serializers.ModelSerializer):
 class StatusDocumentSerializer(serializers.ModelSerializer):
     """Сериализатор документов статуса"""
     uploaded_by_name = serializers.SerializerMethodField()
+    file = serializers.SerializerMethodField()
     file_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -93,13 +99,15 @@ class StatusDocumentSerializer(serializers.ModelSerializer):
             return f"{obj.uploaded_by.first_name} {obj.uploaded_by.last_name}".strip() or obj.uploaded_by.username
         return None
 
+    def get_file(self, obj: StatusDocument) -> str:
+        return self.get_file_url(obj)
+
     def get_file_url(self, obj: StatusDocument) -> str:
-        if obj.file:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.file.url)
-            return obj.file.url
-        return None
+        if not obj.file:
+            return None
+        return reverse('employee-status-document-content', kwargs={
+            'pk': obj.status_id, 'document_id': obj.pk,
+        })
 
 
 class DutyAssignmentValidationMixin:
@@ -142,13 +150,13 @@ class EmployeeStatusSerializer(DutyAssignmentValidationMixin, serializers.ModelS
         return data
 
     def validate_status_type(self, value):
-        validate_status_type_code(value)
+        current = getattr(self.instance, "status_type", None)
+        validate_status_type_code(value, current=current)
         # 🔴 ВТОРАЯ ДВЕРЬ В ТОТ ЖЕ ФАКТ (Plane №757, закрыто до конца в №840).
         # Здесь сходятся ОБА пути этой ручки — создание и правка, — поэтому
         # запрет стоит тут, а не четвёртым вызовом рядом с тремя. `self.instance`
         # даёт текущий тип: правку и закрытие УЖЕ заведённого участия запрет не
         # трогает, отбивается только заведение и смена типа на участие.
-        current = getattr(self.instance, "status_type", None)
         refuse_manual_participation(value, current=current)
         return value
 
@@ -185,6 +193,8 @@ class EmployeeStatusSerializer(DutyAssignmentValidationMixin, serializers.ModelS
 
     def validate(self, attrs):
         """Валидация данных с помощью метода clean модели"""
+        if self.instance:
+            refuse_retired_secondment_amendment(self.instance, attrs)
         self.validate_assignment(attrs)
         instance = self.instance or EmployeeStatus()
 

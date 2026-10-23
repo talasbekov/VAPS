@@ -89,6 +89,7 @@ def confirmation_authorities(employee_ids, actor_user_id):
         user_id=str(actor_user_id),
         role_code_id__in=_DIRECTORATE_HEAD_ROLES,
         is_active=True,
+        role_code__is_active=True,
         scope_division_id__isnull=False,
     ).values_list("scope_division_id", flat=True)
     bounds = list(Division.objects.filter(pk__in=role_scopes).values_list(

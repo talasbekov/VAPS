@@ -1,15 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
 import { opsApiClient } from "@/lib/ops-api";
 import { SECURITY_EVENTS_PATH, type ListSecurityEventsResponse, type SecurityEvent } from "@/entities/security-event";
 
 /** Complete registry for links and aggregates that must include every page. */
 export function useAllSecurityEvents(options: { enabled: boolean }) {
-  return useQuery<SecurityEvent[], Error>({
-    queryKey: ["ops-security-events", "all-person-links"],
-    enabled: options.enabled,
-    queryFn: async ({ signal }) => {
+  const access = useOpsReadAccess("event.view");
+  return useOpsProtectedRead<SecurityEvent[]>(["ops-security-events", "all-person-links"], [], access,
+    async signal => {
       const events = new Map<string, SecurityEvent>();
       for (let page = 1; ; page++) {
         if (signal.aborted) throw new Error("Загрузка отменена");
@@ -22,6 +21,5 @@ export function useAllSecurityEvents(options: { enabled: boolean }) {
         if (!response.next) return [...events.values()];
         if (events.size === previousSize) throw new Error("Не удалось загрузить следующую страницу мероприятий");
       }
-    },
-  });
+    }, { enabled: options.enabled, staleTime: 60_000 });
 }

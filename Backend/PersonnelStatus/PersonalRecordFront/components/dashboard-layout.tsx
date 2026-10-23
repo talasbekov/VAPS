@@ -222,7 +222,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
         {/* Mobile Menu */}
         <MobileMenu isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-          <Sidebar />
+          <Sidebar embedded onNavigate={() => setSidebarOpen(false)} />
         </MobileMenu>
 
         {/* Main Content */}

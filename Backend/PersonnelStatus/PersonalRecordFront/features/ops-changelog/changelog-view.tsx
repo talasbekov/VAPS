@@ -49,20 +49,15 @@ export function ChangelogView({
           <div>
             <h1 className="text-2xl font-bold">{HEADING}</h1>
             <p className="text-muted-foreground">
-              Версия среза нативного порта и закрытые исправления раздела
-              «Охранные мероприятия».
+              Исправления в разделе «Охранные мероприятия».
             </p>
           </div>
         </div>
 
         <section className="rounded-xl border bg-card p-4" aria-label="Версия">
-          <h2 className="mb-2 text-sm font-semibold">Версия среза порта</h2>
+          <h2 className="mb-2 text-sm font-semibold">Версия раздела ОМ</h2>
           <p className="text-sm">
             Версия <span className="font-mono">{PORT_VERSION}</span>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Растёт по очередям портирования; история очередей — в коммитах
-            ветки, дата сборки намеренно не показывается.
           </p>
         </section>
 
@@ -105,21 +100,14 @@ export function ChangelogView({
         </section>
 
         <section className="rounded-xl border border-dashed bg-muted/30 p-4">
-          <h2 className="mb-2 text-sm font-semibold">Чего в журнале нет</h2>
+          <h2 className="mb-2 text-sm font-semibold">О журнале</h2>
           <ul className="flex flex-col gap-2">
             <li className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">
-                Личность сообщившего.
-              </span>{" "}
-              Видимость отправителя багрепорта — только разработчику: поля
-              автора нет в самом типе строки, и в вёрстку ему утечь неоткуда.
+              Авторы обращений в журнале не указываются.
             </li>
             <li className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">
-                История версий (список релизов).
-              </span>{" "}
-              Системе известна ровно одна версия — текущая; манифеста релизов у
-              порта нет.
+              Здесь приведены внесённые в журнал исправления. Полный список
+              версий не ведётся.
             </li>
           </ul>
         </section>

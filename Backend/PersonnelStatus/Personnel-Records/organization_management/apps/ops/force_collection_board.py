@@ -394,17 +394,14 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
             "ALLOCATION_NOT_SENT", 422,
             message="Довыделить можно только по отправленному запросу — черновик правится на месте.",
         )
-    try:
-        count = int(count)
-    except (TypeError, ValueError):
-        count = 0
+    count = events._whole_number(count, "count")
     if count < 1:
         raise events._validation({"count": ["Должно быть не меньше 1."]})
     now = Clock.now()
     parsed_due = None
     if due_at:
         try:
-            parsed_due = dt.datetime.fromisoformat(str(due_at).replace("Z", "+00:00"))
+            parsed_due = events._parse_due_at(due_at)
         except ValueError:
             raise events._validation({"dueAt": ["Неверный формат даты."]})
     # 🔴 ИДЕНТИФИКАТОР — СЛУЧАЙНЫЙ, А НЕ ПО ЧАСАМ (Plane №522, п. 6). Здесь
@@ -422,8 +419,8 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
         "need": count,
         # Срок — указанный, иначе срок исходного запроса, иначе стандартный.
         "dueAt": (
-            parsed_due.isoformat() if parsed_due is not None
-            else source.get("dueAt") or events.allocation_default_due_at(event).isoformat()
+            parsed_due if parsed_due is not None
+            else source.get("dueAt") or events.allocation_default_due_at(event)
         ),
         "status": events._ALLOCATION_DRAFT,
         "comment": "",

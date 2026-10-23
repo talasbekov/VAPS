@@ -4,25 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
 import { motion } from "framer-motion";
 import { LoadFailure } from "@/components/load-failure";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 
 interface StatsCardsProps {
   stats: {
     staff_count: number;
     total_absences: number;
-    by_type: {
-      vacation: number;
-      leave_by_report: number;
-      sick_leave: number;
-      business_trip: number;
-      training: number;
-      competition: number;
-      conference: number;
-      other_absence: number;
-      on_duty: number;
-      after_duty: number;
-      seconded_from: number;
-      seconded_to: number;
-    };
+    by_type: Record<string, number>;
   } | null;
   isLoading?: boolean;
   compact?: boolean;
@@ -36,15 +24,14 @@ interface StatsCardsProps {
   onRetry?: () => void;
 }
 
-const absenceTypeConfig = {
+// Readable legacy labels remain available while the catalog loads or is unavailable.
+const absenceTypeConfig: Record<string, { label: string }> = {
   vacation: { label: "Отпуска" },
   leave_by_report: { label: "Отпуск по рапорту" },
   sick_leave: { label: "Больничные" },
   business_trip: { label: "Командировки" },
   training: { label: "Учёба" },
   competition: { label: "На соревнованиях" },
-  // Без записи здесь карточка молча пропадает (ниже `if (!config) return null`),
-  // хотя бэкенд считает конференцию наравне с остальными типами.
   conference: { label: "На конференции" },
   other_absence: { label: "Иные причины" },
   on_duty: { label: "На дежурстве" },
@@ -92,6 +79,14 @@ export function StatsCards({
   onRetry,
   compact = false,
 }: StatsCardsProps) {
+  const statusTypes = useOpsStatusTypes();
+  const labelOf = (code: string) => {
+    // The shared catalog includes inactive types. Statistics normalize legacy
+    // aliases, while imported rows may still carry the canonical code.
+    const entry = statusTypes.all.find(type => type.code === code || type.legacy_code === code);
+    return entry?.name || absenceTypeConfig[code]?.label || code;
+  };
+
   if (isLoading) {
     if (compact) return <div role="status" className="h-24 animate-pulse rounded-xl border bg-muted/40 p-4 text-sm text-muted-foreground">Загрузка сводки…</div>;
     return (
@@ -150,9 +145,7 @@ export function StatsCards({
     );
   }
 
-  const absenceTypes = Object.entries(stats.by_type) as Array<
-    [keyof typeof absenceTypeConfig, number]
-  >;
+  const absenceTypes = Object.entries(stats.by_type);
 
   if (compact) {
     return (
@@ -171,9 +164,9 @@ export function StatsCards({
         <details className="mt-2 text-sm">
           <summary className="w-fit cursor-pointer rounded text-primary-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">Подробная сводка статусов</summary>
           <dl className="mt-3 grid gap-x-8 gap-y-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-3">
-            {absenceTypes.map(([type, count]) => absenceTypeConfig[type] && (
+            {absenceTypes.map(([type, count]) => (
               <div key={type} className="flex items-baseline justify-between gap-3">
-                <dt className="text-muted-foreground">{absenceTypeConfig[type].label}</dt>
+                <dt className="min-w-0 break-words text-muted-foreground">{labelOf(type)}</dt>
                 <dd className="font-semibold tabular-nums">{count}</dd>
               </div>
             ))}
@@ -207,16 +200,11 @@ export function StatsCards({
           />
         </motion.div>
 
-        {absenceTypes.map(([type, count]) => {
-          const config = absenceTypeConfig[type];
-          if (!config) return null;
-
-          return (
+        {absenceTypes.map(([type, count]) => (
             <motion.div key={type} variants={cardVariants}>
-              <StatCard label={config.label} value={count} />
+              <StatCard label={labelOf(type)} value={count} />
             </motion.div>
-          );
-        })}
+        ))}
       </motion.div>
     </div>
   );

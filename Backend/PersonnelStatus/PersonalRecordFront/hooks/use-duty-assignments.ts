@@ -6,6 +6,7 @@ import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type { ServerDutyAssignment, DutyForcesDepartment, DutyAssignment } from "@/entities/duty-assignment";
+import { dutyIntervalsOnDate } from "@/features/employee-status-update/model/duty-intervals";
 
 export const DUTY_ASSIGNMENTS_QUERY_KEY = ["status-duty-assignments"] as const;
 
@@ -39,7 +40,7 @@ function useDutyAssignments(filters: { object_id?: string; employee_id?: number;
 export function useDutyAssignment(employeeId: number | null, date: string, enabled = true) {
   const query = useDutyAssignments({ employee_id: employeeId ?? undefined, date }, enabled && employeeId !== null);
   // The legacy status editor must not copy an independently managed dispatch shift.
-  const assignment = query.data?.results.find(row => row.status_id != null && row.dispatch_assignment_id == null) ?? null;
+  const assignment = query.data?.results.find(row => row.status_id != null && row.dispatch_assignment_id == null && row.source?.toUpperCase() !== "DISPATCH") ?? null;
   return { ...query, assignment };
 }
 
@@ -55,9 +56,13 @@ export function useObjectDutyForces(objectId: string, date: string) {
     const byDepartment = new Map<string, Map<string, DutyAssignment[]>>();
     for (const row of query.data?.results ?? []) {
       const placement = row.placement;
+      const dispatch = row.dispatch_assignment_id != null || row.source?.toUpperCase() === "DISPATCH";
+      const intervals = dispatch || placement.intervals === undefined ? undefined : dutyIntervalsOnDate(placement.intervals, date);
+      if (intervals?.length === 0) continue;
       const assignment: DutyAssignment = {
         employeeKey: row.dispatch_assignment_id ? `dispatch:${row.dispatch_assignment_id}` : String(row.status_id), employeeName: row.employee_name,
         shiftStart: row.start_at, shiftEnd: row.end_at, timeZone: row.time_zone,
+        intervals,
         rankName: row.rank_name, positionName: row.position_name, departmentName: row.department_name,
         dutyKind: placement.kind, objectId: placement.object_id, objectName: placement.object_name,
         postId: placement.post_id, postName: placement.post_name,
@@ -79,6 +84,6 @@ export function useObjectDutyForces(objectId: string, date: string) {
         assignments: [...items].sort((a, b) => a.employeeName.localeCompare(b.employeeName, "ru")),
       })).sort((a, b) => a.label.localeCompare(b.label, "ru")),
     })).sort((a, b) => a.departmentName.localeCompare(b.departmentName, "ru"));
-  }, [query.data]);
+  }, [query.data, date]);
   return { ...query, departments };
 }

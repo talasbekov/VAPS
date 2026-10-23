@@ -18,6 +18,12 @@ export interface StatusCalendarDivision {
   name: string;
 }
 
+export interface StatusCalendarDivisionOption extends StatusCalendarDivision {
+  parent_id: string | null;
+}
+
+export const STATUS_CALENDAR_DIVISIONS_PATH = "/api/ops/status-calendar/divisions/";
+
 /** Сотрудник месячной матрицы: код статуса на каждый день месяца. */
 export interface StatusCalendarEmployeeMonth {
   id: string;
@@ -97,20 +103,24 @@ export function statusCalendarMonthPath(params: {
   divisionId?: string | null;
   page?: number;
   pageSize?: number;
+  search?: string;
 }): string {
   const query = new URLSearchParams({ month: params.month });
   if (params.divisionId) query.set("division_id", params.divisionId);
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("page_size", String(params.pageSize));
+  if (params.search?.trim()) query.set("search", params.search.trim());
   return `${BASE}/month/?${query.toString()}`;
 }
 
 export function statusCalendarDayPath(params: {
   date: string;
   divisionId?: string | null;
+  search?: string;
 }): string {
   const query = new URLSearchParams({ date: params.date });
   if (params.divisionId) query.set("division_id", params.divisionId);
+  if (params.search?.trim()) query.set("search", params.search.trim());
   return `${BASE}/day/?${query.toString()}`;
 }
 

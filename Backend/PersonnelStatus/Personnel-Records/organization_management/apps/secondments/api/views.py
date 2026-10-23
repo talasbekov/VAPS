@@ -12,6 +12,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.retirement import RetiredSecondmentWritesMixin
 from organization_management.apps.statuses.application.services import (
     StatusApplicationService,
 )
@@ -24,7 +25,7 @@ from organization_management.apps.operations.services import (
 )
 
 
-class SecondmentRequestViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
+class SecondmentRequestViewSet(RetiredSecondmentWritesMixin, RequirePermissionMixin, viewsets.ModelViewSet):
     """
     ViewSet для управления запросами на прикомандирование.
 

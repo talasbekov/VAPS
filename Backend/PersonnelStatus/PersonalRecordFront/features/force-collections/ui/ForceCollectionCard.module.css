@@ -1,0 +1,108 @@
+@media (max-width: 1399px) {
+  .wrap,
+  .wrap > div {
+    overflow-x: visible;
+    min-width: 0;
+  }
+
+  .table {
+    display: block;
+    width: 100%;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table tbody {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .table tbody > tr,
+  .table tbody > tr > td[colspan] {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+  }
+
+  .table [data-slot="department-row"],
+  .table [data-slot="draft-row"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .table [data-slot="department-row"] > td,
+  .table [data-slot="draft-row"] > td {
+    display: block;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .table [data-slot="department-row"] > td:first-child,
+  .table [data-slot="department-row"] > td:nth-child(5),
+  .table [data-slot="department-row"] > td:last-child,
+  .table [data-slot="draft-row"] > td:first-child,
+  .table [data-slot="draft-row"] > td:nth-child(2),
+  .table [data-slot="draft-row"] > td:nth-child(5) {
+    grid-column: 1 / -1;
+  }
+
+  .table [data-slot="department-row"] > td:nth-child(7) {
+    grid-column: 2 / -1;
+  }
+
+  .table [data-slot="department-row"] > td:last-child:has(> div:empty):not(:has(> p)),
+  .table [data-slot="draft-row"] > td:nth-child(3),
+  .table [data-slot="draft-row"] > td:nth-child(4),
+  .table [data-slot="draft-row"] > td:nth-child(7) {
+    display: none;
+  }
+
+  .table [data-slot="draft-row"] > td:first-child > div {
+    flex-wrap: wrap;
+  }
+
+  .table [data-slot="draft-row"] input,
+  .table [data-slot="draft-row"] select {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .table button {
+    min-height: 44px;
+    min-width: 44px;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .table [data-slot="split-editor"] div {
+    min-width: 0;
+    max-width: 100%;
+  }
+}

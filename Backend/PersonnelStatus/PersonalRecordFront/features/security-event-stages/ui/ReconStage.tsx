@@ -24,6 +24,7 @@ import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChief
 //   паспорта объекта, справочника нарядов в данных нет.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { EventForcesLink } from "@/features/forces-workspace/ui/EventForcesLink";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -62,6 +63,7 @@ import { Fact } from "./Fact";
 import { ReconMaterials } from "./ReconMaterials";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
+import { reconcileReconRows, rowsForReconSave, type ReconRowDraft } from "../model/recon-draft";
 
 /** Тип поста из эталона. Список закрытый, но чужое значение не выбрасывается:
  * строки паспорта могли прийти с типом вне списка, и молча заменить его на
@@ -87,25 +89,34 @@ interface SectorGroup {
   rows: ReconSectorPost[];
 }
 
-export function ReconStage({ event }: { event: SecurityEvent }) {
+export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; readOnly?: boolean }) {
   const participationCatalog = useParticipationCatalog();
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(
     event.reconChecklist
   );
   const checklistDrafts = useRef<Record<string, ReconChecklistItem[]>>({});
+  const checklistBases = useRef<Record<string, ReconChecklistItem[]>>({});
   // Callback мутации может жить дольше рендера, в котором был создан. Ref
   // отвечает на вопрос «какой объект открыт В МОМЕНТ ответа», не замыкая A.
   const activeVisitIdRef = useRef<string | null>(null);
-  const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts);
+  const savingVisitIdRef = useRef<string | null>(null);
+  const [rowDraft, setRowDraft] = useState<ReconRowDraft>({
+    base: event.reconSectorPosts, rows: event.reconSectorPosts,
+  });
+  const rows = rowDraft.rows;
+  function setRows(change: (previous: ReconSectorPost[]) => ReconSectorPost[]): void {
+    setRowDraft(previous => ({ ...previous, rows: change(previous.rows) }));
+  }
   // Секторы, у которых ещё нет ни одного поста. Живут ОТДЕЛЬНО от строк:
   // сектор — заголовок группы, а не запись расчёта, и сервер про пустой сектор
   // не знает. Заведённый и не наполненный сектор исчезнет при перезагрузке —
   // это честно: сохранять нечего.
-  const [emptySectors, setEmptySectors] = useState<string[]>([]);
-  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [emptySectorsByVisit, setEmptySectorsByVisit] = useState<Record<string, string[]>>({});
+  const [collapsedByVisit, setCollapsedByVisit] = useState<Record<string, string[]>>({});
   const [expanded, setExpanded] = useState<string[]>([]);
   const [chiefDialogOpen, setChiefDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmVersion, setConfirmVersion] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -114,7 +125,9 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   // переноса форма осталась бы с локальными именами — «Сохранить» считало бы
   // черновик изменённым навсегда, а «Завершить» осталось бы заблокированным.
   const update = useUpdateRecon(event.id, {
-    onFormError: (details) => setFieldErrors(details),
+    onFormError: (details) => {
+      if (savingVisitIdRef.current === activeVisitIdRef.current) setFieldErrors(details);
+    },
     onEvent: (fresh, variables) => {
       const savedVisitId =
         typeof variables.visitObjectId === "string"
@@ -124,38 +137,30 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         fresh.visitObjects.find((visit) => visit.id === savedVisitId)
           ?.reconChecklist ?? fresh.reconChecklist;
       if (savedVisitId !== undefined) {
+        const submitted = variables.checklist as ReconChecklistItem[] | undefined;
+        const local = checklistDrafts.current[savedVisitId];
+        // The save acknowledges only its submitted checklist version. Later
+        // edits, including those made before switching to another visit, stay.
+        const reconciled = local !== undefined && JSON.stringify(local) !== JSON.stringify(submitted)
+          ? local : savedChecklist;
+        checklistBases.current[savedVisitId] = savedChecklist;
+        checklistDrafts.current[savedVisitId] = reconciled;
         if (activeVisitIdRef.current === savedVisitId) {
-          delete checklistDrafts.current[savedVisitId];
-          setChecklist(savedChecklist);
-        } else {
-          // Ответ A не имеет права перерисовать уже открытый B. Сохраняем
-          // подтверждённое сервером состояние A как его локальную базу:
-          // проп `event` намеренно не пересобирается после каждой мутации.
-          checklistDrafts.current[savedVisitId] = savedChecklist;
+          setChecklist(reconciled);
         }
       } else if (activeVisitIdRef.current === null) {
         setChecklist(savedChecklist);
       }
-      setRows(fresh.reconSectorPosts);
-      // Сектор, в котором появились посты, больше не пустой — иначе он остался
-      // бы вторым заголовком с тем же именем.
-      setEmptySectors((prev) =>
-        prev.filter(
-          (name) => !fresh.reconSectorPosts.some((row) => row.sector === name)
-        )
-      );
+      setRowDraft(previous => reconcileReconRows(previous, fresh.reconSectorPosts,
+        variables.sectorPosts as ReconSectorPost[] | undefined));
     },
   });
   // Импорт добавляет строки на СЕРВЕРЕ, поэтому его ответ переносится в форму
-  // явно: карточка ОМ больше не пересобирается на каждом обновлении данных, и
-  // без этого импортированные посты не появились бы. Несохранённые ручные
-  // строки при этом остаются — их сервер ещё не видел.
+  // явно. Импорт не подтверждает локальные правки: сравнение с последним
+  // серверным снимком сохраняет изменённые поля, удаления и новые строки.
   const importPosts = useImportReconPosts(event.id, {
     onEvent: (fresh) =>
-      setRows((prev) => [
-        ...fresh.reconSectorPosts,
-        ...prev.filter((row) => row.id.startsWith("recon-local-")),
-      ]),
+      setRowDraft(previous => reconcileReconRows(previous, fresh.reconSectorPosts)),
   });
   const complete = useCompleteRecon(event.id);
   const access = useChainAccess();
@@ -176,10 +181,23 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const activeVisitObject = scope.visit;
   activeVisitIdRef.current = activeVisitObject?.id ?? null;
   const visibleRows = scope.rows;
+  const emptySectors = emptySectorsByVisit[scope.shown] ?? [];
+  const collapsed = collapsedByVisit[scope.shown] ?? [];
+  function setEmptySectors(change: (previous: string[]) => string[]): void {
+    setEmptySectorsByVisit(previous => ({ ...previous,
+      [scope.shown]: change(previous[scope.shown] ?? []),
+    }));
+  }
+  function setCollapsed(change: (previous: string[]) => string[]): void {
+    setCollapsedByVisit(previous => ({ ...previous,
+      [scope.shown]: change(previous[scope.shown] ?? []),
+    }));
+  }
   useEffect(() => {
     const visitId = activeVisitObject?.id;
     setChecklist(
       (visitId === undefined ? undefined : checklistDrafts.current[visitId]) ??
+        (visitId === undefined ? undefined : checklistBases.current[visitId]) ??
         activeVisitObject?.reconChecklist ??
         event.reconChecklist
     );
@@ -189,10 +207,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   // `event.manage` здесь не fallback — именно его task снимает как источник
   // права рекогносцировки. Переключатель объектов остаётся доступным, чтобы
   // старший объекта A мог уйти с read-only объекта B на свой.
-  const canManageRecon = mayManageRecon(activeVisitObject);
-  const reconManageReason = canManageRecon
-    ? null
-    : "Рекогносцировку ведёт назначенный старший выбранного объекта.";
+  const canManageRecon = !readOnly && mayManageRecon(activeVisitObject);
+  const reconManageReason = readOnly
+    ? "Показан сохранённый расчёт рекогносцировки."
+    : canManageRecon
+      ? null
+      : "Рекогносцировку ведёт назначенный старший выбранного объекта.";
 
   /** Отнести строки к объекту: одну (перенос) или все нераспределённые. */
   function assignToVisit(visitObjectId: string, only?: string): void {
@@ -205,11 +225,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     );
   }
 
+  const confirmedRows = rowDraft.base.filter(row => event.visitObjects.length === 1 ||
+    (row.visitObjectId ?? null) === (activeVisitObject?.id ?? null));
   const dirty =
-    JSON.stringify({ checklist, rows }) !==
+    JSON.stringify({ checklist, rows: visibleRows }) !==
     JSON.stringify({
-      checklist: activeVisitObject?.reconChecklist ?? event.reconChecklist,
-      rows: event.reconSectorPosts,
+      checklist: checklistBases.current[scope.shown] ?? activeVisitObject?.reconChecklist ?? event.reconChecklist,
+      rows: confirmedRows,
     });
 
   /** Расчёт по постам — то самое число, которое завершение этапа отправит
@@ -240,8 +262,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       ? event.passportBinding
       : null);
 
-  /** Потребность ПОКАЗАННОГО объекта — то, что просит подвал `[РЕК-07]`.
-   *  Общее число остаётся рядом: штабу уходит сумма по мероприятию. */
+  /** Завершение публикует выбранный объект; соседние черновики не уходят Штабу. */
   const needOfVisit = visibleRows.reduce(
     (sum, row) =>
       (row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
@@ -379,15 +400,17 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   }
 
   function renameSector(from: string, to: string): void {
+    const ids = new Set(visibleRows.filter(row => row.sector === from).map(row => row.id));
     setRows((prev) =>
-      prev.map((row) => (row.sector === from ? { ...row, sector: to } : row))
+      prev.map((row) => (ids.has(row.id) ? { ...row, sector: to } : row))
     );
     setEmptySectors((prev) => prev.map((name) => (name === from ? to : name)));
     setCollapsed((prev) => prev.map((name) => (name === from ? to : name)));
   }
 
   function removeSector(name: string): void {
-    setRows((prev) => prev.filter((row) => row.sector !== name));
+    const ids = new Set(visibleRows.filter(row => row.sector === name).map(row => row.id));
+    setRows((prev) => prev.filter((row) => !ids.has(row.id)));
     setEmptySectors((prev) => prev.filter((item) => item !== name));
     setCollapsed((prev) => prev.filter((item) => item !== name));
   }
@@ -395,9 +418,10 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   /** Пост встаёт в КОНЕЦ СВОЕЙ группы, а не в конец таблицы: расчёт читают по
    * секторам, и строка, уехавшая в хвост, потеряла бы сектор из виду. */
   function addPost(sector: string): void {
+    const ids = new Set(visibleRows.filter(row => row.sector === sector).map(row => row.id));
     setRows((prev) => {
       const lastInSector = prev.reduce(
-        (found, row, index) => (row.sector === sector ? index : found),
+        (found, row, index) => (ids.has(row.id) ? index : found),
         -1
       );
       const row = blankRow(sector);
@@ -440,11 +464,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   }
 
   function save(): void {
+    if (!canManageRecon || update.isPending || importPosts.isPending) return;
     setFieldErrors(null);
+    savingVisitIdRef.current = activeVisitObject?.id ?? null;
     update.mutate({
       visitObjectId: activeVisitObject?.id,
       checklist,
-      sectorPosts: rows,
+      sectorPosts: rowsForReconSave(rowDraft, activeVisitObject?.id ?? null, event.visitObjects.length === 1),
     });
   }
 
@@ -453,19 +479,34 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   // `[РЕК-07]`: почему «Завершить» недоступна — одна причина, первая по порядку.
   const completeBlocked: string | null = !canManageRecon
     ? reconManageReason
-    : dirty
-      ? "Сохраните расчёт перед завершением этапа."
-      : visibleRows.length === 0
-          ? "Нет постов расчёта."
-          : checklist.some((item) => (item.required ?? true) && item.state === "UNCHECKED")
-            ? "Обязательные пункты чек-листа остались в «Не проверено»."
-            : null;
+    : importPosts.isPending || update.isPending
+      ? "Дождитесь завершения импорта или сохранения расчёта."
+      : dirty
+        ? "Сохраните расчёт перед завершением этапа."
+        : visibleRows.length === 0
+            ? "Нет постов расчёта."
+            : checklist.some((item) => (item.required ?? true) && item.state === "UNCHECKED")
+              ? "Обязательные пункты чек-листа остались в «Не проверено»."
+              : null;
+
+  // Confirmation belongs to the calculation that opened it. A changed visit,
+  // draft or acknowledged server version requires a fresh confirmation.
+  const completionVersion = JSON.stringify({
+    visitObjectId: activeVisitObject?.id ?? null,
+    checklist,
+    rows: visibleRows,
+    confirmedRows,
+  });
+  const confirmationInvalid = completeBlocked !== null || confirmVersion !== completionVersion;
+  useEffect(() => {
+    if (confirmOpen && confirmationInvalid) setConfirmOpen(false);
+  }, [confirmOpen, confirmationInvalid]);
 
   // `[РЕК-02]` (Plane №424): без старшего объекта рекогносцировка закрыта —
   // сервер отвечает 422 `VISIT_CHIEF_REQUIRED` на импорт, сохранение и
   // завершение, а экран не рисует форму, которую нельзя отправить. Хуки
   // выше уже отработали, ранний return их порядок не ломает.
-  if (activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null) {
+  if (!readOnly && activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null) {
     return (
       <Card role="region" aria-label="Рекогносцировка объекта">
         <CardContent className="space-y-5">
@@ -524,7 +565,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <ObjectFacts event={event} />
 
         <VisitObjectPicker event={event} scope={scope} allRows={rows}>
-          {scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0 && (
+          {!readOnly && scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0 && (
             <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>Эти посты заведены до разметки. Отнести все к:</span>
               {event.visitObjects.map((visit) => (
@@ -649,6 +690,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 size="sm"
                 disabled={
                   importPosts.isPending ||
+                  update.isPending ||
                   activeVisitObject === null ||
                   importPassport === null
                 }
@@ -676,7 +718,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               <Button
                 type="button"
                 size="sm"
-                disabled={!dirty || update.isPending}
+                disabled={!dirty || update.isPending || importPosts.isPending}
                 onClick={save}
               >
                 {update.isPending ? "Сохранение…" : "Сохранить расчёт"}
@@ -1064,13 +1106,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t bg-background/95 px-6 py-3 backdrop-blur"
           data-slot="recon-footer"
         >
-          {/* 🔴 ЧИСЛО ОБЪЕКТА И ЧИСЛО, КОТОРОЕ УЙДЁТ ШТАБУ, — РАЗНЫЕ (Plane
-              №708). Подвал печатал потребность ПОКАЗАННОГО объекта, а
-              `complete_recon` отправляет штабу сумму по ВСЕМ постам
-              мероприятия: на ОМ с двумя объектами человек подтверждал «5
-              сотрудников», а уходило 12. Оба числа названы, и второе — только
-              когда оно отличается: лишняя цифра там, где объект один,
-              заставляла бы искать разницу, которой нет. */}
+          {/* Штаб получает завершённый объект; расчёт соседнего объекта
+              может ещё оставаться черновиком и не входит в эту отправку. */}
           <p className="text-sm">
             Потребность по объекту{activeVisitObject !== null ? ` «${activeVisitObject.objectName}»` : ""}:{" "}
             <b className="tabular-nums" data-slot="recon-need">{activeVisitObject !== null ? needOfVisit : needFromPosts}</b>{" "}
@@ -1081,29 +1118,21 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             )}
             <span className="text-muted-foreground">
               →{" "}
-              {needOfVisit !== needFromPosts && activeVisitObject !== null && (
-                <>
-                  штабу уйдёт по мероприятию{" "}
-                  <b className="tabular-nums text-foreground" data-slot="recon-need-event">
-                    {needFromPosts}
-                  </b>{" "}
-                  в{" "}
-                </>
-              )}
-              {needOfVisit === needFromPosts || activeVisitObject === null
-                ? "уйдёт в "
-                : ""}
+              {readOnly ? "сохранённый расчёт для " : "уйдёт в "}
               {forcesOpen ? (
-                <Link
-                  // Прямо на вкладку «Сборы» (№931; ревью №825 нашло тот же
-                  // адрес здесь): без `tab=` открывался «Список сотрудников».
-                  href="/employees?view=forces&tab=collections"
+                <EventForcesLink
+                  eventId={event.id}
                   className="font-semibold text-primary-ink"
                 >
                   «Сбор сил на ОМ»
-                </Link>
+                </EventForcesLink>
               ) : (
                 <span className="font-semibold text-foreground">«Сбор сил на ОМ»</span>
+              )}
+              {!readOnly && activeVisitObject !== null && event.visitObjects.length > 1 && (
+                <span className="mt-1 block text-xs" data-slot="recon-publication-scope">
+                  Отправляется только этот объект. Черновики остальных объектов не передаются.
+                </span>
               )}
             </span>
           </p>
@@ -1112,7 +1141,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={!canManageRecon || !dirty || update.isPending}
+              disabled={!canManageRecon || !dirty || update.isPending || importPosts.isPending}
               onClick={save}
             >
               {update.isPending ? "Сохранение…" : "Сохранить"}
@@ -1136,7 +1165,11 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                   size="sm"
                   disabled={completeBlocked !== null || complete.isPending}
                   aria-describedby={describedBy}
-                  onClick={() => setConfirmOpen(true)}
+                  onClick={() => {
+                    if (completeBlocked !== null || complete.isPending) return;
+                    setConfirmVersion(completionVersion);
+                    setConfirmOpen(true);
+                  }}
                 >
                   {complete.isPending
                     ? "Завершение…"
@@ -1149,10 +1182,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              {/* В заголовке — ЧИСЛО, КОТОРОЕ ДЕЙСТВИТЕЛЬНО УЙДЁТ (Plane
-                  №708): подтверждают отправку, а отправляется сумма по
-                  мероприятию. Потребность показанного объекта названа ниже,
-                  когда она отличается, — чтобы разница не выглядела опечаткой. */}
+              {/* Подтверждается потребность выбранного объекта: черновики
+                  соседних объектов не публикуются вместе с ним. */}
               <DialogTitle>
                 Завершить рекогносцировку объекта с потребностью: физнаряд {needOfVisit}
                 {groupNeedTotal > 0 ? `, группы ${groupNeedTotal}` : ""}?
@@ -1183,8 +1214,9 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </Button>
               <Button
                 type="button"
-                disabled={complete.isPending}
+                disabled={complete.isPending || confirmationInvalid}
                 onClick={() => {
+                  if (!confirmOpen || confirmationInvalid || complete.isPending) return;
                   complete.mutate({ visitObjectId: activeVisitObject?.id });
                   setConfirmOpen(false);
                 }}

@@ -4616,7 +4616,7 @@ class OperationalRatingsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
 
     def list(self, request):
-        return Response(ratings_service.list_operational_ratings())
+        return Response(ratings_service.list_operational_ratings(actor=resolve_actor_id(request)))
 
 
 class OperationalRatingDynamicsViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -4642,7 +4642,7 @@ class OperationalRatingDynamicsViewSet(RequirePermissionMixin, viewsets.ViewSet)
     def list(self, request):
         return Response(
             ratings_service.rating_dynamics(
-                request.query_params.get("employee")
+                request.query_params.get("employee"), actor=resolve_actor_id(request),
             )
         )
 
@@ -4670,7 +4670,7 @@ class OperationalRatingEmployeeViewSet(RequirePermissionMixin, viewsets.ViewSet)
     def list(self, request):
         return Response(
             ratings_service.rating_employee_detail(
-                request.query_params.get("employee")
+                request.query_params.get("employee"), actor=resolve_actor_id(request),
             )
         )
 
@@ -4682,7 +4682,7 @@ class RatingAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {"list": ratings_service.VIEW_ANALYTICS_PERMISSION}
 
     def list(self, request):
-        return Response(ratings_service.rating_analytics())
+        return Response(ratings_service.rating_analytics(actor=resolve_actor_id(request)))
 
 
 class EvaluationWorkspaceViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -4792,7 +4792,7 @@ class EvaluationRegistryViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "correctedOnly": params.get("corrected") == "true",
                 "search": params.get("search") or "",
                 "page": page,
-            })
+            }, actor=resolve_actor_id(request))
         )
 
 

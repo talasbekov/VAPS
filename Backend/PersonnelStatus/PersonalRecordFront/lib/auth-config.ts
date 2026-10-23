@@ -1,6 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
+import { loginForwardingHeaders } from '@/lib/login-forwarding';
 import {
   REFRESH_RETRY_MS,
   accessExpiryMs,
@@ -164,7 +165,7 @@ export const authOptions: NextAuthOptions = {
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.username || !credentials?.password) {
           console.error("Missing credentials");
           return null;
@@ -188,6 +189,7 @@ export const authOptions: NextAuthOptions = {
             headers: {
               "Content-Type": "application/json",
               accept: "application/json",
+              ...loginForwardingHeaders(request.headers),
             },
             body: JSON.stringify({
               username: credentials.username,

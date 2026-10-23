@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $reviewedProject = 'smart-duty-summary-rehearsal-20261014'
 $reviewedDatabase = 'smart_duty_summary_20261014'
 $reviewedFolder = Join-Path (Split-Path -Parent $PSScriptRoot) '.local-review/duty-summary-rehearsal-20261014'
-$portalAddress = 'http://127.0.0.1:3380/security-ops/duty-register/'
+$portalAddress = 'http://127.0.0.1:3380/'
 $releaseMeta = Get-Content -LiteralPath (Join-Path $reviewedFolder 'metadata.json') -Encoding UTF8 -Raw | ConvertFrom-Json
 $acceptanceFile = Join-Path $reviewedFolder 'acceptance.json'
 if (!(Test-Path -LiteralPath $acceptanceFile)) { throw 'The final verification is still in progress. Use this launcher after the completion report.' }
@@ -15,12 +15,15 @@ if ($releaseMeta.project -ne $reviewedProject -or $releaseMeta.database -ne $rev
 $startupProof = Get-Content -LiteralPath (Join-Path $reviewedFolder 'verified-artifacts/result.json') -Encoding UTF8 -Raw | ConvertFrom-Json
 if (!$startupProof.complete -or !$startupProof.originalRowsAndFilesUnchanged -or !$startupProof.startupDataAndFilesUnchanged) { throw 'The restore and startup proof is incomplete.' }
 
-# The original restore receipt remains intact. A verified application-only
-# update supplies current immutable image references for the same data stack.
+# The original restore receipt remains intact. A verified refresh supplies
+# current immutable images for the same data stack. A schema refresh must also
+# prove that old business rows survived its isolated migration rehearsal.
 $currentAppFile = Join-Path $reviewedFolder 'current-app.json'
 if (Test-Path -LiteralPath $currentAppFile) {
     $currentApp = Get-Content -LiteralPath $currentAppFile -Encoding UTF8 -Raw | ConvertFrom-Json
-    if (!$currentApp.complete -or !$currentApp.databaseRowsUnchanged -or !$currentApp.databaseVolumeUnchanged -or !$currentApp.browserVerificationPassed) { throw 'The application update verification is incomplete.' }
+    $allRowsPreserved = ($currentApp.PSObject.Properties.Name -contains 'databaseRowsUnchanged') -and $currentApp.databaseRowsUnchanged
+    $reviewedSchemaRefresh = ($currentApp.PSObject.Properties.Name -contains 'schemaMigrationVerified') -and $currentApp.schemaMigrationVerified -and ($currentApp.PSObject.Properties.Name -contains 'oldBusinessRowsUnchanged') -and $currentApp.oldBusinessRowsUnchanged
+    if (!$currentApp.complete -or (!$allRowsPreserved -and !$reviewedSchemaRefresh) -or !$currentApp.databaseVolumeUnchanged -or !$currentApp.browserVerificationPassed) { throw 'The application update verification is incomplete.' }
     foreach ($field in @('project', 'database', 'frontendPort', 'apiPort', 'dbPort')) {
         if ($currentApp.$field -ne $releaseMeta.$field) { throw 'The application update points to a different stack.' }
     }

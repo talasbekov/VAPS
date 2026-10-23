@@ -267,136 +267,22 @@ def test_status_manage_does_not_open_reads(scene):
     assert response.status_code == 403
 
 
-@pytest.mark.django_db
-def test_receiving_scope_with_status_manage_can_decide(scene):
-    manager = User.objects.create_user(username="t958-host-manager")
-    grant(manager, "status.manage", scope=scene["dep_b"])
-    response = client_for(manager).post(
-        reverse(
-            "secondmentrequest-reject", kwargs={"pk": scene["request"].pk}
-        ),
-        {"reason": "Not accepted"},
-        format="json",
-    )
-    assert response.status_code == 200
-    scene["request"].refresh_from_db()
-    assert scene["request"].status == SecondmentRequest.ApprovalStatus.REJECTED
-
-
-@pytest.mark.django_db
-def test_receiving_scope_with_status_manage_can_approve_and_return(scene):
-    manager = User.objects.create_user(username="t958-host-transition-manager")
-    grant(manager, "status.manage", scope=scene["dep_b"])
-    api = client_for(manager)
-
-    approved = api.post(
-        reverse(
-            "secondmentrequest-approve", kwargs={"pk": scene["request"].pk}
-        ),
-        {},
-        format="json",
-    )
-    assert approved.status_code == 200, approved.data
-    scene["request"].refresh_from_db()
-    assert scene["request"].approved_by_id == manager.pk
-
-    returned = api.post(
-        reverse(
-            "secondmentrequest-return-employee",
-            kwargs={"pk": scene["request"].pk},
-        ),
-        {"reason": "Back home"},
-        format="json",
-    )
-    assert returned.status_code == 200, returned.data
-
-
+@pytest.mark.parametrize("scope_key", ["dep_a", "dep_b", "dep_c"])
 @pytest.mark.parametrize("action", ["approve", "reject", "return_employee"])
 @pytest.mark.django_db
-def test_source_only_manage_scope_cannot_decide_for_the_receiver(scene, action):
-    manager = User.objects.create_user(username=f"t958-source-only-{action}")
-    grant(manager, "status.manage", scope=scene["dep_a"])
+def test_scoped_manage_permission_cannot_reopen_the_retired_workflow(scene, scope_key, action):
+    manager = User.objects.create_user(username=f"retired-{scope_key}-{action}")
+    grant(manager, "status.manage", scope=scene[scope_key])
     response = client_for(manager).post(
-        reverse(
-            f"secondmentrequest-{action.replace('_', '-')}",
-            kwargs={"pk": scene["request"].pk},
-        ),
-        {},
-        format="json",
+        reverse(f"secondmentrequest-{action.replace('_', '-')}", kwargs={"pk": scene["request"].pk}),
+        {}, format="json",
     )
-    assert response.status_code == 403
+    assert response.status_code == 410
+    assert response.data["detail"] == "FEATURE_RETIRED"
     scene["request"].refresh_from_db()
     assert scene["request"].status == SecondmentRequest.ApprovalStatus.PENDING
     assert scene["request"].approved_by_id is None
-    assert not EmployeeStatus.objects.filter(
-        employee=scene["sent"],
-        status_type=EmployeeStatus.StatusType.SECONDED_TO,
-    ).exists()
-
-
-@pytest.mark.django_db
-def test_create_uses_manage_scope_and_server_owned_source_and_actor(scene):
-    manager = User.objects.create_user(username="t958-source-manager")
-    grant(manager, "status.manage", scope=scene["dep_a"])
-
-    response = client_for(manager).post(
-        reverse("secondmentrequest-list"),
-        create_payload(scene),
-        format="json",
-    )
-    assert response.status_code == 201, response.data
-    created = SecondmentRequest.objects.get(pk=response.data["id"])
-    assert created.from_division_id == scene["dep_a"].pk
-    assert created.requested_by_id == manager.pk
-    assert created.status == SecondmentRequest.ApprovalStatus.PENDING
-    assert created.approved_by_id is None
-    assert created.approved_at is None
-    assert created.rejection_reason == ""
-
-    foreign_manager = User.objects.create_user(username="t958-foreign-manager")
-    grant(foreign_manager, "status.manage", scope=scene["dep_b"])
-    denied = client_for(foreign_manager).post(
-        reverse("secondmentrequest-list"),
-        create_payload(scene),
-        format="json",
-    )
-    assert denied.status_code == 403
-
-
-@pytest.mark.django_db
-def test_create_rejects_an_employee_without_a_source_division(scene):
-    orphan = Employee.objects.create(
-        personnel_number="t958-orphan",
-        last_name="No",
-        first_name="Division",
-    )
-    manager = User.objects.create_user(username="t958-global-create-manager")
-    grant(manager, "status.manage")
-    before = SecondmentRequest.objects.count()
-
-    response = client_for(manager).post(
-        reverse("secondmentrequest-list"),
-        create_payload(scene, employee=orphan.pk),
-        format="json",
-    )
-    assert response.status_code == 400
-    assert "employee" in response.data
-    assert SecondmentRequest.objects.count() == before
-
-
-@pytest.mark.django_db
-def test_scoped_wildcard_does_not_open_a_foreign_create_source(scene):
-    scoped_admin = User.objects.create_user(username="t958-scoped-wildcard")
-    grant(scoped_admin, "*", scope=scene["dep_b"])
-    before = SecondmentRequest.objects.count()
-
-    response = client_for(scoped_admin).post(
-        reverse("secondmentrequest-list"),
-        create_payload(scene),
-        format="json",
-    )
-    assert response.status_code == 403
-    assert SecondmentRequest.objects.count() == before
+    assert not EmployeeStatus.objects.exists()
 
 
 @pytest.mark.django_db

@@ -21,6 +21,9 @@
 """
 
 import ipaddress
+import socket
+import time
+from functools import lru_cache
 
 from django.conf import settings
 
@@ -34,17 +37,46 @@ def _is_ip(value):
     return True
 
 
+def _normalized_ip(value):
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return value
+    return str(getattr(address, 'ipv4_mapped', None) or address)
+
+
+@lru_cache(maxsize=8)
+def _service_proxy_ips(hosts, epoch):
+    """Exact service addresses, refreshed every five seconds, never a subnet.
+
+    Service names must be explicitly configured by the closed Docker contour.
+    Failed fresh resolution drops old trust instead of keeping a stale address.
+    """
+    resolved = set()
+    for host in hosts:
+        try:
+            for family, kind, proto, canonical, address in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM):
+                if _is_ip(address[0]):
+                    resolved.add(_normalized_ip(address[0]))
+        except OSError:
+            continue
+    return frozenset(resolved)
+
+
 def client_ip(request):
     """Адрес клиента, которому можно верить. Никогда не `None` — пустая строка,
     если адреса нет (внутренний вызов, тестовый клиент без `REMOTE_ADDR`)."""
-    remote_addr = (request.META.get("REMOTE_ADDR") or "").strip()
-    trusted = frozenset(getattr(settings, "TRUSTED_PROXY_IPS", ()) or ())
+    remote_addr = _normalized_ip((request.META.get("REMOTE_ADDR") or "").strip())
+    trusted = frozenset(_normalized_ip(ip) for ip in (getattr(settings, "TRUSTED_PROXY_IPS", ()) or ()))
+    hosts = tuple(getattr(settings, 'TRUSTED_PROXY_HOSTS', ()) or ())
+    if hosts:
+        trusted |= _service_proxy_ips(hosts, int(time.monotonic() // 5))
     if remote_addr not in trusted:
         # Сосед по сокету — не наш прокси: его заголовки ничего не значат.
         # Это и есть рабочий случай стенда и тестов, где прокси нет вовсе.
         return remote_addr
     hops = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")
-    for hop in (h.strip() for h in reversed(hops)):
+    for hop in (_normalized_ip(h.strip()) for h in reversed(hops)):
         if not hop or hop in trusted:
             continue
         # Первый хоп за нашими прокси. Не адрес — значит цепочку кто-то

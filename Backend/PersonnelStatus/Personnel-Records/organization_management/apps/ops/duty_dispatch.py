@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
@@ -73,26 +74,36 @@ def require_dispatch(actor, config):
 
 class DutyContext:
     """Batch one calendar window; queue and assignment validity use the same rows."""
-    def __init__(self, first, last):
-        self.people = {p.pk: p for p in Employee.objects.select_related("rank", "staff_unit__position", "staff_unit__division")}
+    def __init__(self, first, last, *, employee_ids=None):
+        def scoped(query, field="employee_id"):
+            return query if employee_ids is None else query.filter(**{f"{field}__in": employee_ids})
+
+        self.people = {p.pk: p for p in scoped(Employee.objects.select_related("rank", "staff_unit__position", "staff_unit__division"), "pk")}
         catalog_rows = list(StatusType.objects.values("code", "name", "priority", "report_column_code", "counts_in_staff"))
         self.catalog = StatusCatalog.from_rows(catalog_rows)
         self.labels = {r["code"]: r["name"] for r in catalog_rows}
         self.statuses = defaultdict(list)
-        for row in OpsEmployeeStatus.objects.filter(cancelled_at__isnull=True, date_start__lte=last, date_end__gt=first).order_by("pk").values("id", "employee_id", "status_type_code", "date_start", "date_end", "source_ref", "comment"):
+        for row in scoped(OpsEmployeeStatus.objects.filter(cancelled_at__isnull=True, date_start__lte=last, date_end__gt=first)).order_by("pk").values("id", "employee_id", "status_type_code", "date_start", "date_end", "source_ref", "comment"):
             self.statuses[row["employee_id"]].append(row)
         self.legacy = defaultdict(list)
-        for row in EmployeeStatus.objects.filter(duty_assignment__isnull=False, start_date__lte=last).exclude(state="cancelled"):
+        for row in scoped(EmployeeStatus.objects.filter(duty_assignment__isnull=False, start_date__lte=last).exclude(state="cancelled")):
             effective_end = row.actual_end_date or row.end_date
             if effective_end is None or effective_end >= first:
                 self.legacy[row.employee_id].append(row)
-        self.shifts = set(OpsDutyShift.objects.filter(business_date__range=(first, last)).exclude(state_code="CANCELLED").values_list("employee_id", "business_date"))
+        self.shifts = set(scoped(OpsDutyShift.objects.filter(business_date__range=(first, last)).exclude(state_code="CANCELLED")).values_list("employee_id", "business_date"))
         self.combat = defaultdict(set)
-        for row in OpsCombatDutyShift.objects.filter(business_date__range=(first, last), submission__stateCode="ACCEPTED"):
+        combat = OpsCombatDutyShift.objects.filter(business_date__range=(first, last), submission__stateCode="ACCEPTED")
+        if employee_ids is not None:
+            names = {name for person in self.people.values() for name in (personnel_full_name(person), personnel_display_name(person)) if name}
+            own_names = Q(submission__groupLeaderEmployeeName__in=names)
+            for name in names:
+                own_names |= Q(submission__memberEmployeeNames__contains=[name]) | Q(submission__reserveEmployeeNames__contains=[name])
+            combat = combat.filter(own_names)
+        for row in combat:
             submission = row.submission
             self.combat[row.business_date].update([submission.get("groupLeaderEmployeeName", ""), *submission.get("memberEmployeeNames", []), *submission.get("reserveEmployeeNames", [])])
         self.event_members = defaultdict(list)
-        for row in OpsForceRequestMember.objects.filter(removed_at__isnull=True, event__business_date__lte=last).select_related("event"):
+        for row in scoped(OpsForceRequestMember.objects.filter(removed_at__isnull=True, event__business_date__lte=last)).select_related("event"):
             if (row.event.business_date_end or row.event.business_date) >= first:
                 self.event_members[row.employee_id].append((row.event.business_date, row.event.business_date_end or row.event.business_date))
         self.divisions = {r["id"]: r for r in Division.objects.values("id", "parent_id", "name", "division_type", "tree_id", "lft")}

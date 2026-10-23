@@ -10,14 +10,26 @@ import { dutyDateTime } from '@/entities/duty-register';
 import { statusPeriod } from '@/features/daily-expense/ui/StatusDetails';
 import { formatIsoDate } from '@/shared/lib/date';
 import { moduleOpenFor } from '@/entities/portal-access';
+import { statusCalendarHref } from '@/entities/status-calendar/navigation';
 import { dutyWorkspaceHref, validDutyDate, dutyRosterFilters, dutyRosterFilterValues, shiftDutyDate, serverDutyDate, type DutyRosterFilters } from '../model/workspace';
-import type { CombatRosterGroup } from '../model/roster';
+import type { CombatRosterGroup, RosterPlacement } from '../model/roster';
+import { dutyIntervalLabel, dutyIntervalsOnDate } from '@/features/employee-status-update/model/duty-intervals';
 
 const field = 'min-w-0 max-w-full rounded-md border bg-background px-3 py-2 text-sm';
 const PAGE_SIZE = 25;
 const normalize = (value: string) => value.toLocaleLowerCase('ru').replace(/ё/g, 'е');
 function NameList({ names }: { names: string[] }) {
   return names.length ? <ul className="space-y-1">{names.map((name, i) => <li key={i}>{name}</li>)}</ul> : <span>—</span>;
+}
+function PlacementTimes({ placement, day, zone }: { placement: RosterPlacement; day: string; zone: string }) {
+  const intervals = placement.source !== 'STATUS' || placement.intervals === undefined ? undefined : dutyIntervalsOnDate(placement.intervals, day);
+  return <div className="space-y-1 text-xs text-muted-foreground">
+    <p>{placement.source === 'STATUS' ? 'Из статуса сотрудника' : 'Почасовая смена'}{intervals !== undefined && ' · время Астаны'}</p>
+    {intervals !== undefined ? intervals.length ? <ul className="space-y-1">{intervals.map((interval, index) =>
+      <li key={`${interval.start_at}:${interval.end_at}:${index}`}>{dutyIntervalLabel(interval)}</li>)}</ul> : <p>Выходов на выбранную дату нет.</p>
+      : placement.start_at && placement.end_at ? <p>{dutyDateTime(placement.start_at, zone)} — {dutyDateTime(placement.end_at, zone)}</p>
+        : <p>Время выходов не указано. Круглосуточное нахождение на посту не подтверждено.</p>}
+  </div>;
 }
 function CombatGroup({ group, zone }: { group: CombatRosterGroup; zone: string }) {
   return <details className="min-w-0 rounded-lg border p-4">
@@ -95,9 +107,9 @@ export function DutyRoster() {
       <label className="grid min-w-0 gap-1 text-sm">Дата состава<input type="date" min="0001-01-01" max="9999-12-31" className={field} value={validDutyDate(day) ? day : ''} onChange={event => changeDate(event.target.value)} /></label>
       <div className="flex gap-1" role="group" aria-label="Переход по датам"><Button variant="outline" aria-label="Предыдущий день" disabled={!previousDay} onClick={() => previousDay && changeDate(previousDay)}>←</Button><Button variant="outline" disabled={Boolean(today && today === day)} onClick={() => changeDate(today ?? '')}>Сегодня</Button><Button variant="outline" aria-label="Следующий день" disabled={!nextDay} onClick={() => nextDay && changeDate(nextDay)}>→</Button></div>
       <Button variant="outline" disabled={!validDate || query.isFetching} onClick={() => void query.refetch()}>Обновить состав</Button>
-      {access.hasPermission('status.manage') && moduleOpenFor('/statuses', access.hasPermission) && validDutyDate(day) && <Button asChild><Link href={'/statuses/?' + new URLSearchParams({ businessDate: day })}>Изменить статусы</Link></Button>}
+      {access.hasPermission('status.manage') && moduleOpenFor('/statuses', access.hasPermission) && validDutyDate(day) && <Button asChild><Link href={statusCalendarHref(day)}>Статусы на {formatIsoDate(day)}</Link></Button>}
     </div>
-    <p className="text-sm text-muted-foreground">Назначайте пост или группу при изменении статуса сотрудника. Сохранённый наряд появляется здесь автоматически. Почасовые смены оформляются отдельно, когда нужно указать время.</p>
+    <p className="text-sm text-muted-foreground">Назначайте пост или группу при изменении статуса сотрудника. Сохранённый наряд появляется здесь автоматически. Время выходов указывается в том же назначении. В учёте выходов отдельно отмечаются ознакомление, заступление и завершение.</p>
     {!validDate && <p role="alert" className="text-sm text-destructive">Укажите существующую дату в формате ГГГГ-ММ-ДД.</p>}
     {(query.isLoading || (query.isFetching && !data)) && validDate && <p role="status">Загрузка состава дежурств…</p>}
     {query.isError && <LoadFailure what="состав дежурств" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />}
@@ -119,7 +131,7 @@ export function DutyRoster() {
           <p className="text-sm text-muted-foreground" role="status">Показано {offset + 1}–{Math.min(offset + PAGE_SIZE, shown.length)} из {shown.length}</p>
           <div className="divide-y rounded-lg border">{shown.slice(offset, offset + PAGE_SIZE).map(person => <article key={person.employee_id} className="grid min-w-0 gap-3 p-4 lg:grid-cols-2">
             <div className="min-w-0 space-y-1 break-words"><h3 className="font-semibold">{person.full_name}</h3><p className="text-sm text-muted-foreground">{[person.department_name, person.position_name].filter(Boolean).join(' · ')}</p><p className="text-sm">{person.status_label} · {person.date_end ? statusPeriod({ date_start: person.date_start, date_end: person.date_end }) : `с ${formatIsoDate(person.date_start)} · без окончания`}</p></div>
-            <div className="min-w-0 space-y-3 break-words">{person.placements.length ? person.placements.map(item => <div key={item.source + ':' + item.source_id} className="space-y-1"><p className="font-medium">{item.label || 'Место не указано'}</p><p className="text-xs text-muted-foreground">{item.source === 'STATUS' ? 'Из статуса сотрудника' : 'Почасовая смена'}{item.start_at && <> · {dutyDateTime(item.start_at, data.time_zone)}</>}{item.end_at && <> — {dutyDateTime(item.end_at, data.time_zone)}</>}</p>{item.record_id && <Button asChild variant="outline" size="sm"><Link href={dutyWorkspaceHref('records', new URLSearchParams(params), { from: day, to: day, record: item.record_id })}>Учёт смены</Link></Button>}</div>) : <><p className="text-sm text-muted-foreground">Пост или группа не назначены</p>{person.destination && <p className="text-sm">Место в описании: {person.destination}</p>}</>}</div>
+            <div className="min-w-0 space-y-3 break-words">{person.placements.length ? person.placements.map(item => <div key={item.source + ':' + item.source_id} className="space-y-1"><p className="font-medium">{item.label || 'Место не указано'}</p><PlacementTimes placement={item} day={day} zone={data.time_zone} />{item.record_id && <Button asChild variant="outline" size="sm"><Link href={dutyWorkspaceHref('records', new URLSearchParams(params), { from: day, to: day, record: item.record_id })}>Учёт смены</Link></Button>}{item.source === 'STATUS' && item.intervals !== undefined && dutyIntervalsOnDate(item.intervals, day).length > 0 && <Button asChild variant="outline" size="sm"><Link href={dutyWorkspaceHref('records', new URLSearchParams(), { from: day, to: day, source: 'STATUS', employee_id: String(person.employee_id) })}>Учёт выходов</Link></Button>}</div>) : <><p className="text-sm text-muted-foreground">Пост или группа не назначены</p>{person.destination && <p className="text-sm">Место в описании: {person.destination}</p>}</>}</div>
           </article>)}</div>
           {pages > 1 && <nav className="flex flex-wrap items-center justify-between gap-2 print:hidden" aria-label="Страницы состава"><Button size="sm" variant="outline" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>Назад</Button><span className="text-sm">{currentPage} / {pages}</span><Button size="sm" variant="outline" disabled={currentPage === pages} onClick={() => changePage(currentPage + 1)}>Далее</Button></nav>}
         </> : <p className="rounded-lg border p-5 text-sm text-muted-foreground">{filtered ? 'Сотрудников по выбранным условиям нет.' : 'На эту дату нет сотрудников со статусом дежурства в доступных подразделениях.'}</p>}

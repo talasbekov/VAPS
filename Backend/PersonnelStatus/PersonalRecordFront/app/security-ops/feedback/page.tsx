@@ -24,7 +24,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
 function formatMoment(iso: string): string {
@@ -41,7 +41,15 @@ function formatSize(bytes: number): string {
 const ALL = "ALL";
 
 export default function FeedbackPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const {
+    hasPermission,
+    permissions,
+    isLoading: permissionsLoading,
+    error: permissionError,
+  } = useOpsPermissions();
+  const authorityReady = !permissionsLoading && permissionError === null && permissions !== undefined;
+  const canCreateFeedback = authorityReady && hasPermission("feedback.create");
+  const canOpenChangelog = authorityReady && moduleOpenFor("/security-ops/changelog", hasPermission);
   const pathname = usePathname();
   const [search, setSearch] = useState("");
   const [typeCode, setTypeCode] = useState<string>(ALL);
@@ -109,11 +117,13 @@ export default function FeedbackPage() {
             title="Обратная связь"
             description="Обращения пользователей: ошибки, неверные данные, UX, идеи, доступ и помощь."
           />
-          <p className="text-sm text-muted-foreground">
-            <Link className="underline" href="/security-ops/changelog">
-              Журнал исправлений
-            </Link>
-          </p>
+          {canOpenChangelog && (
+            <p className="text-sm text-muted-foreground">
+              <Link className="underline" href="/security-ops/changelog">
+                Журнал исправлений
+              </Link>
+            </p>
+          )}
         </div>
 
         {listQuery.isError && (
@@ -146,13 +156,12 @@ export default function FeedbackPage() {
               ))}
             </ul>
             <p className="mt-2 text-xs text-muted-foreground">
-              Всего доступно обращений: {data.stats.total}. Справочник{" "}
-              {registry.registryVersion}.
+              Всего доступно обращений: {data.stats.total}.
             </p>
           </section>
         )}
 
-        {registry !== undefined && (
+        {registry !== undefined && canCreateFeedback && (
           <FeedbackForm
             key={formKey}
             modules={registry.modules}
@@ -162,8 +171,15 @@ export default function FeedbackPage() {
             serverTime={data?.serverTime ?? null}
             pending={createFeedback.isPending}
             errorMessage={createFeedback.error?.message ?? null}
-            onSubmit={(body) => createFeedback.mutate(body)}
+            onSubmit={(body) => {
+              if (canCreateFeedback) createFeedback.mutate(body);
+            }}
           />
+        )}
+        {authorityReady && !canCreateFeedback && (
+          <p className="text-sm text-muted-foreground">
+            Создание обращений недоступно для вашей учётной записи.
+          </p>
         )}
 
         <section className="rounded-xl border bg-card p-4">
@@ -297,7 +313,7 @@ export default function FeedbackPage() {
 
                   {request.attachments !== null && request.attachments.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Вложения (метаданные):{" "}
+                      Файлы (без содержимого):{" "}
                       {request.attachments
                         .map((file) => `${file.fileName} · ${formatSize(file.sizeBytes)}`)
                         .join("; ")}
@@ -313,15 +329,15 @@ export default function FeedbackPage() {
                     </p>
                   )}
 
-                  {request.isOwn && request.statusCode === "DRAFT" && (
+                  {canCreateFeedback && request.isOwn && request.statusCode === "DRAFT" && (
                     <div className="mt-2">
                       <button
                         type="button"
                         className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                         disabled={submitDraft.isPending}
-                        onClick={() =>
-                          submitDraft.mutate({ feedbackId: request.feedbackId })
-                        }
+                        onClick={() => {
+                          if (canCreateFeedback) submitDraft.mutate({ feedbackId: request.feedbackId });
+                        }}
                       >
                         Отправить в работу
                       </button>
@@ -366,7 +382,7 @@ export default function FeedbackPage() {
         {data !== undefined && (
           <section className="rounded-xl border border-dashed bg-muted/30 p-4">
             <h2 className="mb-2 text-sm font-semibold">
-              Чего этот раздел не делает и почему
+              Ограничения
             </h2>
             <ul className="flex flex-col gap-2">
               {data.unavailableCapabilities.map((item) => (
@@ -564,7 +580,7 @@ function FeedbackForm(props: FeedbackFormProps) {
         </label>
 
         <label className="flex flex-col gap-1 text-xs font-semibold">
-          Вложение
+          Сведения о файле
           <input
             type="file"
             aria-label="Вложение обращения"
@@ -584,8 +600,8 @@ function FeedbackForm(props: FeedbackFormProps) {
           />
         </label>
         <p className="text-xs text-muted-foreground">
-          Сохраняются только имя, размер и тип файла: хранилища файлов в этом
-          контуре нет, поэтому содержимое вложения не передаётся и не сохраняется.
+          Сохраняются только название, размер и тип файла. Сам файл не передаётся;
+          открыть или скачать его из обращения нельзя.
         </p>
 
         <label className="flex items-center gap-2 text-xs font-semibold">

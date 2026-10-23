@@ -49,7 +49,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // Ассерт при этом НЕ ослаблен: заголовок обязан появиться, просто ждём мы
     // его столько, сколько стоит первая сборка страницы.
     await expect(
-      page.getByRole('heading', { name: 'Готовность' }),
+      page.getByRole('heading', { name: 'Оперативный контроль' }),
     ).toBeVisible({ timeout: 30_000 })
 
     const read = () =>
@@ -212,88 +212,36 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(brandBg).toBe(asideBg)
   })
 
-  // Категории заменили аккордеон 22.08.2026. Прежняя проба здесь меряла
-  // плотность кнопки-заголовка против пункта — контрола больше нет вовсе,
-  // и проба ушла вместе с ним: сравнивать стало нечего.
-  test('категории меню нераскрываемые: все пункты видны сразу', async ({ page }) => {
+  test('короткое меню раскрывает остальные доступные разделы по выбору пользователя', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/`)
-    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
-
+    await page.goto(`${APP}/workspace/`)
+    await expect(page.getByRole('heading', { name: 'Что нужно сделать?', exact: true })).toBeVisible()
     const aside = page.locator('aside').first()
-    await expect(aside).toBeVisible()
-    // 🔴 Сначала доказываем, что сайдбар ЖИВОЙ: у скрытого (`hidden lg:block`
-    // на узком экране) размеры нулевые, и всё ниже вырождается в истину само.
-    expect(await aside.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(0)
-
-    // Ни одного раскрывающего контрола: категория — заголовок, а не кнопка.
-    // Ассерт именно по aria-expanded, а не по отсутствию <button>: скрытое
-    // состояние обязано быть слышно скринридеру, поэтому любой вернувшийся
-    // аккордеон объявит себя этим атрибутом и здесь же попадётся.
-    expect(await aside.locator('button[aria-expanded]').count()).toBe(0)
-
-    // Порядок и состав категорий пинятся литерально: перестановка — это
-    // смена информационной архитектуры, а не косметика, и должна быть видна
-    // в диффе.
-    const headings = aside.getByRole('heading', { level: 2 })
-    await expect(headings).toHaveText([
-      'Ежедневный расход',
-      'Объекты',
-      'Охранные мероприятия',
-      'Личный кабинет',
-      // Категория переименована 25.08.2026 (Plane №50): её имя совпадало с
-      // именем пункта внутри неё.
-      'Система',
-      'Обратная связь',
-    ])
-
-    // Капс — на CSS: в разметке естественный регистр, иначе теряются
-    // акронимы («ОМ», «ГВО»). Playwright читает textContent и капса не видит,
-    // поэтому проверяется отдельно вычисленным стилем.
-    expect(
-      await headings.first().evaluate((el) => getComputedStyle(el).textTransform)
-    ).toBe('uppercase')
-
-    // Под каждой категорией — непустой ВИДИМЫЙ список. Скрытый (свёрнутый)
-    // список — ровно то состояние, которого больше не должно быть.
-    const groups = await aside.evaluate((el) =>
-      Array.from(el.querySelectorAll('h2')).map((h) => {
-        const list = h.nextElementSibling as HTMLElement | null
-        return {
-          title: h.textContent ?? '',
-          isList: list?.tagName === 'UL',
-          links: list ? list.querySelectorAll('a').length : 0,
-          height: list ? list.getBoundingClientRect().height : 0,
-        }
-      })
-    )
-    expect(groups.length).toBe(6)
+    const nav = aside.getByRole('navigation', { name: 'Основная навигация', exact: true })
+    await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toBeVisible()
+    expect(await nav.getByRole('link').count(), 'главный уровень содержит начало и до трёх задач').toBeLessThanOrEqual(4)
+    const sections = nav.locator('details')
+    await expect(sections).not.toHaveAttribute('open', '')
+    await expect(nav.getByRole('link', { name: 'Сотрудники подразделения', exact: true })).toHaveCount(0)
+    await nav.getByText('Все разделы', { exact: true }).click()
+    await expect(nav.getByRole('link', { name: 'Сотрудники подразделения', exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Журнал дежурств', exact: true })).toHaveAttribute('href', /\/security-ops\/duty-register\/?$/)
+    const headings = sections.getByRole('heading', { level: 2 })
+    expect(await headings.count()).toBeGreaterThan(0)
+    expect(await headings.first().evaluate(el => getComputedStyle(el).textTransform)).toBe('uppercase')
+    const groups = await sections.evaluate(el => Array.from(el.querySelectorAll('h2')).map(heading => {
+      const list = heading.nextElementSibling as HTMLElement | null
+      return { title: heading.textContent, isList: list?.tagName === 'UL', links: list?.querySelectorAll('a').length ?? 0, height: list?.getBoundingClientRect().height ?? 0 }
+    }))
     for (const group of groups) {
-      expect(group.isList, `«${group.title}»: под заголовком не список`).toBe(true)
-      expect(group.links, `«${group.title}»: пустая категория`).toBeGreaterThan(0)
-      expect(group.height, `«${group.title}»: список свёрнут`).toBeGreaterThan(0)
+      expect(group.isList, `«${group.title}»: под заголовком нужен список`).toBe(true)
+      expect(group.links, `«${group.title}»: категория не должна быть пустой`).toBeGreaterThan(0)
+      expect(group.height, `«${group.title}»: раскрытый список доступен`).toBeGreaterThan(0)
     }
-
-    // Сумма пунктов = число ссылок НАВИГАЦИИ: ни один пункт не спрятан мимо
-    // категорий и ни один не отрисован дважды. Считается внутри <nav>, а не по
-    // всему <aside>: в подвале с 23.08.2026 стоит своя ссылка — карточка
-    // человека, ведущая в «Мой профиль», и она пунктом меню не является.
-    const total = groups.reduce((sum, group) => sum + group.links, 0)
-    expect(await aside.locator('nav a').count()).toBe(total)
-    await expect(aside.getByRole('link', { name: 'Сотрудники подразделения', exact: true })).toHaveCount(1)
-    await expect(aside.getByRole('link', { name: 'Боевое дежурство по Службе', exact: true }))
-      .toHaveAttribute('href', /\/security-ops\/combat-duty\/?$/)
-    const dispatch = aside.getByRole('link', { name: 'Расстановка дежурств', exact: true })
-    await expect(dispatch).toHaveCount(1)
-    await expect(dispatch).toHaveAttribute('href', /\/security-ops\/duty-dispatch\/?$/)
-    expect(total).toBe(26)
-
-    // Подвал: карточка человека ведёт в профиль, и статус связи подписан.
-    await expect(aside.locator('[data-slot="sidebar-link-status"]')).toContainText(
-      'Закрытый контур',
-    )
+    const hrefs = await nav.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href')))
+    expect(new Set(hrefs).size, 'каждый адрес находится в меню один раз').toBe(hrefs.length)
+    await expect(aside.locator('[data-slot="sidebar-link-status"]')).toContainText('Закрытый контур')
   })
-
   test('меню читается: кегль 14px, строка 36px, шаг 40px', async ({ page }) => {
     await signIn(page)
     // 🔴 Этот сторож пришёл на смену прежнему «меню целиком влезает в
@@ -308,8 +256,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
     const nav = page.locator('aside nav').first()
     // Страница и меню получают права независимо: H1 уже виден, пока
-    // категории ещё не отрисованы. Меряем полный административный список.
-    await expect(nav.getByRole('link')).toHaveCount(26)
+    // категории ещё не отрисованы. Сначала раскрываем доступные разделы.
+    await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toBeVisible()
+    const sections = nav.locator('details')
+    if (await sections.getAttribute('open') === null) await nav.getByText('Все разделы', { exact: true }).click()
     await expect(nav.getByRole('list', { name: 'Личный кабинет', exact: true }).getByRole('link'))
       .toHaveCount(2)
     const metrics = await nav.evaluate((el) => {
@@ -330,7 +280,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
         pitch: b.getBoundingClientRect().top - a.getBoundingClientRect().top,
       }
     })
-    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(26)
+    expect(metrics.links, 'шаг нельзя измерять на пустом списке').toBeGreaterThan(1)
     expect(metrics.fontPx, `кегль пункта ${metrics.fontPx}px — мельче 14px меню не читается`).toBeGreaterThanOrEqual(14)
     expect(
       metrics.headingPx,
@@ -351,7 +301,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     const nav = page.locator('aside nav').first()
     const hint = page.locator('[data-slot="sidebar-scroll-hint"]')
     // До ответа о правах меню пустое и ещё не имеет переполнения.
-    await expect(nav.getByRole('link')).toHaveCount(26)
+    await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toBeVisible()
+    const sections = nav.locator('details')
+    if (await sections.getAttribute('open') === null) await nav.getByText('Все разделы', { exact: true }).click()
 
     // Меню и правда длиннее окна — иначе весь сторож вакуумен: у
     // непрокручиваемого списка «доскроллили до последнего пункта» истинно
@@ -385,26 +337,18 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(topHint, 'о пунктах выше края ничем не сказано').toHaveCSS('opacity', '1')
   })
 
-  test('активный пункт подводится в зону видимости сам', async ({ page }) => {
+  test('текущий редкий раздел виден без раскрытия и прокрутки полного меню', async ({ page }) => {
     await signIn(page)
     await page.setViewportSize({ width: 1366, height: 648 })
-    // «Обратная связь» — последний пункт меню: при загрузке он лежит ниже
-    // сгиба списка, и без подводки «вы здесь» существовало бы только в
-    // разметке.
     await page.goto(`${APP}/feedback/`)
 
     const nav = page.locator('aside nav').first()
     const current = nav.locator('a[aria-current="page"]')
     await expect(current).toHaveText('Обратная связь')
+    await expect(nav.locator('details')).not.toHaveAttribute('open', '')
+    await expect(nav.getByRole('link')).toHaveCount(5)
 
-    // 🔴 НЕ `toBeInViewport`: он меряет пересечение с ОКНОМ и слеп к обрезке
-    // прокручиваемым предком. Пункт, уехавший на 49px ниже нижнего края
-    // меню, лежит в границах окна и проходит его насквозь — этот ассерт уже
-    // был здесь зелёным при сломанной подводке. Меряем по коробке МЕНЮ.
-    // Подводка срабатывает не одним кадром: карточка роли доезжает вместе с
-    // `user` и меняет высоту меню, после чего подводка повторяется. Поэтому
-    // замер берётся опросом — но опрос ждёт УСТОЯВШЕГОСЯ состояния, а не
-    // прячет промежуточное: все четыре условия проверяются на одном снимке.
+    // Measure clipping by the menu itself, including its scroll hint.
     const measure = () => nav.evaluate((el) => {
       const link = el.querySelector('a[aria-current="page"]')!
       const navBox = el.getBoundingClientRect()
@@ -413,36 +357,17 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       return {
         aboveTop: Math.round(navBox.top - linkBox.top),
         belowBottom: Math.round(linkBox.bottom - navBox.bottom),
-        // Подсказка лежит НАД списком: пункт, подведённый ей под низ, виден
-        // формально и не виден на деле. Считается это только пока подсказка
-        // ПОКАЗАНА: доскроллив до конца, она гаснет и ничего не закрывает —
-        // а последний пункт списка иначе всегда «под ней», и ассерт требовал
-        // бы недостижимого.
         underHint: Math.round(linkBox.bottom - (navBox.bottom - hint.getBoundingClientRect().height)),
         hintShown: parseFloat(getComputedStyle(hint).opacity) > 0,
         scrolled: el.scrollTop,
       }
     })
-    // 🔴 ДВА ОЖИДАНИЯ, А НЕ ОДНО (Plane №341). Раньше здесь стоял только
-    // первый опрос — «меню поехало», — и замер брался сразу за ним. Но
-    // подводка отрабатывает ДВАЖДЫ: сначала на монтировании, потом ещё раз,
-    // когда доезжает `user` и снизу появляется карточка роли (~57px), из-за
-    // чего меню становится ниже. Между этими двумя срабатываниями пункт
-    // законно стоит ниже края, и замер, попавший в промежуток, видел недокрут
-    // ровно в высоту карточки — 54px в прогоне 30.08.2026. Под нагрузкой
-    // полного прогона промежуток растягивается, поэтому проба краснела ТОЛЬКО
-    // в нём, а поодиночке была зелёной.
-    //
-    // Предмет пробы при этом НЕ подменён, и это важно: первый опрос остался
-    // на месте и по-прежнему стережёт вакуум — «меню вообще прокрутилось,
-    // иначе подводку проверять не на чем». Добавлено второе ожидание — конца
-    // движения, а не его начала.
     await expect
       .poll(async () => (await measure()).scrolled, {
-        message: 'меню не прокручивалось — подводку проверять не на чем',
+        message: 'текущий раздел не должен требовать прокрутки полного списка',
         timeout: 5_000,
       })
-      .toBeGreaterThan(0)
+      .toBe(0)
     await expect
       .poll(async () => {
         const now = await measure()
@@ -459,8 +384,6 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       expect(seen.underHint, `активный пункт на ${seen.underHint}px заехал под градиент-подсказку`).toBeLessThanOrEqual(0)
     }
 
-    // Страница при этом остаётся наверху: подводка обязана двигать СВОЙ
-    // контейнер, а не окно (scrollIntoView прокручивает всех предков).
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
@@ -825,6 +748,8 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await page.goto(`${APP}/security-ops/events/`)
     const bar = page.locator('[data-slot="filter-bar"]')
     await expect(bar).toBeVisible()
+    await page.getByRole('button', { name: 'Дополнительные фильтры', exact: true }).click()
+    await expect(page.getByLabel('Этап', { exact: true })).toBeVisible()
 
     const controls = bar.locator('input, select, button')
     const count = await controls.count()
@@ -989,6 +914,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(await openOrgBoardTable(page)).toBeVisible({ timeout: 45_000 })
 
     // Путь ДВУМЯ клиентскими переходами: пункт меню ведёт на «Сбор сил на ОМ»
+    await page.locator('aside nav').getByText('Все разделы', { exact: true }).click()
     await page.locator('aside nav').getByRole('link', { name: 'Сбор сил на ОМ', exact: true }).click()
     await expect(page).toHaveURL(new RegExp('/employees/?$'))
 
@@ -1046,9 +972,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     { path: '/employees/', title: 'Ежедневный расход организации', eyebrow: 'Ежедневный расход' },
     { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
     { path: '/statuses/', title: 'Управление статусами', eyebrow: null },
-    { path: '/reports/', title: 'Отчеты', eyebrow: 'Ежедневный расход' },
+    { path: '/reports/', title: 'Расход и кадровые отчёты', eyebrow: 'Ежедневный расход' },
     // Охранные мероприятия и объекты
-    { path: '/security-ops/command-center/', title: 'Готовность', eyebrow: 'Ежедневный расход' },
+    { path: '/security-ops/command-center/', title: 'Оперативный контроль', eyebrow: 'Охранные мероприятия' },
     { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
     // «Реестр ГВО» снят из меню и с маршрутов (Plane «Реестр ОМ-35.8»):
     // сводка живёт панелью в карточке ОМ, сводный взгляд — вкладкой реестра.
@@ -1059,7 +985,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     { path: '/security-ops/ratings/', title: 'Оперативный рейтинг', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/workspace/', title: 'Оценивание участников', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/evaluations/', title: 'Итоговые оценки участников', eyebrow: 'Оценка и отчётность' },
-    { path: '/security-ops/ratings/export/', title: 'Выгрузка рейтинга', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/export/', title: 'История выгрузок рейтинга', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/audit/', title: 'Журнал оценивания', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/analytics/', title: 'Аналитика рейтинга', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/analytics/', title: 'Состояние службы и личного состава', eyebrow: 'Ежедневный расход' },

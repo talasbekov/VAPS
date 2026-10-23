@@ -10,7 +10,7 @@ import { CapabilityNotes } from "@/shared/ui/capability-notes";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { useRatingAnalytics } from "@/hooks/use-ops-ratings";
-import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
+import { AnalyticsNavigation } from "@/components/analytics/analytics-navigation";
 import type { RatingGroupAggregate } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
@@ -43,12 +43,13 @@ function groupValue(group: RatingGroupAggregate): string {
 }
 
 export default function RatingAnalyticsPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
   const query = useRatingAnalytics();
-  const data = query.data;
+  const data = !permissionsLoading && !permissionsError && query.error === null && !query.readAccessBlocked
+    ? query.data : undefined;
   const figures = data?.figures ?? null;
 
-  if (!permissionsLoading && !hasPermission("analytics.view")) {
+  if (!permissionsLoading && (permissionsError || !hasPermission("analytics.view"))) {
     return <OpsAccessDenied what="аналитики рейтинга" />;
   }
 
@@ -61,12 +62,19 @@ export default function RatingAnalyticsPage() {
           description="Только агрегированные значения. Отдельные оценки, оценщики и комментарии в отчёт не входят и с сервера не запрашиваются."
         />
 
-        <RatingsNav />
+        <AnalyticsNavigation current="rating" />
 
-        {query.isLoading && (
-          <p className="text-sm text-muted-foreground">Загрузка отчёта…</p>
+        {(permissionsLoading || query.isLoading) && (
+          <p className="text-sm text-muted-foreground">{permissionsLoading ? "Проверяем доступ к аналитике…" : "Загрузка отчёта…"}</p>
         )}
-        {query.error !== null && (
+        {query.error !== null && "errorCode" in query.error && query.error.errorCode === "ANALYTICS_SCOPE_UNAVAILABLE" ? (
+          <section role="status" className="rounded-xl border bg-card p-4 text-sm">
+            <h2 className="mb-1 font-semibold">Аналитика рейтинга для вашей области пока недоступна</h2>
+            <p className="text-muted-foreground">
+              Отчёт по вашему подразделению пока не поддерживается. Общие показатели доступны только с правом просмотра всей организации.
+            </p>
+          </section>
+        ) : (query.error !== null || query.readAccessBlocked) && (
           <LoadFailure
             what="аналитику рейтинга"
             onRetry={() => void query.refetch()}

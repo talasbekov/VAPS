@@ -1453,8 +1453,11 @@ class ApiClient {
       employee: number;
       status_type: string;
       start_date?: string;
-      end_date?: string;
+      end_date?: string | null;
       comment?: string;
+      location?: string;
+      related_division?: number;
+      duty_assignment?: DutyPlacementInput | null;
     }
   ): Promise<any> {
     const endpoint = `/api/statuses/statuses/${statusId}/`;
@@ -2685,45 +2688,22 @@ export function convertStaffUnitsResponseToOrgUnit(
 
   // Если есть несколько корневых элементов, создаем виртуальный корень
   if (rootUnits.length > 1) {
-    if (rootUnits.some(unit => unit.division === null)) {
-      // Нет общего подразделения: неизвестная принадлежность не превращает
-      // человека в начальника реального управления или его подчинённого.
-      return {
-        id: "unassigned-structure-root",
-        name: "Структура организации",
-        head: null,
-        employees: [],
-        color: "bg-card border-border",
-        type: "leadership",
-        children: rootUnits.map(root => convertStaffUnitToOrgUnit({
-          ...root, children: buildTree(root.id),
-        })),
-      };
-    }
-    // Находим элемент с минимальным ID среди корневых
-    const mainRoot = rootUnits.reduce((min, unit) =>
-      unit.id < min.id ? unit : min
-    );
-
-    // Строим дерево для главного корня, включая другие корни как его детей
-    const otherRoots = rootUnits.filter((unit) => unit.id !== mainRoot.id);
-    const mainRootChildren = buildTree(mainRoot.id);
-
-    // Добавляем другие корни как детей главного корня
-    const allChildren = [
-      ...mainRootChildren,
-      ...otherRoots.map((root) => ({
+    // Минимальный ID — представитель строки, а не доказательство подчинения:
+    // независимые корни остаются соседями без заимствованного руководителя.
+    return {
+      id: rootUnits.some(unit => unit.division === null)
+        ? "unassigned-structure-root"
+        : "organization-structure-root",
+      name: "Структура организации",
+      head: null,
+      employees: [],
+      color: "bg-card border-border",
+      type: "leadership",
+      children: rootUnits.map(root => convertStaffUnitToOrgUnit({
         ...root,
         children: buildTree(root.id),
       })),
-    ];
-
-    const rootWithChildren: StaffUnit = {
-      ...mainRoot,
-      children: allChildren.length > 0 ? allChildren : undefined,
     };
-
-    return convertStaffUnitToOrgUnit(rootWithChildren);
   }
 
   // Если корневой элемент один, строим дерево для него

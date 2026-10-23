@@ -36,13 +36,14 @@ import { useForceCollections } from "@/hooks/use-force-collections";
 import { ForceCollectionCard } from "./ForceCollectionCard";
 import { ForceCampaignsPanel } from "./ForceCampaignsPanel";
 import { formatIsoDate } from "@/shared/lib/date";
+import styles from "./ForceCollectionsTable.module.css";
 
 
 function Progress({ done, need }: { done: number; need: number }) {
   const percent = need > 0 ? Math.min(100, Math.round((done / need) * 100)) : 0;
   const over = need > 0 && done > need;
   return (
-    <div className="min-w-[130px]">
+    <div className={styles.progress}>
       <p className="text-sm tabular-nums">
         {done} из {need}
         {over && (
@@ -164,8 +165,46 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
+      {collections.isPending ? (
+        <div data-slot="table-container" role="status" aria-busy className="space-y-3 rounded-lg border p-4">
+          <p className="text-muted-foreground text-sm">Загрузка сборов…</p>
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="bg-muted h-9 w-full animate-pulse rounded" aria-hidden />
+          ))}
+        </div>
+      ) : collections.isError ? (
+        <div data-slot="table-container" className="min-w-0 space-y-3 rounded-lg border p-4">
+          <p role="alert" className="text-destructive-ink break-words text-sm">
+            {collections.error?.message ?? "Не удалось загрузить сборы"}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 whitespace-normal"
+            disabled={!enabled || collections.isFetching}
+            onClick={() => { if (enabled) void collections.refetch(); }}
+          >
+            {collections.isFetching ? "Загружаю…" : "Повторить загрузку сборов"}
+          </Button>
+        </div>
+      ) : rows.length === 0 ? (
+        <div data-slot="table-container" className="space-y-3 rounded-lg border p-4">
+          <p role="status" className="text-muted-foreground text-sm">
+            Сборов нет. Обновите список, чтобы проверить, появились ли новые сборы.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={!enabled || collections.isFetching}
+            onClick={() => { if (enabled) void collections.refetch(); }}
+          >
+            {collections.isFetching ? "Обновляю…" : "Обновить сборы"}
+          </Button>
+        </div>
+      ) : (
+      <div className={`${styles.wrap} rounded-lg border`}>
+        <Table className={styles.table} role="table" aria-label="Сборы сил">
           <TableHeader>
             <TableRow>
               {/* Колонки `[СБС-10]` (Plane №426): код · название · дата ·
@@ -181,44 +220,8 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
-          <TableBody aria-busy={collections.isPending}>
-            {collections.isPending &&
-              [0, 1, 2].map((index) => (
-                <TableRow key={index}>
-                  <TableCell colSpan={9}>
-                    <div
-                      className="bg-muted h-9 w-full animate-pulse rounded"
-                      aria-hidden
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-
-            {!collections.isPending && collections.isError && (
-              <TableRow>
-                <TableCell colSpan={9}>
-                  <p role="alert" className="text-destructive-ink text-sm">
-                    {collections.error?.message ??
-                      "Сборы не загрузились — список показать нечем"}
-                  </p>
-                </TableCell>
-              </TableRow>
-            )}
-
-            {!collections.isPending && !collections.isError && rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={9} className="whitespace-normal">
-                  <p className="text-muted-foreground text-sm">
-                    Сборов нет — ни у одного мероприятия ещё не посчитана
-                    потребность в силах
-                  </p>
-                </TableCell>
-              </TableRow>
-            )}
-
-            {!collections.isPending &&
-              !collections.isError &&
-              rows.map((row: ForceCollectionRow) => (
+          <TableBody aria-busy={collections.isFetching}>
+            {rows.map((row: ForceCollectionRow) => (
                 <TableRow
                   key={row.eventId}
                   data-slot="force-collection-row"
@@ -280,22 +283,28 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                     </p>
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Дата ОМ</span>
                     {formatIsoDate(row.businessDate)}
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Потребность</span>
                     {row.need}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums" data-slot="collection-requested">
-                    {row.requested}
+                  <TableCell className="text-right tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Запрошено</span>
+                    <span data-slot="collection-requested">{row.requested}</span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums" data-slot="collection-allocating">
-                    {row.allocating}
+                  <TableCell className="text-right tabular-nums">
+                    <span className={styles.label} aria-hidden="true">Выделяют</span>
+                    <span data-slot="collection-allocating">{row.allocating}</span>
                   </TableCell>
                   <TableCell data-slot="collection-sent">
+                    <span className={styles.label} aria-hidden="true">Прислано</span>
                     <Progress done={row.sent} need={row.need} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums" data-slot="collection-shortage">{row.shortage}</TableCell>
+                  <TableCell className="text-right tabular-nums"><span className={styles.label} aria-hidden="true">Недобор</span><span data-slot="collection-shortage">{row.shortage}</span></TableCell>
                   <TableCell>
+                    <span className={styles.label} aria-hidden="true">Статус</span>
                     <Badge variant="outline" data-slot="collection-status">
                       {row.boardStatus.label}
                     </Badge>
@@ -322,6 +331,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
           </TableBody>
         </Table>
       </div>
+      )}
     </section>
     </div>
   );

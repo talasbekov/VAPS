@@ -529,7 +529,7 @@ def serialize_security_event(event, *, with_phone=False, read_context=None):
         ),
         "demandRows": event.demand_rows,
         "demandApproved": event.demand_approved,
-        "forceRequests": event.force_requests,
+        "forceRequests": security_events.project_auto_force_requests(event),
         # Раскладка потребности по департаментам и её итог. Итог считает
         # сервер: «сколько ещё не разложено» — правило, по которому он же
         # отбивает перебор, и второй счёт на клиенте разошёлся бы с ним молча.

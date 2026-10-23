@@ -393,6 +393,48 @@ def test_a_changed_allocation_is_delivered_again_the_same_day(chain):
     assert [row.payload["directorateCount"] for row in summaries] == [1, 2]
 
 
+def test_distinct_same_day_events_both_reach_the_directorate_head(chain):
+    event, allocation, directorates, head, officer, _watcher = chain
+    notify_directorate_heads(event, allocation, directorates)
+    event.pk = None
+    event.code = "ОМ-FR-2"
+    event.save()
+    second_allocation = {**allocation, "id": "force-allocation-second-event"}
+
+    notify_directorate_heads(event, second_allocation, directorates)
+
+    for recipient, kind in ((head, KIND), (officer, DEPARTMENT_KIND)):
+        rows = OpsNotification.objects.filter(recipient=str(recipient.pk), kind=kind)
+        assert {row.payload["eventCode"] for row in rows} == {"ОМ-FR-1", "ОМ-FR-2"}
+        assert {row.payload["allocationId"] for row in rows} == {
+            "force-allocation-1", "force-allocation-second-event",
+        }
+
+
+def test_retrying_the_same_allocation_does_not_duplicate_department_summary(chain):
+    event, allocation, directorates, head, officer, _watcher = chain
+
+    notify_directorate_heads(event, allocation, directorates)
+    notify_directorate_heads(event, allocation, directorates)
+
+    assert OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).count() == 1
+    summaries = OpsNotification.objects.filter(recipient=str(officer.pk), kind=DEPARTMENT_KIND)
+    assert summaries.count() == 1
+    assert summaries.get().payload["allocationId"] == "force-allocation-1"
+
+
+def test_a_changed_directorate_request_is_delivered_as_a_new_revision(chain):
+    event, allocation, directorates, head, _officer, _watcher = chain
+    notify_directorate_heads(event, allocation, directorates)
+    changed = [{**row, "need": 3} if index == 0 else row for index, row in enumerate(directorates)]
+
+    notify_directorate_heads(event, allocation, changed)
+    notify_directorate_heads(event, allocation, changed)
+
+    rows = OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).order_by("created_at")
+    assert [row.payload["need"] for row in rows] == [2, 3]
+
+
 def test_the_summary_preserves_allocation_row_order(chain):
     event, allocation, directorates, _head, officer, _watcher = chain
 

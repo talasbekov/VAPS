@@ -45,7 +45,6 @@ import { Label } from "@/components/ui/label";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatCard } from "@/components/stat-card";
 import {
   Table,
   TableBody,
@@ -74,6 +73,7 @@ import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { HqStages } from "./ForceCampaignsPanel";
 import { refreshForceWorkspaceViews } from "@/hooks/use-force-campaigns";
+import styles from "./ForceCollectionCard.module.css";
 
 
 /**
@@ -89,6 +89,12 @@ import { refreshForceWorkspaceViews } from "@/hooks/use-force-campaigns";
  * которая всегда отвечает отказом.
  */
 const SPLIT_STAGES = ["DEMAND", "FORCES", "PLACEMENT"];
+const COLLECTION_STEP_LABELS = [
+  "Получить потребность",
+  "Разделить по департаментам",
+  "Получить ответы и списки",
+  "Раздать по ОМ и объектам",
+] as const;
 
 const ALLOCATION_STATUS: Record<string, string> = {
   // Отправленная строка без ответа департамента — «Запрос отправлен»; сам
@@ -182,20 +188,20 @@ function DepartmentRow({
             </p>
           ))}
         </TableCell>
-        <TableCell className="text-right font-semibold tabular-nums">{need}</TableCell>
-        <TableCell className="text-right tabular-nums" data-slot="department-allocating">
+        <TableCell data-label="Запрошено" className="text-right font-semibold tabular-nums">{need}</TableCell>
+        <TableCell data-label="Выделяют" className="text-right tabular-nums" data-slot="department-allocating">
           {allocating === null ? <span className="text-muted-foreground">—</span> : allocating}
         </TableCell>
-        <TableCell className="tabular-nums" data-slot="department-sent">
+        <TableCell data-label="Прислано" className="tabular-nums" data-slot="department-sent">
           {sent} из {need}
         </TableCell>
-        <TableCell className="text-muted-foreground max-w-[220px] whitespace-normal text-sm">
+        <TableCell data-label="Комментарий" className="text-muted-foreground max-w-[220px] whitespace-normal text-sm">
           {row.answerComment || row.comment || "—"}
         </TableCell>
-        <TableCell className="whitespace-normal text-sm" data-slot="department-status">
+        <TableCell data-label="Статус" className="whitespace-normal text-sm" data-slot="department-status">
           {ALLOCATION_STATUS[row.status] ?? row.status}
         </TableCell>
-        <TableCell className="whitespace-normal text-sm" data-slot="department-responsible">
+        <TableCell data-label="Ответственный" className="whitespace-normal text-sm" data-slot="department-responsible">
           {row.responsibleName || <span className="text-muted-foreground">не назначен</span>}
         </TableCell>
         <TableCell>
@@ -546,7 +552,7 @@ function SplitEditor({
     <>
       {rows.map((row, index) => (
         <TableRow key={row.key} data-slot="draft-row">
-          <TableCell>
+          <TableCell data-label="Департамент">
             <Label className="sr-only" htmlFor={`draft-department-${row.key}`}>
               Департамент, строка {index + 1}
             </Label>
@@ -612,7 +618,7 @@ function SplitEditor({
               </fieldset>
             )}
           </TableCell>
-          <TableCell className="text-right">
+          <TableCell data-label="Запрошено" className="text-right">
             <Label className="sr-only" htmlFor={`draft-need-${row.key}`}>
               Сколько человек, строка {index + 1}
             </Label>
@@ -628,7 +634,7 @@ function SplitEditor({
           </TableCell>
           <TableCell className="text-muted-foreground text-right">—</TableCell>
           <TableCell className="text-muted-foreground">—</TableCell>
-          <TableCell><Label htmlFor={`draft-comment-${row.key}`} className="sr-only">Комментарий Штаба, строка {index + 1}</Label><Input id={`draft-comment-${row.key}`} aria-label={`Комментарий Штаба, строка ${index + 1}`} value={row.comment} disabled={split.isPending} onChange={event => patch(row.key, { comment: event.target.value })} className="min-w-40" /></TableCell>
+          <TableCell data-label="Комментарий Штаба"><Label htmlFor={`draft-comment-${row.key}`} className="sr-only">Комментарий Штаба, строка {index + 1}</Label><Input id={`draft-comment-${row.key}`} aria-label={`Комментарий Штаба, строка ${index + 1}`} value={row.comment} disabled={split.isPending} onChange={event => patch(row.key, { comment: event.target.value })} className="min-w-40" /></TableCell>
           <TableCell className="text-sm" data-slot="department-status">
             Черновик
           </TableCell>
@@ -791,7 +797,7 @@ function CollectionObjectPlan({
   const needDiffers = data.needByObject.length > 0 && shownNeed !== data.need;
 
   return (
-    <section aria-labelledby="collection-need-heading" className="space-y-3 rounded-xl border bg-card p-4" data-slot="collection-need">
+    <section aria-labelledby="collection-need-heading" className="space-y-3" data-slot="collection-need">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 id="collection-need-heading" className="font-semibold">Потребность по объектам ОМ</h3>
@@ -902,6 +908,15 @@ export function ForceCollectionCard({
         <p role="alert" className="text-destructive-ink text-sm">
           {collection.error?.message ?? "Сбор не открылся"}
         </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 whitespace-normal"
+          disabled={!enabled || collection.isFetching}
+          onClick={() => { if (enabled) void collection.refetch(); }}
+        >
+          {collection.isFetching ? "Загружаю…" : "Повторить загрузку сбора"}
+        </Button>
       </div>
     );
   }
@@ -911,6 +926,7 @@ export function ForceCollectionCard({
   const sentRows = data.allocations.filter(isSent);
   const collectionOpen = data.canCollect ?? SPLIT_STAGES.includes(data.stage);
   const editable = collectionOpen && access.can(FORCES_COMMAND);
+  const currentStep = data.handover.at || data.roster.length > 0 ? 4 : sentRows.length > 0 ? 3 : 2;
 
   return (
     <div className="min-w-0 space-y-5">
@@ -942,46 +958,84 @@ export function ForceCollectionCard({
         </p>
       </div>
 
-      <HqStages current={data.handover.at || data.roster.length > 0 ? 4 : sentRows.length > 0 ? 3 : 2} />
-      <p className="rounded-lg border-l-4 border-primary bg-primary/5 p-3 text-sm">Запрос — пожелание Штаба. Департамент вправе выделить меньше, больше или отказаться. Специальные группы идут сверх квоты физического наряда.</p>
+      <dl aria-label="Состояние сбора" className="grid grid-cols-3 gap-3 rounded-lg border bg-card p-3">
+        <div className="min-w-0">
+          <dt className="text-muted-foreground text-xs" title="Требуется по рекогносцировке">Потребность</dt>
+          <dd className="mt-1 text-xl font-semibold tabular-nums">{data.need}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-muted-foreground text-xs">Собрано</dt>
+          <dd className="mt-1 text-xl font-semibold tabular-nums text-green-700 dark:text-green-400">{data.gathered}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-muted-foreground text-xs">Осталось собрать</dt>
+          <dd className={`mt-1 text-xl font-semibold tabular-nums ${data.remaining > 0 ? "text-primary-ink" : "text-green-700 dark:text-green-400"}`}>
+            {data.remaining}
+          </dd>
+        </div>
+      </dl>
 
-      <CollectionObjectPlan data={data} canViewEvent={access.can("event.view")} />
-      {(data.demandRows ?? []).some(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD") && <section aria-label="Потребность в специальных группах" className="rounded-xl border bg-card p-4"><h3 className="font-semibold">Специальные группы · сверх физического наряда</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{(data.demandRows ?? []).filter(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD").map(row => <p key={row.id} className="rounded-lg bg-muted/40 p-3 text-sm">{row.specification || row.kindCode} · {row.need} · {row.place}</p>)}</div></section>}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard
-          label="Требуется по рекогносцировке"
-          value={data.need}
-          caption="Число, которое делит штаб"
-        />
-        <StatCard
-          label="Распределено квотами"
-          value={data.allocated}
-          tone={data.allocated > data.need ? "danger" : "neutral"}
-          caption={
-            data.allocated > data.need
+      <p role="status" aria-label="Текущий этап сбора" className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
+        <span className="font-medium">Шаг {currentStep} из 4</span>
+        {" · "}{data.handover.at ? "Состав передан на расстановку" : COLLECTION_STEP_LABELS[currentStep - 1]}
+      </p>
+
+      <details className="rounded-xl border bg-card" data-slot="collection-progress-details">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-semibold">
+          Квоты, ответы и этапы сбора
+        </summary>
+        <div className="space-y-4 border-t p-4">
+          <dl aria-label="Квоты и ответы департаментов" className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-muted-foreground text-xs">Распределено квотами</dt>
+              <dd aria-describedby="collection-quota-progress" className={`mt-1 text-xl font-semibold tabular-nums ${data.allocated > data.need ? "text-destructive-ink" : ""}`}>
+                {data.allocated}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground text-xs">Департаменты выделяют</dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums">{data.totals.allocating}</dd>
+            </div>
+          </dl>
+          <p id="collection-quota-progress" className={`text-xs ${data.allocated > data.need ? "text-destructive-ink" : "text-muted-foreground"}`}>
+            {data.allocated > data.need
               ? `Больше потребности на ${data.allocated - data.need}`
-              : `Ещё не разложено ${data.need - data.allocated}`
-          }
-        />
-        <StatCard label="Департаменты выделяют" value={data.totals.allocating} caption="Ответы на запросы Штаба" />
-        <StatCard
-          label="Собрано"
-          value={data.gathered}
-          tone="success"
-          caption="Люди со статусом участия"
-        />
-        <StatCard
-          label="Осталось собрать"
-          value={data.remaining}
-          tone={data.remaining > 0 ? "info" : "success"}
-          caption={data.remaining > 0 ? "До закрытия потребности" : "Потребность закрыта"}
-        />
-      </div>
+              : `Ещё не разложено ${data.need - data.allocated}`}
+          </p>
+          <HqStages current={currentStep} />
+        </div>
+      </details>
+
+      {/* Native disclosure keeps its content mounted; action forms below never reset on toggle. */}
+      <details className="rounded-xl border bg-card" data-slot="collection-reference">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-semibold">
+          Потребность и объекты ОМ
+        </summary>
+        <div className="space-y-4 border-t p-4">
+          <CollectionObjectPlan data={data} canViewEvent={access.can("event.view")} />
+          {(data.demandRows ?? []).some(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD") && (
+            <section aria-label="Потребность в специальных группах" className="space-y-2">
+              <h3 className="font-semibold">Специальные группы · сверх физического наряда</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(data.demandRows ?? []).filter(row => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD").map(row => (
+                  <p key={row.id} className="rounded-lg bg-muted/40 p-3 text-sm">
+                    {row.specification || row.kindCode} · {row.need} · {row.place}
+                  </p>
+                ))}
+              </div>
+            </section>
+          )}
+          <p className="text-muted-foreground border-t pt-3 text-sm">
+            Запрос — пожелание Штаба. Департамент вправе выделить меньше, больше или отказаться.
+            Специальные группы идут сверх квоты физического наряда.
+          </p>
+        </div>
+      </details>
 
       <section aria-labelledby="collection-split-heading" className="space-y-3">
         <div>
           <h3 id="collection-split-heading" className="font-semibold">
-            2–3. Запросы департаментам и полученные списки
+            Запросы департаментам и полученные списки
           </h3>
           <p className="text-muted-foreground text-sm">
             Подготовьте квоты и сроки в черновике. Отправленные строки сохраняются;
@@ -989,8 +1043,8 @@ export function ForceCollectionCard({
           </p>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
+        <div className={`overflow-x-auto rounded-lg border ${styles.wrap}`}>
+          <Table className={styles.table}>
             <TableHeader>
               <TableRow>
                 {/* Колонки `[СБС-12]` (Plane №426). */}

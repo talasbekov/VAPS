@@ -30,6 +30,21 @@ pytestmark = pytest.mark.django_db
 LIST = "/api/ops/security-events/forces/requests/"
 
 
+@pytest.mark.parametrize("bad_row", [None, "department", 17, []])
+def test_malformed_allocation_row_is_a_field_error_without_writes(manager, bad_row):  # noqa: F811
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, _ = event_on_demand(manager)
+    response = manager.post(
+        f"{base}forces/allocation/", {"rows": [bad_row]}, format="json",
+    )
+
+    assert response.status_code == 400, response.content
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+    assert "rows.0" in response.json()["details"]
+    assert OpsSecurityEvent.objects.get(pk=_event_id(base)).force_allocation == []
+
+
 def _event_id(base):
     return base.rstrip("/").rsplit("/", 1)[-1]
 

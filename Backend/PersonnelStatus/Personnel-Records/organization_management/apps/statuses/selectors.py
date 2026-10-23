@@ -96,3 +96,57 @@ def status_on_date(employee_id: int, on_date):
         .order_by(*CURRENT_STATUS_ORDER)
         .first()
     )
+
+
+def statuses_effective_on_date(queryset, on_date):
+    """Personnel periods are inclusive; an actual end replaces the plan.
+
+    Completed rows are needed for historical reports and cancelled rows never
+    express a fact. This deliberately differs from the ACTIVE-only card/list
+    selectors above, whose callers need to see overdue, unclosed records.
+    """
+    return queryset.filter(start_date__lte=on_date).exclude(
+        state=EmployeeStatus.StatusState.CANCELLED
+    ).filter(
+        Q(actual_end_date__gte=on_date)
+        | Q(actual_end_date__isnull=True, end_date__gte=on_date)
+        | Q(actual_end_date__isnull=True, end_date__isnull=True)
+    )
+
+
+def effective_status_types_by_employee(rows, status_catalog):
+    """Choose one status type per employee from date-filtered tuple rows.
+
+    Rows contain employee_id, type, state, start and actual end.
+    A return starts on its selected date. Its row remains evidence of that
+    return after a later status completes it, so an absence with that actual
+    end does not win on the return day. Ordinary planned ends stay inclusive.
+    Other imported overlaps use catalog priority and a stable code tie-break.
+    """
+    rows = list(rows)
+    returns = {
+        (employee_id, start_date)
+        for employee_id, status_type, _state, start_date, _actual_end in rows
+        if status_catalog.code_for(status_type) == EmployeeStatus.StatusType.IN_SERVICE
+    }
+    best = {}
+    for employee_id, status_type, state, _start, actual_end in rows:
+        if employee_id is None:
+            continue
+        if (
+            state == EmployeeStatus.StatusState.COMPLETED
+            and status_catalog.code_for(status_type) != EmployeeStatus.StatusType.IN_SERVICE
+            and actual_end is not None
+            and (employee_id, actual_end) in returns
+        ):
+            continue
+        rank = (
+            0 if state == EmployeeStatus.StatusState.ACTIVE else 1,
+            status_catalog.priority.get(status_type, 10_000),
+            status_catalog.code_for(status_type),
+            status_type,
+        )
+        current = best.get(employee_id)
+        if current is None or rank < current[0]:
+            best[employee_id] = (rank, status_type)
+    return {employee_id: winner[1] for employee_id, winner in best.items()}

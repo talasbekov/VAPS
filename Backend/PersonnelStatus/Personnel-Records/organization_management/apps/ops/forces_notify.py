@@ -32,6 +32,9 @@
 предмет (кому и что), и держать её рядом с правилами раскладки значило бы
 растить файл, в котором и так под пять тысяч строк.
 """
+import hashlib
+import json
+
 from organization_management.apps.operations import notify_service
 from organization_management.apps.operations.services import PermissionService
 
@@ -250,6 +253,16 @@ def _department_heads_over(division_ids):
     }
 
 
+def _request_delivery_key(payload):
+    """One delivery per original allocation and delivered request revision.
+
+    The payload includes event/allocation identity, requested work and deadline.
+    Hashing keeps imported identifiers within the notification key's limit.
+    """
+    revision = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "forces-request:" + hashlib.sha256(revision.encode("utf-8")).hexdigest()
+
+
 def notify_directorate_heads(event, allocation, directorates):
     """Разослать запрос сил начальникам управлений заявки.
 
@@ -320,6 +333,7 @@ def notify_directorate_heads(event, allocation, directorates):
                 KIND,
                 event.business_date,
                 payload,
+                dedupe_key=_request_delivery_key(payload),
                 label=row.get("name") or key,
             )
     # 🔴 СВОДНОЕ ПИСЬМО НАЧАЛЬНИКУ ДЕПАРТАМЕНТА (Plane №922, решение
@@ -347,34 +361,35 @@ def notify_directorate_heads(event, allocation, directorates):
         ]
         if not mine:
             continue
+        payload = {
+            "eventId": str(event.pk),
+            "eventCode": event.code,
+            "eventTitle": event.title,
+            "businessDate": event.business_date.isoformat(),
+            "allocationId": allocation.get("id"),
+            "departmentName": allocation.get("departmentName", ""),
+            # Сумма и состав — обе цифры письма: «N человек по k
+            # управлениям». Состав нужен не для красоты: без него
+            # получатель не знает, ЧТО именно на нём висит, а это ровно
+            # та полуправда, ради которой вид и заведён отдельным.
+            "need": sum(int(row.get("need") or 0) for row in mine),
+            "directorateCount": len(mine),
+            "directorates": [
+                {
+                    "divisionId": str(row.get("divisionId")),
+                    "name": row.get("name", ""),
+                    "need": int(row.get("need") or 0),
+                }
+                for row in mine
+            ],
+            "dueAt": allocation.get("dueAt"),
+        }
         tally.deliver(
             user_id,
             DEPARTMENT_KIND,
             event.business_date,
-            {
-                "eventId": str(event.pk),
-                "eventCode": event.code,
-                "eventTitle": event.title,
-                "businessDate": event.business_date.isoformat(),
-                "allocationId": allocation.get("id"),
-                "departmentName": allocation.get("departmentName", ""),
-                # Сумма и состав — обе цифры письма: «N человек по k
-                # управлениям». Состав нужен не для красоты: без него
-                # получатель не знает, ЧТО именно на нём висит, а это ровно
-                # та полуправда, ради которой вид и заведён отдельным.
-                "need": sum(int(row.get("need") or 0) for row in mine),
-                "directorateCount": len(mine),
-                "directorates": [
-                    {
-                        "divisionId": str(row.get("divisionId")),
-                        "name": row.get("name", ""),
-                        "need": int(row.get("need") or 0),
-                    }
-                    for row in mine
-                ],
-                "dueAt": allocation.get("dueAt"),
-            },
-            dedupe_key=None,
+            payload,
+            dedupe_key=_request_delivery_key(payload),
             label=allocation.get("departmentName") or "департамент",
         )
     return {

@@ -37,6 +37,9 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.masking import mask_iin
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.retirement import (
+    refuse_retired_secondment_type, refuse_retired_secondment_amendment,
+)
 from organization_management.apps.statuses.selectors import (
     CURRENT_STATUS_ORDER,
     active_status,
@@ -496,6 +499,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 #
                 # Отказ, а не тихий пропуск: пропуск выглядел бы как успех, и
                 # человек ушёл бы, считая статус проставленным.
+                refuse_retired_secondment_type(status_data.get('status_type'))
                 _refuse_participation_status(status_data.get('status_type'))
 
                 try:
@@ -1314,6 +1318,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 # `_refuse_participation_status` (Plane №757). Проверка стоит и
                 # здесь: путей записи статуса у этой ручки ДВА, и закрытый
                 # один оставил бы обход открытым.
+                # Keep amendments of an existing historical fact possible;
+                # creating it or changing another type into it is retired.
+                current_type = None
+                current_status = None
+                if status_data.get('id'):
+                    current_status = EmployeeStatus.objects.filter(
+                        pk=status_data['id'],
+                        employee__staff_unit__division_id__in=division_ids,
+                    ).first()
+                    current_type = current_status.status_type if current_status else None
+                if current_status:
+                    refuse_retired_secondment_amendment(current_status, status_data)
+                refuse_retired_secondment_type(
+                    status_data.get('status_type'), current=current_type,
+                )
                 _refuse_participation_status(status_data.get('status_type'))
                 try:
                     with transaction.atomic():

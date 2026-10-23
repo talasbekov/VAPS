@@ -30,10 +30,37 @@ test('single journal entry shows status placement and existing combat groups wit
   await expect(composition.getByText('Объект Восток · Пост 2', { exact: true })).toBeVisible();
   await expect(page.getByText('Боевая группа 1', { exact: true })).toBeVisible();
   await expect(composition.getByRole('button', { name: 'Назначить', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Изменить статусы', exact: true })).toHaveAttribute('href', `/statuses/?businessDate=${day}`);
+  await expect(page.getByRole('link', { name: 'Статусы на 16.10.2026', exact: true })).toHaveAttribute('href', `/statuses/?view=calendar&statusDate=${day}`);
   await page.getByLabel('Поиск в составе', { exact: true }).fill('пост 2');
   await expect(composition.getByText('Наряд Из Статуса', { exact: true })).toBeVisible();
   await expect(composition.getByText('Почасовой Сотрудник', { exact: true })).toHaveCount(0);
+});
+
+test('status roster shows only exits intersecting its date and distinguishes unknown hours from no exits', async ({ page, businessWrites }) => {
+  await boot(page, ['duty.view']);
+  const intervals = [
+    { start_at: day + 'T08:30:00+05:00', end_at: day + 'T12:00:00+05:00' },
+    { start_at: day + 'T22:00:00+05:00', end_at: '2026-10-17T04:00:00+05:00' },
+    { start_at: '2026-10-18T09:00:00+05:00', end_at: '2026-10-18T11:00:00+05:00' },
+  ];
+  let schedule: typeof intervals | undefined = intervals;
+  await page.route('**' + api + '**', route => route.fulfill({ json: { ...roster,
+    departments: [{ ...roster.departments[0], employees: [{ ...roster.departments[0].employees[0], placements: [{
+      ...roster.departments[0].employees[0].placements[0], ...(schedule === undefined ? {} : { intervals: schedule, time_zone: 'Asia/Almaty' }),
+    }] }] }],
+  } }));
+  await page.goto(path + '?date=' + day);
+  const composition = page.getByRole('region', { name: 'Состав наряда' });
+  await expect(composition).toContainText('16.10.2026 08:30 — 16.10.2026 12:00');
+  await expect(composition).toContainText('16.10.2026 22:00 — 17.10.2026 04:00');
+  await expect(composition).not.toContainText('18.10.2026 09:00');
+  schedule = [];
+  await page.getByRole('button', { name: 'Обновить состав', exact: true }).click();
+  await expect(composition).toContainText('Выходов на выбранную дату нет.');
+  schedule = undefined;
+  await page.getByRole('button', { name: 'Обновить состав', exact: true }).click();
+  await expect(composition).toContainText('Время выходов не указано. Круглосуточное нахождение на посту не подтверждено.');
+  expect(businessWrites).toEqual([]);
 });
 
 test('composition filters unplaced people and stays usable on narrow screens', async ({ page }) => {
@@ -43,7 +70,7 @@ test('composition filters unplaced people and stays usable on narrow screens', a
   const composition = page.getByRole('region', { name: 'Состав наряда' });
   await expect(composition.getByText('Выделенный Сотрудник', { exact: true })).toBeVisible();
   await expect(composition.getByText('Наряд Из Статуса', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Изменить статусы', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /^Статусы на / })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Почасовые смены', exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.locator('body').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
@@ -53,7 +80,7 @@ test('status read and write rights do not offer a journal link to an unavailable
   await boot(page, ['duty.view', 'status.view', 'status.manage']);
   await page.goto(path + '?date=' + day);
   await expect(page.getByRole('region', { name: 'Состав наряда' }).getByText('Наряд Из Статуса', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Изменить статусы', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /^Статусы на / })).toHaveCount(0);
   expect(businessWrites).toEqual([]);
 });
 

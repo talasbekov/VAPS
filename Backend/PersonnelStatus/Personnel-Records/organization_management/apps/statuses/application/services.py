@@ -18,7 +18,12 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.participation_guard import (
     refuse_manual_participation,
 )
-from organization_management.apps.statuses.selectors import status_on_date
+from organization_management.apps.statuses.selectors import (
+    effective_status_types_by_employee,
+    statuses_effective_on_date,
+    status_on_date,
+)
+from organization_management.apps.statuses.catalog import personnel_reporting_catalog
 from organization_management.apps.statuses.duty_assignments import normalize_assignment, assignment_location
 from organization_management.apps.divisions.models import Division
 
@@ -784,33 +789,48 @@ class StatusApplicationService:
 
             employee_ids = None
 
-        # Статистика по статусам
-        queryset = EmployeeStatus.objects.filter(
-            start_date__lte=end_date
-        ).filter(
-            Q(end_date__gte=start_date) | Q(end_date__isnull=True)
-        ).exclude(
-            status_type=EmployeeStatus.StatusType.IN_SERVICE
-        )
+        status_catalog = personnel_reporting_catalog()
 
-        if employee_ids is not None:
-            queryset = queryset.filter(employee_id__in=employee_ids)
+        # Today's dashboard reports people, using the same date window and
+        # catalog winner as personnel reports. Period/history callers retain
+        # their existing row-overlap contract below.
+        if start_date == end_date == timezone.localdate():
+            queryset = EmployeeStatus.objects.all()
+            if employee_ids is not None:
+                queryset = queryset.filter(employee_id__in=employee_ids)
+            effective = effective_status_types_by_employee(
+                statuses_effective_on_date(queryset, start_date)
+                .values_list("employee_id", "status_type", "state", "start_date", "actual_end_date"),
+                status_catalog,
+            )
+            codes = effective.values()
+        else:
+            queryset = EmployeeStatus.objects.filter(
+                start_date__lte=end_date
+            ).filter(
+                Q(end_date__gte=start_date) | Q(end_date__isnull=True)
+            )
+            if employee_ids is not None:
+                queryset = queryset.filter(employee_id__in=employee_ids)
+            codes = queryset.values_list("status_type", flat=True)
 
-        # Подсчет по типам (используем код статуса на английском)
-        statistics = {}
-        for status_type, display_name in EmployeeStatus.StatusType.choices:
-            if status_type == EmployeeStatus.StatusType.IN_SERVICE:
-                continue
-            count = queryset.filter(status_type=status_type).count()
-            statistics[status_type] = count
+        # Normalize aliases into the catalog's personnel code, retain the
+        # established zero-valued legacy keys, and include custom/imported
+        # codes so every counted absence appears in the breakdown.
+        in_service = EmployeeStatus.StatusType.IN_SERVICE
+        statistics = {
+            code: 0 for code in dict.fromkeys(status_catalog.code_by_alias.values())
+            if code != in_service
+        }
+        for code in codes:
+            code = status_catalog.code_for(code)
+            if code != in_service:
+                statistics[code] = statistics.get(code, 0) + 1
 
         return {
-            'period': {
-                'start_date': start_date,
-                'end_date': end_date
-            },
+            'period': {'start_date': start_date, 'end_date': end_date},
             'division_id': division_id,
             'staff_count': staff_count,
-            'total_absences': queryset.count(),
-            'by_type': statistics
+            'total_absences': sum(statistics.values()),
+            'by_type': statistics,
         }

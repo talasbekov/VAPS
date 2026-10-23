@@ -320,13 +320,13 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
-    await expect(kpiTile(page, 'Списочная численность')).toBeVisible({ timeout: 20_000 })
+    await expect(kpiTile(page, 'Штатная численность')).toBeVisible({ timeout: 20_000 })
 
-    await expect(kpiTile(page, 'Списочная численность').locator('p.tabular-nums')).toHaveText(
+    await expect(kpiTile(page, 'Штатная численность').locator('p.tabular-nums')).toHaveText(
       new RegExp(`^${String(totals.staff_total).split('').join('\\s*')}$`),
     )
-    await expect(kpiTile(page, 'Фактическая численность')).toContainText(
-      `${share(totals.list_total, totals.staff_total)} от списочной`,
+    await expect(kpiTile(page, 'Списочная численность')).toContainText(
+      `${share(totals.list_total, totals.staff_total)} от штатной`,
     )
     await expect(kpiTile(page, 'В строю').locator('p.tabular-nums')).toHaveText(new RegExp(`^${String(inService).split('').join('\\s*')}$`))
     await expect(kpiTile(page, 'Вакансии').locator('p.tabular-nums')).toHaveText(new RegExp(`^${String(totals.vacancies).split('').join('\\s*')}$`))
@@ -478,6 +478,90 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await expandAllBranches(block)
 
     await expect(block.locator('[data-division-id]')).toHaveCount(tree.nodes.length)
+  })
+
+  test('Task18: высота длинного дерева переключается без потери строк и ручного раскрытия веток на 1440/390 (client-only fixture)', async ({ page }) => {
+    const tree = {
+      ...SYNTHETIC_TREE_WITH_HEALTHY_BRANCH,
+      nodes: [
+        ...SYNTHETIC_TREE_WITH_HEALTHY_BRANCH.nodes,
+        ...Array.from({ length: 80 }, (_, index) => ({
+          division_id: 9400 + index,
+          name: `Несдавшее подразделение ${index + 1}`,
+          parent_id: 9001,
+          status: 'RED',
+          late: false,
+        })),
+      ],
+    }
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: tree }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    const region = block.getByRole('region', { name: 'Подразделения', exact: true })
+    await expect(region).toBeVisible({ timeout: 20_000 })
+    await expect(region).toHaveAttribute('tabindex', '0')
+    const regionId = await region.getAttribute('id')
+    expect(regionId).toBeTruthy()
+    const sizeToggle = block.locator(`button[aria-controls="${regionId}"]`)
+    const healthyToggle = region.locator('[data-division-id="9002"] > div > button[aria-expanded]')
+    const rootToggle = region.locator('[data-division-id="9001"] > div > button[aria-expanded]')
+    const counters = await block.locator('p').first().innerText()
+    const reportHrefs = await block.locator('a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')))
+    const expectedIds = tree.nodes.map(node => node.division_id).sort((a, b) => a - b)
+    const dimensions = () => region.evaluate(node => ({
+      height: node.clientHeight, content: node.scrollHeight, viewport: innerHeight,
+    }))
+
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect(sizeToggle).toHaveAttribute('aria-pressed', 'false')
+      // Existing problem-first and healthy-collapsed defaults remain intact.
+      await expect(rootToggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(healthyToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(region.locator('[data-division-id="9003"]')).toHaveCount(0)
+      await healthyToggle.click()
+      await expect(region.locator('[data-division-id="9003"]')).toHaveCount(1)
+      await expect.poll(async () => {
+        const box = await dimensions()
+        return box.height <= Math.min(box.viewport * 0.5, 448) + 1 && box.content > box.height
+      }).toBe(true)
+      const limited = await dimensions()
+      await region.scrollIntoViewIfNeeded()
+      await region.focus()
+      await expect(region).toBeFocused()
+      await page.keyboard.press('End')
+      await expect.poll(() => region.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop)).toBeLessThanOrEqual(2)
+      await expect(region.locator('[data-division-id="9479"]')).toBeInViewport()
+
+      await sizeToggle.click()
+      await expect(sizeToggle).toHaveAttribute('aria-pressed', 'true')
+      await expect.poll(async () => {
+        const box = await dimensions()
+        return box.height > limited.height + 200 && box.content <= box.height + 1
+      }).toBe(true)
+      await expect(healthyToggle).toHaveAttribute('aria-expanded', 'true')
+      expect(await region.locator('[data-division-id]').evaluateAll(nodes => nodes.map(node => Number(node.getAttribute('data-division-id'))).sort((a, b) => a - b))).toEqual(expectedIds)
+      await expect(block.locator('p').first()).toHaveText(counters)
+      expect(await block.locator('a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')))).toEqual(reportHrefs)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0)
+
+      await sizeToggle.click()
+      await expect(sizeToggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(healthyToggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(region.locator('[data-division-id="9003"]')).toHaveCount(1)
+      await healthyToggle.click()
+      await sizeToggle.click()
+      await expect(healthyToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(region.locator('[data-division-id="9003"]')).toHaveCount(0)
+      await sizeToggle.click()
+      await expect(sizeToggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(block.locator('p').first()).toHaveText(counters)
+      expect(await block.locator('a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')))).toEqual(reportHrefs)
+    }
   })
 
   test('здоровая ветка сворачивается в сводку «+N подразделений» и разворачивается по клику (стенд сегодня вырожден — все узлы RED, эта ветка живыми данными не покрыта, синтетическая фикстура через page.route)', async ({

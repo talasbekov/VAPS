@@ -23,16 +23,16 @@ export function OpsKpiCards({ items }: { items: OpsKpiItem[] }) {
         <Card key={item.key}>
           <CardContent className="flex items-center gap-3 p-4">
             <item.icon className={`h-8 w-8 shrink-0 ${item.iconClass}`} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p
-                className="truncate text-[11px] font-semibold text-muted-foreground"
+                className="break-words whitespace-normal text-[11px] font-semibold text-muted-foreground"
                 title={item.label}
               >
                 {item.label}
               </p>
               <p className="text-xl font-bold tabular-nums">{item.value}</p>
               {item.hint && (
-                <p className="truncate text-[11px] text-muted-foreground">
+                <p className="break-words whitespace-normal text-[11px] text-muted-foreground">
                   {item.hint}
                 </p>
               )}

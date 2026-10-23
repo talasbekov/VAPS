@@ -399,10 +399,10 @@ export function DaySubmissionPanel({
             <span className="text-sm text-muted-foreground">День не сдан</span>
             {canSubmitDay ? <button
               type="button"
-              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+              className="min-h-10 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
               onClick={handleOpenConfirm}
             >
-              {SUBMIT_LABEL}
+              {embedded ? "Проверить и сдать" : SUBMIT_LABEL}
             </button> : <span className="text-sm text-muted-foreground">У вашей роли нет права сдавать день.</span>}
           </div>
         )}

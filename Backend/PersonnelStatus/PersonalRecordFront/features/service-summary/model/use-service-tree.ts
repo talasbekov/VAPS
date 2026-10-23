@@ -10,11 +10,13 @@
 // №235). Департамент — узел, чей родитель есть КОРЕНЬ леса (после снятия
 // осиротевшего «Управление (стенд)», см. `resolveOrganizationRoot`), а не
 // зашитый уровень типа: тип узла в ответе дерева не приходит вовсе.
-import { useQuery } from "@tanstack/react-query";
-import { useContext } from "react";
-import { ServiceSummaryRootContext } from "./workspace-context";
-import { apiClient, type TrafficLightNode } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useContext, useEffect, useRef } from "react";
+import { ServiceSummaryRootContext, ServiceSummaryWorkspaceReadyContext } from "./workspace-context";
+import { apiClient, type TrafficLightNode, type TrafficLightTree } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
+import { hasCurrentOpsReadAuthority, useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
+import { isReadAccessBlocked } from "@/lib/query-read-access";
 import {
   DAILY_SUBMISSIONS_PATH,
   buildDivisionForest,
@@ -67,6 +69,13 @@ function subtreeSize(
 export interface ServiceTree {
   isPending: boolean;
   isError: boolean;
+  readAllowed: boolean;
+  readScope: string;
+  readBlocked: boolean;
+  canRetry: boolean;
+  retryPending: boolean;
+  /** Only this mounted day/context; never returns a protected payload. */
+  retry: () => Promise<void>;
   /** null, пока дерево не загружено или корень не разрешился. */
   rootId: number | null;
   childrenOf: Map<number, TrafficLightNode[]>;
@@ -79,25 +88,39 @@ export interface ServiceTree {
 
 export function useServiceTree(businessDate: string | null): ServiceTree {
   const canonicalRootId = useContext(ServiceSummaryRootContext);
-  const dateValid = businessDate !== null;
-
-  const treeQuery = useQuery({
-    queryKey: ["service-summary", "tree", businessDate],
-    queryFn: () =>
-      apiClient.getTrafficLightTree({ businessDate: businessDate as string }),
-    enabled: dateValid,
-  });
-
-  const submissionsQuery = useQuery({
-    queryKey: ["service-summary", "submissions", businessDate],
-    queryFn: () =>
-      opsApiClient.get<unknown>(
+  const workspaceReady = useContext(ServiceSummaryWorkspaceReadyContext);
+  const client = useQueryClient();
+  const summaryAccess = useOpsReadAccess("service_summary.view");
+  const statusAccess = useOpsReadAccess("status.view");
+  const access = { ...summaryAccess, allowed: summaryAccess.allowed && statusAccess.allowed &&
+    workspaceReady && canonicalRootId !== null && businessDate !== null };
+  const identity = JSON.stringify([access.scope, canonicalRootId, businessDate]);
+  const current = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  current.current = access.allowed ? identity : null;
+  const isCurrent = () => mounted.current && current.current === identity && hasCurrentOpsReadAuthority(client, access);
+  const readCurrent = async <T,>(signal: AbortSignal, read: () => Promise<T>): Promise<T> => {
+    if (!isCurrent()) throw new Error("Область свода изменилась.");
+    const data = await read();
+    if (signal.aborted || !isCurrent()) throw new Error("Область свода изменилась.");
+    return data;
+  };
+  const treeQuery = useOpsProtectedRead<TrafficLightTree>(["service-summary", "tree"], [businessDate, canonicalRootId], access,
+    signal => readCurrent(signal, () => apiClient.getTrafficLightTree({ businessDate: businessDate as string })));
+  const submissionsQuery = useOpsProtectedRead<unknown>(["service-summary", "submissions"], [businessDate, canonicalRootId], access,
+    signal => readCurrent(signal, () => opsApiClient.get<unknown>(
         `${DAILY_SUBMISSIONS_PATH}?business_date=${encodeURIComponent(
           businessDate as string
         )}`
-      ),
-    enabled: dateValid,
-  });
+      )));
+  const readBlocked = treeQuery.readAccessBlocked || submissionsQuery.readAccessBlocked;
+  const retryPending = treeQuery.isFetching || submissionsQuery.isFetching;
+  const retry = useCallback(async () => {
+    if (!isCurrent() || [treeQuery, submissionsQuery].some(source =>
+      isReadAccessBlocked(client, source.readKey) || client.isFetching({ queryKey: source.readKey, exact: true }) > 0)) return;
+    await Promise.all([treeQuery.refetch(), submissionsQuery.refetch()]);
+  }, [identity, access.allowed, access.scope, client, treeQuery.refetch, submissionsQuery.refetch]);
 
   const nodes = treeQuery.data?.nodes ?? [];
   const { childrenOf } = buildDivisionForest(nodes);
@@ -115,6 +138,12 @@ export function useServiceTree(businessDate: string | null): ServiceTree {
   return {
     isPending: treeQuery.isPending || submissionsQuery.isPending,
     isError: treeQuery.isError || submissionsQuery.isError,
+    readAllowed: access.allowed,
+    readScope: access.scope,
+    readBlocked,
+    canRetry: access.allowed && !readBlocked && !retryPending,
+    retryPending,
+    retry,
     rootId: root?.division_id ?? null,
     childrenOf,
     nodeById,

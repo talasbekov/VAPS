@@ -1,6 +1,4 @@
 import type { Page } from '@playwright/test';
-import type { Download } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 import { test, expect, signIn } from './ux-fixture';
 
 const path = '/security-ops/duty-register/';
@@ -89,9 +87,9 @@ function snapshot(extra: Record<string, unknown> = {}) {
     by_employee: [{ subject_key: 'EMPLOYEE:7', employee_id: 7, employee_name: 'Учётный сотрудник', record_count: 3, planned_minutes: 720, actual_record_minutes: 0, actual_minutes: 0, attention_count: 1 }],
     filters: { divisions: [{ id: 4, name: 'Первое подразделение' }], employees: [{ employee_id: 7, employee_name: 'Учётный сотрудник' }] }, ...extra };
 }
-async function boot(page: Page, data = snapshot()) {
+async function boot(page: Page, data = snapshot(), permissions = ['duty.view', 'duty.manage', 'dictionary.view']) {
   await signIn(page);
-  await page.route('**/api/operations/my-permissions/', route => route.fulfill({ json: { permissions: ['duty.view', 'duty.manage', 'dictionary.view'], roles: [] } }));
+  await page.route('**/api/operations/my-permissions/', route => route.fulfill({ json: { permissions, roles: [] } }));
   await page.route('**/api/ops/duty-register/**', route => {
     const url = new URL(route.request().url());
     if (url.pathname === api + 'kinds/') return route.fulfill({ json: kinds });
@@ -104,130 +102,37 @@ async function boot(page: Page, data = snapshot()) {
   await page.goto(path + '?from=2026-10-13&to=2026-10-13');
 }
 
-async function downloadedCsv(download: Download) {
-  const file = await download.path();
-  expect(file).toBeTruthy();
-  const text = await readFile(file!, 'utf8');
-  expect(text.startsWith('\uFEFF')).toBeTruthy();
-  const rows: string[][] = []; let row: string[] = [], cell = '', quoted = false;
-  for (let index = 1; index < text.length; index++) {
-    const char = text[index];
-    if (char === '"') { if (quoted && text[index + 1] === '"') { cell += '"'; index++; } else quoted = !quoted; }
-    else if (char === ';' && !quoted) { row.push(cell); cell = ''; }
-    else if (char === '\n' && !quoted) { expect(text[index - 1]).toBe('\r'); row.push(cell); rows.push(row); row = []; cell = ''; }
-    else if (char !== '\r' || quoted) cell += char;
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
-  expect(quoted).toBeFalsy();
-  expect(rows.every(value => value.length === rows[0].length)).toBeTruthy();
-  return rows;
-}
 function employeeGroup(index: number, extra: Record<string, unknown> = {}) {
   return { subject_key: `EMPLOYEE:${index}`, employee_id: String(index), employee_name: `Сотрудник ${index}`,
     record_count: 2, planned_minutes: 120, actual_record_minutes: 90, actual_minutes: 60, attention_count: 1,
     unknown_planned_count: 0, unknown_actual_count: 0, confirmed_actual_count: 1, ...extra };
 }
 
-test('summary CSV exports all employee groups and fresh net hours with exact identifiers', async ({ page, businessWrites }) => {
-  const groups = Array.from({ length: 51 }, (_, index) => employeeGroup(index + 1));
-  groups[0] = employeeGroup(1, { employee_id: '9007199254740993', subject_key: 'EMPLOYEE:9007199254740993', planned_minutes: null, actual_minutes: 0, unknown_planned_count: 1 });
-  groups[1] = employeeGroup(2, { employee_id: null, subject_key: 'UNKNOWN:2', planned_minutes: 0, actual_minutes: null, unknown_actual_count: 1 });
-  await boot(page, snapshot({ by_employee: groups }));
-  await page.getByRole('button', { name: 'По сотрудникам', exact: true }).click();
-  await expect(page.getByText('Показано 1–40 из 51', { exact: true })).toBeVisible();
-  const fresh = groups.map(row => ({ ...row })); fresh[50] = employeeGroup(51, { actual_minutes: 180 });
-  await page.route('**/api/ops/duty-register/?**', route => route.fulfill({ json: snapshot({ by_employee: fresh, generated_at: '2026-10-13T15:00:00+05:00' }) }));
-  const ready = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
-  const file = await ready; const rows = await downloadedCsv(file); const headers = rows[0];
-  const value = (row: string[], column: string) => row[headers.indexOf(column)];
-  expect(rows).toHaveLength(52);
-  expect(file.suggestedFilename()).toContain('по сотрудникам');
-  expect(value(rows[1], 'ID сотрудника')).toBe('9007199254740993');
-  expect(value(rows[1], 'Плановые часы')).toBe('Неизвестно');
-  expect(value(rows[1], 'Фактические часы без пересечений')).toBe('0,00');
-  expect(value(rows[2], 'ID сотрудника')).toBe('');
-  expect(value(rows[2], 'Плановые часы')).toBe('0,00');
-  expect(value(rows[2], 'Фактические часы без пересечений')).toBe('Неизвестно');
-  expect(value(rows[52 - 1], 'Сотрудник')).toBe('Сотрудник 51');
-  expect(value(rows[52 - 1], 'Фактические часы без пересечений')).toBe('3,00');
-  expect(value(rows[1], 'С даты')).toBe('2026-10-13');
-  expect(value(rows[1], 'По дату включительно')).toBe('2026-10-13');
-  expect(value(rows[1], 'Часовой пояс')).toBe('Asia/Qyzylorda');
-  expect(value(rows[1], 'Сформировано')).toBe('13.10.2026, 15:00');
-  expect(value(rows[1], 'Как учитываются часы')).toContain('исключены');
-  expect(businessWrites).toEqual([]);
-});
-
-test('summary CSV kinds keep record hours and safely escape names and applied search', async ({ page, businessWrites }) => {
-  const name = ' \t=HYPERLINK("адрес";"название")\nГБР';
-  const data = snapshot({ by_kind: [{ service_duty_code: 'GBR', service_duty_label: name, record_count: 3, employee_count: 2,
-    planned_minutes: 0, actual_record_minutes: 90, attention_count: 1, unknown_planned_count: 1, unknown_actual_count: 2, confirmed_actual_count: 1 }] });
-  await boot(page, data);
-  const search = page.getByRole('searchbox', { name: 'Поиск по записям', exact: true });
-  await search.fill(' +проверка; "контекст"');
-  await page.getByRole('button', { name: 'Применить фильтры', exact: true }).click();
-  await page.getByRole('button', { name: 'По видам', exact: true }).click();
-  const ready = page.waitForEvent('download'); await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
-  const rows = await downloadedCsv(await ready); const headers = rows[0];
-  const value = (column: string) => rows[1][headers.indexOf(column)];
-  expect(rows).toHaveLength(2);
-  expect(value('Вид дежурства')).toBe("'" + name);
-  expect(value('Фактические часы отдельных записей')).toBe('1,50');
-  expect(value('Плановые часы')).toBe('0,00');
-  expect(value('Завершённых записей с неполным фактом')).toBe('2');
-  expect(value('Применённый отбор')).toContain('Поиск:  +проверка; "контекст"');
-  expect(value('Как учитываются часы')).toContain('Сумма часов отдельных записей');
-  expect(businessWrites).toEqual([]);
-});
-
-for (const status of [403, 503]) test(`summary CSV rejects stale cache after ${status} and recovers after a successful refresh`, async ({ page, businessWrites }) => {
+for (const status of [403, 503]) test(`summary refresh reports ${status} and recovers without CSV controls`, async ({ page, businessWrites }) => {
   await boot(page, snapshot({ by_employee: [employeeGroup(7)] }));
   await page.getByRole('button', { name: 'По сотрудникам', exact: true }).click();
-  const downloads: Download[] = []; page.on('download', file => downloads.push(file));
+  await expect(page.getByRole('heading', { name: 'Сотрудник 7', exact: true })).toBeVisible();
   let responseStatus = status;
   await page.route('**/api/ops/duty-register/?**', route => responseStatus === 200
     ? route.fulfill({ json: snapshot({ by_employee: [employeeGroup(7)] }) })
     : route.fulfill({ status: responseStatus, json: { detail: 'Отказ обновления сводки' } }));
-  await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
+  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
-  expect(downloads).toHaveLength(0);
-  responseStatus = 200; await page.getByRole('button', { name: 'Повторить', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true })).toBeEnabled();
-  const ready = page.waitForEvent('download'); await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
-  expect((await downloadedCsv(await ready)).length).toBe(2);
+  responseStatus = 200;
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Сотрудник 7', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Выгрузить.*CSV/ })).toHaveCount(0);
   expect(businessWrites).toEqual([]);
 });
 
-for (const returnToOriginal of [false, true]) test(`summary CSV cancels after browser history changes during the read, return=${returnToOriginal}`, async ({ page, businessWrites }) => {
-  await boot(page, snapshot({ by_employee: [employeeGroup(7)] }));
-  await page.getByRole('button', { name: 'По сотрудникам', exact: true }).click();
-  const downloads: Download[] = []; page.on('download', file => downloads.push(file));
-  let release!: () => void; const paused = new Promise<void>(resolve => { release = resolve; });
-  let requested = false;
-  await page.route('**/api/ops/duty-register/?**', async route => { requested = true; await paused; await route.fulfill({ json: snapshot({ by_employee: [employeeGroup(7)] }) }); });
-  await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
-  await expect.poll(() => requested).toBeTruthy();
-  await page.evaluate(() => history.pushState(null, '', '/security-ops/duty-register/?from=2026-10-13&to=2026-10-13&view=kinds'));
-  await expect(page.getByRole('button', { name: 'По видам', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  if (returnToOriginal) {
-    await page.evaluate(() => history.pushState(null, '', '/security-ops/duty-register/?from=2026-10-13&to=2026-10-13&view=employees'));
-    await expect(page.getByRole('button', { name: 'По сотрудникам', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  }
-  release();
-  await expect(page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true })).toBeEnabled();
-  expect(downloads).toHaveLength(0);
-  expect(businessWrites).toEqual([]);
-});
-
-test('summary CSV controls fit 320px and empty summaries export only headers', async ({ page, businessWrites }) => {
+test('empty summary fits 320px and keeps read views without CSV controls', async ({ page, businessWrites }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await boot(page, snapshot({ rows: [], by_employee: [], by_kind: [], pagination: { count: 0, page: 1, pages: 1, page_size: 25 } }));
   await page.getByRole('button', { name: 'По сотрудникам', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true })).toBeVisible();
+  await expect(page.getByText('Нет данных в выбранном отборе.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Выгрузить.*CSV/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-  const ready = page.waitForEvent('download'); await page.getByRole('button', { name: 'Выгрузить сводку CSV', exact: true }).click();
-  expect(await downloadedCsv(await ready)).toHaveLength(1);
   expect(businessWrites).toEqual([]);
 });
 
@@ -248,6 +153,7 @@ test('summary opens matching records and filters survive reload', async ({ page,
   await page.getByRole('button', { name: /Требуют внимания/ }).click();
   await expect(page).toHaveURL(/attention=ANY/);
   await expect.poll(() => reads.some(url => new URL(url).searchParams.get('attention') === 'ANY')).toBeTruthy();
+  await page.getByRole('form', { name: 'Фильтры журнала' }).locator('summary').click();
   await page.getByRole('combobox', { name: 'Вид дежурства', exact: true }).selectOption('KUMBEZ');
   await page.getByRole('button', { name: 'Применить фильтры' }).click();
   await expect(page).toHaveURL(/kind=KUMBEZ/);
@@ -294,21 +200,18 @@ test('denied cached records stay hidden through the next temporary error', async
   status = 503;
   await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(page.getByText('Учётный сотрудник', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Выгрузить CSV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeDisabled();
   expect(businessWrites).toEqual([]);
 });
 
-test('CSV exports all filtered records rather than only the visible page', async ({ page, businessWrites }) => {
+test('journal keeps applied filters and print without CSV controls', async ({ page, businessWrites }) => {
   await boot(page, snapshot({ pagination: { count: 51, page: 1, pages: 3, page_size: 25 } }));
-  let exported = '';
-  await page.route('**/api/ops/duty-register/export/?**', route => { exported = route.request().url(); return route.fulfill({ body: '\uFEFFЗапись;Вид\r\nLOG:17;ГБР\r\n', headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': "attachment; filename*=UTF-8''journal.csv" } }); });
+  await page.getByRole('form', { name: 'Фильтры журнала' }).locator('summary').click();
   await page.getByRole('combobox', { name: 'Вид дежурства', exact: true }).selectOption('GBR');
   await page.getByRole('button', { name: 'Применить фильтры' }).click();
-  const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Выгрузить CSV' }).click();
-  expect((await download).suggestedFilename()).toBe('journal.csv');
-  expect(new URL(exported).searchParams.get('kind')).toBe('GBR');
-  expect(new URL(exported).searchParams.has('page')).toBeFalsy();
+  await expect(page).toHaveURL(/kind=GBR/);
+  await expect(page.getByRole('button', { name: /Выгрузить.*CSV/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeEnabled();
   expect(businessWrites).toEqual([]);
 });
 
@@ -494,6 +397,7 @@ test('first-load failure disables date presets until the server clock is availab
 
 test('print includes the applied filters while draft controls are hidden', async ({ page, businessWrites }) => {
   await boot(page);
+  await page.getByRole('form', { name: 'Фильтры журнала' }).locator('summary').click();
   for (const [name, value] of [['Вид дежурства', 'KUMBEZ'], ['Состояние', 'COMPLETED'], ['Подразделение', '4'], ['Сотрудник', '7'], ['Источник', 'LOG'], ['Отметки контроля', 'ANY']]) {
     await page.getByRole('combobox', { name, exact: true }).selectOption(value);
   }
@@ -514,7 +418,7 @@ test('invalid draft period explains the limit without sending a list request', a
   await boot(page);
   let reads = 0;
   await page.route('**/api/ops/duty-register/?**', route => { reads++; return route.fulfill({ json: snapshot() }); });
-  await expect(page.getByRole('button', { name: 'Выгрузить CSV' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeEnabled();
   const baseline = reads;
   await page.getByRole('textbox', { name: 'По дату включительно', exact: true }).fill('2026-10-12');
   await expect(page.getByText('Конечная дата должна быть не раньше начальной.', { exact: true })).toBeVisible();
@@ -845,7 +749,7 @@ test('a denied record invalidates its cached list through a temporary refresh fa
   await expect(dialog.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.getByText('Учётный сотрудник', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Выгрузить CSV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeDisabled();
   listFailed = false;
   await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Учётный сотрудник', exact: true })).toBeVisible();
@@ -893,6 +797,100 @@ test('expired temporary division grant hides old scoped data even if the new rea
   await expect.poll(() => permissionReads).toBeGreaterThan(before);
   await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
   await expect(page.getByText('Сотрудник временной области', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Выгрузить CSV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Печать', exact: true })).toBeDisabled();
+  expect(businessWrites).toEqual([]);
+});
+
+test('journal optional filters keep the complete draft when closed and applied', async ({ page, businessWrites }) => {
+  await boot(page);
+  const form = page.getByRole('form', { name: 'Фильтры журнала' });
+  const disclosure = form.locator('details');
+  const summary = disclosure.locator('summary');
+  await expect(summary).toHaveText('Дополнительные фильтры · 0');
+  await expect(disclosure).not.toHaveAttribute('open');
+  for (const name of ['С даты', 'По дату включительно', 'Поиск по записям']) await expect(form.getByLabel(name, { exact: true })).toBeVisible();
+  await expect(form.getByRole('combobox', { name: 'Отметки контроля', exact: true })).toBeVisible();
+  await expect(form.getByRole('combobox', { name: 'Вид дежурства', exact: true })).not.toBeVisible();
+  await summary.focus(); await summary.press('Enter');
+  for (const [name, value] of [['Вид дежурства', 'KUMBEZ'], ['Состояние', 'ACTIVE'], ['Подразделение', '4'], ['Сотрудник', '7'], ['Источник', 'LOG']]) {
+    await form.getByRole('combobox', { name, exact: true }).selectOption(value);
+  }
+  await form.getByLabel('Поиск по записям', { exact: true }).fill('Пост 2');
+  await form.getByRole('combobox', { name: 'Отметки контроля', exact: true }).selectOption('ANY');
+  await form.getByLabel('С даты', { exact: true }).fill('2026-10-10');
+  await expect(summary).toHaveText('Дополнительные фильтры · 5');
+  await summary.click();
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(page).not.toHaveURL(/kind=/);
+  await form.getByRole('button', { name: 'Применить фильтры', exact: true }).click();
+  await expect.poll(() => Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({ from: '2026-10-10', to: '2026-10-13', kind: 'KUMBEZ', state: 'ACTIVE', division_id: '4', employee_id: '7', source: 'LOG', attention: 'ANY', search: 'Пост 2' });
+  await expect(disclosure).toHaveAttribute('open', '');
+  await page.reload();
+  await expect(summary).toHaveText('Дополнительные фильтры · 5');
+  await expect(form.getByRole('combobox', { name: 'Вид дежурства', exact: true })).toHaveValue('KUMBEZ');
+  await expect(form.getByLabel('Поиск по записям', { exact: true })).toHaveValue('Пост 2');
+  await summary.click();
+  await expect(page.getByRole('region', { name: 'Применённый отбор' }).getByText('Смена Кумбез', { exact: true })).toBeVisible();
+  await form.getByRole('button', { name: 'Сбросить отбор', exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.has('kind')).toBe(false);
+  await expect(summary).toHaveText('Дополнительные фильтры · 0');
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(form.getByLabel('С даты', { exact: true })).toHaveValue('2026-10-10');
+  await page.setViewportSize({ width: 320, height: 780 });
+  await summary.click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  expect(businessWrites).toEqual([]);
+});
+
+test('journal opens active optional filters even when the selected people have no period records', async ({ page, businessWrites }) => {
+  await boot(page, snapshot({ filters: { divisions: [], employees: [] } }));
+  await page.goto(path + '?from=2026-10-13&to=2026-10-13&kind=ARCHIVE&state=ACTIVE&source=STATUS&division_id=9007199254740993&employee_id=7');
+  const form = page.getByRole('form', { name: 'Фильтры журнала' });
+  await expect(form.locator('summary')).toHaveText('Дополнительные фильтры · 5');
+  await expect(form.getByRole('combobox', { name: 'Подразделение', exact: true })).toBeVisible();
+  await expect(form.getByRole('combobox', { name: 'Подразделение', exact: true })).toHaveValue('9007199254740993');
+  await expect(form.getByRole('combobox', { name: 'Сотрудник', exact: true })).toHaveValue('7');
+  await expect(form.getByRole('combobox', { name: 'Вид дежурства', exact: true })).toHaveValue('ARCHIVE');
+  await form.locator('summary').click();
+  const applied = page.getByRole('region', { name: 'Применённый отбор' });
+  for (const value of ['Архивный вид', 'Заступил', 'Выход из статуса сотрудника', 'ID 9007199254740993', 'ID 7']) await expect(applied.getByText(value, { exact: true })).toBeVisible();
+  expect(businessWrites).toEqual([]);
+});
+
+test('empty journal guidance follows reader, creation, recovery and failed refresh actions', async ({ page, businessWrites }) => {
+  const empty = snapshot({ rows: [], by_kind: [], by_employee: [], pagination: { count: 0, page: 1, pages: 1, page_size: 25 } });
+  await boot(page, empty, ['duty.view']);
+  const result = page.getByRole('region', { name: 'Результаты журнала' });
+  const add = page.getByRole('button', { name: 'Добавить запись', exact: true });
+  const recover = page.getByRole('button', { name: 'Проверить предыдущее сохранение', exact: true });
+  for (const permission of ['duty.view', 'analytics.view', 'duty.dispatch']) {
+    await page.route('**/api/operations/my-permissions/', route => route.fulfill({ json: { permissions: [permission], roles: [] } }));
+    await page.reload();
+    await expect(result).toContainText('Измените период или сбросьте отбор.');
+    await expect(result).not.toContainText('Добавить запись');
+    await expect(add).toHaveCount(0);
+    await expect(recover).toHaveCount(0);
+  }
+  await page.route('**/api/operations/my-permissions/', route => route.fulfill({ json: { permissions: ['duty.view', 'duty.manage'], roles: [] } }));
+  await page.reload();
+  await expect(add).toBeEnabled();
+  await expect(result).toContainText('Добавить запись');
+  const session = await (await page.request.get('/api/auth/session/')).json();
+  await page.evaluate(actor => {
+    sessionStorage.setItem('smart-josparlau:duty-create:' + encodeURIComponent(actor), JSON.stringify({ version: 1, scope: 'previous-scope', zone: 'Asia/Qyzylorda',
+      body: { employee_id: 7, service_duty_code: 'GBR', client_request_id: 'a7dad977-c4bf-41ba-bb82-b384a98a7bb0', planned_start: '2026-10-13T08:00', planned_end: '2026-10-13T20:00', location_label: '', document_basis: '', note: '' },
+      person: { employee_id: 7, employee_name: 'Учётный сотрудник', division_id: 4, division_name: 'Первое подразделение', position_name: 'Сотрудник' }, kindLabel: 'ГБР' }));
+    window.dispatchEvent(new Event('smart-josparlau:duty-create-changed'));
+  }, session.user.id ?? session.user.email ?? '');
+  await expect(recover).toBeEnabled();
+  await expect(result).toContainText('Проверить предыдущее сохранение');
+  await expect(result).not.toContainText('Добавить запись');
+  await expect(add).toHaveCount(0);
+  await page.route('**/api/ops/duty-register/?**', route => route.fulfill({ status: 503, json: { detail: 'Временный отказ' } }));
+  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
+  await expect(page.getByText('Показаны ранее загруженные данные.', { exact: false })).toBeVisible();
+  await expect(recover).toBeDisabled();
+  await expect(result).toContainText('Измените период или сбросьте отбор.');
+  await expect(result).not.toContainText('Проверить предыдущее сохранение');
   expect(businessWrites).toEqual([]);
 });

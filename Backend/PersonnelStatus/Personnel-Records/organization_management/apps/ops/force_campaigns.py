@@ -13,9 +13,18 @@ from organization_management.apps.operations.models_forces import (
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops.security_events import (
     _not_found,
+    _sync_auto_force_request,
     _validation,
     published_visit_ids,
 )
+
+
+def active_campaign_ids_for_event(event_id):
+    """Authoritative distributions accepted by physical reserve selection."""
+    return list(OpsForceCampaign.objects.filter(
+        campaign_events__event_id=event_id,
+        status__in=(OpsForceCampaign.Status.DRAFT, OpsForceCampaign.Status.GATHERING, OpsForceCampaign.Status.DISTRIBUTING),
+    ).order_by("pk").values_list("pk", flat=True).distinct())
 
 
 def _event_row(event):
@@ -207,6 +216,18 @@ def get_campaign(campaign_id):
 
 @transaction.atomic
 def hand_over(campaign_id, *, comment, actor):
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    discovered_event_ids = list(
+        OpsForceCampaignEvent.objects.filter(campaign_id=campaign_id)
+        .order_by("event_id").values_list("event_id", flat=True)
+    ) if str(campaign_id).isdigit() else []
+    # Reserve/select already locks event -> campaign. NO KEY UPDATE also lets
+    # an in-flight campaign assignment finish its FK KEY SHARE reference.
+    locked_events = {
+        event.pk: event for event in OpsSecurityEvent.objects
+        .select_for_update(no_key=True).filter(pk__in=discovered_event_ids).order_by("pk")
+    }
     campaign = (
         OpsForceCampaign.objects.select_for_update().filter(pk=campaign_id).first()
         if str(campaign_id).isdigit()
@@ -220,13 +241,18 @@ def hand_over(campaign_id, *, comment, actor):
             422,
             message="Распределение уже передано в расстановку.",
         )
+    current_event_ids = set(campaign.campaign_events.values_list("event_id", flat=True))
+    if current_event_ids != set(discovered_event_ids) or current_event_ids != set(locked_events):
+        raise _validation({"eventIds": ["Состав распределения изменился. Откройте его заново и повторите передачу."]})
     assignments = list(
-        campaign.assignments.select_related("event", "visit_object").order_by(
+        campaign.assignments.select_related("visit_object").order_by(
             "created_at", "pk"
         )
     )
     if not assignments:
         raise _validation({"assignments": ["Сначала распределите сотрудников."]})
+    if any(row.event_id not in locked_events for row in assignments):
+        raise _validation({"eventIds": ["Назначение не относится к текущему составу распределения."]})
     pool_ids = {row["employeeId"] for row in _pool(campaign)}
     assigned_ids = {row.employee_key for row in assignments}
     clean_comment = str(comment or "").strip()
@@ -240,8 +266,7 @@ def hand_over(campaign_id, *, comment, actor):
     # Validate every campaign event before writing any handover, including
     # events that have no assignments at all. A shortage may be explained,
     # but a published object with demand cannot enter placement empty.
-    for link in campaign.campaign_events.select_related("event"):
-        event = link.event
+    for event in locked_events.values():
         published = published_visit_ids(event)
         for visit in event.visit_objects.all():
             if published is not None and str(visit.pk) not in published:
@@ -266,7 +291,7 @@ def hand_over(campaign_id, *, comment, actor):
     actor_key = str(actor or "")
     handovers = []
     for event_id, rows in by_event.items():
-        event = rows[0].event
+        event = locked_events[event_id]
         if event.force_handover:
             raise DomainError(
                 "FORCE_HANDED_OVER",
@@ -304,7 +329,8 @@ def hand_over(campaign_id, *, comment, actor):
             "comment": clean_comment,
             "campaignId": str(campaign.pk),
         }
-        event.save(update_fields=["force_roster", "force_handover", "updated_at"])
+        _sync_auto_force_request(event)
+        event.save(update_fields=["force_roster", "force_handover", "force_requests", "updated_at"])
         handovers.append(
             OpsForceCampaignHandover(
                 campaign=campaign,
@@ -375,18 +401,7 @@ def add_reserve_member(*, event, allocation_id, employee, actor):
 
     event = lock_event(event.pk)
     _find_allocation(event, allocation_id)
-    campaign_ids = list(
-        OpsForceCampaign.objects.filter(
-            campaign_events__event=event,
-            status__in=(
-                OpsForceCampaign.Status.DRAFT,
-                OpsForceCampaign.Status.GATHERING,
-                OpsForceCampaign.Status.DISTRIBUTING,
-            ),
-        )
-        .values_list("pk", flat=True)
-        .distinct()
-    )
+    campaign_ids = active_campaign_ids_for_event(event.pk)
     campaigns = list(
         OpsForceCampaign.objects.select_for_update().filter(pk__in=campaign_ids)
     )

@@ -1,15 +1,11 @@
-import { test, expect, signIn } from './ux-fixture';
+import { test, expect, signIn, readApi } from './ux-fixture';
 import type { Page, APIRequestContext } from '@playwright/test';
-import { STAND_USERNAME, STAND_PASSWORD } from './stand-credentials';
 import type { SecurityEvent } from '@/entities/security-event';
 import type { ProtectedPerson } from '@/entities/protected-person';
 
 const person: ProtectedPerson = { id: 'ux-picker-new', code: 'UX-PICKER', name: 'Лицо выбора ГВО', category: 'FOREIGN', callsign: 'Проверка выбора', bio: '', country: '', position: '', facts: [], photoUrl: null };
 async function prepare(page: Page, request: APIRequestContext, mode: 'gvo' | 'edit' | 'create', legacySnapshot = false) {
-  const api = process.env.SMOKE_API!; expect(api).toBeTruthy();
-  const token = await request.post(api + '/api/token/', { data: { username: STAND_USERNAME, password: STAND_PASSWORD } });
-  expect(token.ok()).toBe(true); const { access } = await token.json(); const headers = { Authorization: 'Bearer ' + access };
-  const read = async (path: string) => { const response = await request.get(api + path, { headers }); expect(response.ok()).toBe(true); return response.json(); };
+  const read = (path: string) => readApi(request, path);
   const event = await read('/api/ops/security-events/24/') as SecurityEvent;
   if (legacySnapshot) {
     expect(event.protectedPersonId).toBeTruthy(); expect(event.protectedPersonName).toBeTruthy();

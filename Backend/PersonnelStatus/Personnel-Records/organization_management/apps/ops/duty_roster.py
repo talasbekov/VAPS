@@ -15,6 +15,7 @@ from organization_management.apps.ops.duty_dispatch import DutyContext, interval
 from organization_management.apps.ops.duty_record_access import READ_PERMISSIONS, division_scope, in_scope, public_identifier
 from organization_management.apps.ops.security_events import personnel_full_name
 from organization_management.apps.statuses.duty_assignments import DUTY_CODES, DUTY_GROUPS, identifier
+from organization_management.apps.statuses.duty_intervals import placement_for_roster
 from organization_management.apps.ops.api.views_service_combat import _combat_groups_for
 
 
@@ -191,9 +192,11 @@ def _snapshot_for_scopes(day, *, read_scope, dispatch_scope, duty_scope, divisio
         if source_id is not None and person.pk in current_readers:
             for source in context.legacy[person.pk]:
                 if source.pk == int(source_id) and source.status_type in DUTY_CODES and source.start_date <= day and (source.actual_end_date or source.end_date or day) >= day:
+                    place = placement_for_roster(source.duty_assignment, source.start_date, source.actual_end_date or source.end_date)
                     placements.append({"source": "STATUS", "source_id": public_identifier(source.pk),
-                        "label": _label(source.duty_assignment), "start_at": None, "end_at": None, "record_id": None,
-                        **({"_placement": source.duty_assignment} if include_places else {})})
+                        "label": _label(place), "start_at": None, "end_at": None, "record_id": None,
+                        **({"intervals": place["intervals"], "time_zone": place["time_zone"]} if "intervals" in place else {}),
+                        **({"_placement": place} if include_places else {})})
                     break
         placements.extend(dispatches.get(person.pk, ()))
         group = groups.setdefault(department_id, {"id": public_identifier(department_id),

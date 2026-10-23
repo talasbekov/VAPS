@@ -64,6 +64,16 @@ async function hydrated(page: Page): Promise<void> {
   })
 }
 
+/** Native disclosure is initially closed; the same statistics assertions remain below. */
+async function openStatistics(page: Page): Promise<void> {
+  const summary = page.locator('summary[aria-label="Штат по подразделениям"]')
+  await expect(summary).toBeVisible({ timeout: 25_000 })
+  const details = summary.locator('..')
+  if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await summary.click()
+  }
+}
+
 /** Строка разреза по подписи подразделения: [уровень, штат, занято, вакансий]. */
 async function breakdownRow(page: Page, name: string): Promise<string[]> {
   return page.evaluate((unit) => {
@@ -108,6 +118,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openStatistics(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 
     for (const [name, level, counts] of [
@@ -133,6 +144,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openStatistics(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 
     const body = (await page.locator('main').textContent()) ?? ''
@@ -167,6 +179,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openStatistics(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 
     await expect(page.getByText('Кликните на подразделение для фокуса')).toBeVisible()
@@ -230,6 +243,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openStatistics(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
     await page.getByRole('button', { name: 'Развернуть все' }).click()
     // Раскрытие ОТРИСОВЫВАЕТСЯ не мгновенно: на полной штатке в дереве 51
@@ -292,6 +306,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openStatistics(page)
     // Таблица появляется после ответа ручки статистики: без ожидания сторож
     // вакуумности срабатывает на пустой странице, а не на пустом разрезе.
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })

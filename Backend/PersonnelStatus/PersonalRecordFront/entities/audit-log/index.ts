@@ -60,6 +60,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   DOCUMENT_DOWNLOADED: "Документ выдан на руки",
   PASSPORT_VERSION_PUBLISHED: "Версия паспорта опубликована",
   SECURITY_OBJECT_PHOTO_SET: "Снимок объекта загружен",
+  SECURITY_OBJECT_CATALOG_IMPORTED: "Каталог объекта импортирован",
   SECURITY_EVENT_CREATED: "Мероприятие заведено",
   SECURITY_EVENT_CLOSED: "Мероприятие закрыто",
   SECURITY_EVENT_DELETED: "Мероприятие удалено из реестра",

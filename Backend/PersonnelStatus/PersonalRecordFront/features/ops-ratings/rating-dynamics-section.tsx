@@ -7,7 +7,7 @@
 // а tooltip обязателен как носитель версии методики.
 import { useState } from "react";
 import { useRatingDynamics } from "@/hooks/use-ops-ratings";
-import { LoadFailure } from "@/components/load-failure";
+import { isRatingScopeUnavailable, RatingReadFailure } from "@/features/ops-ratings/rating-read-failure";
 import {
   Table,
   TableBody,
@@ -63,7 +63,7 @@ function pointTitle(point: RatingDynamicsPoint): string {
 export function RatingDynamicsSection() {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const query = useRatingDynamics(employeeId);
-  const data = query.data;
+  const data = isRatingScopeUnavailable(query.error) ? undefined : query.data;
 
   return (
     <section
@@ -108,7 +108,8 @@ export function RatingDynamicsSection() {
         <p className="text-sm text-muted-foreground">Загрузка динамики…</p>
       )}
       {query.error !== null && (
-        <LoadFailure
+        <RatingReadFailure
+          error={query.error}
           what="динамику рейтинга"
           onRetry={() => void query.refetch()}
           isRetrying={query.isFetching}

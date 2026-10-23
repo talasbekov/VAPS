@@ -68,7 +68,22 @@ def _full_name(employee):
     return " ".join(part for part in parts if part)
 
 
-def _employees_page(scope_division_ids, page, page_size):
+def _employees(scope_division_ids, search=""):
+    from django.db.models import Q
+    from organization_management.apps.employees.models import Employee
+
+    queryset = Employee.objects.filter(is_active=True)
+    if scope_division_ids is not None:
+        queryset = queryset.filter(staff_unit__division_id__in=list(scope_division_ids))
+    # Every word may occur in any part of the name, in any order. Scope is
+    # already applied; searching never broadens the actor's permission.
+    for word in search.split():
+        queryset = queryset.filter(Q(last_name__icontains=word)
+            | Q(first_name__icontains=word) | Q(middle_name__icontains=word))
+    return queryset
+
+
+def _employees_page(scope_division_ids, page, page_size, search=""):
     """Страница состава области: сотрудники + их подразделение.
 
     Счёт состава здесь не берётся: он уже посчитан `_scope_employee_ids` для
@@ -77,31 +92,18 @@ def _employees_page(scope_division_ids, page, page_size):
     `scope_division_ids is None` — безскоуповый актор, всё дерево; сужение
     делает вызывающий через общий резолвер области, а не эта функция.
     """
-    from organization_management.apps.employees.models import Employee
-
     queryset = (
-        Employee.objects.filter(is_active=True)
+        _employees(scope_division_ids, search)
         .select_related("rank", "staff_unit__division")
         .order_by("last_name", "first_name", "id")
     )
-    if scope_division_ids is not None:
-        queryset = queryset.filter(
-            staff_unit__division_id__in=list(scope_division_ids)
-        )
     start = (page - 1) * page_size
     return list(queryset[start : start + page_size])
 
 
-def _scope_employee_ids(scope_division_ids):
+def _scope_employee_ids(scope_division_ids, search=""):
     """Все сотрудники области, ОДИН запрос: сводка считается по ним."""
-    from organization_management.apps.employees.models import Employee
-
-    queryset = Employee.objects.filter(is_active=True)
-    if scope_division_ids is not None:
-        queryset = queryset.filter(
-            staff_unit__division_id__in=list(scope_division_ids)
-        )
-    return list(queryset.values_list("id", flat=True))
+    return list(_employees(scope_division_ids, search).values_list("id", flat=True))
 
 
 def month_summary(days, employee_ids, catalog):
@@ -138,7 +140,7 @@ def month_summary(days, employee_ids, catalog):
     return rows
 
 
-def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE):
+def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE, search=""):
     """Месяц × страница состава: по каждому сотруднику код на каждый день.
 
     Запросов к базе — постоянное число (состав, счёт, факты, справочник), а не
@@ -152,8 +154,8 @@ def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE
 
     catalog_rows = StatusTypeSelector.catalog_rows()
     catalog = StatusCatalog.from_rows(catalog_rows)
-    scope_employee_ids = _scope_employee_ids(scope_division_ids)
-    employees = _employees_page(scope_division_ids, page, page_size)
+    scope_employee_ids = _scope_employee_ids(scope_division_ids, search)
+    employees = _employees_page(scope_division_ids, page, page_size, search)
     count = len(scope_employee_ids)
 
     facts_by_employee = {}
@@ -231,24 +233,18 @@ def _group_of(code, catalog):
     return "absent"
 
 
-def day_panel(*, on_date, scope_division_ids):
+def day_panel(*, on_date, scope_division_ids, search=""):
     """Занятость области на дату: три группы поимённо + «в строю» числом.
 
     Поимённого списка «в строю» нет намеренно: на пяти тысячах сотрудников это
     и есть весь состав, а панель отвечает на вопрос «кто чем занят», а не
     «кто есть».
     """
-    from organization_management.apps.employees.models import Employee
-
     queryset = (
-        Employee.objects.filter(is_active=True)
+        _employees(scope_division_ids, search)
         .select_related("rank", "staff_unit__division")
         .order_by("last_name", "first_name", "id")
     )
-    if scope_division_ids is not None:
-        queryset = queryset.filter(
-            staff_unit__division_id__in=list(scope_division_ids)
-        )
     employees = list(queryset)
 
     catalog_rows = StatusTypeSelector.catalog_rows()

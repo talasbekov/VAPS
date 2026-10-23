@@ -14,7 +14,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { useContext } from "react";
+import { useContext, useRef } from "react";
 import { OpsProtectedPortalContext, OpsProtectedInteractionContext } from "@/lib/ops-permission-suspension";
 
 interface MobileMenuProps {
@@ -26,6 +26,7 @@ interface MobileMenuProps {
 export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
   const protectedContainer = useContext(OpsProtectedPortalContext);
   const interactionBlocked = useContext(OpsProtectedInteractionContext);
+  const opener = useRef<HTMLElement | null>(null);
   return (
     <DialogPrimitive.Root
       open={isOpen}
@@ -41,6 +42,16 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
             Фон именно сайдбара, а не карточки: внутрь кладётся <Sidebar>, чей
             текст набран text-sidebar-foreground. */}
         <DialogPrimitive.Content
+          onOpenAutoFocus={() => {
+            opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={event => {
+            // The header button lives outside Dialog.Root, so Radix has no Trigger ref.
+            if (opener.current?.isConnected) {
+              event.preventDefault();
+              opener.current.focus({ preventScroll: true });
+            }
+          }}
           onEscapeKeyDown={event => { if (interactionBlocked()) event.preventDefault(); }}
           onInteractOutside={event => { if (interactionBlocked()) event.preventDefault(); }}
           aria-label="Меню навигации"

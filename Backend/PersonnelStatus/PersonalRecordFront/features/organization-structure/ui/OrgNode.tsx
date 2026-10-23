@@ -201,6 +201,7 @@ export function OrgNode({
     <div key={unit.id} className="flex flex-col items-center relative">
       <div className="relative">
         <Card
+          data-org-unit-id={unit.id}
           className={`w-80 ${
             unit.color
           } border-2 cursor-pointer transition-all duration-300 ease-in-out ${
@@ -256,11 +257,14 @@ export function OrgNode({
             )}
 
             {unit.employees.length > 0 && (
-              <div className="mb-2">
+              <details className="mb-2">
                 {/* Вакансии лежат в том же списке (иначе их не было бы видно
                     вовсе), но в счётчик «Сотрудники» не входят: пустая ставка
                     не человек. Число вакансий называется отдельно. */}
-                <div className="text-xs text-muted-foreground mb-1 font-medium">
+                <summary
+                  className="min-h-11 cursor-pointer content-center rounded text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   Сотрудники (
                   {
                     unit.employees.filter(
@@ -276,11 +280,11 @@ export function OrgNode({
                         (emp) => emp.name === "Вакантная должность"
                       ).length
                     })`}
-                </div>
+                </summary>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                   {unit.employees.map((emp) => renderEmployee(emp, "small"))}
                 </div>
-              </div>
+              </details>
             )}
           </CardContent>
         </Card>

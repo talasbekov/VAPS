@@ -19,10 +19,13 @@ import { Lock } from "lucide-react";
 // его оценка за это ОМ. Среднее по нему было бы другой величиной под чужой
 // подписью.
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { eventArchiveDocumentHref } from "@/entities/security-event/model/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { JOURNAL_TYPE_LABEL, objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { EMPTY_FILTERS } from "@/entities/operational-rating";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
@@ -49,6 +52,14 @@ function eventPeriod(event: SecurityEvent): string {
 }
 
 export function ClosedView({ event }: { event: SecurityEvent }) {
+  const query = new URLSearchParams(useSearchParams());
+  const authority = useOpsPermissions();
+  const canOpenPassport = authority.permissions !== undefined && !authority.isLoading &&
+    authority.error === null && moduleOpenFor(
+      "/security-ops/objects",
+      authority.hasPermission,
+      code => authority.roles.some(role => role.code === code),
+    );
   // `[ЗАК-10]`/`[ЗАК-13]` (Plane №448): ОДНА страница с якорями «Итог ·
   // Оценки · Инциденты · Документы · История». Отдельных карточек «Итоги
   // направлений», «Карточка, бюллетень, программа», «Расчёты и заявки» и
@@ -202,7 +213,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
             })}
             <li>
               <Link
-                href={`/security-ops/events/${event.id}/?stage=RECON`}
+                href={eventArchiveDocumentHref(event.id, query, "recon")}
                 className="font-semibold text-primary-ink"
               >
                 Рекогносцировка (чек-лист, посты) →
@@ -210,7 +221,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
             </li>
             <li>
               <Link
-                href={`/security-ops/events/${event.id}/?stage=BULLETIN`}
+                href={eventArchiveDocumentHref(event.id, query, "bulletin")}
                 className="font-semibold text-primary-ink"
               >
                 Бюллетень →
@@ -218,12 +229,18 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
               {event.passportBinding !== null && (
                 <>
                   {" · "}
-                  <Link
-                    href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
-                    className="font-semibold text-primary-ink"
-                  >
-                    Паспорт объекта вер. {event.passportBinding.versionNumber} (снимок) →
-                  </Link>
+                  {canOpenPassport ? (
+                    <Link
+                      href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
+                      className="font-semibold text-primary-ink"
+                    >
+                      Паспорт объекта вер. {event.passportBinding.versionNumber} (снимок) →
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Паспорт объекта вер. {event.passportBinding.versionNumber} (снимок)
+                    </span>
+                  )}
                 </>
               )}
             </li>

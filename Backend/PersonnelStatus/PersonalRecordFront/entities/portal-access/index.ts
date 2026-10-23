@@ -22,6 +22,7 @@
  * открыты каждому, кто вообще вошёл.
  */
 export const MODULE_PERMISSION = {
+  "/workspace": null,
   "/security-ops/profile": null,
   "/service-employees": null,
   // ── Портальные модули (Plane №352, Ш-1) ─────────────────────────────────
@@ -67,6 +68,7 @@ export const MODULE_PERMISSION = {
   "/security-ops/analytics": "analytics.view",
   "/security-ops/objects": "object.view",
   "/security-ops/events": "event.view",
+  "/security-ops/assistant": ["event.create", "event.manage", "forces.command"],
   // Страница визита иностранного ОЛ (`[ГВО-01]`, Plane №436) — та же мерка,
   // что у реестра: визит показывает то же, что карточка ОМ.
   "/security-ops/visits": "event.view",
@@ -74,6 +76,12 @@ export const MODULE_PERMISSION = {
   "/security-ops/laws": ["catalog.view", "legal.manage"],
   "/security-ops/vehicles": "event.view",
   "/security-ops/analytics/operations": "analytics.operations",
+  "/security-ops/ratings": "rating.view_aggregate",
+  "/security-ops/ratings/workspace": "rating.evaluate",
+  "/security-ops/ratings/evaluations": "rating.view_aggregate",
+  "/security-ops/ratings/export": "rating.export",
+  "/security-ops/ratings/audit": "rating.view_audit",
+  "/security-ops/ratings/analytics": "analytics.view",
   "/security-ops/service-reports": "report.generate",
   // Reading statuses and entering the service workspace require separate
   // permissions; the conjunctive requirement is below.
@@ -113,6 +121,7 @@ const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
   "/security-ops/duty-register",
   "/security-ops/objects",
   "/security-ops/events",
+  "/security-ops/assistant",
   "/security-ops/command-center",
   "/dashboard",
   "/reports",

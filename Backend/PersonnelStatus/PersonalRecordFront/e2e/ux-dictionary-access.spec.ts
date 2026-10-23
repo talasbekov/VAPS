@@ -48,7 +48,15 @@ test('a permission outage keeps catalogue reads disabled until an explicit retry
   await page.goto(path);
   await expect(page.getByRole('heading', { name: 'Не удалось проверить права доступа', exact: true })).toBeVisible();
   expect(reads).toEqual([]);
-  failed = false; await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  // Automatic retries stay unavailable until the user actually requests retry.
+  // Switching before click races a queued retry and removes the button.
+  await page.exposeFunction('allowDictionaryPermissionRetry', () => { failed = false; });
+  await page.getByRole('button', { name: 'Повторить', exact: true }).evaluate(button => {
+    button.addEventListener('click', () => {
+      void (window as unknown as { allowDictionaryPermissionRetry: () => Promise<void> }).allowDictionaryPermissionRetry();
+    }, { capture: true, once: true });
+  });
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Виды дежурств', exact: true })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();
   expect(businessWrites).toEqual([]);

@@ -81,6 +81,10 @@ class OpsDutyCreationClosure(models.Model):
 class OpsDutyRecordSupplement(DutyExecutionFields):
     source_type = models.CharField(max_length=20)
     source_id = models.PositiveBigIntegerField()
+    # Existing PLAN/DISPATCH keep the empty key. STATUS owns one supplement
+    # per exact exit, identified by content rather than a mutable array index.
+    source_key = models.CharField(max_length=64, blank=True, default="")
+    source_snapshot = models.JSONField(default=dict, blank=True)
     service_duty_code = models.CharField(max_length=100, blank=True, default="")
     service_duty_label = models.CharField(max_length=255, blank=True, default="")
     employee_id = models.PositiveBigIntegerField(null=True)
@@ -98,8 +102,11 @@ class OpsDutyRecordSupplement(DutyExecutionFields):
         verbose_name = "Дополнение учёта дежурства"
         verbose_name_plural = "Дополнения учёта дежурств"
         constraints = [
-            models.UniqueConstraint(fields=["source_type", "source_id"], name="uniq_duty_supplement_source"),
-            models.CheckConstraint(condition=models.Q(source_type__in=("DISPATCH", "PLAN")), name="chk_duty_supplement_source"),
+            models.UniqueConstraint(fields=["source_type", "source_id", "source_key"], name="uniq_duty_supplement_source"),
+            models.CheckConstraint(condition=models.Q(source_type__in=("DISPATCH", "PLAN", "STATUS")), name="chk_duty_supplement_source"),
+            models.CheckConstraint(condition=(models.Q(source_type="STATUS", source_key__regex=r"^[0-9a-f]{64}$",
+                source_snapshot__has_keys=["source_id", "employee_id", "placement", "date_start", "date_end", "planned_start", "planned_end"])
+                | (~models.Q(source_type="STATUS") & models.Q(source_key="", source_snapshot={}))), name="chk_duty_supplement_key"),
             models.CheckConstraint(condition=(~models.Q(source_type="PLAN") | models.Q(
                 acknowledged_at__isnull=True, actual_start__isnull=True, actual_end__isnull=True,
                 acknowledged_by="", started_by="", completed_by="",

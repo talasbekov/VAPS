@@ -93,6 +93,20 @@ class Employee(models.Model):
         return super().save(*args, **kwargs)
 
 
+class EmployeeServiceProfile(models.Model):
+    """Explicit personal inventory and personnel facts; absent row means unknown."""
+
+    employee = models.OneToOneField(Employee, on_delete=models.CASCADE, related_name='service_profile')
+    data = models.JSONField(default=dict)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'employee_service_profiles'
+        verbose_name = 'Служебный профиль сотрудника'
+        verbose_name_plural = 'Служебные профили сотрудников'
+
+
 class EmployeeTransferHistory(models.Model):
     """История кадровых перемещений сотрудника"""
 

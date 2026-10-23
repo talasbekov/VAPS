@@ -51,6 +51,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
+import { MyNextShift } from "./MyNextShift";
+import { ProfileEventLink as EventLink } from "./ProfileEventLink";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -337,6 +339,7 @@ export function ProfileBody({
 
   return (
     <>
+      {!readOnly && <MyNextShift employeeId={String(employee.id)} />}
       <HeroCard
         employee={employee}
         rankLabel={employee.rank_label ?? directories.rankLabel(employee.rank_code)}
@@ -642,48 +645,6 @@ interface MyAssignment {
    * и отличить одно от другого было нечем. */
   declinedVia: string;
   declinedBy: string;
-}
-
-/**
- * Название мероприятия — ССЫЛКОЙ ТОЛЬКО ТОМУ, КОМУ КАРТОЧКА ОТКРЫТА
- * (Plane №595).
- *
- * 🔴 Карточка ОМ закрыта правом `event.view`, а ручка «мои назначения»
- * написана ровно для того, у кого его НЕТ: рядовой сотрудник видит свои
- * заступления, не видя реестра. Ссылка вела его на экран «Доступ закрыт» —
- * обещала то, чего не даёт.
- *
- * Без права ссылки нет ВОВСЕ, а не выключенной: у ссылки нет действия,
- * которое можно выключить, и «серая ссылка» читалась бы как неполадка. Для
- * этого человека карточки ОМ не существует, и текст без ссылки — честное
- * описание его мира. (Конвенция раздела «недоступное выключается, а не
- * прячется» — про ДЕЙСТВИЯ: там выключенная кнопка отвечает на вопрос
- * «почему я не могу», здесь вопроса не возникает.)
- */
-function EventLink({
-  eventId,
-  className,
-  children,
-  hideWithoutAccess = false,
-}: {
-  eventId: string;
-  className: string;
-  children: React.ReactNode;
-  /** Кнопка-ссылка, у которой нет смысла без перехода: без права её нет
-   *  вовсе. Для НАЗВАНИЯ мероприятия остаётся текст — оно называет строку. */
-  hideWithoutAccess?: boolean;
-}) {
-  const { hasPermission, isLoading } = useOpsPermissions();
-  // Пока права грузятся — ссылка есть: мигать интерфейсом хуже, а переход
-  // всё равно упрётся в тот же гейт страницы, что и раньше.
-  if (!isLoading && !hasPermission("event.view")) {
-    return hideWithoutAccess ? null : <span className={className}>{children}</span>;
-  }
-  return (
-    <Link href={`/security-ops/events/${eventId}`} className={className}>
-      {children}
-    </Link>
-  );
 }
 
 /** Плоская строка сервера → форма, которую читают вкладки. Мероприятие

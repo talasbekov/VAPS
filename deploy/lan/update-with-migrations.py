@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Reviewed schema transition for the complete 17 October application package."""
+"""Reviewed schema transition for the complete 20 October application package."""
 import argparse
 import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -31,15 +32,19 @@ payload=json.load(sys.stdin)
 django.setup()
 from django.db import connection,transaction
 exec(payload['source'],globals())
-if payload['action']=='capture':
+if payload['action']=='graph':
+    value=migration_graph()
+elif payload['action'] in ('capture','current'):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
             cursor.execute('SHOW transaction_read_only')
             assert cursor.fetchone()[0]=='on', 'Read-only probe required'
+        if payload['action']=='current' and pending_plan():
+            raise RuntimeError('Restored database requires migrations')
         value=capture(payload.get('spec'))
 else:
-    value=migrate_atomic(payload['before'],payload.get('schema'))
+    value=migrate_atomic(payload['before'],payload.get('schema'),payload.get('graph'))
 print(json.dumps(value,sort_keys=True))
 '''
 UPLOADS = '''import hashlib,json
@@ -60,10 +65,23 @@ print(json.dumps(result,sort_keys=True))
 '''
 
 
-def run_json(command, action, *, before=None, schema=None, spec=None, env=None):
+GRAPH_ENV = ('DJANGO_SECRET_KEY=offline-graph-probe', 'ENABLE_BACKGROUND_TASKS=0',
+             'DJANGO_SETTINGS_MODULE=organization_management.config.settings.lan',
+             'POSTGRES_HOST=127.0.0.1', 'POSTGRES_PORT=5432', 'POSTGRES_DB=graph_probe',
+             'POSTGRES_USER=graph_probe', 'POSTGRES_PASSWORD=unused', 'REDIS_HOST=127.0.0.1',
+             'ALLOWED_HOSTS=localhost', 'PGOPTIONS=-c default_transaction_read_only=on')
+
+
+def graph_command(image):
+    return ['docker', 'run', '--rm', '-i', '--pull', 'never', '--network', 'none',
+            *[arg for value in GRAPH_ENV for arg in ('-e', value)], '--entrypoint', 'python', image]
+
+
+def run_json(command, action, *, before=None, schema=None, spec=None, graph=None, env=None):
     # A real dump's schema can exceed Linux's per-argument limit. Pass evidence
     # through stdin, never in command arguments or console output.
-    payload = {'source': CHECK_SOURCE, 'action': action, 'before': before, 'schema': schema, 'spec': spec}
+    payload = {'source': CHECK_SOURCE, 'action': action, 'before': before, 'schema': schema,
+               'spec': spec, 'graph': graph}
     with tempfile.TemporaryFile() as stream:
         stream.write(json.dumps(payload).encode('utf-8'))
         stream.seek(0)
@@ -72,25 +90,33 @@ def run_json(command, action, *, before=None, schema=None, spec=None, env=None):
 
 class TransitionUpdate(app.ApplicationUpdate):
     def load(self):
-        if self.manifest.get('source_revision') != checks.SOURCE_REVISION or self.manifest.get('compatibility_overlay'):
-            raise RuntimeError('This transition requires the reviewed 17 October application package')
+        revision = self.manifest.get('source_revision', '')
+        if not re.fullmatch('[0-9a-f]{40}', revision) or self.manifest.get('compatibility_overlay'):
+            raise RuntimeError('This transition requires a complete reviewed source release')
         transition = json.loads((HERE / 'schema-transition.json').read_text(encoding='utf-8'))
-        if (transition.get('source_revision') != checks.SOURCE_REVISION or
+        if (transition.get('source_revision') != revision or
+                transition.get('policy') != checks.RELEASE_POLICY or
                 transition.get('images') != self.manifest.get('images') or
-                transition.get('plans') != [[list(item) for item in plan] for plan in checks.APPROVED_PLANS] or
+                transition.get('reviewed_migrations') != [list(item) for item in checks.APPROVED_PLAN] or
+                transition.get('graph_sha256') != base.sha(HERE / 'migration-graph.json') or
                 set(transition.get('files', {})) != {'update-with-migrations.py', 'schema-transition-checks.py'}):
-            raise RuntimeError('Incomplete or mismatched schema patch')
+            raise RuntimeError('Incomplete or mismatched current schema release')
         for name, digest in transition['files'].items():
             if base.sha(HERE / name) != digest:
                 raise RuntimeError('Schema patch checksum mismatch: ' + name)
         required = {'application-images.tar', 'update.py', 'update-app-only.py', 'update-offline.py',
-                    'update-with-migrations.py', 'schema-transition-checks.py', 'schema-transition.json'}
-        if not required.issubset(self.manifest.get('files', {})) or set(self.manifest.get('images', {})) != {'backend', 'frontend'}:
+                    'update-with-migrations.py', 'schema-transition-checks.py', 'schema-transition.json',
+                    'migration-graph.json', 'source-revision.txt'}
+        if not required.issubset(self.manifest.get('files', {})) or set(self.manifest.get('images', {})) != {'backend', 'frontend', 'proxy'}:
             raise RuntimeError('Complete application and reviewed transition package required')
         for name, digest in self.manifest['files'].items():
             path = HERE / name
             if path.parent != HERE or base.sha(path) != digest:
                 raise RuntimeError('Application package checksum mismatch: ' + name)
+        if (HERE / 'source-revision.txt').read_text(encoding='utf-8').strip() != revision:
+            raise RuntimeError('Source revision file differs from the release manifest')
+        self.graph = json.loads((HERE / 'migration-graph.json').read_text(encoding='utf-8'))
+        checks.require_graph(self.graph, self.graph)
         configs = base.exported_config_ids(HERE / 'application-images.tar', self.manifest['images'])
         try:
             for key, image in self.manifest['images'].items():
@@ -99,13 +125,15 @@ class TransitionUpdate(app.ApplicationUpdate):
             super().load()
         else:
             print('Package verified; reviewed application images are already loaded.', flush=True)
+            self.verify_proxy_configuration()
+        checks.require_graph(run_json(graph_command(self.new_backend), 'graph'), self.graph)
 
     def require_transition(self):
         backend = self.services.get('backend', {})
         if backend.get('entrypoint') is not None or backend.get('command') is not None:
             raise RuntimeError('Custom backend startup requires review')
         plan = self.readonly(base.PLAN)
-        checks.require_plan(plan)
+        checks.require_plan(plan, self.graph)
         return plan
 
     def backend_json(self, action, **kwargs):
@@ -121,7 +149,7 @@ class TransitionUpdate(app.ApplicationUpdate):
         return self.backend_json('capture')
 
     def migrate_live(self, before, schema):
-        return self.backend_json('migrate', before=before, schema=schema)
+        return self.backend_json('migrate', before=before, schema=schema, graph=self.graph)
 
     def upload_snapshot(self):
         cid = base.run(self.base + ['ps', '-aq', 'backend']).strip()
@@ -142,7 +170,7 @@ class TransitionUpdate(app.ApplicationUpdate):
         if current['Id'] != self.db['Id'] or current['Mounts'] != self.db['Mounts']:
             raise RuntimeError('Unexpected PostgreSQL container or volume change')
 
-    def rehearse_transition(self, folder, before):
+    def rehearse_transition(self, folder, before, *, no_migrations=False):
         marker = uuid.uuid4().hex
         name = 'sj-schema-check-' + marker
         volume = name + '-data'
@@ -156,7 +184,8 @@ class TransitionUpdate(app.ApplicationUpdate):
         env_args = [arg for key in keys for arg in ('-e', key)]
         py = ['docker', 'run', '--rm', '-i', '--pull', 'never', '--network', 'container:' + name,
               *env_args, '--entrypoint', 'python', self.new_backend]
-        print('Restoring backup and rehearsing the reviewed migration plan in isolated PostgreSQL...', flush=True)
+        print('Restoring backup in isolated PostgreSQL' +
+              (' for current-schema verification...' if no_migrations else ' and rehearsing the reviewed migration plan...'), flush=True)
         base.run(['docker', 'volume', 'create', '--label', 'sj-schema-check=' + marker, volume])
         try:
             info = json.loads(base.run(['docker', 'volume', 'inspect', volume]))[0]
@@ -180,9 +209,13 @@ class TransitionUpdate(app.ApplicationUpdate):
             if restored != before:
                 raise RuntimeError('Restored backup does not match the paused database')
             base.save_json(folder / 'restored-before.json', restored)
-            after = run_json(py, 'migrate', before=restored, env=clone_env)
+            if no_migrations:
+                after = run_json(py, 'current', env={**clone_env, 'PGOPTIONS': '-c default_transaction_read_only=on'})
+            else:
+                after = run_json(py, 'migrate', before=restored, graph=self.graph, env=clone_env)
             base.save_json(folder / 'rehearsal-after.json', after)
-            print('Backup restored; reviewed migrations passed; all original rows and business sequences preserved.', flush=True)
+            print('Backup restored; ' + ('current schema verified' if no_migrations else 'reviewed migrations passed') +
+                  '; all original rows and business sequences preserved.', flush=True)
             return after
         finally:
             found = base.run(['docker', 'ps', '-aq', '--filter', 'name=^/' + name + '$']).strip()
@@ -229,7 +262,7 @@ class TransitionUpdate(app.ApplicationUpdate):
             migrated = self.migrate_live(before, rehearsal['schema'])
             committed = True
             base.save_json(folder / 'database-after-migrations.json', migrated)
-            self.set_images(new_backend, self.new_frontend)
+            self.set_images(new_backend, self.new_frontend, self.new_proxy)
             self.start_application()
             after = self.database_snapshot()
             base.save_json(folder / 'database-after-startup.json', after)
@@ -238,13 +271,14 @@ class TransitionUpdate(app.ApplicationUpdate):
             self.verify_database_identity()
             self.start_writers()
             base.save_json(folder / 'SUCCESS.json', {
-                'mode': 'reviewed-schema-transition', 'source_revision': checks.SOURCE_REVISION,
+                'mode': 'reviewed-schema-transition', 'source_revision': self.manifest['source_revision'],
                 'migrations_executed': plan, 'backup_restored_and_migrated': True,
                 'all_original_rows_and_columns_preserved': True, 'business_sequences_preserved': True,
                 'schema_matches_rehearsal': True, 'uploads_unchanged': True,
                 'database_container_unchanged': True, 'database_volume': self.volume,
                 'verified_before_resuming_background_jobs': True,
-                'backend_image': new_backend, 'frontend_image': self.new_frontend})
+                'backend_image': new_backend, 'frontend_image': self.new_frontend,
+                'proxy_image': self.new_proxy, 'proxy_configuration_sha256': self.proxy_configuration_sha256})
             print('UPDATE PASSED. All ' + str(len(plan)) + ' migrations applied; original data and uploads preserved. Backup: ' + str(folder), flush=True)
         except BaseException:
             if stopped:
@@ -260,7 +294,7 @@ class TransitionUpdate(app.ApplicationUpdate):
                             uploads is not None and self.upload_snapshot() != uploads):
                         raise RuntimeError('Recovery review required; data retained, application remains closed')
                     (self.stack / 'images.env').write_bytes(old_images)
-                    self.set_images(rollback_backend, self.old_frontend)
+                    self.set_images(rollback_backend, self.old_frontend, self.old_proxy)
                     self.start_application()
                     if before is not None and self.database_snapshot() != before:
                         raise RuntimeError('Original application startup changed data')

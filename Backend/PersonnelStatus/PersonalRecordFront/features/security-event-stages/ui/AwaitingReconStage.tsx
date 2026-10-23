@@ -14,7 +14,6 @@
 // Форму рекогносцировки здесь НЕ показываем: PATCH рекогносцировки на стадии
 // «Бюллетень» сервер отклоняет, и форма, которая гарантированно получит
 // отказ, — обещание, а не действие.
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompleteBulletin } from "@/hooks/use-security-event-stages";
@@ -39,23 +38,15 @@ export function AwaitingReconStage({ event }: { event: SecurityEvent }) {
       <CardContent className="space-y-3">
         {hasObject ? (
           <p className="text-sm text-muted-foreground">
-            Объект посещения выбран — осматривать есть что, и рекогносцировку
-            можно открыть сразу: бюллетеня сервер от такого мероприятия не
-            требует. Заведённые с объектом ОМ начинаются с рекогносцировки и
-            этого шага не видят вовсе.
+            Объект выбран. Следующий шаг — открыть рекогносцировку.
+            После этого старший наряда указывает зоны, посты и потребность в людях.
           </p>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground">
-              Объект посещения у мероприятия не выбран — его добавляют кнопкой
-              «+» в{" "}
-              <Link
-                href="/security-ops/events"
-                className="font-semibold text-primary-ink"
-              >
-                реестре ОМ
-              </Link>
-              . Рекогносцировка без объекта ведётся по мероприятию целиком.
+            <p className="text-sm text-muted-foreground">
+              Объект ещё не выбран. Ответственный за мероприятие добавляет его
+              кнопкой «Добавить объекты» в блоке «Объекты ОМ» выше.
+              Если отдельная площадка не нужна, рекогносцировка ведётся по мероприятию целиком.
             </p>
           </>
         )}

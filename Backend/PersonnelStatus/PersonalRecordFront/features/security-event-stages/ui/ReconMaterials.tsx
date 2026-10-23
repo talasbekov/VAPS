@@ -31,16 +31,25 @@ export function ReconMaterials({
   const { hasPermission } = useOpsPermissions();
   const canRead = hasPermission("event.view");
   const query = useReconMaterials(eventId, visitObjectId, canRead);
-  const upload = useUploadReconMaterial();
-  const remove = useRemoveReconMaterial();
-  const download = useDownloadReconMaterial();
+  const selected = { eventId, visitObjectId };
+  const upload = useUploadReconMaterial(selected);
+  const remove = useRemoveReconMaterial(selected);
+  const download = useDownloadReconMaterial(selected);
+  const targetStamp = JSON.stringify(query.readKey);
+  const [localTarget, setLocalTarget] = useState(targetStamp);
   const [checklistItemId, setChecklistItemId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const activeTarget = useRef("");
-  activeTarget.current = `${eventId}:${visitObjectId}`;
+  const mounted = useRef(false);
+  activeTarget.current = targetStamp;
   useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    setLocalTarget(targetStamp);
     setChecklistItemId("");
     setFile(null);
     setLocalError(null);
@@ -48,10 +57,16 @@ export function ReconMaterials({
     upload.reset();
     remove.reset();
     download.reset();
-  }, [eventId, visitObjectId, upload.reset, remove.reset, download.reset]);
+  }, [targetStamp, upload.reset, remove.reset, download.reset]);
 
-  const materials = query.data?.results ?? [];
-  const canEdit = canManage && canRead && visitObjectId !== null && !query.isError;
+  const localCurrent = localTarget === targetStamp;
+  const currentFile = localCurrent ? file : null;
+  const known = query.data !== undefined && !query.isError && !query.readAccessBlocked;
+  const sourceForbidden = query.error !== null && "status" in query.error && query.error.status === 403;
+  const downloadForbidden = download.error !== null && "status" in download.error && download.error.status === 403;
+  const forbidden = sourceForbidden || (query.readAccessBlocked && (query.error === null || downloadForbidden));
+  const materials = known ? query.data!.results : [];
+  const canEdit = canManage && canRead && visitObjectId !== null && query.canAct;
   const limitReached = materials.length >= MAX_MATERIALS;
   const busy = upload.isPending || remove.isPending;
   const labels = new Map(checklist.map((item) => [item.id, item.label]));
@@ -62,16 +77,16 @@ export function ReconMaterials({
   }
 
   async function submitUpload() {
-    if (file === null || visitObjectId === null || !canEdit || busy) return;
-    if (file.size > MAX_BYTES) {
+    if (currentFile === null || visitObjectId === null || !canEdit || busy) return;
+    if (currentFile.size > MAX_BYTES) {
       setLocalError("Файл больше 10 МБ.");
       return;
     }
     const submittedTarget = activeTarget.current;
     setLocalError(null);
     try {
-      await upload.mutateAsync({ eventId, visitObjectId, file, checklistItemId: checklistItemId || null });
-      if (activeTarget.current === submittedTarget) {
+      await upload.mutateAsync({ eventId, visitObjectId, file: currentFile, checklistItemId: checklistItemId || null });
+      if (mounted.current && activeTarget.current === submittedTarget) {
         setFile(null);
         if (fileInput.current !== null) fileInput.current.value = "";
       }
@@ -81,9 +96,11 @@ export function ReconMaterials({
   }
 
   async function saveDownload(row: ReconMaterial) {
-    if (visitObjectId === null) return;
+    if (visitObjectId === null || !query.canAct) return;
+    const submittedTarget = activeTarget.current;
     try {
       const result = await download.mutateAsync({ eventId, visitObjectId, materialId: row.id });
+      if (!mounted.current || activeTarget.current !== submittedTarget) return;
       const url = URL.createObjectURL(result.blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -101,7 +118,7 @@ export function ReconMaterials({
     <section aria-label="Материалы рекогносцировки" data-slot="recon-materials" className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Материалы рекогносцировки</h3>
-        <span className="text-xs text-muted-foreground">{materials.length} из {MAX_MATERIALS}</span>
+        <span className="text-xs text-muted-foreground">{known ? `${materials.length} из ${MAX_MATERIALS}` : "Число файлов неизвестно"}</span>
       </div>
       <p className="text-xs text-muted-foreground">
         Фото к пунктам чек-листа: JPEG, PNG или WebP. Материалы объекта: изображения или PDF.
@@ -111,6 +128,11 @@ export function ReconMaterials({
         <p className="text-sm text-muted-foreground">Выберите объект посещения, чтобы открыть его материалы.</p>
       ) : !canRead ? (
         <p className="text-sm text-muted-foreground">Для просмотра материалов требуется право просмотра мероприятия.</p>
+      ) : forbidden ? (
+        <div role="status" className="text-sm">
+          <p className="font-medium">Нет доступа к материалам выбранного объекта</p>
+          <p className="mt-1 text-xs text-muted-foreground">Доступ к мероприятию не всегда открывает его файлы. Материалы доступны уполномоченным участникам этого объекта.</p>
+        </div>
       ) : (
         <>
           {canManage && <div className="flex flex-wrap items-end gap-2">
@@ -119,7 +141,7 @@ export function ReconMaterials({
               <select
                 aria-label="К чему прикрепить материал"
                 className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={checklistItemId}
+                value={localCurrent ? checklistItemId : ""}
                 disabled={!canEdit || busy || limitReached}
                 onChange={(event) => {
                   setChecklistItemId(event.target.value);
@@ -136,6 +158,7 @@ export function ReconMaterials({
             <label className="min-w-52 flex-1 space-y-1 text-xs">
               <span>Файл материала</span>
               <Input
+                key={targetStamp}
                 ref={fileInput}
                 aria-label="Файл материала"
                 type="file"
@@ -148,23 +171,23 @@ export function ReconMaterials({
                 }}
               />
             </label>
-            <Button type="button" size="sm" disabled={!canEdit || file === null || busy || limitReached} onClick={() => { void submitUpload(); }}>
+            <Button type="button" size="sm" disabled={!canEdit || currentFile === null || busy || limitReached} onClick={() => { void submitUpload(); }}>
               {upload.isPending ? "Загрузка…" : "Загрузить"}
             </Button>
           </div>}
-          {!canManage && <p className="text-xs text-muted-foreground">Материалы доступны для скачивания. Загрузку и удаление ведёт старший объекта на этапе рекогносцировки.</p>}
+          {!canManage && known && <p className="text-xs text-muted-foreground">Загрузку и удаление ведёт старший объекта на этапе рекогносцировки.</p>}
           {limitReached && <p className="text-xs text-muted-foreground">Достигнут лимит: 30 материалов на объект.{canEdit ? " Удалите ненужный файл перед загрузкой нового." : ""}</p>}
-          {localError !== null && <p className="text-sm text-destructive-ink" role="alert">{localError}</p>}
+          {localCurrent && localError !== null && <p className="text-sm text-destructive-ink" role="alert">{localError}</p>}
           <StageError error={upload.error} />
           <StageError error={remove.error} />
-          <StageError error={download.error} />
-          <StageError error={query.error} />
+          <StageError error={downloadForbidden ? null : download.error} />
+          {query.isError && <p className="text-sm text-destructive-ink" role="alert">Не удалось загрузить материалы. Повторите попытку.</p>}
           {query.isError && <Button type="button" variant="outline" size="sm" onClick={() => { void query.refetch(); }}>Повторить загрузку списка</Button>}
-          {query.isLoading ? (
+          {query.isPending ? (
             <p className="text-xs text-muted-foreground">Загрузка материалов…</p>
-          ) : !query.isError && materials.length === 0 ? (
+          ) : known && materials.length === 0 ? (
             <p className="text-xs text-muted-foreground">Материалы для выбранного объекта пока не загружены.</p>
-          ) : (
+          ) : known ? (
             <div className="space-y-3">
               {[...groups.entries()].map(([itemId, rows]) => (
                 <div key={itemId} className="space-y-1">
@@ -180,7 +203,7 @@ export function ReconMaterials({
                           </p>
                         </div>
                         <div className="flex gap-1">
-                          <Button type="button" variant="outline" size="sm" disabled={download.isPending} onClick={() => { void saveDownload(row); }}>
+                          <Button type="button" variant="outline" size="sm" disabled={!query.canAct || download.isPending} onClick={() => { void saveDownload(row); }}>
                             {download.isPending && download.variables?.materialId === row.id ? "Скачивание…" : "Скачать"}
                           </Button>
                           {canManage && <Button type="button" variant="ghost" size="sm" disabled={!canEdit || busy} onClick={() => {
@@ -195,7 +218,7 @@ export function ReconMaterials({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </>
       )}
     </section>

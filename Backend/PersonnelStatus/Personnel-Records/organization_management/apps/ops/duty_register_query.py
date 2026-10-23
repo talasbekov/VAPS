@@ -1,8 +1,9 @@
-"""One PostgreSQL snapshot for rows, groups and clipped administrative hours.
+"""Combined PostgreSQL rows, groups and clipped administrative hours.
 
 Only table identifiers from Django metadata are interpolated. All user
 filters, periods and scope sets are bound parameters.
 """
+import json
 from datetime import datetime, time, timedelta
 
 from django.db import connection
@@ -20,7 +21,7 @@ from organization_management.apps.ops.duty_record_access import division_scope, 
 
 ATTENTION_CODES = (
     "MISSING_KIND", "MISSING_ACKNOWLEDGEMENT", "MISSING_START", "MISSING_END",
-    "INVALID_ACTUAL_FACTS", "SOURCE_CHANGED", "OVERLAP", "EMPLOYEE_UNKNOWN",
+    "INVALID_ACTUAL_FACTS", "SOURCE_CHANGED", "OVERLAP", "EMPLOYEE_UNKNOWN", "LATE_START",
 )
 
 
@@ -33,6 +34,12 @@ def register_cte(actor, query):
     write = division_scope(actor, WRITE_PERMISSIONS)
     plan_write = division_scope(actor, ("duty.manage",))
     receiver = division_scope(actor, ("duty.dispatch",))
+    from organization_management.apps.ops.personnel_duty_records import exits, sql_rows
+    status_scope = scope
+    if query.get("division_id"):
+        status_scope = {query["division_id"]} if scope is None else scope & {query["division_id"]}
+    status_rows = [] if query.get("source") not in (None, "", "STATUS") else sql_rows(exits(
+        query["from"], query["to"], read_scope=status_scope, employee_id=query.get("employee_id")))
     params = {
         "read_global": scope is None, "read_ids": sorted(scope or ()),
         "write_global": write is None, "write_ids": sorted(write or ()),
@@ -42,12 +49,15 @@ def register_cte(actor, query):
         "first": datetime.combine(query["from"], time.min, _local_tz()),
         "last": datetime.combine(query["to"] + timedelta(days=1), time.min, _local_tz()),
         "zone": str(_local_tz()), "page_size": query["page_size"], "page": query["page"],
+        "status_records": json.dumps(status_rows),
     }
     conditions = []
     for field in ("source", "state"):
         if query.get(field):
             params[field] = query[field]
             conditions.append(field + " = %(" + field + ")s")
+    if query.get("state") == "ACTIVE":
+        conditions.append("actual_start<=%(now)s AND actual_end IS NULL")
     if query.get("kind") == "__missing__":
         conditions.append("service_duty_code IS NULL")
     elif query.get("kind"):
@@ -80,7 +90,7 @@ WITH raw_records AS (
         l.location_label, l.document_basis, l.note, l.created_at, l.updated_at, l.revision,
         NULL::integer AS receiver_department_id,
         e.id IS NOT NULL AS employee_known, FALSE AS source_changed, FALSE AS planning_locked,
-        NULL::bigint AS live_plan_division_id
+        NULL::bigint AS live_plan_division_id, ''::text AS source_key
     FROM {table(OpsDutyLogEntry)} l
     LEFT JOIN {table(Employee)} e ON e.id=l.employee_id
     WHERE (l.planned_start < %(last)s AND l.planned_end > %(first)s)
@@ -97,7 +107,7 @@ WITH raw_records AS (
         NULL::timestamptz, NULL::timestamptz, p.acknowledged_at, p.actual_start, p.actual_end,
         COALESCE(p.target->>'safeLabel', ''), '', COALESCE(p.note, ''), p.created_at,
         GREATEST(p.updated_at, s.updated_at), NULL::integer, NULL::integer,
-        e.id IS NOT NULL, FALSE, COALESCE(m.state_code='APPROVED', FALSE), live_u.division_id
+        e.id IS NOT NULL, FALSE, COALESCE(m.state_code='APPROVED', FALSE), live_u.division_id, ''::text
     FROM {table(OpsDutyShift)} p
     LEFT JOIN {table(OpsDutyRecordSupplement)} s ON s.source_type='PLAN' AND s.source_id=p.id
     LEFT JOIN {table(Employee)} e ON e.id=COALESCE(s.employee_id,
@@ -129,7 +139,7 @@ WITH raw_records AS (
         e.id IS NOT NULL,
         (st.cancelled_at IS NOT NULL OR st.employee_id<>d.employee_id
           OR st.date_start>(d.start_at AT TIME ZONE %(zone)s)::date
-          OR st.date_end<=((d.end_at-INTERVAL '1 microsecond') AT TIME ZONE %(zone)s)::date), FALSE, NULL::bigint
+          OR st.date_end<=((d.end_at-INTERVAL '1 microsecond') AT TIME ZONE %(zone)s)::date), FALSE, NULL::bigint, ''::text
     FROM {table(OpsDutyDispatchAssignment)} d
     LEFT JOIN {table(OpsDutyRecordSupplement)} s ON s.source_type='DISPATCH' AND s.source_id=d.id
     LEFT JOIN {table(Employee)} e ON e.id=COALESCE(s.employee_id, NULLIF(d.employee_id,0))
@@ -138,12 +148,35 @@ WITH raw_records AS (
     LEFT JOIN {table(OpsEmployeeStatus)} st ON st.id=d.source_status_id
     WHERE (d.start_at < %(last)s AND d.end_at > %(first)s)
        OR (s.actual_start < %(last)s AND COALESCE(s.actual_end, %(now)s) > %(first)s)
+
+    UNION ALL
+
+    SELECT 'STATUS', r.source_id, r.employee_id, r.employee_name, r.division_id, r.division_name,
+        NULLIF(r.service_duty_code, ''), COALESCE(NULLIF(r.service_duty_label, ''), 'Вид не указан'),
+        r.business_date,
+        CASE WHEN r.source_changed THEN 'CANCELLED'
+             WHEN r.actual_end IS NOT NULL THEN 'COMPLETED'
+             WHEN r.actual_start IS NOT NULL THEN 'ACTIVE'
+             WHEN r.acknowledged_at IS NOT NULL THEN 'ACKNOWLEDGED' ELSE 'PLANNED' END,
+        r.planned_start, r.planned_end, r.acknowledged_at, r.actual_start, r.actual_end,
+        r.location_label, '', '', r.created_at, r.updated_at, NULL::integer, NULL::integer,
+        r.employee_known, r.source_changed, FALSE, r.live_division_id, r.source_key
+    FROM JSONB_TO_RECORDSET(%(status_records)s::jsonb) AS r(
+        source_id bigint, employee_id bigint, employee_name text, division_id bigint, division_name text,
+        business_date date, planned_start timestamptz, planned_end timestamptz, location_label text,
+        created_at timestamptz, updated_at timestamptz, employee_known boolean, source_changed boolean,
+        live_division_id bigint, source_key text, service_duty_code text, service_duty_label text,
+        acknowledged_at timestamptz, actual_start timestamptz, actual_end timestamptz)
 ), scoped AS (
-    SELECT *, source||':'||source_id::text AS id,
+    SELECT *, source||':'||source_id::text||CASE WHEN source='STATUS' THEN ':'||source_key ELSE '' END AS id,
         CASE WHEN employee_id IS NULL THEN source||':'||source_id::text ELSE 'EMPLOYEE:'||employee_id::text END AS subject_key,
-        (state='COMPLETED' AND actual_start IS NOT NULL AND actual_end IS NOT NULL
+        ((state='COMPLETED' OR (source='STATUS' AND source_changed AND actual_end IS NOT NULL))
+            AND actual_start IS NOT NULL AND actual_end IS NOT NULL
             AND actual_end>=actual_start AND actual_end<=%(now)s) AS valid_actual,
         CASE WHEN source='DISPATCH' THEN %(receiver_global)s OR receiver_department_id=ANY(%(receiver_ids)s::bigint[])
+             WHEN source='STATUS' THEN NOT source_changed AND planned_start IS NOT NULL AND (%(write_global)s OR %(receiver_global)s OR (
+                (division_id=ANY(%(write_ids)s::bigint[]) OR division_id=ANY(%(receiver_ids)s::bigint[]))
+                AND (live_plan_division_id=ANY(%(write_ids)s::bigint[]) OR live_plan_division_id=ANY(%(receiver_ids)s::bigint[]))))
              WHEN source='PLAN' THEN %(plan_write_global)s OR (
                 division_id=ANY(%(plan_write_ids)s::bigint[])
                 AND live_plan_division_id=ANY(%(plan_write_ids)s::bigint[]))
@@ -180,20 +213,22 @@ WITH raw_records AS (
             AND (planned_start<%(now)s OR (source='PLAN' AND business_date<%(today)s)) THEN 'MISSING_START' END,
         CASE WHEN actual_end IS NULL AND state='ACTIVE'
             AND (planned_end<%(now)s OR (source='PLAN' AND business_date<%(today)s)) THEN 'MISSING_END' END,
-        CASE WHEN (state='COMPLETED' AND NOT valid_actual) OR (state='ACTIVE' AND (actual_start IS NULL OR actual_start>%(now)s)) THEN 'INVALID_ACTUAL_FACTS' END,
-        CASE WHEN source_changed AND state<>'CANCELLED' THEN 'SOURCE_CHANGED' END,
+        CASE WHEN (state='COMPLETED' AND NOT valid_actual) OR (state='ACTIVE' AND (actual_start IS NULL OR actual_start>%(now)s OR actual_end IS NOT NULL)) THEN 'INVALID_ACTUAL_FACTS' END,
+        CASE WHEN source_changed AND (state<>'CANCELLED' OR source='STATUS') THEN 'SOURCE_CHANGED' END,
+        CASE WHEN state<>'CANCELLED' AND actual_start<=%(now)s AND actual_start>planned_start THEN 'LATE_START' END,
         CASE WHEN has_overlap THEN 'OVERLAP' END,
         CASE WHEN NOT employee_known AND state<>'CANCELLED' THEN 'EMPLOYEE_UNKNOWN' END
     ], NULL)::text[] AS attention_codes
     FROM measured
 ), period_records AS (
-    SELECT *, attention_codes && ARRAY['MISSING_START','MISSING_END','INVALID_ACTUAL_FACTS','SOURCE_CHANGED','OVERLAP','EMPLOYEE_UNKNOWN'] AS needs_attention,
+    SELECT *, attention_codes && ARRAY['MISSING_START','MISSING_END','INVALID_ACTUAL_FACTS','SOURCE_CHANGED','OVERLAP','EMPLOYEE_UNKNOWN','LATE_START'] AS needs_attention,
         ARRAY_REMOVE(ARRAY[
             CASE WHEN writable AND state='PLANNED' THEN 'acknowledge' END,
             CASE WHEN writable AND state='ACKNOWLEDGED' AND (source<>'PLAN' OR business_date<=%(today)s) THEN 'start' END,
             CASE WHEN writable AND state='ACTIVE' AND actual_start IS NOT NULL AND actual_start<=%(now)s AND (source<>'PLAN' OR business_date<=%(today)s) THEN 'complete' END,
-            CASE WHEN writable AND state IN ('PLANNED','ACKNOWLEDGED') AND NOT planning_locked THEN 'cancel' END,
-            CASE WHEN writable AND state<>'CANCELLED' THEN 'classify' END,
+            CASE WHEN writable AND source<>'STATUS' AND state IN ('PLANNED','ACKNOWLEDGED') AND NOT planning_locked THEN 'cancel' END,
+            CASE WHEN writable AND state<>'CANCELLED' AND (source<>'STATUS' OR %(write_global)s OR (
+                division_id=ANY(%(write_ids)s::bigint[]) AND live_plan_division_id=ANY(%(write_ids)s::bigint[]))) THEN 'classify' END,
             CASE WHEN writable AND source='LOG' AND state IN ('PLANNED','ACKNOWLEDGED') THEN 'edit' END
         ], NULL)::text[] AS actions
     FROM marked
@@ -226,7 +261,7 @@ updated_at, revision, attention_codes, needs_attention, actions"""
 SUMMARY_SQL = """
 SELECT COUNT(*) AS record_count, COUNT(DISTINCT employee_id) AS employee_count,
     COUNT(*) FILTER (WHERE state='COMPLETED') AS completed_count,
-    COUNT(*) FILTER (WHERE state='ACTIVE') AS active_count,
+    COUNT(*) FILTER (WHERE state='ACTIVE' AND actual_start<=%(now)s AND actual_end IS NULL) AS active_count,
     COUNT(*) FILTER (WHERE state='CANCELLED') AS cancelled_count,
     COUNT(*) FILTER (WHERE acknowledged_at IS NULL AND state IN ('PLANNED','ACKNOWLEDGED')) AS unconfirmed_count,
     COUNT(*) FILTER (WHERE needs_attention) AS attention_count,
@@ -245,7 +280,15 @@ FROM filtered
 def snapshot_sql(cte):
     dictionary = table(OpsDictionaryEntry)
     return cte + f"""
-, summary AS ({SUMMARY_SQL}),
+, summary AS ({SUMMARY_SQL}), control AS (
+    SELECT COUNT(*) FILTER (WHERE state<>'CANCELLED') AS assigned,
+        COUNT(*) FILTER (WHERE state<>'CANCELLED' AND acknowledged_at<=%(now)s) AS acknowledged,
+        COUNT(*) FILTER (WHERE state<>'CANCELLED' AND actual_start<=%(now)s) AS started,
+        COUNT(*) FILTER (WHERE state<>'CANCELLED' AND 'MISSING_START'=ANY(attention_codes)) AS missing_start,
+        COUNT(*) FILTER (WHERE state<>'CANCELLED' AND 'LATE_START'=ANY(attention_codes)) AS late_start,
+        COUNT(*) FILTER (WHERE state<>'CANCELLED' AND 'MISSING_END'=ANY(attention_codes)) AS missing_end
+    FROM filtered
+),
 kind_groups AS (
     SELECT f.service_duty_code, COALESCE(MAX(d.label),MAX(f.service_duty_label),'Вид не указан') AS service_duty_label,
         COUNT(*) AS record_count, COUNT(DISTINCT f.employee_id) AS employee_count,
@@ -285,6 +328,7 @@ kind_groups AS (
 )
 SELECT JSONB_BUILD_OBJECT(
     'summary',(SELECT ROW_TO_JSON(summary) FROM summary),
+    'control',(SELECT ROW_TO_JSON(control) FROM control),
     'rows',COALESCE((SELECT JSONB_AGG(ROW_TO_JSON(paged)) FROM paged),'[]'::jsonb),
     'pagination',(SELECT ROW_TO_JSON(limits) FROM limits),
     'by_kind',COALESCE((SELECT JSONB_AGG(ROW_TO_JSON(k) ORDER BY k.record_count DESC,k.service_duty_label) FROM kind_groups k),'[]'::jsonb),

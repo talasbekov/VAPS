@@ -1,15 +1,8 @@
 "use client";
 
-import { CapabilityNotes } from "@/shared/ui/capability-notes";
-
-// Отчётный реестр службы (§22.18-22.25, §20.32): запуск отчёта, состояния
-// работы, метаданные артефакта и скачивание. Экран НИЧЕГО не формирует сам:
-// выборка строк, маскирование и сборка файла живут на сервере (§22.24), сюда
-// приходят метаданные; содержимое появляется в памяти вкладки ровно на время
-// сохранения файла.
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileSpreadsheet, FileText, ScrollText } from "lucide-react";
+import { FileText, ScrollText } from "lucide-react";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -17,21 +10,17 @@ import { PageHeader } from "@/components/page-header";
 import { ReportSectionCard } from "@/components/reports/report-section-card";
 import { ReportNavigation } from "@/components/reports/report-navigation";
 import {
-  useCreateReportJob,
-  useDownloadArtifact,
   useBulletinIssueFile,
   useBulletinIssues,
   useEventDocumentKinds,
   useIssueBulletin,
   useRenderEventDocument,
   useReportJobs,
-  useReportTypes,
 } from "@/hooks/use-ops-reports";
 import {
   JOB_STATE_LABEL,
   formatMoment,
   formatSize,
-  saveFile,
   saveBinaryFile,
 } from "@/features/ops-reports/report-shared";
 import type {
@@ -58,10 +47,7 @@ const JOB_STATE_CLASS: Record<ReportJobState, string> = {
 export default function ServiceReportsPage() {
   const queryClient = useQueryClient();
   const { hasPermission, isLoading: permissionsLoading, error: permissionsError } = useOpsPermissions();
-  const typesQuery = useReportTypes();
   const jobsQuery = useReportJobs();
-  const createJob = useCreateReportJob([typesQuery.readKey, jobsQuery.readKey]);
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobsQuery.readKey);
 
   // Документы ОМ (Plane №159, шаг ПД-3). Список видов приходит С СЕРВЕРА:
   // свой список на экране разошёлся бы с реестром сборщиков и предложил бы
@@ -111,40 +97,12 @@ export default function ServiceReportsPage() {
         ? `Документ «${chosenKind.label}» строится по мероприятию — укажите его код`
         : null;
 
-  const reportType = typesQuery.data?.results[0] ?? null;
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [sensitive, setSensitive] = useState(false);
-  const [attempts, setAttempts] = useState<Record<string, number>>({});
-
   const artifactsByJob = useMemo(() => {
     const map = new Map<string, ReportArtifactSummary>();
     for (const artifact of jobsQuery.data?.artifacts ?? [])
       map.set(artifact.reportJobId, artifact);
     return map;
   }, [jobsQuery.data]);
-
-  async function submit(): Promise<void> {
-    if (reportType === null || typesQuery.canAct === false || jobsQuery.canAct === false || createJob.isPending || permissionsLoading || permissionsError || !hasPermission(MODULE_PERMISSION["/security-ops/service-reports"])) return;
-    const fingerprint = `${reportType.reportTypeCode}:${from}:${to}:${sensitive ? "S" : "N"}`;
-    const attempt = attempts[fingerprint] ?? 1;
-    try {
-      await createJob.mutateAsync({
-      reportTypeCode: reportType.reportTypeCode,
-      format: "CSV",
-      from,
-      to,
-      sensitive,
-      // Advance only the acknowledged parameter set. Switching to another
-      // report must preserve a pending retry after a lost response.
-      idempotencyKey: `${fingerprint}:${attempt}`,
-      });
-      setAttempts((value) => ({ ...value, [fingerprint]: attempt + 1 }));
-    } catch {
-      // A lost response may still have created the job. Retry with the same
-      // key until the server acknowledges it; the mutation displays its error.
-    }
-  }
 
   if (permissionsError) {
     return <DashboardLayout><LoadFailure what="права доступа к отчётам" onRetry={() => void queryClient.resetQueries({ queryKey: ["ops-me"], exact: true })} /></DashboardLayout>;
@@ -162,14 +120,14 @@ export default function ServiceReportsPage() {
         <PageHeader
           eyebrow="Отчёты"
           title="Дежурства и документы ОМ"
-          description="Смены дежурств за период берутся из журнала смен. Документы ОМ формируются по данным выбранного мероприятия."
+          description="Документы ОМ формируются по данным выбранного мероприятия. Ранее созданные отчёты доступны в истории."
         />
 
         <ReportNavigation current="service" />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
-            Запуск отчёта
+            Документы ОМ
           </span>
           <Link
             href="/security-ops/service-reports/history"
@@ -179,103 +137,6 @@ export default function ServiceReportsPage() {
           </Link>
         </nav>
 
-        {typesQuery.isLoading && (
-          <p className="text-sm text-muted-foreground">Загрузка…</p>
-        )}
-        {(typesQuery.isError || typesQuery.readAccessBlocked) && (
-          <LoadFailure
-            what="типы отчётов"
-            onRetry={() => void typesQuery.refetch()}
-            isRetrying={typesQuery.isFetching}
-          />
-        )}
-
-        {reportType !== null && typesQuery.data !== undefined && (
-          <ReportSectionCard
-            role="group"
-            aria-label="Форма запуска отчёта"
-            icon={FileSpreadsheet}
-            iconClassName="text-green-600"
-            title={reportType.safeTitle}
-            description={reportType.description}
-          >
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-xs font-semibold">
-                Начало периода
-                <input
-                  type="date"
-                  className="rounded-md border bg-background p-2 text-sm font-normal"
-                  aria-label="Начало периода"
-                  value={from}
-                  onChange={(event) => setFrom(event.target.value)}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold">
-                Конец периода
-                <input
-                  type="date"
-                  className="rounded-md border bg-background p-2 text-sm font-normal"
-                  aria-label="Конец периода"
-                  value={to}
-                  onChange={(event) => setTo(event.target.value)}
-                />
-              </label>
-              <label className="flex items-center gap-2 text-xs font-semibold">
-                <input
-                  type="checkbox"
-                  checked={sensitive}
-                  disabled={!typesQuery.data.canExportSensitive}
-                  onChange={(event) => setSensitive(event.target.checked)}
-                />
-                Включить скрытые поля
-              </label>
-              <button
-                type="button"
-                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                onClick={submit}
-                aria-busy={createJob.isPending}
-                disabled={
-                  createJob.isPending ||
-                  typesQuery.canAct === false || jobsQuery.canAct === false ||
-                  from === "" ||
-                  to === "" ||
-                  // Недоступность типа решил СЕРВЕР (§22.5) — экран её не
-                  // выводит сам.
-                  reportType.unavailableReason !== null
-                }
-              >
-                {createJob.isPending ? "Запускаем формирование…" : "Сформировать отчёт"}
-              </button>
-            </div>
-
-            {!typesQuery.data.canExportSensitive && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Скрытые поля доступны только пользователям с отдельным правом выгрузки.
-              </p>
-            )}
-            {reportType.unavailableReason !== null ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {reportType.unavailableReason}
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Период — до {reportType.maxPeriodDays} дней. Готовый файл
-                хранится {typesQuery.data.retentionPolicy.retentionDays} дней.
-              </p>
-            )}
-            {createJob.error !== null && (
-              <p role="alert" className="mt-2 text-xs text-destructive-ink">
-                {createJob.error.message}
-              </p>
-            )}
-          </ReportSectionCard>
-        )}
-
-        {/* Документы ОМ. Отдельная карточка, а не строка в форме отчёта:
-            отчёт — это ЗАДАНИЕ (очередь, срок, повтор, ревизия), а документ
-            собирается одним ответом и ничего после себя не оставляет. Свести
-            их в одно место значило бы обещать документу жизненный цикл,
-            которого у него нет. */}
         <ReportSectionCard
           role="group"
           aria-label="Выгрузка документов ОМ"
@@ -608,19 +469,6 @@ export default function ServiceReportsPage() {
                             ? `Доступен до ${formatMoment(artifact.expiresAt)}`
                             : "Срок хранения истёк"}
                         </span>
-                        <div>
-                          <button
-                            type="button"
-                            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                            disabled={!artifact.available || download.isPending || jobsQuery.canAct === false}
-                            title={
-                              artifact.available ? undefined : "Срок хранения истёк"
-                            }
-                            onClick={() => { if (jobsQuery.canAct !== false) download.mutate({ artifactId: artifact.artifactId }); }}
-                          >
-                            Скачать CSV
-                          </button>
-                        </div>
                       </div>
                     )}
                   </li>
@@ -628,16 +476,7 @@ export default function ServiceReportsPage() {
               })}
             </ul>
           )}
-          {download.error !== null && (
-            <p className="mt-2 text-xs text-destructive-ink">
-              {download.error.message}
-            </p>
-          )}
         </ReportSectionCard>
-
-        {typesQuery.data !== undefined && (
-          <CapabilityNotes title="Состав и форматы отчёта за период" items={[...typesQuery.data.maskedFields, ...typesQuery.data.unavailableFormats, ...typesQuery.data.unavailableArtifactFields]} />
-        )}
       </div>
     </DashboardLayout>
   );

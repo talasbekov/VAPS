@@ -8,10 +8,13 @@ const ts = require('typescript');
 function readMap(rows) {
   const exports = {};
   const dependencies = {
-    react: { useContext: () => 1 },
+    react: { useContext: () => 1, useRef: () => ({}), useCallback: fn => fn, useEffect: () => {} },
     './workspace-context': { ServiceSummaryRootContext: {} },
-    '@tanstack/react-query': { useQuery: options => ({ isPending: false, isError: false,
-      data: options.queryKey[1] === 'tree' ? { nodes: [{ division_id: 1, parent_id: null }] } : rows }) },
+    '@tanstack/react-query': { useQueryClient: () => ({}) },
+    '@/hooks/use-ops-protected-read': { useOpsReadAccess: () => ({ allowed: true }),
+      useOpsProtectedRead: prefix => ({ isPending: false, isError: false,
+        data: prefix[1] === 'tree' ? { nodes: [{ division_id: 1, parent_id: null }] } : rows }) },
+    '@/lib/query-read-access': {},
     '@/entities/daily-grid': { DAILY_SUBMISSIONS_PATH: '/daily', buildDivisionForest: () => ({ childrenOf: new Map() }), parseSubmissionList: value => value },
     '@/lib/api': {}, '@/lib/ops-api': {},
   };

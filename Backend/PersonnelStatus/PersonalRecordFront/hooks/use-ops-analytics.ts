@@ -83,7 +83,7 @@ export function useLoadAnalytics() {
 
 /** §22.13-22.15: уровень и цель — в ключе кэша целиком. */
 export function useOperationsAnalytics(query: OperationsQuery) {
-  const access = useOpsReadAccess("analytics.view");
+  const access = useOpsReadAccess("analytics.operations");
   return useOpsProtectedRead(["ops-analytics", "operations"], [
       query.level,
       query.objectId ?? "",

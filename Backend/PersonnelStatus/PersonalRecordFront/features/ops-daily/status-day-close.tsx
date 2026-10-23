@@ -25,6 +25,7 @@
 import { Suspense, useCallback, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { ClipboardCheck, ListChecks } from "lucide-react";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useBusinessDate } from "@/features/daily-expense/model/business-date";
@@ -131,14 +132,36 @@ function StatusDayCloseInner() {
   return (
     <section
       aria-label="Сдача дня за управление"
-      className="grid gap-3 rounded-xl border bg-card p-4"
+      className="grid min-w-0 gap-3 rounded-xl border bg-card p-4 sm:p-5"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">Сдача расхода</h2>
-        <p className="text-xs text-muted-foreground">Подготовьте статусы → проверьте расход → сдайте день</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] sm:items-start">
-        <div className="grid gap-1.5">
+      <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-6">
+        <div className="min-w-0 space-y-2">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true"><ClipboardCheck className="size-4" /></span>
+            <h2 className="text-base font-semibold">Сдача расхода</h2>
+          </div>
+          {metadataReady && permitted.length === 1 && selectedDivision !== null ? (
+            <p className="min-w-0 break-words text-sm text-muted-foreground lg:pl-[42px]">{[...(selectedDivision.ancestors ?? []), selectedDivision.name].join(" / ")}</p>
+          ) : metadataReady && permitted.length > 0 && (
+            <label className="grid min-w-0 gap-1.5 text-sm">
+              <span className="sr-only">Управление</span>
+              <select
+                aria-label="Управление для сдачи дня"
+                className="h-10 min-w-0 w-full rounded-md border bg-background px-3 lg:max-w-xl"
+                value={selectedDivision === null ? "" : String(selectedDivision.id)}
+                onChange={event => setDivision(event.target.value)}
+              >
+                <option value="">Выберите управление</option>
+                {permitted.map(row => (
+                  <option key={row.id} value={row.id}>
+                    {[...(row.ancestors ?? []), row.name].join(" / ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="grid min-w-0 gap-1.5">
           <div className="flex items-center justify-between gap-2 text-sm">
             <label htmlFor="status-business-date" className="text-muted-foreground">Расход на дату</label>
             {isOverridden ? (
@@ -166,33 +189,7 @@ function StatusDayCloseInner() {
             }}
           />
         </div>
-        {metadataReady && permitted.length === 1 && selectedDivision !== null ? (
-          <div className="grid min-w-0 gap-1.5 text-sm">
-            <span className="text-muted-foreground">Управление</span>
-            <p className="py-2 font-medium">{[...(selectedDivision.ancestors ?? []), selectedDivision.name].join(" / ")}</p>
-          </div>
-        ) : metadataReady && permitted.length > 0 && (
-          <label className="grid min-w-0 gap-1.5 text-sm">
-            <span className="text-muted-foreground">Управление</span>
-            <select
-              aria-label="Управление для сдачи дня"
-              className="h-10 min-w-0 w-full rounded-md border bg-background px-3"
-              value={selectedDivision === null ? "" : String(selectedDivision.id)}
-              onChange={event => setDivision(event.target.value)}
-            >
-              <option value="">Выберите управление</option>
-              {permitted.map(row => (
-                <option key={row.id} value={row.id}>
-                  {[...(row.ancestors ?? []), row.name].join(" / ")}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
       </div>
-      <p id="status-report-date-help" className="text-xs text-muted-foreground">
-        Дата относится только к расходу и сдаче дня. Текущие статусы в таблице меняются с сегодняшнего дня.
-      </p>
 
       {dateError ? (
         <div role="alert" className="text-sm text-destructive-ink">
@@ -230,6 +227,9 @@ function StatusDayCloseInner() {
           />
         </div>
       )}
+      <p id="status-report-date-help" className="text-xs text-muted-foreground">
+        Дата относится к расходу и сдаче дня. Текущий статус сотрудника меняется с сегодняшнего дня.
+      </p>
     </section>
   );
 }
@@ -255,7 +255,7 @@ function SelectedDayClose({ divisionId, businessDate, canCorrect, metadataReady 
   const loading = submissions.isPending || submissions.isFetching || report.isPending || report.isFetching;
   const failed = submissions.isError || report.isError || (!report.isPending && !report.data);
   return (
-    <div className="grid items-start gap-3 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(240px,auto)]">
+    <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,auto)] lg:gap-6">
       <ExpensePreview businessDate={businessDate} data={report.data} isLoading={report.isPending || report.isFetching} isError={report.isError} />
       {loading ? (
         <p role="status" className="text-sm text-muted-foreground">Загрузка состояния сдачи дня…</p>
@@ -288,13 +288,12 @@ function SelectedDayClose({ divisionId, businessDate, canCorrect, metadataReady 
   );
 }
 
-/** Одна цифра расхода: подпись сверху, число снизу — так же читаются плитки
- *  шапки страницы (`StatCard`), только компактнее. */
+/** Компактный показатель расхода: число над подписью. */
 function Figure({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-[72px]">
+    <div className="flex min-w-16 flex-col gap-1">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-xl font-semibold tabular-nums leading-tight">{value}</dd>
+      <dd className="order-first text-xl font-semibold leading-tight tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -339,13 +338,12 @@ function ExpensePreview({
       .filter((code) => code !== "IN_SERVICE" && (totals.columns[code] ?? 0) > 0)
       .map((code) => ({ code, label: labels[code] ?? code, value: totals.columns[code] }));
     body = (
-      <dl className="flex flex-wrap gap-x-6 gap-y-3" aria-label="Числа расхода">
+      <dl className="flex flex-wrap gap-x-5 gap-y-3" aria-label="Числа расхода">
         <Figure label="Список" value={totals.list_total} />
         <Figure label="В строю" value={inService} />
         {absent.map((column) => (
           <Figure key={column.code} label={column.label} value={column.value} />
         ))}
-        {totals.attached > 0 && <Figure label="Приданы" value={totals.attached} />}
         {absent.length === 0 && (
           <p className="self-end text-sm text-muted-foreground">
             Отсутствующих на эту дату нет — все в строю.
@@ -358,16 +356,28 @@ function ExpensePreview({
   return (
     <section
       aria-label="Расход на дату"
-      className="min-w-0"
+      className="flex min-w-0 flex-wrap items-start gap-x-5 gap-y-3"
     >
       {body}
-      <details className="mt-2 text-xs text-muted-foreground">
-        <summary className="w-fit cursor-pointer">Что входит в расход</summary>
-        <p className="mt-1 max-w-prose">
-          Кадровые статусы и участие в ОМ, действующие на {formatIsoDate(businessDate)}.
-          После изменения статусов в таблице ниже числа обновятся.
-        </p>
-      </details>
+      {!isLoading && !isError && data && (
+        <details className="group min-w-0 text-xs open:basis-full">
+          <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent [&::-webkit-details-marker]:hidden">
+            <ListChecks className="size-4 text-muted-foreground" aria-hidden="true" />Состав расхода
+          </summary>
+          <div className="mt-3 overflow-hidden rounded-lg border">
+            <table className="w-full text-sm" aria-label="Состав расхода">
+              <thead className="bg-muted/50"><tr><th scope="col" className="px-3 py-2 text-left font-medium">Показатель</th><th scope="col" className="px-3 py-2 text-right font-medium">Численность</th></tr></thead>
+              <tbody>
+                <tr className="border-t"><th scope="row" className="px-3 py-2 text-left font-medium">Список</th><td className="px-3 py-2 text-right tabular-nums">{data.totals.list_total}</td></tr>
+                {data.columns.filter(code => code === "IN_SERVICE" || (data.totals.columns[code] ?? 0) > 0).map(code => (
+                  <tr key={code} className="border-t"><th scope="row" className="px-3 py-2 text-left font-normal">{data.column_labels[code] ?? code}</th><td className="px-3 py-2 text-right tabular-nums">{data.totals.columns[code] ?? 0}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-muted-foreground">Статусы и участие в ОМ на {formatIsoDate(businessDate)}. После изменения статусов числа обновятся.</p>
+        </details>
+      )}
     </section>
   );
 }

@@ -1,11 +1,10 @@
 "use client"
 
 import { useState, useMemo, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
-import { MassStatusUpdate } from "@/components/mass-status-update"
-import { retainFailedMassSelection } from "@/features/employee-status-update/model/mass-status-result"
 import { StatusCalendarBoard } from "@/widgets/status-calendar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -15,24 +14,28 @@ import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
 import { directorateDenial } from "@/hooks/use-staff-units-by-directorate"
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
 import { useQueryClient } from "@tanstack/react-query"
-import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { moduleOpenFor } from "@/entities/portal-access";
 import { ForcesRequestBanner } from "@/features/forces-request-banner/ui/ForcesRequestBanner";
 import { StatusDayClose } from "@/features/ops-daily/status-day-close";
 import { OpsPermissionBoundary } from "@/components/ops-permission-boundary";
+import { AssistantHomeEntry } from "@/features/om-assistant/home-entry";
 
 export default function StatusesPage() {
-  return <OpsPermissionBoundary><StatusesScreen /></OpsPermissionBoundary>
+  return <OpsPermissionBoundary><Suspense fallback={<p role="status">Загрузка статусов…</p>}><StatusesScreen /></Suspense></OpsPermissionBoundary>
 }
 
 function StatusesScreen() {
-  // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
-  // редактирования». Управляющие элементы ей не показываются — обещание
-  // действия, которое сервер отклонит, хуже их отсутствия. «Экспорт» остаётся:
-  // это чтение.
-  //
+  const params = useSearchParams()
+  const router = useRouter()
+  const view = params.get("view") === "calendar" ? "calendar" : "table"
+  const changeView = (nextView: string) => {
+    const next = new URLSearchParams(params)
+    if (nextView === "calendar") next.set("view", "calendar")
+    else next.delete("view")
+    router.replace(`/statuses/${next.size ? `?${next}` : ""}`, { scroll: false })
+  }
   // ПРАВО ТЕПЕРЬ РАЗДЕЛА, А НЕ ПОРТАЛА (Plane №352, Ш-1): было
   // `hasPermission("statuses", "update")` из зашитого набора портальной роли.
   // Семь ролей заказчика живут в каталоге раздела, и портальный набор их не
@@ -83,6 +86,8 @@ function StatusesScreen() {
     // 28.08.2026, и «Обновить» обязано освежить оба (Plane №231).
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] })
     queryClient.invalidateQueries({ queryKey: ["staff-units-page"] })
+    queryClient.invalidateQueries({ queryKey: ["status-calendar-month"] })
+    queryClient.invalidateQueries({ queryKey: ["status-calendar-day"] })
     // Расход на деловую дату в карточке сдачи (Plane №1209): поставленный в
     // таблице статус обязан отразиться в числах, которые начальник сдаёт.
     queryClient.invalidateQueries({ queryKey: ["ops-daily", "expense-preview"] })
@@ -105,7 +110,7 @@ function StatusesScreen() {
     }
   }
 
-  // Все три вкладки и счётчики читают ОДИН запрос directorate: закрыта ручка —
+  // Обе вкладки и счётчики читают ОДИН запрос directorate: закрыта ручка —
   // закрыт экран. Показывать шапку с нулями было бы враньём о подразделении.
   // Причина отказа передаётся заглушке: 403 и 400 чинятся разными людьми
   // (Plane №329).
@@ -128,7 +133,7 @@ function StatusesScreen() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <PageHeader
           title="Управление статусами"
@@ -139,6 +144,7 @@ function StatusesScreen() {
             : "Просмотр текущих и запланированных статусов сотрудников вашего подразделения."}
           actions={
             <div className="flex flex-wrap items-center gap-3">
+              <AssistantHomeEntry compact accessReady={!opsPermissionsLoading && !permissionsError} hasPermission={hasOpsPermission} />
               <span className="text-xs text-muted-foreground">
                 Обновлено: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
               </span>
@@ -188,33 +194,24 @@ function StatusesScreen() {
         </dl>
 
         {/* Main Content */}
-        <Tabs defaultValue="table" className="space-y-6">
+        <Tabs value={view} onValueChange={changeView} className="space-y-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-            <TabsList className={`grid h-auto w-full ${canEdit ? "grid-cols-3" : "grid-cols-2"} sm:inline-flex sm:w-fit`}>
+            <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-fit">
               <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="table">Таблица сотрудников</TabsTrigger>
               <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="calendar">Календарь статусов</TabsTrigger>
-              {canEdit && (
-                <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="mass-update">Массовое обновление</TabsTrigger>
-              )}
             </TabsList>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {canEdit && (
-                <SecondmentRequestsDialog />
-              )}
-            </div>
           </div>
 
-          <TabsContent value="table" className="space-y-6">
+          <TabsContent value="table" className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {canEdit
-                ? "Текущий статус меняется с сегодняшнего дня. Для будущего периода откройте «Запланированные статусы» в меню сотрудника."
+                ? "Измените статус в меню сотрудника или выберите нужный день в календаре статусов."
                 : "Таблица показывает текущие статусы. Будущие периоды доступны в календаре статусов."}
             </p>
             {error ? (
               <Card>
                 <CardContent className="p-6 text-center text-red-500">
-                  <p className="mb-4">Ошибка загрузки данных: {error}</p>
+                  <p className="mb-4">Не удалось загрузить список сотрудников. Попробуйте ещё раз.</p>
                   <Button onClick={handleRefresh} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Попробовать снова
@@ -234,18 +231,6 @@ function StatusesScreen() {
             <StatusCalendarBoard />
           </TabsContent>
 
-          {/* Содержимое вкладки снимается вместе с самой вкладкой: оставленное
-              под скрытым переключателем, оно открывалось бы по адресу и по
-              восстановленному состоянию вкладок. */}
-          {canEdit && (
-            <TabsContent value="mass-update" className="space-y-6">
-              <MassStatusUpdate
-                selectedEmployees={selectedEmployees}
-                onSuccess={handleRefresh}
-                onRetainFailedSelection={(submitted, remaining) => setSelectedEmployees(current => retainFailedMassSelection(current, submitted, remaining))}
-              />
-            </TabsContent>
-          )}
         </Tabs>
       </div>
     </DashboardLayout>

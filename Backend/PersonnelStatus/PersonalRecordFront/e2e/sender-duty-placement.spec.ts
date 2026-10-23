@@ -101,6 +101,18 @@ test.describe('sender duty placement read-only view', () => {
     await expect(dialog.getByText('Объект Альфа', { exact: true })).toHaveCount(0);
   });
 
+  test('dispatcher shift clocks override incidental empty status intervals', async ({ page }) => {
+    const state = await setup(page);
+    await page.route('**/api/statuses/statuses/duty-assignments/**', route => route.fulfill({ json: { results: [{
+      ...assignment, placement: { ...assignment.placement, intervals: [], time_zone: 'Asia/Almaty' },
+    }] } }));
+    const dialog = await openPlacement(page);
+    await expect(dialog).toContainText('08:00');
+    await expect(dialog).toContainText('12:00');
+    await expect(dialog).not.toContainText('Выходов на выбранную дату нет.');
+    expect(state.writes).toEqual([]);
+  });
+
   test('revoking status permission hides already loaded placements and the row action', async ({ page }) => {
     const state = await setup(page);
     const dialog = await openPlacement(page);

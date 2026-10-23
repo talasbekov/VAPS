@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { accessScopeLabel } from "@/entities/access";
 import { moduleOpenFor } from "@/entities/portal-access";
+import { PORTAL_HOME_PATH, portalWorkspace, activePortalTask, portalTaskHref } from "@/features/portal-workspace/model";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import {
@@ -29,6 +30,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileText,
+  House,
   KeyRound,
   Landmark,
   LineChart,
@@ -38,6 +40,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  Sparkles,
   UserRound,
   Users,
   type LucideIcon,
@@ -110,18 +113,19 @@ type NavItem = {
 // состояние группы больше не существует, значит и хранить его нечем.
 const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
   {
-    title: "Ежедневный расход",
+    title: "Личный состав и расход",
     items: [
-      { name: "Оперативный контроль", href: "/security-ops/command-center", icon: LineChart },
       { name: "Обзор", href: "/dashboard", icon: BarChart3 },
       { name: "Статусы сотрудников", href: "/statuses", icon: Shield },
-      { name: "Журнал дежурств", href: "/security-ops/duty-register", icon: ClipboardList },
-      { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
-      { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
-      { name: "Отчёты", href: "/reports", match: ["/reports", "/security-ops/service-reports"], icon: FileText },
       // Workspace and status-read permissions are checked by the same gate
       // as the page; role names do not authorize access.
       { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
+    ],
+  },
+  {
+    title: "Дежурства",
+    items: [
+      { name: "Журнал дежурств", href: "/security-ops/duty-register", icon: ClipboardList },
     ],
   },
   {
@@ -133,7 +137,10 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "Охранные мероприятия",
     items: [
+      { name: "Помощник по ОМ", href: "/security-ops/assistant", icon: Sparkles },
+      { name: "Оперативный контроль", href: "/security-ops/command-center", icon: LineChart },
       { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList, counter: "events" },
+      { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       // Пункта «Реестр ГВО» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
       // заказчик снял модуль, сводка живёт панелью в карточке мероприятия
       // («Информация по ГВО»), а сводный взгляд — вкладкой «Визиты
@@ -147,7 +154,14 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       { name: "Транспорт ГОН", href: "/security-ops/vehicles", icon: Car },
       // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
       // попадали только по ссылкам с других экранов.
+    ],
+  },
+  {
+    title: "Аналитика и отчёты",
+    items: [
+      { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
       { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
+      { name: "Отчёты", href: "/reports", match: ["/reports", "/security-ops/service-reports"], icon: FileText },
     ],
   },
   {
@@ -340,11 +354,12 @@ function LinkStatus() {
   );
 }
 
-export function Sidebar() {
-  return <Suspense><SidebarContent /></Suspense>;
+type SidebarProps = { embedded?: boolean; onNavigate?: () => void };
+export function Sidebar(props: SidebarProps) {
+  return <Suspense><SidebarContent {...props} /></Suspense>;
 }
 
-function SidebarContent() {
+function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
   const queryClient = useQueryClient();
   // Из `useAuth` берётся только КТО вошёл: роль и права переехали в раздел
   // (Plane №352, Ш-4), и подпись человека внизу меню читает их оттуда же,
@@ -353,6 +368,8 @@ function SidebarContent() {
   const pathname = normalizePath(usePathname() ?? "");
   const searchParams = useSearchParams();
   const query = new URLSearchParams(searchParams);
+  const [sectionSearch, setSectionSearch] = useState('');
+  useEffect(() => setSectionSearch(''), [pathname]);
 
   // 🔴 ПУНКТ БЕЗ ПРАВА НЕ ПОКАЗЫВАЕТСЯ (Plane №1203, решение заказчика
   // 12.09.2026: «пусть каждой роли будут видны те модули, которые прописаны в
@@ -405,7 +422,8 @@ function SidebarContent() {
     ? sectionRoles.map(role => `${role.name} · ${accessScopeLabel(role)}`).join("; ")
     : accessLabel;
 
-  const workspaceRole = resolveWorkspaceRole(access);
+  const headquartersTarget = hasOpsPermission('forces.command') && Boolean(query.get('collection') || query.get('campaign') || query.get('tab') === 'collections');
+  const workspaceRole = headquartersTarget ? 'headquarters' : resolveWorkspaceRole(access);
   const workspace = workspaceRole === 'responsible' || workspaceRole === 'expense' || workspaceRole === 'headquarters';
   const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query, hasOpsPermission('status.view')) : null;
   const workspaceItems: NavItem[] = workspaceRole === 'responsible' ? [
@@ -437,6 +455,15 @@ function SidebarContent() {
       .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item)
       .filter(itemOpen),
   })).filter(category => category.items.length > 0);
+  const work = portalWorkspace(access);
+  const activeTaskId = activePortalTask([...work.primary, ...work.more], pathname, query);
+  const contextualTask = work.more.find(task => task.id === activeTaskId && task.accessHref === '/employees');
+  const primaryTasks = contextualTask ? [...work.primary, contextualTask] : work.primary;
+  const primaryPaths = new Set(primaryTasks.map(task => task.accessHref));
+  const remainingCategories = categories.map(category => ({ ...category,
+    items: category.items.filter(item => !primaryPaths.has(item.href.split('?')[0])),
+  })).filter(category => category.items.length > 0);
+  const searchTerm = sectionSearch.trim().toLocaleLowerCase('ru');
   // Match the final links, including the permission-dependent report target
   // and its job/history aliases. The longest matching address stays active.
   const activeRouteHref = categories.flatMap(category => category.items.flatMap(item =>
@@ -451,6 +478,14 @@ function SidebarContent() {
   const activeHref = pathname === '/employees' && workspace
     ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
     : activeRouteHref;
+  // Keep the current page visible without unfolding every other module.
+  const currentItem = remainingCategories.flatMap(category => category.items).find(item => item.href === activeHref);
+  const otherCategories = remainingCategories.map(category => ({ ...category,
+    items: category.items.filter(item => item.href !== currentItem?.href),
+  })).filter(category => category.items.length > 0);
+  const visibleCategories = otherCategories.map(category => ({ ...category,
+    items: category.items.filter(item => `${category.title} ${item.name}`.toLocaleLowerCase('ru').includes(searchTerm)),
+  })).filter(category => category.items.length > 0);
   // Сквозной счётчик для stagger-анимации: задержка считается от начала
   // меню, а не от начала своей категории, иначе пункты разных категорий
   // выезжали бы одновременно.
@@ -553,9 +588,11 @@ function SidebarContent() {
   }, [activeHref, revealActive]);
 
   return (
-    <aside className="h-screen w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col">
+    <aside className={`${embedded ? 'h-full min-h-0' : 'h-screen'} w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col`} onClick={event => {
+      if ((event.target as HTMLElement).closest('a[href]')) onNavigate?.();
+    }}>
       {/* Логотип */}
-      <div
+      {!embedded && <div
         data-slot="sidebar-brand"
         className="bg-sidebar border-sidebar-border flex h-16 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
       >
@@ -574,7 +611,7 @@ function SidebarContent() {
             Силы и мероприятия
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Навигация. Ссылки — next/link: раньше это были сырые <a>, и каждый
           клик по меню перезагружал документ (сброс кэша запросов, повторный
@@ -597,7 +634,26 @@ function SidebarContent() {
               </button>
             </div>
           )}
-          {categories.map((category, categoryIndex) => {
+          {navigationReady && <section aria-label="Моя работа" className="mb-5">
+            <ul className="space-y-1">
+              <li><NavLink href={PORTAL_HOME_PATH} name="Моя работа" icon={House} active={pathname === PORTAL_HOME_PATH} /></li>
+              {primaryTasks.map(task => <li key={task.id}><NavLink href={portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams())} name={task.title} icon={ClipboardCheck} active={activeTaskId === task.id} /></li>)}
+            </ul>
+          </section>}
+          {navigationReady && currentItem && <section aria-label="Текущий раздел" className="mb-5">
+            <p className="px-3 text-xs font-medium text-muted-foreground">Текущий раздел</p>
+            <ul className="mt-1"><li><NavLink href={currentItem.href} name={currentItem.name} icon={currentItem.icon} active counter={currentItem.counter === undefined ? undefined : counters[currentItem.counter] ?? undefined} /></li></ul>
+          </section>}
+          {navigationReady && otherCategories.length > 0 && <details key={`${pathname}:${activeHref ?? ''}`} onToggle={event => {
+            syncScrollHint();
+            if (event.currentTarget.open) revealActive();
+          }} className="rounded-xl border border-sidebar-border px-1 py-2">
+            <summary className="min-h-9 cursor-pointer px-2 py-1 text-sm font-semibold">Все разделы</summary>
+            <label className="mx-2 mt-3 block text-xs text-muted-foreground">Найти раздел
+              <input type="search" value={sectionSearch} onChange={event => setSectionSearch(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-sidebar-border bg-sidebar px-3 text-sm text-sidebar-foreground" placeholder="Например, отчёты" />
+            </label>
+            {visibleCategories.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Такого раздела не найдено. Попробуйте другое название.</p>}
+          {visibleCategories.map((category, categoryIndex) => {
             const headingId = `sidebar-category-${categoryIndex}`;
             return (
               <div key={category.title} className={categoryIndex > 0 ? "mt-4" : undefined}>
@@ -642,6 +698,7 @@ function SidebarContent() {
               </div>
             );
           })}
+          </details>}
         </nav>
         {/* Признаки продолжения списка. `aria-hidden` — они дублируют то, что
             скринридер и так знает по разметке; для глаза это единственная

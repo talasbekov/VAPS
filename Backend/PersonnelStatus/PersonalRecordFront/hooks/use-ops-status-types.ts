@@ -34,6 +34,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient, type OpsStatusType } from "@/lib/api";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { isSelectableStatusType } from "@/entities/status/retired-types";
 
 export interface OpsStatusTypesResult {
   /** Активные типы в порядке справочника (сервер сортирует по приоритету). */
@@ -74,7 +75,7 @@ export function useOpsStatusTypes(enabled = true): OpsStatusTypesResult {
     [all]
   );
   const types = useMemo(
-    () => (all ?? []).filter((type) => type.is_active),
+    () => (all ?? []).filter((type) => type.is_active && isSelectableStatusType(type)),
     [all]
   );
   const labelOf = useCallback(

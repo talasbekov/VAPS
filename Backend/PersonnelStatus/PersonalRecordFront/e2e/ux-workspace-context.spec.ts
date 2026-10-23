@@ -29,14 +29,15 @@ test('unknown legacy view falls back to the daily view in both heading and bread
   expect(businessWrites).toEqual([]);
 });
 
-test('the employee list offers a working destination for bulk status changes', async ({ page, businessWrites }) => {
+test('statuses opens directly with a working employee table and calendar', async ({ page, businessWrites }) => {
   await signIn(page);
-  await page.goto('/employees/?view=forces');
-  await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Массовое изменение статусов', exact: true }).click();
+  await page.goto('/statuses/');
   await expect(page).toHaveURL(/\/statuses\/?$/);
   await expect(page.getByRole('heading', { name: 'Управление статусами', exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Массовое обновление', exact: true }).click();
-  await expect(page.getByText('Массовое обновление статусов', { exact: true })).toBeVisible();
+  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('tab', { name: 'Календарь статусов', exact: true }).click();
+  await expect(page.getByRole('table', { name: /Статусы сотрудников по дням/ })).toBeVisible();
+  await page.getByRole('tab', { name: 'Месяц', exact: true }).click();
+  await expect(page.getByRole('grid', { name: /Занятость/ })).toBeVisible();
   expect(businessWrites).toEqual([]);
 });

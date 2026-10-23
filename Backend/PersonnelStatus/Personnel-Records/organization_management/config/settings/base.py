@@ -2,6 +2,11 @@
 Base Django settings for the organization_management project.
 """
 import os
+
+# Local assistant extraction is opt-in; no cloud provider or credentials fallback.
+OPS_ASSISTANT_PROVIDER = os.environ.get("OPS_ASSISTANT_PROVIDER", "disabled")
+OPS_ASSISTANT_OLLAMA_URL = os.environ.get("OPS_ASSISTANT_OLLAMA_URL", "http://127.0.0.1:11434")
+OPS_ASSISTANT_MODEL = os.environ.get("OPS_ASSISTANT_MODEL", "qwen2.5:7b")
 from pathlib import Path
 from datetime import timedelta
 
@@ -328,6 +333,11 @@ OPS_WS_ENABLED = os.environ.get('OPS_WS_ENABLED', '1') == '1'
 TRUSTED_PROXY_IPS = tuple(
     h.strip() for h in os.environ.get('TRUSTED_PROXY_IPS', '').split(',') if h.strip()
 )
+# Only the closed Docker deployments set service identities. Do not set client
+# hostnames, CIDRs or public DNS names here.
+TRUSTED_PROXY_HOSTS = tuple(
+    h.strip() for h in os.environ.get('TRUSTED_PROXY_HOSTS', '').split(',') if h.strip()
+)
 
 # Cache
 CACHES = {
@@ -339,6 +349,19 @@ CACHES = {
         }
     }
 }
+
+# A separate Redis DB prevents routine response-cache clearing from resetting
+# login budgets. Every production worker uses the same counters.
+CACHES['auth_throttle'] = {
+    'BACKEND': 'django_redis.cache.RedisCache',
+    'LOCATION': 'redis://redis:6379/2',
+    'KEY_PREFIX': 'smart-login',
+    'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+}
+LOGIN_THROTTLE_ACCOUNT_LIMIT = 10
+LOGIN_THROTTLE_ACCOUNT_WINDOW = 300
+LOGIN_THROTTLE_IP_LIMIT = 60
+LOGIN_THROTTLE_IP_WINDOW = 60
 
 LOGGING = {
     'version': 1,
