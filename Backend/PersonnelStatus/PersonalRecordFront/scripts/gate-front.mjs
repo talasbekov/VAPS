@@ -70,6 +70,7 @@ try {
     run("scripts/tests/map-asset.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/day-submission-current.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/portal-start.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/workdesk.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-workspace.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-control.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-shift.test.cjs", [], process.env, ["--test"]);

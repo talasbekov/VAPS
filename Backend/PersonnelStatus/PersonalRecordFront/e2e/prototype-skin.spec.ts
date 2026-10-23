@@ -215,7 +215,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   test('короткое меню раскрывает остальные доступные разделы по выбору пользователя', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/workspace/`)
-    await expect(page.getByRole('heading', { name: 'Что нужно сделать?', exact: true })).toBeVisible()
+    await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(/Доступ и пользователи|Работа департамента|Поручения и подготовка наряда|Люди и ежедневная работа|Мои задания и дежурства/)
     const aside = page.locator('aside').first()
     const nav = aside.getByRole('navigation', { name: 'Основная навигация', exact: true })
     await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toBeVisible()

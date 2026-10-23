@@ -38,8 +38,10 @@ for (const scenario of cases) test(`${scenario.name} sees up to three relevant t
   await signIn(page);
   await page.goto('/workspace/');
   const tasks = page.getByRole('region', { name: 'Основные рабочие задачи', exact: true });
-  await expect(page.getByRole('heading', { name: 'Что нужно сделать?', exact: true })).toBeVisible();
-  await expect(tasks.getByRole('heading', { level: 2 })).toHaveText(scenario.tasks);
+  const titles: Record<string, string> = { employee: 'Мои задания и дежурства', 'status manager': 'Люди и ежедневная работа', headquarters: 'Поручения и подготовка наряда', administrator: 'Доступ и пользователи' };
+  await expect(page.getByRole('heading', { name: titles[scenario.name], exact: true, level: 1 })).toBeVisible();
+  const quickTasks = scenario.tasks.filter((_, index) => !(['administrator', 'status manager'].includes(scenario.name) && index === 0)).filter(title => scenario.name !== 'headquarters' || title !== 'Подготовить наряд');
+  for (const title of quickTasks) await expect(tasks.getByRole('link', { name: new RegExp('^' + title) })).toBeVisible();
   expect(await tasks.getByRole('link').count()).toBeLessThanOrEqual(3);
   const nav = page.getByRole('navigation', { name: 'Основная навигация', exact: true });
   await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toHaveAttribute('aria-current', 'page');

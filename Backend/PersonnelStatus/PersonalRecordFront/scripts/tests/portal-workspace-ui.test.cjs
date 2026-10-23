@@ -11,11 +11,12 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
     '@/lib/auth':{useAuth:()=>({user:{id:'test',name:'Test user'}})},
     '@/hooks/use-security-events':{useSecurityEvents:()=>({data:{total:0}})},
     '@/components/dashboard-layout':{DashboardLayout:({children})=>children},
+    '@/features/portal-workspace/work-queues':{AssistantWorkQueue:()=>null,DepartmentWorkQueue:()=>null,PersonalWork:()=>null,WorkdeskComposer:()=>null},
     '@/shared/config/in-development':{inDevelopmentOfRoute:()=>null,inDevelopmentSummary:()=>''},
     '@tanstack/react-query':{useQueryClient:()=>client},
   };
   function load(name) {
-    if(name.endsWith('.css'))return {};
+    if(name.endsWith('.css'))return {default:new Proxy({},{get:(_,key)=>String(key)})};
     if(Object.hasOwn(overrides,name))return overrides[name];
     if(!name.startsWith('@/'))return require(name);
     if(cache.has(name))return cache.get(name);
@@ -26,13 +27,13 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
   }
   return {load,client};
 }
-test('home renders three primary admin tasks and keeps less frequent tasks collapsed',()=>{
+test('home promotes one admin action and keeps secondary tools compact and other tasks collapsed',()=>{
   const f=fixture();try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/workspace').PortalWorkspace));
     const primary=html.match(/<section aria-label="Основные рабочие задачи">([\s\S]*?)<\/section>/)[1];
-    assert.equal((primary.match(/<a /g)||[]).length,3);
-    assert.match(primary,/href="\/settings\/users"/);assert.match(primary,/href="\/settings\/roles"/);
-    assert.match(html,/<details class=/);assert.doesNotMatch(html,/<details[^>]*\bopen=/);
+    assert.equal((primary.match(/<a /g)||[]).length,2);
+    assert.match(html,/aria-label="Главное действие"/);assert.match(html,/href="\/settings\/users"/);assert.match(primary,/href="\/settings\/roles"/);
+    assert.match(html,/<details>/);assert.doesNotMatch(html,/<details[^>]*\bopen=/);
   }finally{f.client.clear();}
 });
 test('home never renders protected task links from retained permissions after a failed refresh',()=>{

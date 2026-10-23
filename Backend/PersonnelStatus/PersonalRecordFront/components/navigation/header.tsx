@@ -50,7 +50,7 @@ export function Header({
     // она отъедала треть экрана телефона на каждой странице у всех ролей,
     // кроме role-2/4/6.
     <header className="border-b border-border">
-      <div className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 bg-card px-4 sm:px-6">
+      <div className="sticky top-0 z-40 flex min-h-16 items-center justify-between gap-2 bg-card px-4 py-2 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           {/* Бургер — единственный вход в навигацию на мобильном, и до этой
               правки у него не было имени вовсе: скринридер читал «кнопка». */}
@@ -98,7 +98,8 @@ export function Header({
                показывается первая: шапка не место для списка, а полный
                состав виден в разделе доступа. */
             <span
-              className="text-muted-foreground hidden items-center gap-1 rounded-lg border px-3 py-1.5 text-xs lg:inline-flex"
+              className="text-muted-foreground hidden max-w-[22rem] items-center gap-1 text-xs xl:inline-flex"
+              aria-label="Рабочая роль"
               title={
                 sectionRoles.length > 1
                   ? `Ролей раздела ${sectionRoles.length}: ${sectionRoles
@@ -107,8 +108,7 @@ export function Header({
                   : undefined
               }
             >
-              <span className="font-semibold">Раздел ОМ:</span>
-              <span>{sectionRole.name}</span>
+              <span className="truncate">{sectionRole.name}</span>
               {sectionRole.scope_division_name ? (
                 <span>· {sectionRole.scope_division_name}</span>
               ) : null}
