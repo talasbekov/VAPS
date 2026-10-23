@@ -33,7 +33,8 @@ for (const width of [320, 1440]) test(`commander opens actual work from the desk
   await expect(queue.getByRole('link', { name: /Наряд: Аккорда/ })).toBeVisible();
   await expect(queue).toContainText('Инициатор поручения');
   await expect(queue).toContainText('23.10.2026');
-  await expect(queue).toContainText('Показаны последние');
+  await expect(queue).toContainText('на первой странице');
+  await expect(queue).toContainText('Уточнить сведения');
   await expect(page.getByLabel('Какой наряд нужно подготовить?', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
   await queue.getByRole('link', { name: /Наряд: Аккорда/ }).click();
@@ -119,5 +120,37 @@ test('dark theme keeps the workdesk legible and resizing keeps content outside t
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect.poll(() => title.evaluate(el => el.getBoundingClientRect().left)).toBeGreaterThan(256);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  expect(businessWrites).toEqual([]);
+});
+
+test('completed tasks stay in collapsed history while earlier tasks remain reachable', async ({ page, businessWrites }) => {
+  const done = { ...task, id: '43333333-3333-4333-8333-333333333333', status: 'completed', plan: { ...task.plan, title: 'Завершённое поручение' } };
+  await access(page); await assistant(page, { rows: [done, task] });
+  await signIn(page); await page.goto('/workspace/');
+  const queue = page.getByRole('region', { name: 'Последние поручения', exact: true });
+  await expect(queue.getByRole('link', { name: /Завершённое поручение/ })).toBeHidden();
+  await expect(queue.getByRole('link', { name: /Наряд: Аккорда/ })).toBeVisible();
+  await expect(queue).toContainText('на первой странице');
+  await expect(queue.getByRole('link', { name: 'Все поручения', exact: true })).toHaveAttribute('href', /page=1/);
+  await queue.locator('summary').click();
+  await expect(queue.getByRole('link', { name: /Завершённое поручение/ })).toBeVisible();
+  expect(businessWrites).toEqual([]);
+});
+
+test('returned department request stays current and zero submitted answer starts in history', async ({ page, businessWrites }) => {
+  await access(page, ['forces.allocate']);
+  const base = { eventId: '20', code: 'ОМ-20', businessDate: '2026-10-25', departmentName: 'Департамент', need: 20, assigned: 0, stage: 'FORCES', overdue: false };
+  await page.route('**/api/ops/security-events/forces/requests/**', route => route.fulfill({ json: { results: [
+    { ...base, allocationId: 'returned', title: 'Исправление запроса', status: 'RETURNED', allocating: null },
+    { ...base, allocationId: 'zero', title: 'Нулевой ответ', status: 'DECLINED', allocating: 0 },
+  ] } }));
+  await signIn(page); await page.goto('/workspace/');
+  const queue = page.getByRole('region', { name: 'Запросы вашему департаменту', exact: true });
+  await expect(queue.getByRole('link', { name: /Исправление запроса/ })).toBeVisible();
+  await expect(queue.getByRole('link', { name: /Исправление запроса/ })).toContainText('Исправить ответ');
+  await expect(queue.getByRole('link', { name: /Нулевой ответ/ })).toBeHidden();
+  await queue.locator('summary').click();
+  await expect(queue.getByRole('link', { name: /Нулевой ответ/ })).toBeVisible();
+  await expect(queue.getByRole('link', { name: /Нулевой ответ/ })).toContainText('Ответ: 0 чел.');
   expect(businessWrites).toEqual([]);
 });

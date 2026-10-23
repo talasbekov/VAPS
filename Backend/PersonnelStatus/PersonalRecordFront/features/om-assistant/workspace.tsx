@@ -8,10 +8,11 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { AssistantBrief } from "@/features/om-assistant/brief";
+import { AssistantProgress } from "@/features/om-assistant/progress";
 import { STAGE_LABEL, STAGE_ORDER } from "@/entities/security-event/model/stage-meta";
 import { SECURITY_EVENT_KIND_LABEL } from "@/entities/security-event/model/types";
 import { useAssistantAccess, useAssistantCatalogs, useAssistantConfiguration, useAssistantTask, useAssistantTasks, useAssistantWriter } from "@/features/om-assistant/api";
-import { ASSISTANT_PATH, assistantDate, assistantTaskTitle, assistantListPage, assistantPageHref, assistantQueuePagination, assistantTaskHref, draftFromPlan, fieldsFromDraft, isTaskId, reconConfirmed, requestsSent, taskPresentation, taskSteps,
+import { ASSISTANT_PATH, assistantDate, assistantTaskTitle, assistantListPage, assistantPageHref, assistantQueuePagination, assistantTaskHref, draftFromPlan, fieldsFromDraft, isTaskId, reconConfirmed, requestsSent, taskNextAction, taskPresentation, taskSteps,
   type AssistantCatalogs, type AssistantDraft, type AssistantFields, type AssistantTask, type AssistantTaskList } from "@/features/om-assistant/model";
 
 const panel = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900";
@@ -48,6 +49,7 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
   task: AssistantTask; canViewEvent: boolean; canCommand: boolean; isHeadquarters?: boolean; departments?: AssistantCatalogs["departments"];
 }) {
   const presentation = taskPresentation(task);
+  const nextAction = taskNextAction(task);
   const sent = requestsSent(task);
   const linkedStage = task.status === "event_unavailable" ? undefined : STAGE_ORDER.find(stage => stage === task.event?.stage);
   const departmentNames = new Map(departments.map(row => [row.id, row.name]));
@@ -55,12 +57,22 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{task.event?.code ?? "Поручение сохранено"}</p>
         <h2 className="mt-1 text-xl font-semibold">{assistantTaskTitle(task)}</h2>
-        <p className="mt-1 text-sm text-slate-500">{[task.plan.objectName, task.plan.kind ? SECURITY_EVENT_KIND_LABEL[task.plan.kind] : null, task.plan.eventTime].filter(Boolean).join(" · ")}</p></div>
+        <p className="mt-1 text-sm text-slate-500">{[task.plan.kind ? SECURITY_EVENT_KIND_LABEL[task.plan.kind] : null, task.plan.eventTime].filter(Boolean).join(" · ")}</p></div>
       <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800 dark:bg-blue-950 dark:text-blue-200">{presentation.label}</span>
     </div>
+    <dl aria-label="Сведения поручения" className="mt-4 grid gap-3 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700 sm:grid-cols-3">
+      <div><dt className="text-slate-500">Дата ОМ</dt><dd className="font-medium">{assistantDate(task.plan.businessDate)}{task.plan.businessDateEnd && task.plan.businessDateEnd !== task.plan.businessDate ? ` — ${assistantDate(task.plan.businessDateEnd)}` : ""}</dd></div>
+      <div><dt className="text-slate-500">Объект</dt><dd className="break-words font-medium">{task.plan.objectName || (task.plan.objectId ? "Объект выбран; название недоступно" : "Не указан")}</dd></div>
+      <div><dt className="text-slate-500">Людей по поручению</dt><dd className="font-medium">{task.plan.personnelTotal ?? "Не указано"}</dd></div>
+    </dl>
+    <AssistantProgress task={task} />
     <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
-      <p className="text-sm text-slate-500">Следующий шаг выполняет</p><p className="font-semibold">{presentation.owner}</p>
-      <p className="mt-1 text-sm leading-relaxed">{presentation.description}</p>
+      <h3 className="font-semibold">{nextAction.title}</h3>
+      <p className="text-sm text-slate-500">Следующий шаг выполняет</p><p className="font-semibold">{nextAction.owner}</p>
+      <p className="mt-1 text-sm leading-relaxed">{nextAction.description}</p>
+      {nextAction.canCorrect && <Button asChild variant="outline" className="mt-3"><a href="#assistant-correction" onClick={event => {
+        event.currentTarget.ownerDocument.getElementById("assistant-correction")?.setAttribute("open", "");
+      }}>Уточнить сведения</a></Button>}
       {task.event && task.status !== "event_unavailable" && <p className="mt-2 text-sm">
         {linkedStage ? <>Текущий этап ОМ: <strong>{STAGE_LABEL[linkedStage]}</strong></> : "Этап ОМ не определён. Проверьте карточку ОМ."}
       </p>}
@@ -70,10 +82,10 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
       {canViewEvent && <Button asChild variant="outline"><Link href={`/security-ops/events/${encodeURIComponent(task.event.id)}/`}>Открыть карточку ОМ</Link></Button>}
       {canCommand && <Button asChild variant="outline"><Link href={`/employees?view=forces&tab=collections&collection=${encodeURIComponent(task.event.id)}`}>Открыть сбор наряда</Link></Button>}
     </div>}
-    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-      <div><dt className="text-slate-500">Дата ОМ</dt><dd className="font-medium">{assistantDate(task.plan.businessDate)}{task.plan.businessDateEnd && task.plan.businessDateEnd !== task.plan.businessDate ? ` — ${assistantDate(task.plan.businessDateEnd)}` : ""}</dd></div>
-      <div><dt className="text-slate-500">Людей по поручению</dt><dd className="font-medium">{task.plan.personnelTotal ?? "Не указано"}</dd></div>
-    </dl>
+    {task.message.trim() && <details className="mt-4 border-t pt-3">
+      <summary className="cursor-pointer text-sm font-semibold">Исходное поручение</summary>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600 dark:text-slate-300">{task.message}</p>
+    </details>}
     <details className="mt-4 border-t pt-3">
       <summary className="cursor-pointer text-sm font-semibold">Ход подготовки</summary>
     <ol aria-label="Подготовка наряда" className="mt-5 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
@@ -230,7 +242,7 @@ function TaskCorrection({ task, acknowledged, catalogs, disabled, save }: { task
       }
     } catch (value) { setError(value instanceof Error ? value.message : "Проверьте сведения."); }
   };
-  return <details className={panel} open={task.questions.length > 0}>
+  return <details id="assistant-correction" tabIndex={-1} className={`${panel} scroll-mt-6`} open={task.questions.length > 0}>
     <summary className="cursor-pointer font-semibold">{task.questions.length ? "Уточнить сведения" : "Изменить предложение запросов"}</summary>
     <div className="mt-4">
       {conflict && <div role="status" className="mb-4 space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">

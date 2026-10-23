@@ -218,6 +218,18 @@ def _validate_interval(*, date_start, date_end, employee, status_type):
             )
 
 
+def validate_status_creation(*, employee, status_type_code, date_start, date_end, override=False, override_reason=""):
+    """Read-only validation shared by assessment and the locked write path."""
+    assert_employee_is_employed(employee)
+    assert_employee_status_editable(employee.pk)
+    if override and not (override_reason or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, detail={"field": "override_reason"}, message="При override обязательна непустая причина.")
+    status_type = _resolve_status_type(status_type_code)
+    _validate_interval(date_start=date_start, date_end=date_end, employee=employee, status_type=status_type)
+    return _assert_no_conflict(employee_id=employee.pk, status_type_code=status_type_code,
+                               date_start=date_start, date_end=date_end, override=override)
+
+
 def _conflict_details(conflicts):
     return [
         {
@@ -420,30 +432,8 @@ def create_status(
     )
     _require_actor(actor)
     employee = _lock_employee(employee_id)
-    assert_employee_is_employed(employee)
-    assert_employee_status_editable(employee_id)
-    # Причина обхода проверяется ДО (более дорогого) детекта конфликтов.
-    if override and not (override_reason or "").strip():
-        raise DomainError(
-            "VALIDATION_ERROR",
-            400,
-            detail={"field": "override_reason"},
-            message="При override обязательна непустая причина.",
-        )
-    status_type = _resolve_status_type(status_type_code)
-    _validate_interval(
-        date_start=date_start,
-        date_end=date_end,
-        employee=employee,
-        status_type=status_type,
-    )
-    bypassed_conflicts = _assert_no_conflict(
-        employee_id=employee_id,
-        status_type_code=status_type_code,
-        date_start=date_start,
-        date_end=date_end,
-        override=override,
-    )
+    bypassed_conflicts = validate_status_creation(employee=employee, status_type_code=status_type_code,
+        date_start=date_start, date_end=date_end, override=override, override_reason=override_reason)
 
     status = OpsEmployeeStatus(
         employee_id=employee_id,

@@ -41,14 +41,13 @@ import Link from "next/link";
 import { Megaphone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   useDirectorateForcesRequest,
   useDirectorateForcesRequests,
-  useSelectForRequest,
 } from "@/hooks/use-forces-request-banner";
-import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key";
+import { RequestCandidatePicker } from "./RequestCandidatePicker";
+import { useOpsReadAccess } from "@/hooks/use-ops-protected-read";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -68,21 +67,17 @@ const ADDRESSEE_LABEL = {
 } as const;
 
 export function ForcesRequestBanner({
-  selectedEmployees = [],
   onSelected,
   compact = false,
 }: {
   /** Keep the outstanding request visible while leaving the roster in focus. */
   compact?: boolean;
-  /** Кого начальник отметил чекбоксами в таблице ниже (Plane №395,
-   *  `[СБС-31]`): выделение идёт ИЗ ЗАПРОСА — мероприятие и даты он не
-   *  выбирает, статус ставит сервер. */
-  selectedEmployees?: string[];
   /** После выделения — таблице пора перечитать статусы и снять отметки. */
   onSelected?: () => void;
 }) {
   const searchParams = useSearchParams();
   const access = useOpsPermissions();
+  const candidateAccess = useOpsReadAccess("status.manage");
   const linkedId = searchParams.get("forcesRequest");
   // Список нужен, только когда человек пришёл БЕЗ ссылки: по ссылке предмет
   // разговора уже назван, и лишний запрос за соседними заявками ничего к
@@ -90,9 +85,6 @@ export function ForcesRequestBanner({
   const mine = useDirectorateForcesRequests({ enabled: linkedId === null });
   const rows = mine.data?.results ?? [];
   const [picked, setPicked] = useState<string | null>(null);
-  // Обоснование обхода мягкого конфликта (Plane №545) — ОДНО на повтор:
-  // человек объясняет одно решение про отмеченную пачку, а не по строке.
-  const [overrideReason, setOverrideReason] = useState("");
   // Физнаряд — отдельный резерв без ОМ; специальная группа сразу относится
   // к тому мероприятию, из которого пришёл запрос (Plane №977).
   const [kindCode, setKindCode] = useState("PHYSICAL_SQUAD");
@@ -115,56 +107,13 @@ export function ForcesRequestBanner({
   const allocationId =
     linkedId ?? pickedAlive ?? (rows.length === 1 ? rows[0].allocationId : null);
   const request = useDirectorateForcesRequest(allocationId);
-  const select = useSelectForRequest(allocationId);
   const participationCatalog = useParticipationCatalog(allocationId !== null);
-  // 🔴 ОТЧЁТ ПРИНАДЛЕЖИТ ЗАПРОСУ, А НЕ ЭКРАНУ (Plane №546). Состояние
-  // мутации не ключится по `allocationId` и не сбрасывается при его смене, а
-  // баннер печатал `select.data` безусловно. Человек выделял двоих по
-  // запросу A, открывал уведомление запроса B — адрес менялся, страница НЕ
-  // перемонтировалась, — и под свежей шапкой запроса B висело «Выделено: 2 ·
-  // не выделены: …» от запроса A. Та же строка переживала и обновление
-  // данных, выдавая себя за итог по новой таблице; `select.isError`
-  // переживал смену так же.
-  //
-  // Сброс на СМЕНУ ЗАПРОСА, а не на каждый показ: отчёт об удавшемся
-  // выделении обязан остаться на экране — это итог действия человека, и он
-  // читает его после того, как таблица уже перечиталась.
-  const { reset: resetReport } = select;
+  // The keyed picker owns the draft and mutation report for this request.
   useEffect(() => {
-    resetReport();
-    // Обоснование обхода принадлежит тому же отчёту (Plane №545): набранный
-    // для запроса A текст под шапкой запроса B объяснял бы чужое решение.
-    setOverrideReason("");
     setKindCode("PHYSICAL_SQUAD");
     setRoleCode("");
     setParticipationBranch("PHYSICAL");
-  }, [allocationId, resetReport]);
-  // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
-  // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
-  // а вакансии — `${unitId}-vacant…`. Серверу нужен ГОЛЫЙ employeeId: первая
-  // редакция слала ключ как есть, и сервер честно отвечал «5132-18 —
-  // Сотрудник не вашего управления» (поймано живой пробой).
-  //
-  // РАЗБОР КЛЮЧА — ОБЩИЙ (Plane №547). Здесь стояла своя копия правила, и
-  // она разошлась бы с оригиналом при первой же смене формата ключа: у
-  // `employeeIdOfKey` тот же предмет и та же оговорка про вакансии.
-  const employeeIds = selectedEmployees
-    .map((key) => employeeIdOfKey(key))
-    .filter((id): id is number => id !== null)
-    .map(String);
-  // 🔴 РАСХОЖДЕНИЕ СЧЁТЧИКОВ НАЗЫВАЕТСЯ ВСЛУХ (Plane №547). Таблица считает
-  // ВЫБРАННЫЕ СТРОКИ («Выбрано: 10»), а выделить можно только сотрудников —
-  // вакансия это пустая штатная единица, выделять по ней некого. Числа
-  // расходились молча: «Выбрано: 10» и «Выделить на ОМ-…: 7», и разницу
-  // человеку не объяснял никто. Таблица теперь выбирает только доступных
-  // сотрудников; пояснение сохранено для прежнего или внешнего набора ключей.
-  const vacantSelected = selectedEmployees.length - employeeIds.length;
-  // Кого можно взять повторно, с обоснованием (Plane №545). Считается по
-  // признаку отказа, а не по его коду: список кодов на клиенте разошёлся бы
-  // с сервером при первом же новом виде конфликта.
-  const overridableRefused = (select.data?.refused ?? []).filter(
-    (row) => row.overridable
-  );
+  }, [allocationId]);
   const selectedKind = (participationCatalog.data ?? []).find(
     (kind) => kind.code === kindCode
   );
@@ -342,6 +291,9 @@ export function ForcesRequestBanner({
   }
 
   const data = request.data;
+  const selectedNeed = data.needByKind?.[kindCode] ?? (kindCode === "PHYSICAL_SQUAD" ? data.directorates.reduce((sum, row) => sum + row.need, 0) : 0);
+  const selectedAssigned = data.assignedByKind?.[kindCode] ?? (data.assignedByKind ? 0 : kindCode === "PHYSICAL_SQUAD" ? data.directorates.reduce((sum, row) => sum + row.assigned, 0) : 0);
+  const kindLabel = kindCode === "PHYSICAL_SQUAD" ? "Физический наряд" : selectedKind?.label || "Специальная группа";
   return (
     <section
       role="status"
@@ -352,34 +304,33 @@ export function ForcesRequestBanner({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Megaphone className="text-primary-ink h-4 w-4" aria-hidden="true" />
         <span className="font-semibold">
-          Запрос на {data.code} ({formatIsoDate(data.businessDate)})
+          Запрос на {data.code} ({formatIsoDate(data.businessDate)}{data.businessDateEnd && data.businessDateEnd !== data.businessDate ? ` — ${formatIsoDate(data.businessDateEnd)}` : ""})
         </span>
         <span className="text-muted-foreground text-sm">
           {data.title} · от «{data.departmentName}»
           {data.dueAt ? ` · срок ${formatIsoDateTime(data.dueAt)}` : ""}
         </span>
       </div>
+      <p className="text-sm" data-slot="request-selection-context">{data.location || "Объект назначит Штаб"} · {kindLabel} · нужно {selectedNeed} · выделено {selectedAssigned}</p>
+      {moduleOpenFor("/security-ops/events", access.hasPermission) && <Link href={`/security-ops/events/${data.eventId}/`} className="text-sm text-primary-ink hover:underline">Карточка мероприятия →</Link>}
       {chooser}
       <RequestDetails
         compact={compact}
         linked={linkedId ?? pickedAlive}
-        summary={`Выделено ${data.directorates.reduce((sum, row) => sum + row.assigned, 0)} из ${data.directorates.reduce((sum, row) => sum + row.need, 0)}`}
+        summary={`${kindLabel}: выделено ${selectedAssigned} из ${selectedNeed}`}
       >
       <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {data.directorates.map((row) => {
-          const done = row.need > 0 && row.assigned >= row.need;
           return (
             <li key={row.divisionId} className="flex items-center gap-2">
               <span>{row.name}:</span>
               {/* `text-green-700` — тот же класс, что у `StatCard tone="success"`:
                   «своих» токенов вроде `text-success-ink` в системе нет, и
                   выдуманный класс молча отрисовался бы как ничто. */}
-              <b className={`tabular-nums ${done ? "text-green-700" : ""}`}>
-                выделено {row.assigned} из {row.need}
+              <b className="tabular-nums">
+                всего сотрудников: {row.assigned}
               </b>
-              {!done && row.need > 0 && (
-                <span className="text-muted-foreground">· ещё {row.need - row.assigned}</span>
-              )}
+              <span className="text-muted-foreground">· квота физического наряда: {row.need}</span>
             </li>
           );
         })}
@@ -424,138 +375,8 @@ export function ForcesRequestBanner({
             : `Выбранная группа сразу получит статус участия в ${data.code}; объект назначит Штаб. Выбор чужой группы не расширяет список сотрудников.`}
         </p>
       </div>
-      {/* ЧЕКБОКСЫ → резерв либо «УЧАСТИЕ В ОМ» (Plane №977). Кнопка живёт в
-          баннере, а не в диалоге статуса: для группы мероприятие и даты даёт
-          запрос, для физнаряда их позже назначает Штаб. Отказы приходят
-          построчно и видны здесь же, а не в тосте, который уедет.
-
-          ПОИМЁННО — ТОЛЬКО ПО СВОИМ (Plane №543). Отказ по чужому сотруднику
-          несёт идентификатор вместо фамилии: подтверждать существование людей
-          вне своей области значило бы отдать перебор по кадрам. На экране это
-          незаметно — отметить чужого в таблице своего управления нельзя, — и
-          заметно только тому, кто шлёт запрос руками. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          // 44 px (Plane №782): главное действие баннера и самое дорогое —
-          // оно ставит людям статус участия в мероприятии.
-          //
-          // 🔴 ВЫСОТА МИНИМАЛЬНАЯ, А ПОДПИСЬ ПЕРЕНОСИТСЯ. У кнопки shadcn в
-          // основе `whitespace-nowrap`, а подпись пустого выбора длинная
-          // («Отметьте сотрудников в таблице — и выделите на ОМ», 399 px).
-          // На узком экране она вылезала за баннер и тянула ГОРИЗОНТАЛЬНУЮ
-          // ПРОКРУТКУ всей страницы: замерено на 420 px — `scrollWidth` 432
-          // при `clientWidth` 420, и это ДО правки (44 px добавляли к беде 8
-          // px, а не создавали её). «Статусы» открывают с планшета, ради
-          // этого вся карточка и правится, — чинится здесь же.
-          className="h-auto min-h-11 max-w-full py-2 text-left whitespace-normal"
-          disabled={employeeIds.length === 0 || participationIncomplete || select.isPending}
-          onClick={() =>
-            select.mutate(
-              { employeeIds, kindCode, roleCode: roleCode || undefined },
-              { onSuccess: () => onSelected?.() }
-            )
-          }
-        >
-          {select.isPending
-            ? "Выделяю…"
-            : employeeIds.length === 0
-              ? "Отметьте сотрудников в таблице"
-              : participationIncomplete
-                ? "Выберите группу и специальность"
-                : kindCode === "PHYSICAL_SQUAD"
-                ? `Добавить в общий резерв: ${employeeIds.length}`
-                : `Выделить на ${data.code}: ${employeeIds.length}`}
-        </Button>
-        {vacantSelected > 0 && (
-          <span className="text-muted-foreground text-xs">
-            Выбрано строк: {selectedEmployees.length}, из них вакансий:{" "}
-            {vacantSelected} — выделяются только сотрудники.
-          </span>
-        )}
-        <span className="text-muted-foreground text-xs">
-          {kindCode === "PHYSICAL_SQUAD"
-            ? "До распределения в календаре и расходе будет виден резерв кампании. "
-            : "Статус «Участие в ОМ» с датами мероприятия проставится сразу. "}
-          {moduleOpenFor("/security-ops/events", access.hasPermission) && <Link
-            href={`/security-ops/events/${data.eventId}/`}
-            className="text-primary-ink font-medium hover:underline"
-          >
-            Карточка мероприятия →
-          </Link>}
-        </span>
-      </div>
-      {select.data !== undefined && (
-        <p role="status" className="text-sm" data-slot="select-report">
-          Выделено: <b className="tabular-nums">{select.data.selected.length}</b>
-          {select.data.refused.length > 0 && (
-            <>
-              {" "}· не выделены:{" "}
-              {select.data.refused.map((row) => `${row.name} — ${row.message}`).join("; ")}
-            </>
-          )}
-        </p>
-      )}
-      {/* 🔴 МЯГКИЙ ОТКАЗ ПЕРЕСТАЛ БЫТЬ ТУПИКОМ (Plane №545). Сервер отвечает
-          «статус пересекается» и помечает такой отказ обходимым — но обойти
-          его было нечем: поля обоснования на экране не было, а второго пути у
-          начальника управления нет (ручной статус «Участие в ОМ» запрещён
-          решением заказчика, №427). Жёсткие отказы сюда не попадают: их
-          сервер помечает `overridable: false`, и предлагать по ним кнопку
-          значило бы обещать то, чего он не сделает. */}
-      {overridableRefused.length > 0 && (
-        <div className="flex flex-wrap items-end gap-2" data-slot="select-override">
-          <div className="grid gap-1">
-            {/* Подпись ВИДИМАЯ, а не плейсхолдер: плейсхолдер исчезает при
-                первом же символе, и человек перестаёт видеть, что он пишет. */}
-            <Label htmlFor="forces-override-reason" className="text-xs">
-              Обоснование: почему берём, несмотря на занятость
-            </Label>
-            <Input
-              id="forces-override-reason"
-              value={overrideReason}
-              onChange={(e) => setOverrideReason(e.target.value)}
-              // 44 px (Plane №782): поле и кнопка обхода стоят в одну
-              // строку, и разная высота у соседей читается как сбитая
-              // вёрстка — а зона нажатия у поля ввода нужна не меньше, чем
-              // у кнопки.
-              className="h-11 w-72 text-sm"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11"
-            disabled={overrideReason.trim() === "" || select.isPending}
-            onClick={() =>
-              select.mutate(
-                {
-                  employeeIds: overridableRefused.map((row) => row.employeeId),
-                  kindCode,
-                  roleCode: roleCode || undefined,
-                  override: true,
-                  override_reason: overrideReason.trim(),
-                },
-                {
-                  onSuccess: () => {
-                    setOverrideReason("");
-                    onSelected?.();
-                  },
-                }
-              )
-            }
-          >
-            {select.isPending
-              ? "Выделяю…"
-              : `Выделить с обоснованием: ${overridableRefused.length}`}
-          </Button>
-        </div>
-      )}
-      {select.isError && (
-        <p role="alert" className="text-destructive-ink text-sm">
-          {select.error?.message ?? "Выделить не удалось"}
-        </p>
-      )}
+      <RequestCandidatePicker key={JSON.stringify([allocationId, kindCode, roleCode, candidateAccess.scope, data.businessDate, data.businessDateEnd, data.location, data.status])}
+        request={data} kindCode={kindCode} roleCode={roleCode} incomplete={participationIncomplete} onSelected={onSelected} />
       </RequestDetails>
     </section>
   );
@@ -569,7 +390,7 @@ function RequestDetails({ compact, linked, summary, children }: {
 }) {
   if (!compact) return <>{children}</>;
   return (
-    <details key={linked ?? "menu"} open={linked !== null}>
+    <details key={linked ?? "menu"} open>
       <summary className="min-h-11 cursor-pointer rounded-md py-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="font-medium tabular-nums">{summary}</span>
         <span className="ml-3 text-primary-ink">Подбор сотрудников</span>

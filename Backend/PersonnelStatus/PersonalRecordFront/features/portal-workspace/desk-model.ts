@@ -25,8 +25,25 @@ export function departmentWorkRow(row: DepartmentRequestRow) {
     : answered ? 'Посмотреть ответ' : row.allocating === null ? 'Подготовить ответ' : 'Продолжить подбор';
   const tone: 'quiet' | 'attention' | 'active' = closed || answered ? 'quiet' : row.overdue || row.status === 'RETURNED' ? 'attention' : 'active';
   const params = new URLSearchParams({ view: 'forces', tab: 'requests', request: row.allocationId, businessDate: row.businessDate });
-  return { href: `/employees?${params}`, action, tone,
+  return { href: `/employees?${params}`, action, tone, history: closed || answered,
     detail: `Запрошено ${row.need} чел.${row.allocating === null ? '' : ` · Ответ: ${row.allocating} чел.`}`,
     status: closed ? 'Сбор завершён' : row.status === 'RETURNED' ? 'Возвращён на исправление'
       : answered ? 'Ответ передан' : row.overdue ? 'Срок ответа прошёл' : row.allocating !== null ? 'Идёт подбор' : 'Ожидает ответа' };
+}
+
+/** A navigation prompt, never permission to perform the next business write. */
+export function assistantWorkAction(status: string): string {
+  const actions: Record<string, string> = {
+    needs_information: 'Уточнить сведения',
+    awaiting_recon: 'Проверить рекогносцировку',
+    awaiting_executor: 'Проверить передачу в штаб',
+    prepared: 'Проверить и продолжить подготовку',
+    awaiting_department_responses: 'Проверить ответы департаментов',
+    collecting: 'Проверить собранный состав',
+    placement: 'Проверить расстановку',
+    awaiting_approval: 'Проверить согласование',
+    completed: 'Посмотреть результат',
+    event_unavailable: 'Проверить доступ к мероприятию',
+  };
+  return actions[status] ?? 'Проверить состояние поручения';
 }

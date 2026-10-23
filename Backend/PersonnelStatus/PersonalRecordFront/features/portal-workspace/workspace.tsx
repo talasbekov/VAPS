@@ -1,22 +1,14 @@
 "use client";
 
 import Link from 'next/link';
-import { ArrowRight, ClipboardCheck, ShieldCheck, Users, CalendarDays, Sparkles } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { useOpsPermissions } from '@/hooks/use-ops-permissions';
-import { portalWorkspace, type PortalTask } from './model';
+import { portalWorkspace } from './model';
 import { workdeskKind, WORKDESK_COPY } from './desk-model';
 import { AssistantWorkQueue, DepartmentWorkQueue, PersonalWork, WorkdeskComposer } from './work-queues';
 import styles from './workspace.module.css';
-
-function TaskLink({ task }: { task: PortalTask }) {
-  const Icon = task.id === 'assistant' ? Sparkles : task.id === 'users' ? Users : task.id === 'roles' ? ShieldCheck
-    : task.id === 'duties' || task.id === 'personal' ? CalendarDays : ClipboardCheck;
-  return <Link href={task.href} className={styles.tool}><Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-    <span><strong>{task.title}</strong><small>{task.description}</small></span><ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-  </Link>;
-}
 
 export function PortalWorkspace() {
   const access = useOpsPermissions();
@@ -29,7 +21,6 @@ export function PortalWorkspace() {
   const hasAssistant = all.some(task => task.id === 'assistant');
   const lead = tasks.primary[0];
   const showLead = kind === 'admin' || kind === 'status';
-  const primaryTools = tasks.primary.filter(task => !(showLead && task.id === lead?.id) && !(kind === 'commander' && task.id === 'assistant'));
   const scope = [...new Set(access.roles.map(role => role.scope_division_name).filter(Boolean))].join(' · ');
   return <DashboardLayout><div className={styles.desk}>
     <header>
@@ -56,11 +47,7 @@ export function PortalWorkspace() {
           <strong>Доступ настраивается в карточке пользователя</strong>Выберите сотрудника, рабочую роль и подразделение. Назначенные права определяют его рабочий стол и доступные действия.
         </section>}
       </div>
-      <aside className={styles.tools} aria-label="Рабочие инструменты">
-        <h2>Быстрый переход</h2>
-        <section aria-label="Основные рабочие задачи">{primaryTools.map(task => <TaskLink key={task.id} task={task} />)}</section>
-        {tasks.more.length > 0 && <details><summary>Другие рабочие задачи</summary>{tasks.more.map(task => <TaskLink key={task.id} task={task} />)}</details>}
-      </aside>
+
     </div>}
   </div></DashboardLayout>;
 }

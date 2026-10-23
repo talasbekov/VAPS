@@ -5045,6 +5045,34 @@ def placement_assignments_view(event, *, with_phone=False, read_context=None):
     return view
 
 
+def validate_allocation_member(event, allocation_id, employee):
+    """Read-only stage and duplicate guards shared with candidate assessment."""
+    if not can_collect_forces(event):
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Выделять людей можно после рекогносцировки и до согласования "
+                "расстановки."
+            ),
+        )
+    _find_allocation(event, allocation_id)
+    if employee is None:
+        raise _validation({"employeeId": ["Сотрудник не найден."]})
+    employee_key = str(employee.pk)
+    for row in event.force_allocation:
+        if any(m.get("employeeId") == employee_key for m in row.get("members", [])):
+            raise DomainError(
+                "DOUBLE_ASSIGNMENT",
+                422,
+                message=(
+                    f"{personnel_display_name(employee)} уже выделен(а) на это "
+                    f"мероприятие департаментом «{row.get('departmentName')}»."
+                ),
+            )
+
+
+
 @transaction.atomic
 def add_allocation_member(
     event_id,
@@ -5071,31 +5099,9 @@ def add_allocation_member(
     from organization_management.apps.operations import status_service
 
     event = lock_event(event_id)
-    if not can_collect_forces(event):
-        raise DomainError(
-            "INVALID_STAGE_TRANSITION",
-            422,
-            message=(
-                "Выделять людей можно после рекогносцировки и до согласования "
-                "расстановки."
-            ),
-        )
-    target = _find_allocation(event, allocation_id)
     employee = _find_personnel(employee_id)
-    if employee is None:
-        raise _validation({"employeeId": ["Сотрудник не найден."]})
+    validate_allocation_member(event, allocation_id, employee)
     employee_key = str(employee.pk)
-    for row in event.force_allocation:
-        if any(m.get("employeeId") == employee_key for m in row.get("members", [])):
-            raise DomainError(
-                "DOUBLE_ASSIGNMENT",
-                422,
-                message=(
-                    f"{personnel_display_name(employee)} уже выделен(а) на это "
-                    f"мероприятие департаментом «{row.get('departmentName')}»."
-                ),
-            )
-
     division_id, division_name = _employee_division(employee)
     status = status_service.create_status(
         employee_id=employee.pk,

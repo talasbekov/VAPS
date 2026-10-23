@@ -19,6 +19,7 @@ from organization_management.apps.operations.models_assistant import OpsAssistan
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_object import OpsSecurityObject
 from . import access, planning
+from .progress import assignment_progress
 
 
 FIELD_KEYS = {"title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectId", "eventId", "allocations", "intent", "personnelTotal"}
@@ -332,6 +333,6 @@ def serialize_task(request, task):
             "status": status, "delegated": task.delegated, "canEdit": not unavailable and task.initiated_by == resolve_actor_id(request), "canContinue": can_continue,
             "gathering": _gathering_context(request, task, event, collection_eligible=collection_eligible),
             "questions": questions, "interpretationNotice": task.plan.get("interpretationNotice"), "plan": plan,
-            "event": ({"id": str(event["id"]), "code": event["code"], "title": event["title"], "stage": event["stage"], "forceDemandTotal": event.get("forceDemandTotal"), "requested": sum(int(row.get("need") or 0) for row in event.get("forceAllocation", []) if row.get("sentAt")), "rosterCount": len(event.get("forceRoster", [])), "href": f"/security-ops/events/{event['id']}/"} if event else None),
+            "event": ({"id": str(event["id"]), "code": event["code"], "title": event["title"], "stage": event["stage"], "forceDemandTotal": event.get("forceDemandTotal"), "requested": sum(int(row.get("need") or 0) for row in event.get("forceAllocation", []) if row.get("sentAt")), "rosterCount": len(event.get("forceRoster", [])), "progress": assignment_progress(event, handed_over=bool(task.event and task.event.force_handover)), "href": f"/security-ops/events/{event['id']}/"} if event else None),
             "receipts": [] if unavailable else [{"operation": receipt.operation_key, "executedBy": receipt.executed_by, "createdAt": receipt.created_at.isoformat(), "result": receipt.result} for receipt in task.receipts.order_by("id")],
             "updatedAt": task.updated_at.isoformat()}

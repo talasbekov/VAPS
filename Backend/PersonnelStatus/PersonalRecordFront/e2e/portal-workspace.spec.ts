@@ -37,12 +37,9 @@ for (const scenario of cases) test(`${scenario.name} sees up to three relevant t
   await useAccess(page, scenario.access);
   await signIn(page);
   await page.goto('/workspace/');
-  const tasks = page.getByRole('region', { name: 'Основные рабочие задачи', exact: true });
+  await expect(page.getByRole('complementary', { name: 'Рабочие инструменты' })).toHaveCount(0);
   const titles: Record<string, string> = { employee: 'Мои задания и дежурства', 'status manager': 'Люди и ежедневная работа', headquarters: 'Поручения и подготовка наряда', administrator: 'Доступ и пользователи' };
   await expect(page.getByRole('heading', { name: titles[scenario.name], exact: true, level: 1 })).toBeVisible();
-  const quickTasks = scenario.tasks.filter((_, index) => !(['administrator', 'status manager'].includes(scenario.name) && index === 0)).filter(title => scenario.name !== 'headquarters' || title !== 'Подготовить наряд');
-  for (const title of quickTasks) await expect(tasks.getByRole('link', { name: new RegExp('^' + title) })).toBeVisible();
-  expect(await tasks.getByRole('link').count()).toBeLessThanOrEqual(3);
   const nav = page.getByRole('navigation', { name: 'Основная навигация', exact: true });
   await expect(nav.getByRole('link', { name: 'Моя работа', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(await nav.getByRole('link').count()).toBeLessThanOrEqual(4);
@@ -57,12 +54,12 @@ for (const scenario of cases) test(`${scenario.name} sees up to three relevant t
   expect(businessWrites).toEqual([]);
 });
 
-test('an employee opens personal assignments from the task card', async ({ page, businessWrites }) => {
+test('an employee opens personal assignments from the menu', async ({ page, businessWrites }) => {
   await useAccess(page, cases[0].access);
   await signIn(page);
   await page.goto('/workspace/');
-  await page.getByRole('region', { name: 'Основные рабочие задачи', exact: true })
-    .getByRole('link', { name: /^Мои задания и дежурства/ }).click();
+  await page.getByRole('navigation', { name: 'Основная навигация', exact: true })
+    .getByRole('link', { name: 'Мои задания и дежурства', exact: true }).click();
   await expect(page).toHaveURL(/\/security-ops\/profile\/?$/);
   await expect(page.getByRole('heading', { name: 'Мой профиль', exact: true })).toBeVisible();
   expect(businessWrites).toEqual([]);
@@ -144,5 +141,17 @@ test('mobile query-only work switches close the menu and keep headquarters acces
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(open).toBeFocused();
+  expect(businessWrites).toEqual([]);
+});
+
+test('mixed-role menu retains every work mode after quick links are removed', async ({ page, businessWrites }) => {
+  await useAccess(page, administrator);
+  await signIn(page); await page.goto('/workspace/');
+  const nav = page.getByRole('navigation', { name: 'Основная навигация', exact: true });
+  await nav.getByText('Все разделы', { exact: true }).click();
+  for (const title of ['Распределения Штаба', 'Ответить на запрос людей', 'Сдать расход департамента']) {
+    await expect(nav.getByRole('link', { name: title, exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: title, exact: true })).toHaveCount(1);
+  }
   expect(businessWrites).toEqual([]);
 });

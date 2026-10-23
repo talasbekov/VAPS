@@ -2,6 +2,7 @@
 
 import { useState, useMemo, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
@@ -28,6 +29,7 @@ export default function StatusesPage() {
 
 function StatusesScreen() {
   const params = useSearchParams()
+  const requestMode = Boolean(params.get("forcesRequest")?.trim())
   const router = useRouter()
   const view = params.get("view") === "calendar" ? "calendar" : "table"
   const changeView = (nextView: string) => {
@@ -60,7 +62,7 @@ function StatusesScreen() {
     error: queryError,
     isRefetching: refreshing,
     dataUpdatedAt,
-  } = useStaffUnitsPage({ page: 1, pageSize: 1, withSummary: true }, !opsPermissionsLoading && !permissionsError && allowed)
+  } = useStaffUnitsPage({ page: 1, pageSize: 1, withSummary: true }, !requestMode && !opsPermissionsLoading && !permissionsError && allowed)
 
   const stats = useMemo(() => {
     const summary = data?.summary
@@ -123,6 +125,14 @@ function StatusesScreen() {
     return <OpsAccessDenied what="статусов сотрудников" />
   }
 
+  if (requestMode) {
+    return <DashboardLayout><div className="space-y-4">
+      <Link href="/statuses/" className="inline-flex min-h-11 items-center text-sm underline">Вернуться к статусам сотрудников</Link>
+      <PageHeader title="Подбор сотрудников на ОМ" description="Выберите сотрудников по запросу, проверьте состав и отправьте его." />
+      <Suspense fallback={null}><ForcesRequestBanner compact /></Suspense>
+    </div></DashboardLayout>
+  }
+
   if (denial) {
     return (
       <DashboardLayout>
@@ -164,7 +174,6 @@ function StatusesScreen() {
         <Suspense fallback={null}>
           <ForcesRequestBanner
             compact
-            selectedEmployees={selectedEmployees}
             onSelected={() => {
               setSelectedEmployees([])
               handleRefresh()

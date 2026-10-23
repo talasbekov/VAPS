@@ -20,7 +20,9 @@ export interface AssistantTask {
   id: string; initiatedBy: string; message: string; revision: number; status: string; delegated: boolean; canEdit: boolean; canContinue?: boolean;
   questions: { field: string; text: string }[]; interpretationNotice: string | null; plan: AssistantPlan;
   gathering?: { state: "missing" | "ready" | "ambiguous"; campaignId: string | null } | null;
-  event: { id: string; code: string; title: string; stage: string; forceDemandTotal: number | null; requested: number; rosterCount: number } | null;
+  event: { id: string; code: string; title: string; stage: string; forceDemandTotal: number | null; requested: number; rosterCount: number;
+    progress?: { collectionClosed?: boolean; need: number | null; collected: number; remaining: number | null;
+      departments: { id: string; name: string; requested: number; responded: number | null; status: string; overdue: boolean }[] } } | null;
   receipts: AssistantReceipt[]; updatedAt: string;
 }
 export interface AssistantCatalogs { objects: { id: string; name: string }[]; departments: { id: string; name: string }[] }
@@ -122,6 +124,35 @@ const STATUS: Record<string, { label: string; owner: string; description: string
 };
 export function taskPresentation(task: AssistantTask) {
   return STATUS[task.status] ?? { label: "Проверьте состояние", owner: "Инициатор поручения", description: "Обновите данные и проверьте текущий этап в карточке ОМ." };
+}
+const CLARIFICATION_FIELDS: Record<string, string> = {
+  title: "название", kind: "вид ОМ", businessDate: "дату начала", businessDateEnd: "дату окончания",
+  eventTime: "время", objectId: "объект", eventId: "существующее ОМ", personnelTotal: "число людей",
+  allocations: "количества по департаментам", intent: "действие с запросами",
+};
+export function taskNextAction(task: AssistantTask): { title: string; owner: string; description: string; canCorrect: boolean } {
+  const presentation = taskPresentation(task);
+  const hasQuestions = task.questions.length > 0 && !requestsSent(task);
+  if (hasQuestions) {
+    const names = [...new Set(task.questions.map(question => CLARIFICATION_FIELDS[question.field.split(/[.\[]/)[0]] ?? "сведения поручения"))];
+    const fields = names.length < 2 ? names[0] : `${names.slice(0, -1).join(", ")} и ${names[names.length - 1]}`;
+    return task.canEdit
+      ? { title: `Уточните ${fields}`, owner: "Инициатор поручения", description: "Остальные сведения уже сохранены. Дополните форму ниже и продолжите подготовку.", canCorrect: true }
+      : { title: "Инициатор уточняет сведения", owner: "Инициатор поручения", description: `Нужно уточнить ${fields}. После уточнения обновите состояние поручения.`, canCorrect: false };
+  }
+  const titles: Record<string, string> = {
+    needs_information: "Проверьте сведения поручения",
+    awaiting_recon: "Завершить осмотр и опубликовать потребность",
+    awaiting_executor: task.canContinue === true ? "Отправьте подготовленные запросы" : "Дождаться отправки запросов штабом",
+    prepared: "Выбрать отправку подготовленных запросов",
+    awaiting_department_responses: "Получить ответы департаментов",
+    collecting: "Проверить состав и передать на расстановку",
+    placement: "Распределить сотрудников по постам",
+    awaiting_approval: "Получить подписи по маршруту ОМ",
+    completed: "Проверить итог в карточке ОМ",
+    event_unavailable: "Проверить доступ к связанному ОМ",
+  };
+  return { title: titles[task.status] ?? "Обновить состояние поручения", owner: presentation.owner, description: presentation.description, canCorrect: false };
 }
 export function requestsSent(task: AssistantTask): boolean { return task.receipts.some(row => row.operation === "send_allocations"); }
 export function reconConfirmed(task: AssistantTask): boolean {

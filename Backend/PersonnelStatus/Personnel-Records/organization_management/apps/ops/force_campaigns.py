@@ -390,20 +390,13 @@ def create_campaign(*, title, event_ids, actor):
 
 
 @transaction.atomic
-def add_reserve_member(*, event, allocation_id, employee, actor):
-    """Записать физнаряд в общий резерв, не создавая финальный статус ОМ."""
-    from organization_management.apps.ops.security_events import (
-        _employee_division,
-        _find_allocation,
-        lock_event,
-        personnel_display_name,
-    )
-
-    event = lock_event(event.pk)
+def validate_reserve_member(*, event, allocation_id, employee, lock=False):
+    """Read-only by default; write locks survive until the outer transaction commits."""
+    from organization_management.apps.ops.security_events import _find_allocation
     _find_allocation(event, allocation_id)
     campaign_ids = active_campaign_ids_for_event(event.pk)
     campaigns = list(
-        OpsForceCampaign.objects.select_for_update().filter(pk__in=campaign_ids)
+        (OpsForceCampaign.objects.select_for_update() if lock else OpsForceCampaign.objects).filter(pk__in=campaign_ids)
     )
     if not campaigns:
         message = "Для мероприятия не создано активное распределение сил."
@@ -425,6 +418,22 @@ def add_reserve_member(*, event, allocation_id, employee, actor):
             422,
             message="Сотрудник уже находится в общем резерве.",
         )
+    return campaign
+
+
+@transaction.atomic
+def add_reserve_member(*, event, allocation_id, employee, actor):
+    """Записать физнаряд в общий резерв, не создавая финальный статус ОМ."""
+    from organization_management.apps.ops.security_events import (
+        _employee_division,
+        _find_allocation,
+        lock_event,
+        personnel_display_name,
+    )
+
+    event = lock_event(event.pk)
+    campaign = validate_reserve_member(event=event, allocation_id=allocation_id, employee=employee, lock=True)
+    employee_key = str(employee.pk)
     employee_name = personnel_display_name(employee)
     row = OpsForceCampaignPoolMember.objects.create(
         campaign=campaign,

@@ -382,6 +382,17 @@ for (const width of [1440, 390]) test(`basic clarification and collapsed request
   });
   await signIn(page); await page.goto('/security-ops/assistant?task=' + id);
   const card = page.getByRole('region', { name: 'Состояние поручения' });
+  await expect(card.getByRole('heading', { name: 'Уточните название и вид ОМ', exact: true })).toBeVisible();
+  const context = card.locator('dl[aria-label="Сведения поручения"]');
+  await expect(context).toContainText('23.10.2026');
+  await expect(context).toContainText('Доступный объект');
+  await expect(context).toContainText('200');
+  const correctionLink = card.getByRole('link', { name: 'Уточнить сведения', exact: true });
+  await expect(correctionLink).toHaveAttribute('href', '#assistant-correction');
+  await page.locator('#assistant-correction > summary').click();
+  await expect(page.getByLabel('Название', { exact: true })).toBeHidden();
+  await correctionLink.click();
+  await expect(page).toHaveURL(new RegExp(`task=${id}#assistant-correction$`));
   await expect(card).toContainText('23.10.2026');
   await expect(card).toContainText('Доступный объект');
   await expect(card.getByText('200', { exact: true })).toBeVisible();
@@ -403,6 +414,10 @@ for (const width of [1440, 390]) test(`basic clarification and collapsed request
   await expect(page.getByLabel('Существующее ОМ, ID (если уже создано)')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Добавить департамент', exact: true })).toBeHidden();
   await page.getByLabel('Название', { exact: true }).fill('Наряд на Аккорду');
+  await card.getByText('Исходное поручение', { exact: true }).click();
+  await expect(card.getByText('Запроси наряд', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Обновить состояние', exact: true }).click();
+  await expect(page.getByLabel('Название', { exact: true })).toHaveValue('Наряд на Аккорду');
   await page.getByRole('combobox', { name: /^Вид ОМ(?:\s|$)/ }).selectOption('INTERNAL');
   await page.getByText('Дополнительные сведения', { exact: true }).click();
   await page.getByLabel('Время (необязательно)', { exact: true }).fill('10:30');

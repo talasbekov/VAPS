@@ -33,6 +33,7 @@ try {
     run("scripts/tests/event-workflow-readability.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/workflow-context-navigation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/om-assistant.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/assistant-progress.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/force-collections-queue.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/security-events-filters.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/service-summary-retry.test.cjs", [], process.env, ["--test"]);

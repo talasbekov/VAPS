@@ -11,7 +11,6 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { resolveWorkspaceRole, resolveWorkspaceView, workspaceHref, type WorkspaceView } from "@/features/forces-workspace/model/workspace";
 import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { accessScopeLabel } from "@/entities/access";
@@ -105,7 +104,6 @@ type NavItem = {
    * сервера: счётчик в меню — обещание «здесь столько-то дел», и выдуманное
    * число врёт на каждой странице приложения сразу. */
   counter?: "events";
-  workspaceView?: WorkspaceView;
 };
 
 // Категории нераскрываемые: заголовок — не кнопка, список под ним всегда
@@ -422,20 +420,6 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
     ? sectionRoles.map(role => `${role.name} · ${accessScopeLabel(role)}`).join("; ")
     : accessLabel;
 
-  const headquartersTarget = hasOpsPermission('forces.command') && Boolean(query.get('collection') || query.get('campaign') || query.get('tab') === 'collections');
-  const workspaceRole = headquartersTarget ? 'headquarters' : resolveWorkspaceRole(access);
-  const workspace = workspaceRole === 'responsible' || workspaceRole === 'expense' || workspaceRole === 'headquarters';
-  const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query, hasOpsPermission('status.view')) : null;
-  const workspaceItems: NavItem[] = workspaceRole === 'responsible' ? [
-    { name: 'Рабочий стол', href: workspaceHref(query, 'desk'), icon: ClipboardList, workspaceView: 'desk' },
-    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const, nested: true }] : []),
-    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces', nested: true },
-  ] : workspaceRole === 'expense' ? [
-    ...(hasOpsPermission('status.view') ? [{ name: 'Расход департамента', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const }] : []),
-    ...(hasOpsPermission('forces.allocate') ? [{ name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' as const }] : []),
-  ] : workspaceRole === 'headquarters' ? [
-    { name: 'Распределения', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
-  ] : [];
   // Пункт остаётся в меню, только если модуль за ним открыт человеку (одна
   // карта для меню и страницы — `entities/portal-access`). Категория без
   // единого пункта не рисуется: заголовок над пустотой читался бы как
@@ -449,19 +433,22 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
   // its existing page guard and export APIs.
   const reportHref = moduleOpenFor("/reports", hasOpsPermission)
     ? "/reports" : "/security-ops/service-reports";
+  const work = portalWorkspace(access);
+  const allTasks = [...work.primary, ...work.more];
+  const taskHref = (task: (typeof allTasks)[number]) => portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams());
   const categories = CATEGORIES.map(category => ({ ...category,
     items: category.items
-      .flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item])
+      .flatMap<NavItem>(item => item.href === '/employees' && allTasks.some(task => task.accessHref === '/employees')
+        ? allTasks.filter(task => task.accessHref === '/employees').map(task => ({ name: task.title, href: taskHref(task), icon: Users })) : [item])
       .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item)
       .filter(itemOpen),
   })).filter(category => category.items.length > 0);
-  const work = portalWorkspace(access);
   const activeTaskId = activePortalTask([...work.primary, ...work.more], pathname, query);
   const contextualTask = work.more.find(task => task.id === activeTaskId && task.accessHref === '/employees');
   const primaryTasks = contextualTask ? [...work.primary, contextualTask] : work.primary;
-  const primaryPaths = new Set(primaryTasks.map(task => task.accessHref));
+  const primaryDestinations = new Set(primaryTasks.map(taskHref));
   const remainingCategories = categories.map(category => ({ ...category,
-    items: category.items.filter(item => !primaryPaths.has(item.href.split('?')[0])),
+    items: category.items.filter(item => !primaryDestinations.has(item.href)),
   })).filter(category => category.items.length > 0);
   const searchTerm = sectionSearch.trim().toLocaleLowerCase('ru');
   // Match the final links, including the permission-dependent report target
@@ -475,8 +462,9 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
     category.title,
     category.items.map(item => [item.href, item.name]),
   ]));
-  const activeHref = pathname === '/employees' && workspace
-    ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
+  const activeEmployeeTask = allTasks.find(task => task.id === activeTaskId && task.accessHref === '/employees');
+  const activeHref = pathname === '/employees'
+    ? (activeEmployeeTask ? taskHref(activeEmployeeTask) : activeRouteHref)
     : activeRouteHref;
   // Keep the current page visible without unfolding every other module.
   const currentItem = remainingCategories.flatMap(category => category.items).find(item => item.href === activeHref);
