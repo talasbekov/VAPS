@@ -300,7 +300,7 @@ function SecurityObjectsScreen() {
   const search = searchParams.get("search") ?? "";
   const rawTab = searchParams.get("tab") ?? "";
   const tab: ObjectTab | typeof ALL_TABS =
-    rawTab in OBJECT_TABS ? (rawTab as ObjectTab) : ALL_TABS;
+    Object.prototype.hasOwnProperty.call(OBJECT_TABS, rawTab) ? (rawTab as ObjectTab) : ALL_TABS;
   const status = searchParams.get("status") ?? ANY;
   const passport = searchParams.get("passport") ?? ANY;
   const region = searchParams.get("region") ?? ANY;
@@ -309,7 +309,7 @@ function SecurityObjectsScreen() {
   const freshnessFilter = searchParams.get("freshness") ?? ANY;
   const rawView = searchParams.get("view") ?? "";
   const view: ViewMode =
-    rawView in VIEW_MODES ? (rawView as ViewMode) : DEFAULT_VIEW;
+    Object.prototype.hasOwnProperty.call(VIEW_MODES, rawView) ? (rawView as ViewMode) : DEFAULT_VIEW;
 
   const query = useSecurityObjects({
     enabled: !permissionsLoading && hasPermission(MODULE_PERMISSION["/security-ops/objects"]),
@@ -383,6 +383,10 @@ function SecurityObjectsScreen() {
     (region !== ANY ? 1 : 0) +
     (freshnessFilter !== ANY ? 1 : 0) +
     (search.trim() !== "" ? 1 : 0);
+  const hasObjects = (registryData?.results.length ?? 0) > 0;
+  const hasSelection = activeFilters > 0 || tab !== ALL_TABS;
+  const showTools = registryData !== undefined && (hasObjects || hasSelection);
+  const additionalFilters = activeFilters - (search.trim() !== "" ? 1 : 0);
 
   function applyParams(params: URLSearchParams): void {
     const qs = params.toString();
@@ -405,19 +409,23 @@ function SecurityObjectsScreen() {
 
   // Поиск в URL — с задержкой: иначе каждая буква давала router.replace и
   // пересчёт всех KPI-плиток реестра.
-  const [searchDraft, setSearchDraft] = useDebouncedCommit(search, (value) =>
+  const [searchDraft, setSearchDraft, cancelSearchDraft] = useDebouncedCommit(search, (value) =>
     setParam("search", value, "")
   );
 
-  function resetFilters(): void {
+  function resetFilters(includeTab = false): void {
+    cancelSearchDraft();
+    setSearchDraft("");
     const params = new URLSearchParams(searchParams);
     for (const name of ["search", "status", "passport", "region", "freshness"]) {
       params.delete(name);
     }
+    if (includeTab) params.delete("tab");
     applyParams(params);
   }
 
-  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/objects"])) {
+  if (!permissionsLoading && (!hasPermission(MODULE_PERMISSION["/security-ops/objects"]) ||
+      (query.error?.kind === "api" && query.error.status === 403))) {
     return <OpsAccessDenied what="реестра объектов" />;
   }
 
@@ -427,10 +435,10 @@ function SecurityObjectsScreen() {
         <PageHeader
           eyebrow="Объекты"
           title="Объекты и паспорта"
-          description="Реестр охраняемых объектов, их паспортов, секторов, постов и истории публикаций"
+          description="Найдите объект и откройте его паспорт."
         />
 
-        {registryData !== undefined && (
+        {hasObjects && registryData !== undefined && (
           <div
             role="group"
             aria-label="Раздел реестра"
@@ -454,9 +462,13 @@ function SecurityObjectsScreen() {
           </div>
         )}
 
-        {registryData !== undefined && (
-          <section aria-label="Показатели реестра">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {hasObjects && registryData !== undefined && (
+          <details className="rounded-xl border bg-card">
+            <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-semibold">
+              Сводка по объектам
+            </summary>
+          <section aria-label="Показатели реестра" className="px-3 pb-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {KPI_TILES.map((tile) => {
                 const value = registryData.kpi[tile.kpi];
                 const active =
@@ -464,12 +476,12 @@ function SecurityObjectsScreen() {
                   (searchParams.get(tile.param.name) ?? ANY) === tile.param.value;
                 const body = (
                   <>
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 items-start gap-2">
                       <span
                         aria-hidden="true"
-                        className={`h-2 w-2 shrink-0 rounded-full ${tile.dot}`}
+                        className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tile.dot}`}
                       />
-                      <span className="truncate text-xs font-medium text-muted-foreground">
+                      <span className="min-w-0 flex-1 break-words whitespace-normal text-xs font-medium text-muted-foreground">
                         {tile.label}
                       </span>
                     </span>
@@ -510,11 +522,14 @@ function SecurityObjectsScreen() {
               })}
             </div>
           </section>
+          </details>
         )}
 
+        {showTools && (
+        <>
         <Card>
           <CardContent className="flex flex-wrap items-center gap-2 p-3">
-            <div className="relative min-w-[14rem] flex-1">
+            <div className="relative min-w-0 basis-56 flex-1">
               <Search
                 aria-hidden="true"
                 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -522,35 +537,11 @@ function SecurityObjectsScreen() {
               <Input
                 className="pl-9"
                 aria-label="Поиск по реестру объектов"
-                placeholder="Поиск по названию, адресу, рег. номеру или типу"
+                placeholder="Название, адрес или номер"
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
               />
             </div>
-
-            <FilterSelect
-              label="Статус"
-              value={status}
-              onChange={(value) => setParam("status", value, ANY)}
-              options={(Object.keys(OBJECT_STATE_LABEL) as ObjectState[]).map(
-                (key) => ({ value: key, label: OBJECT_STATE_LABEL[key] })
-              )}
-            />
-            <FilterSelect
-              label="Паспорт"
-              value={passport}
-              onChange={(value) => setParam("passport", value, ANY)}
-              options={PASSPORT_STATES.map((key) => ({
-                value: key,
-                label: PASSPORT_STATE_LABEL[key],
-              }))}
-            />
-            <FilterSelect
-              label="Регион"
-              value={region}
-              onChange={(value) => setParam("region", value, ANY)}
-              options={regions.map((value) => ({ value, label: value }))}
-            />
 
             <div
               role="group"
@@ -576,12 +567,52 @@ function SecurityObjectsScreen() {
             </div>
           </CardContent>
         </Card>
+        <details className="rounded-xl border bg-card">
+          <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-semibold">
+            Фильтры{additionalFilters > 0 ? ` (${additionalFilters})` : ""}
+          </summary>
+          <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+            <FilterSelect
+              label="Статус"
+              value={status}
+              onChange={(value) => setParam("status", value, ANY)}
+              options={(Object.keys(OBJECT_STATE_LABEL) as ObjectState[]).map(
+                (key) => ({ value: key, label: OBJECT_STATE_LABEL[key] })
+              )}
+            />
+            <FilterSelect
+              label="Паспорт"
+              value={passport}
+              onChange={(value) => setParam("passport", value, ANY)}
+              options={PASSPORT_STATES.map((key) => ({
+                value: key,
+                label: PASSPORT_STATE_LABEL[key],
+              }))}
+            />
+            <FilterSelect
+              label="Регион"
+              value={region}
+              onChange={(value) => setParam("region", value, ANY)}
+              options={regions.map((value) => ({ value, label: value }))}
+            />
+            {freshnessFilter !== ANY && (
+              <p className="w-full text-sm text-muted-foreground">
+                Актуальность: {Object.prototype.hasOwnProperty.call(FRESHNESS_LABEL, freshnessFilter)
+                  ? FRESHNESS_LABEL[freshnessFilter as PassportFreshnessState]
+                  : "задан отбор"}
+              </p>
+            )}
+
+          </div>
+        </details>
+        </>
+        )}
 
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">
               Реестр объектов
-              {query.data !== undefined && (
+              {hasObjects && query.data !== undefined && (
                 <span className="font-normal text-muted-foreground">
                   {" "}
                   {/* знаменатель — размер ВКЛАДКИ, а не всего реестра: на
@@ -592,8 +623,8 @@ function SecurityObjectsScreen() {
                 </span>
               )}
             </h2>
-            {activeFilters > 0 && (
-              <Button size="sm" variant="outline" onClick={resetFilters}>
+            {activeFilters > 0 && filtered.length > 0 && (
+              <Button size="sm" variant="outline" onClick={() => resetFilters()}>
                 Сбросить фильтры ({activeFilters})
               </Button>
             )}
@@ -609,6 +640,9 @@ function SecurityObjectsScreen() {
             objects={filtered}
             freshnessById={freshnessById}
             onHistory={setHistoryFor}
+            catalogEmpty={registryData !== undefined && !hasObjects}
+            hasSelection={hasSelection}
+            onShowAll={() => resetFilters(true)}
           />
         </div>
 
@@ -713,6 +747,9 @@ function ObjectsRegistry({
   objects,
   freshnessById,
   onHistory,
+  catalogEmpty,
+  hasSelection,
+  onShowAll,
 }: {
   /** Текущий отбор реестра — уезжает в карточку для возврата на него. */
   backSuffix: string;
@@ -724,6 +761,9 @@ function ObjectsRegistry({
   objects: SecurityObject[];
   freshnessById: Map<string, PassportFreshness>;
   onHistory: (object: SecurityObject) => void;
+  catalogEmpty: boolean;
+  hasSelection: boolean;
+  onShowAll: () => void;
 }) {
   if (isLoading) {
     return (
@@ -756,7 +796,19 @@ function ObjectsRegistry({
     return (
       <Card>
         <CardContent className="p-9 text-center text-sm text-muted-foreground">
-          Объекты не найдены
+          <p className="font-semibold text-foreground">
+            {catalogEmpty ? "Объектов пока нет" : "Объекты не найдены"}
+          </p>
+          <p className="mt-2">
+            {catalogEmpty
+              ? "Когда объекты будут добавлены в каталог, здесь появятся их паспорта."
+              : "Измените поиск или фильтры, чтобы найти нужный объект."}
+          </p>
+          {hasSelection && (
+            <Button className="mt-4" variant="outline" onClick={onShowAll}>
+              Показать все объекты
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
