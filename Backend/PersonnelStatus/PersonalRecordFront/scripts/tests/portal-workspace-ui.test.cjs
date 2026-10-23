@@ -6,7 +6,7 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
   const client=new QueryClient(),cache=new Map();
   const overrides={
     'next/link':{default:({children,...props})=>React.createElement('a',props,children)},
-    'next/navigation':{usePathname:()=>pathname,useSearchParams:()=>new URLSearchParams()},
+    'next/navigation':{usePathname:()=>pathname,useSearchParams:()=>new URLSearchParams(state.query || '')},
     '@/hooks/use-ops-permissions':{useOpsPermissions:()=>access},
     '@/lib/auth':{useAuth:()=>({user:{id:'test',name:'Test user'}})},
     '@/hooks/use-security-events':{useSecurityEvents:()=>({data:{total:0}})},
@@ -15,6 +15,15 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
     '@/shared/config/in-development':{inDevelopmentOfRoute:()=>null,inDevelopmentSummary:()=>''},
     '@tanstack/react-query':{useQueryClient:()=>client},
   };
+  if(state.queue) {
+    delete overrides['@/features/portal-workspace/work-queues'];
+    overrides['@/features/om-assistant/api']={useAssistantTasks:()=>state.queue};
+    overrides['@/features/om-assistant/brief']={};
+    overrides['@/hooks/use-ops-protected-read']={useOpsReadAccess:()=>({allowed:true}),useOpsProtectedRead:()=>state.queue};
+    overrides['@/hooks/use-my-employee']={};
+    overrides['@/widgets/my-profile/ui/MyNextShift']={};
+    overrides['@/lib/ops-api']={};
+  }
   function load(name) {
     if(name.endsWith('.css'))return {default:new Proxy({},{get:(_,key)=>String(key)})};
     if(Object.hasOwn(overrides,name))return overrides[name];
@@ -22,19 +31,32 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
     if(cache.has(name))return cache.get(name);
     const p=path.join(__dirname,'../..',name.slice(2)),file=[p+'.ts',p+'.tsx',path.join(p,'index.ts')].find(fs.existsSync);
     assert.ok(file,name);const exports={};cache.set(name,exports);
-    vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:dependency=>load(dependency.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency)):dependency),URLSearchParams,process,Date});
+    vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:dependency=>load(dependency.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(file.endsWith('index.ts') ? name+'/index' : name),dependency)):dependency),URLSearchParams,process,Date});
     return exports;
   }
   return {load,client};
 }
-test('home promotes one admin action and keeps secondary tools compact and other tasks collapsed',()=>{
+test('home retains the main admin action without a duplicate navigation catalogue',()=>{
   const f=fixture();try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/workspace').PortalWorkspace));
-    const primary=html.match(/<section aria-label="Основные рабочие задачи">([\s\S]*?)<\/section>/)[1];
-    assert.equal((primary.match(/<a /g)||[]).length,2);
-    assert.match(html,/aria-label="Главное действие"/);assert.match(html,/href="\/settings\/users"/);assert.match(primary,/href="\/settings\/roles"/);
-    assert.match(html,/<details>/);assert.doesNotMatch(html,/<details[^>]*\bopen=/);
+    assert.match(html,/aria-label="Главное действие"/);
+    assert.match(html,/href="\/settings\/users"/);
+    assert.doesNotMatch(html,/<aside|Быстрый переход|Основные рабочие задачи/);
   }finally{f.client.clear();}
+});
+test('all authorized employee work modes stay reachable without duplicate destinations',()=>{
+  for(const codes of [['*'],['forces.allocate','forces.command','status.view']]) for(const query of ['', 'view=forces&tab=collections', 'view=daily&businessDate=2026-10-23']) {
+    const f=fixture(codes, query ? '/employees' : '/workspace', {query});try {
+      const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
+      const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
+      const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1].replaceAll('&amp;','&'));
+      for(const wanted of [{view:'forces',tab:'requests'},{view:'forces',tab:'collections'},{view:'daily'}]) {
+        assert.equal(hrefs.filter(href=>{const [path,search]=href.split('?'); const params=new URLSearchParams(search); return path==='/employees' && Object.entries(wanted).every(([key,value])=>params.get(key)===value);}).length,1,JSON.stringify(wanted));
+      }
+      assert.equal(new Set(hrefs).size,hrefs.length);
+      assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
+    }finally{f.client.clear();}
+  }
 });
 test('home never renders protected task links from retained permissions after a failed refresh',()=>{
   const f=fixture(['*'],'/workspace',{error:Error('offline')});try {
@@ -86,4 +108,64 @@ test('embedded sidebar has no duplicate brand and a failed access refresh hides 
     const html=renderToStaticMarkup(React.createElement(failed.load('@/components/navigation/sidebar').Sidebar));
     assert.match(html,/role="alert"/);assert.doesNotMatch(html,/href="\/(settings|statuses|employees)/);
   }finally{failed.client.clear();}
+});
+
+test('queue preview keeps completed records inside closed history and labels its limited scope',()=>{
+  const rows=[{id:'done',status:'completed',plan:{title:'Finished'},receipts:[]},{id:'open',status:'needs_information',plan:{title:'Current'},receipts:[]}];
+  const f=fixture(['*'],'/workspace',{queue:{data:{results:rows,page:1,pageCount:2,total:30},refetch:()=>{}}});try {
+    const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/work-queues').AssistantWorkQueue));
+    const history=html.match(/<details[^>]*>[\s\S]*?<\/details>/)?.[0] || '';
+    assert.ok(history.includes('Finished'));assert.doesNotMatch(history,/<details[^>]*\bopen=/);
+    assert.ok(!history.includes('Current'));assert.ok(html.includes('Уточнить сведения'));
+    assert.match(html,/первой странице/);assert.match(html,/href="\/security-ops\/assistant\/\?page=1"/);
+  }finally{f.client.clear();}
+});
+test('empty bounded preview still links to the full list and read failures hide retained history',()=>{
+  for(const failed of [false,true]) {
+    const f=fixture(['*'],'/workspace',{queue:{isError:failed,data:{results:[{id:'done',status:'completed',plan:{title:'Finished'},receipts:[]}],pageCount:2},refetch:()=>{}}});try {
+      const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/work-queues').AssistantWorkQueue));
+      if(failed) {assert.match(html,/role="alert"/);assert.ok(!html.includes('Finished'));}
+      else {assert.match(html,/первой странице/);assert.match(html,/Все поручения/);assert.ok(!html.includes('Поручений пока нет'));}
+    }finally{f.client.clear();}
+  }
+});
+test('department history excludes returned requests and preserves a zero submitted answer',()=>{
+  const rows=[{allocationId:'zero',title:'Zero answer',status:'DECLINED',allocating:0,stage:'FORCES',need:5,businessDate:'2026-10-23'},
+    {allocationId:'returned',title:'Returned request',status:'RETURNED',allocating:null,stage:'FORCES',need:5,businessDate:'2026-10-23'}];
+  const f=fixture(['*'],'/workspace',{queue:{data:{results:rows},refetch:()=>{}}});try {
+    const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/work-queues').DepartmentWorkQueue));
+    const history=html.match(/<details[^>]*>[\s\S]*?<\/details>/)?.[0] || '';
+    assert.ok(history.includes('Zero answer'));assert.ok(history.includes('Ответ: 0 чел.'));
+    assert.ok(!history.includes('Returned request'));assert.ok(html.includes('Исправить ответ'));
+    assert.doesNotMatch(history,/<details[^>]*\bopen=/);
+  }finally{f.client.clear();}
+});
+
+test('empty queues hide zero preview counts and only a proven empty assistant list claims no tasks',()=>{
+  for(const total of [0,undefined,30]) {
+    const f=fixture(['*'],'/workspace',{queue:{data:{results:[],total},refetch:()=>{}}});try {
+      const queues=f.load('@/features/portal-workspace/work-queues');
+      const assistant=renderToStaticMarkup(React.createElement(queues.AssistantWorkQueue));
+      assert.doesNotMatch(assistant,/Показаны/);
+      assert.match(assistant,/Все поручения/);
+      if(total===0) {assert.match(assistant,/Поручений пока нет/);assert.doesNotMatch(assistant,/остальные страницы/);}
+      else {assert.match(assistant,/На первой странице нет текущих поручений/);assert.doesNotMatch(assistant,/Поручений пока нет/);}
+      const department=renderToStaticMarkup(React.createElement(queues.DepartmentWorkQueue));
+      assert.doesNotMatch(department,/Показаны/);
+      assert.match(department,/Все запросы/);
+    }finally{f.client.clear();}
+  }
+});
+
+test('selection-only access pins the authorized employee section with one active marker',()=>{
+  const f=fixture(['forces.select'],'/employees',{query:'view=forces'});try {
+    const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
+    const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
+    const current=nav.match(/<section aria-label="Текущий раздел"[\s\S]*?<\/section>/)?.[0] || '';
+    assert.match(current,/href="\/employees"/);
+    assert.match(current,/aria-current="page"/);
+    assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
+    assert.equal((nav.match(/href="\/employees"/g)||[]).length,1);
+    assert.doesNotMatch(nav,/<details[^>]*\bopen=/);
+  }finally{f.client.clear();}
 });

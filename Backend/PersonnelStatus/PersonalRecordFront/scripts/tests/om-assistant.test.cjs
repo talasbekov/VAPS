@@ -15,6 +15,44 @@ const task = patch => ({ id: taskId, initiatedBy: 'chief', revision: 2, status: 
   event: { id: '70', code: 'ОМ-70', title: 'Встреча', stage: 'RECON', forceDemandTotal: 10, requested: 0, rosterCount: 0 },
   receipts: [], updatedAt: '2026-10-21T10:00:00Z', ...patch });
 
+test('the clarification next step names only unresolved fields and links the initiator to the retained editor', t => {
+  const f = fixture(t);
+  const value = task({ status: 'needs_information', event: null, gathering: null, canContinue: false,
+    message: 'Наряд на Аккорду 23 октября, 200 человек',
+    plan: { title: null, kind: null, businessDate: '2026-10-23', objectId: '30', objectName: 'Аккорда', personnelTotal: 200 },
+    questions: [{ field: 'title', text: 'Укажите название.' }, { field: 'kind', text: 'Укажите вид ОМ.' }] });
+  const html = renderWorkspace(f, value);
+  assert.match(html, /Уточните название и вид ОМ/);
+  assert.match(html, /href="#assistant-correction"/);
+  assert.match(html, /id="assistant-correction"/);
+  const context = html.match(/<dl[^>]*aria-label="Сведения поручения"[\s\S]*?<\/dl>/)?.[0];
+  assert.ok(context, 'recognized context must be available together before clarification');
+  assert.match(context, /23\.10\.2026/); assert.match(context, /Аккорда/); assert.match(context, /200/);
+  assert.match(html, /<details[^>]*><summary[^>]*>Исходное поручение<\/summary>/);
+  assert.match(html, /Наряд на Аккорду 23 октября, 200 человек/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('a readonly recipient sees the next actor without a correction link or an instruction to edit', t => {
+  const f = fixture(t);
+  const value = task({ status: 'needs_information', canEdit: false, canContinue: false,
+    questions: [{ field: 'allocations', text: 'Укажите количества.' }] });
+  const next = f.model.taskNextAction(value);
+  assert.equal(next.canCorrect, false);
+  assert.match(next.title, /Инициатор уточняет/);
+  const html = renderWorkspace(f, value, true);
+  assert.doesNotMatch(html, /href="#assistant-correction"/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('an explicit clarification overrides a suggested value and sent requests never offer corrections', t => {
+  const f = fixture(t);
+  const value = task({ questions: [{ field: 'businessDate', text: 'Проверьте дату.' }, { field: 'allocations[0].need', text: 'Уточните количество.' }] });
+  assert.match(f.model.taskNextAction(value).title, /дату.*количества по департаментам/);
+  assert.equal(f.model.taskNextAction(value).owner, 'Инициатор поручения');
+  assert.equal(f.model.taskNextAction({ ...value, receipts: [{ operation: 'send_allocations', result: {} }] }).canCorrect, false);
+});
+
 for (const [canEdit, sent] of [[true, false], [false, false], [true, true], [false, true]]) {
   test(`an interpretation notice gives an available next step for editable=${canEdit}, sent=${sent}`, t => {
     const f = fixture(t);
@@ -87,6 +125,8 @@ function fixture(t) {
     'next/navigation': { useSearchParams: () => new URLSearchParams(state.search ?? ''), useRouter: () => ({ replace() {}, push() {} }) },
     '@/components/dashboard-layout': { DashboardLayout: ({ children }) => children },
     '@/components/ops-access-denied': { OpsAccessDenied: () => React.createElement('p', null, 'Нет доступа') },
+    // Progress has its own contract suite; keep these editor/writer tests independent.
+    '@/features/om-assistant/progress': { AssistantProgress: () => null },
     '@/components/ui/button': { Button: ({ children, asChild, variant, size, ...props }) =>
       asChild ? children : React.createElement('button', props, children) },
   };

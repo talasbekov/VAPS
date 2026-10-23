@@ -45,14 +45,40 @@ def _directorate_row_view(event, allocation, mine, allocation_id):
         for row in mine
         for group_id in row.get("groupDemandIds", [])
     }
+    from organization_management.apps.operations.selectors import DivisionTreeSelector, StaffUnitSelector
+    children = DivisionTreeSelector.children_map()
+    visible = set()
+    for row in mine:
+        visible |= DivisionTreeSelector.subtree_ids(_as_division_id(row.get("divisionId")), children_map=children)
+    members = allocation.get("members") or []
+    divisions = StaffUnitSelector.divisions_of([int(row["employeeId"]) for row in members if str(row.get("employeeId", "")).isdigit()])
+    assigned_by_kind = {}
+    for member in members:
+        employee_id = str(member.get("employeeId", ""))
+        division = divisions.get(int(employee_id)) if employee_id.isdigit() else None
+        if division is None:
+            division = _as_division_id(member.get("divisionId"))
+        if division not in visible:
+            continue
+        kind = member.get("kindCode") or "PHYSICAL_SQUAD"
+        assigned_by_kind[kind] = assigned_by_kind.get(kind, 0) + 1
+    need_by_kind = {"PHYSICAL_SQUAD": sum(int(row.get("need") or 0) for row in mine)}
+    for group_id, row in group_demands.items():
+        if group_id in selected_group_ids:
+            kind = row.get("kindCode") or ""
+            need_by_kind[kind] = need_by_kind.get(kind, 0) + int(row.get("need") or 0)
     return {
         "eventId": str(event.pk),
         "code": event.code,
         "title": event.title,
         "businessDate": event.business_date.isoformat(),
+        "businessDateEnd": (event.business_date_end or event.business_date).isoformat(),
+        "location": event.location,
         "allocationId": allocation_id,
         "departmentName": allocation.get("departmentName", ""),
         "status": allocation.get("status"),
+        "needByKind": need_by_kind,
+        "assignedByKind": assigned_by_kind,
         "dueAt": allocation.get("dueAt"),
         "groupDemands": [
             row
@@ -286,6 +312,49 @@ def _event_of_request(allocation_id, allowed_division_ids):
     raise _not_found("Запрос управлению не найден.", allocation_id)
 
 
+def validate_request_kind(kind_code, role_code):
+    from organization_management.apps.operations.exceptions import DomainError
+    if kind_code == "PHYSICAL_SQUAD" and role_code:
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"roleCode": ["У физнаряда нет специальности внутри группы."]},
+            message="Для физнаряда специальность не выбирается.",
+        )
+    if kind_code and kind_code != "PHYSICAL_SQUAD":
+        from organization_management.apps.operations.models_settings import (
+            OpsDictionaryEntry,
+        )
+
+        if not OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS",
+            code=kind_code,
+            is_active=True,
+        ).exists():
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"kindCode": ["Группа не найдена или неактивна."]},
+                message="Выберите действующую группу участия.",
+            )
+        roles = OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_GROUP_ROLES",
+            group_code=kind_code,
+            is_active=True,
+        )
+        if roles.exists() and not role_code:
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"roleCode": ["Выберите специальность внутри группы."]},
+                message="Выберите специальность внутри группы.",
+            )
+        if role_code and not roles.filter(code=role_code).exists():
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"roleCode": ["Специальность не относится к выбранной группе."]},
+                message="Выберите специальность выбранной группы.",
+            )
+
+
 def select_for_request(
     allocation_id,
     employee_ids,
@@ -347,45 +416,7 @@ def select_for_request(
     # всё равно станет другим.
     event = _event_of_request(allocation_id, allowed_division_ids)
     event_id = str(event.pk)
-    if kind_code == "PHYSICAL_SQUAD" and role_code:
-        raise DomainError(
-            "VALIDATION_ERROR", 400,
-            detail={"roleCode": ["У физнаряда нет специальности внутри группы."]},
-            message="Для физнаряда специальность не выбирается.",
-        )
-    if kind_code and kind_code != "PHYSICAL_SQUAD":
-        from organization_management.apps.operations.models_settings import (
-            OpsDictionaryEntry,
-        )
-
-        if not OpsDictionaryEntry.objects.filter(
-            dictionary_code="EVENT_PARTICIPATION_KINDS",
-            code=kind_code,
-            is_active=True,
-        ).exists():
-            raise DomainError(
-                "VALIDATION_ERROR",
-                400,
-                detail={"kindCode": ["Группа не найдена или неактивна."]},
-                message="Выберите действующую группу участия.",
-            )
-        roles = OpsDictionaryEntry.objects.filter(
-            dictionary_code="EVENT_GROUP_ROLES",
-            group_code=kind_code,
-            is_active=True,
-        )
-        if roles.exists() and not role_code:
-            raise DomainError(
-                "VALIDATION_ERROR", 400,
-                detail={"roleCode": ["Выберите специальность внутри группы."]},
-                message="Выберите специальность внутри группы.",
-            )
-        if role_code and not roles.filter(code=role_code).exists():
-            raise DomainError(
-                "VALIDATION_ERROR", 400,
-                detail={"roleCode": ["Специальность не относится к выбранной группе."]},
-                message="Выберите специальность выбранной группы.",
-            )
+    validate_request_kind(kind_code, role_code)
     # 🔴 ВЫДЕЛЯЮТ ПО УПРАВЛЕНИЯМ, КОТОРЫМ АДРЕСОВАНА ЗАЯВКА (Plane №550).
     # Проверка области отвечает на вопрос «мой ли это сотрудник», и у
     # действующего с областью на ДЕПАРТАМЕНТ она молчит про всех его людей —

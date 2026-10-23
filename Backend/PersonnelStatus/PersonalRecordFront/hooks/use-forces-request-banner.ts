@@ -6,19 +6,23 @@
 // Путь и тип живут здесь, а не в `entities/security-event/model/types.ts`:
 // у контракта один читатель — баннер, — и растить общий файл типов ради него
 // не нужно. Переедет туда, когда появится второй читатель.
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { StaffingDemandRow } from "@/entities/security-event";
 import { FORCE_CAMPAIGN_RESERVES_KEY } from "@/hooks/use-force-campaigns";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
 
 export interface DirectorateForcesRequest {
   eventId: string;
   code: string;
   title: string;
   businessDate: string;
+  businessDateEnd?: string;
+  location?: string;
+  needByKind?: Record<string, number>;
+  assignedByKind?: Record<string, number>;
   allocationId: string;
   departmentName: string;
   status: string;
@@ -68,32 +72,21 @@ export interface DirectorateForcesRequestsResponse {
 }
 
 export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}) {
-  const { hasPermission } = useOpsPermissions();
-  return useQuery<DirectorateForcesRequestsResponse, OpsApiFailure>({
-    queryKey: DIRECTORATE_FORCES_REQUESTS_KEY,
-    queryFn: () =>
+  const access = useOpsReadAccess("status.manage");
+  return useOpsProtectedRead<DirectorateForcesRequestsResponse>(["ops-directorate-forces-requests", "list"], [], access, () =>
       opsApiClient.get<DirectorateForcesRequestsResponse>(
         directorateForcesRequestsPath()
       ),
-    enabled: (options.enabled ?? true) && hasPermission("status.manage"),
-    // Нет права `status.manage` — 403; повторять его нечего, а баннера у
-    // такого человека и быть не должно.
-    retry: false,
-  });
+    { enabled: options.enabled ?? true });
 }
 
 export function useDirectorateForcesRequest(allocationId: string | null) {
-  const { hasPermission } = useOpsPermissions();
-  return useQuery<DirectorateForcesRequest, OpsApiFailure>({
-    queryKey: ["ops-directorate-forces-request", allocationId],
-    queryFn: () =>
+  const access = useOpsReadAccess("status.manage");
+  return useOpsProtectedRead<DirectorateForcesRequest>(["ops-directorate-forces-request", "detail"], [allocationId], access, () =>
       opsApiClient.get<DirectorateForcesRequest>(
         directorateForcesRequestPath(allocationId as string)
       ),
-    enabled: allocationId !== null && hasPermission("status.manage"),
-    // Чужая или снятая заявка — 404, и повторять его нечего.
-    retry: false,
-  });
+    { enabled: allocationId !== null });
 }
 
 /** Отчёт выделения по запросу (Plane №395): кого выделили, кому отказано —
@@ -123,6 +116,39 @@ export function directorateSelectPath(allocationId: string): string {
   return `${directorateForcesRequestPath(allocationId)}select/`;
 }
 
+export interface RequestCandidate {
+  employeeId: string; name: string; rankLabel: string; unit: string;
+  assessment: "AVAILABLE" | "RESERVE_ELIGIBLE" | "REQUIRES_REASON" | "BLOCKED";
+  code: string; message: string; overridable: boolean;
+}
+export interface RequestCandidatesPage {
+  request: DirectorateForcesRequest; results: RequestCandidate[];
+  count: number; page: number; pageSize: number; hasNext: boolean; assessmentScope: "page";
+}
+export function useRequestCandidates(allocationId: string, kindCode: string, roleCode: string, search: string, page: number, enabled: boolean) {
+  const access = useOpsReadAccess("status.manage");
+  return useOpsProtectedRead<RequestCandidatesPage>(["ops-request-candidates", "page"], [allocationId, kindCode, roleCode, search, page], access, () => {
+    const query = new URLSearchParams({ kindCode, roleCode, search, page: String(page) });
+    return opsApiClient.get<RequestCandidatesPage>(`${directorateForcesRequestPath(allocationId)}candidates/?${query}`);
+  }, { enabled });
+}
+export function useRequestCandidateReview(allocationId: string, kindCode: string, roleCode: string, employeeIds: string[], enabled: boolean) {
+  const access = useOpsReadAccess("status.manage");
+  const ids = [...employeeIds].sort();
+  const query = useOpsProtectedRead<RequestCandidatesPage>(["ops-request-candidates", "review"], [allocationId, kindCode, roleCode, ids], access, async (signal) => {
+    let result: RequestCandidatesPage | undefined;
+    for (let offset = 0; offset < ids.length; offset += 50) {
+      signal.throwIfAborted();
+      const params = new URLSearchParams({ kindCode, roleCode, employeeIds: ids.slice(offset, offset + 50).join(",") });
+      const response = await opsApiClient.get<RequestCandidatesPage>(`${directorateForcesRequestPath(allocationId)}candidates/?${params}`);
+      result = result ? { ...response, results: [...result.results, ...response.results] } : response;
+    }
+    if (!result) throw new Error("Выберите сотрудников для проверки.");
+    return result;
+  }, { enabled: enabled && ids.length > 0 });
+  return { ...query, access };
+}
+
 /**
  * Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
  * Физнаряд попадает в общий резерв кампании без финального статуса; для
@@ -146,7 +172,7 @@ export function useSelectForRequest(allocationId: string | null) {
     onSuccess: () => {
       // Баннер и таблица статусов читают разные ручки — обновить обе: иначе
       // «выделено 1 из 2» в баннере спорило бы со статусом в строке ниже.
-      void client.invalidateQueries({ queryKey: ["ops-directorate-forces-request", allocationId] });
+      void client.invalidateQueries({ queryKey: ["ops-directorate-forces-request"] });
       // Список тоже: он несёт «выделено X из Y» по каждому запросу, и без
       // сброса чипы выбора спорили бы с цифрой в самом баннере (Plane №487).
       void client.invalidateQueries({ queryKey: DIRECTORATE_FORCES_REQUESTS_KEY });

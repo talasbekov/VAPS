@@ -53,6 +53,7 @@ function harness({ event = fixture(), query = 'visit=101&back=stage%3DCLOSED', p
     'lucide-react': ui,
     '@tanstack/react-query': { useQuery: () => ({ data: [], isPending: false, isError: false }) },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => access },
+    '@/hooks/use-ops-protected-read': { useOpsReadAccess: () => ({ scope: 'fixture', allowed: access.hasPermission('status.manage') }) },
     '@/hooks/use-security-events': { useSecurityEvent: () => ({ data: event, isLoading: false, isError: false }) },
     '@/hooks/use-security-event-stages': { useCompleteRecon: mutation, useImportReconPosts: mutation,
       useUpdateRecon: mutation, useOverrideStage: mutation, ...Object.fromEntries([

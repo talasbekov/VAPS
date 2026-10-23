@@ -48,9 +48,10 @@ test.describe('permission-driven portal start', () => {
     await authenticate(page);
     await page.goto(APP + '/', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/workspace\/?$/);
-    const tasks = page.getByRole('region', { name: 'Основные рабочие задачи', exact: true });
-    await expect(tasks.getByRole('link')).toHaveCount(1);
     const navigation = page.getByRole('navigation', { name: 'Основная навигация', exact: true });
+    const tasks = navigation.getByRole('region', { name: 'Моя работа', exact: true });
+    await expect(tasks.getByRole('link', { name: 'Мои задания и дежурства', exact: true })).toHaveCount(1);
+    await expect(tasks.getByRole('link')).toHaveCount(2);
     await expect(navigation.getByRole('link', { name: 'Статусы сотрудников', exact: true })).toHaveCount(0);
     await expect(navigation.getByRole('link', { name: 'Сбор сил на ОМ', exact: true })).toHaveCount(0);
     await tasks.getByRole('link', { name: /^Мои задания и дежурства/ }).click();
@@ -89,8 +90,10 @@ test.describe('permission-driven portal start', () => {
     recover = true;
     await page.getByRole('button', { name: 'Повторить загрузку', exact: true }).click();
     await expect(page).toHaveURL(/\/workspace\/?$/);
-    await expect(page.getByRole('region', { name: 'Основные рабочие задачи', exact: true })
-      .getByRole('link', { name: /^Объекты и паспорта/ })).toBeVisible();
+    const objects = page.getByRole('navigation', { name: 'Основная навигация', exact: true })
+      .getByRole('link', { name: 'Объекты и паспорта', exact: true });
+    await expect(objects).toBeVisible();
+    await expect(objects).toHaveAttribute('href', /^\/security-ops\/objects\/?$/);
   });
 
   test('relative and same-origin absolute callback retain path, query and hash', async ({ page }) => {

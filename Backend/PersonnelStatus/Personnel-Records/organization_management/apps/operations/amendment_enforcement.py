@@ -135,11 +135,9 @@ def enforce_amendment_on_retro_edit(
     )
 
 
-def _amend_covered(covered, *, actor, reason, triggered_by_status_id):
-    """Общий хвост обоих входов: требование причины и сами поправки."""
-    if not covered:
-        return []
-    if not (reason or "").strip():
+def assert_amendment_reason(covered, reason=""):
+    """Read-only reason guard, also used before offering a candidate."""
+    if covered and not (reason or "").strip():
         raise DomainError(
             "AMENDMENT_REASON_REQUIRED",
             422,
@@ -150,6 +148,11 @@ def _amend_covered(covered, *, actor, reason, triggered_by_status_id):
             },
             message="Правка задевает сданные дни: нужна причина для поправки.",
         )
+
+
+def _amend_covered(covered, *, actor, reason, triggered_by_status_id):
+    """Общий хвост обоих входов: требование причины и сами поправки."""
+    assert_amendment_reason(covered, reason)
     return [
         amend_day(
             division_id=submission.division_id,

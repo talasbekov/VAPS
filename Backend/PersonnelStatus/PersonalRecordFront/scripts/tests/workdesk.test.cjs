@@ -40,3 +40,15 @@ test('closed events never ask for new responses even when an old request is over
     assert.equal(result.action, 'Посмотреть запрос'); assert.equal(result.tone, 'quiet');
   }
 });
+
+test('completed and submitted work goes to history while returned work stays actionable', () => {
+  const { departmentWorkRow, assistantWorkAction } = load();
+  assert.equal(departmentWorkRow({ ...request, status: 'SUBMITTED' }).history, true);
+  assert.equal(departmentWorkRow({ ...request, status: 'DECLINED', allocating: 0 }).history, true);
+  assert.equal(departmentWorkRow({ ...request, status: 'RETURNED' }).history, false);
+  assert.equal(departmentWorkRow({ ...request, status: 'RETURNED', stage: 'CLOSED' }).history, true);
+  assert.equal(assistantWorkAction('needs_information'), 'Уточнить сведения');
+  assert.equal(assistantWorkAction('awaiting_recon'), 'Проверить рекогносцировку');
+  assert.equal(assistantWorkAction('completed'), 'Посмотреть результат');
+  assert.equal(assistantWorkAction('future_status'), 'Проверить состояние поручения');
+});

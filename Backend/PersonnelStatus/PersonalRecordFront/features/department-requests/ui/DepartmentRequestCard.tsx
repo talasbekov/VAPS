@@ -550,6 +550,9 @@ export function DepartmentRequestCard({
           {detail.eventTime !== null ? ` · ${detail.eventTime}` : ""}
         </p>
         <p role="status" className="text-sm text-muted-foreground">
+          Запрошено {quota} · выделяем {allocation.allocating ?? "ответ ещё не сохранён"} · собрано {assigned}
+        </p>
+        <p role="status" className="text-sm text-muted-foreground">
           {eventStageLabel ? `Этап мероприятия: ${eventStageLabel}` : "Этап мероприятия не определён"}
           {collectionClosed && ". Ответ, распределение по управлениям, их оповещение и отправка списка на этом этапе недоступны."}
         </p>

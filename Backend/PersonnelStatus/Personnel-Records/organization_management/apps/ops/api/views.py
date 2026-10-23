@@ -386,6 +386,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_directorate_requests": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_select": _STATUS_MANAGE_PERMISSION,
+        "forces_directorate_candidates": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_respond": _FORCES_ALLOCATE_PERMISSION,
@@ -1773,6 +1774,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
         )
         return Response(directorate_request_view(allocation_id, allowed))
+
+    @action(detail=False, methods=["get"], url_path=r"forces/requests/(?P<allocation_id>[^/]+)/directorate/candidates")
+    def forces_directorate_candidates(self, request, allocation_id=None):
+        from organization_management.apps.operations.services import PermissionService
+        from organization_management.apps.ops.force_request_candidates import candidates_for_request
+        params = request.query_params
+        try:
+            page = int(params.get("page", "1"))
+            page_size = int(params.get("pageSize", "50"))
+            ids = [int(value) for value in params["employeeIds"].split(",")] if params.get("employeeIds") else None
+            if page < 1 or not 1 <= page_size <= 50 or (ids is not None and (len(ids) > 200 or any(value <= 0 for value in ids))):
+                raise ValueError
+        except (ValueError, TypeError):
+            raise DomainError("VALIDATION_ERROR", 400, message="Проверьте страницу и идентификаторы сотрудников.")
+        allowed = PermissionService.visible_division_ids(resolve_actor_id(request), _STATUS_MANAGE_PERMISSION)
+        return Response(candidates_for_request(allocation_id, allowed, kind_code=params.get("kindCode", "PHYSICAL_SQUAD"),
+            role_code=params.get("roleCode", ""), search=params.get("search", ""), page=page, page_size=page_size, employee_ids=ids))
 
     @action(
         detail=False,

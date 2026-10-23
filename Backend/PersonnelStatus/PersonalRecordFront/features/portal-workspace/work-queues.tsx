@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, RefreshCw } from 'lucide-react';
 import { useAssistantAccess, useAssistantConfiguration, useAssistantTasks, useAssistantWriter } from '@/features/om-assistant/api';
-import { assistantDate, assistantTaskHref, assistantTaskTitle, taskPresentation } from '@/features/om-assistant/model';
+import { assistantDate, assistantTaskHref, assistantTaskTitle, taskPresentation, type AssistantTask } from '@/features/om-assistant/model';
 import { AssistantBrief } from '@/features/om-assistant/brief';
 import { useOpsProtectedRead, useOpsReadAccess } from '@/hooks/use-ops-protected-read';
 import { useMyEmployee } from '@/hooks/use-my-employee';
 import { MyNextShift } from '@/widgets/my-profile/ui/MyNextShift';
 import { opsApiClient } from '@/lib/ops-api';
 import { securityEventDepartmentRequestsPath, type DepartmentRequestRow } from '@/entities/security-event';
-import { departmentWorkRow } from './desk-model';
+import { departmentWorkRow, assistantWorkAction } from './desk-model';
 import styles from './workspace.module.css';
 
 export function WorkdeskComposer() {
@@ -44,29 +44,55 @@ function Refresh({ label, busy, run }: { label: string; busy: boolean; run(): vo
   </button>;
 }
 
+function AssistantRows({ rows }: { rows: AssistantTask[] }) {
+  return <ul>{rows.map(task => {
+    const state = taskPresentation(task);
+    return <li key={task.id}><Link href={assistantTaskHref(task.id)} className={styles.row}>
+      <div className={styles.rowBody}>
+        <strong>{assistantTaskTitle(task)}</strong>
+        <p className={styles.meta}>{[task.plan.businessDate ? assistantDate(task.plan.businessDate) : 'Дата уточняется', task.plan.objectName,
+          task.plan.personnelTotal == null ? null : `${task.plan.personnelTotal} чел.`].filter(Boolean).join(' · ')}</p>
+        <div className={styles.next}><span className={styles.state} data-tone={task.status === 'completed' ? 'quiet' : task.status === 'needs_information' ? 'attention' : 'active'}>{state.label}</span><span>{state.owner}</span></div>
+        <p className={styles.next}>{assistantWorkAction(task.status)}</p>
+      </div><ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link></li>;
+  })}</ul>;
+}
+
 export function AssistantWorkQueue() {
   const query = useAssistantTasks();
   const data = query.isError ? undefined : query.data;
-  const rows = data?.results.slice(0, 5) ?? [];
+  const current = data?.results.filter(task => task.status !== 'completed') ?? [];
+  const history = data?.results.filter(task => task.status === 'completed') ?? [];
+  const rows = current.slice(0, 5);
   return <section className={styles.panel} aria-label="Последние поручения">
-    <div className={styles.panelHead}><h2>Последние поручения</h2><Refresh label="Обновить поручения" busy={query.isFetching} run={() => void query.refetch()} /></div>
+    <div className={styles.panelHead}><h2>Текущие среди последних поручений</h2><Refresh label="Обновить поручения" busy={query.isFetching} run={() => void query.refetch()} /></div>
     {query.isError ? <p className={styles.empty} role="alert">{query.readAccessBlocked ? 'Доступ к поручениям не подтверждён.' : 'Не удалось обновить поручения.'} Повторите загрузку.</p>
       : !data ? <p className={styles.empty} role="status">Загружаем поручения…</p>
-      : rows.length === 0 ? <div className={styles.empty}><strong>Поручений пока нет</strong>Опишите задачу в помощнике. После сохранения здесь будет видно, кто выполняет следующий шаг.</div>
-      : <ul>{rows.map(task => {
-        const state = taskPresentation(task);
-        return <li key={task.id}><Link href={assistantTaskHref(task.id)} className={styles.row}>
-          <div className={styles.rowBody}>
-            <strong>{assistantTaskTitle(task)}</strong>
-            <p className={styles.meta}>{[task.plan.businessDate ? assistantDate(task.plan.businessDate) : 'Дата уточняется', task.plan.objectName,
-              task.plan.personnelTotal == null ? null : `${task.plan.personnelTotal} чел.`].filter(Boolean).join(' · ')}</p>
-            <div className={styles.next}><span className={styles.state} data-tone={task.status === 'needs_information' ? 'attention' : 'active'}>{state.label}</span><span>{state.owner}</span></div>
-          </div><ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        </Link></li>;
-      })}</ul>}
-    {!!rows.length && <div className={styles.foot}><span>Показаны последние {rows.length}. Полный список — в помощнике.</span>
-      <Link className={styles.textLink} href="/security-ops/assistant/?page=1">Все поручения <ArrowRight className="size-3.5" aria-hidden /></Link></div>}
+      : <>
+        {rows.length ? <AssistantRows rows={rows} /> : data.total === 0
+          ? <div className={styles.empty}><strong>Поручений пока нет</strong>Подготовьте новое поручение.</div>
+          : <div className={styles.empty}><strong>На первой странице нет текущих поручений</strong>Проверьте остальные страницы в полном списке или подготовьте новое поручение.</div>}
+        {!!history.length && <details className={styles.history}>
+          <summary>История поручений на первой странице ({history.length})</summary>
+          <AssistantRows rows={history} />
+        </details>}
+        <div className={styles.foot}>{rows.length > 0 && <span>Показаны {rows.length} из {current.length} текущих на первой странице. Более ранние поручения — в полном списке.</span>}
+          <Link className={styles.textLink} href="/security-ops/assistant/?page=1">Все поручения <ArrowRight className="size-3.5" aria-hidden /></Link></div>
+      </>}
   </section>;
+}
+
+function DepartmentRows({ rows }: { rows: DepartmentRequestRow[] }) {
+  return <ul>{rows.map(row => {
+    const work = departmentWorkRow(row);
+    return <li key={row.allocationId}><Link href={work.href} className={styles.row}>
+      <div className={styles.rowBody}><strong>{row.title}</strong>
+        <p className={styles.meta}>{assistantDate(row.businessDate)} · {row.departmentName}<br />{work.detail}</p>
+        <div className={styles.next}><span className={styles.state} data-tone={work.tone}>{work.status}</span><span>{work.action}</span></div>
+      </div><ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link></li>;
+  })}</ul>;
 }
 
 export function DepartmentWorkQueue() {
@@ -74,26 +100,26 @@ export function DepartmentWorkQueue() {
   const query = useOpsProtectedRead<{ results: DepartmentRequestRow[] }>(['ops-workdesk', 'department-requests'], [], access,
     () => opsApiClient.get(securityEventDepartmentRequestsPath()), { poll: () => 30000 });
   const data = query.isError ? undefined : query.data;
-  const rows = [...(data?.results ?? [])].sort((a, b) => {
+  const current = (data?.results ?? []).filter(row => !departmentWorkRow(row).history).sort((a, b) => {
     const priority = (row: DepartmentRequestRow) => ({ attention: 0, active: 1, quiet: 2 })[departmentWorkRow(row).tone];
     return priority(a) - priority(b);
-  }).slice(0, 6);
+  });
+  const history = (data?.results ?? []).filter(row => departmentWorkRow(row).history);
+  const rows = current.slice(0, 6);
   return <section className={styles.panel} aria-label="Запросы вашему департаменту">
     <div className={styles.panelHead}><h2>Запросы вашему департаменту</h2><Refresh label="Обновить запросы" busy={query.isFetching} run={() => void query.refetch()} /></div>
     {query.isError ? <p role="alert" className={styles.empty}>Не удалось обновить запросы. Повторите загрузку.</p>
       : !data ? <p role="status" className={styles.empty}>Загружаем запросы…</p>
-      : rows.length === 0 ? <div className={styles.empty}><strong>Запросов пока нет</strong>Когда Штаб запросит людей, поручение появится здесь.</div>
-      : <ul>{rows.map(row => {
-        const work = departmentWorkRow(row);
-        return <li key={row.allocationId}><Link href={work.href} className={styles.row}>
-          <div className={styles.rowBody}><strong>{row.title}</strong>
-            <p className={styles.meta}>{assistantDate(row.businessDate)} · {row.departmentName}<br />{work.detail}</p>
-            <div className={styles.next}><span className={styles.state} data-tone={work.tone}>{work.status}</span><span>{work.action}</span></div>
-          </div><ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        </Link></li>;
-      })}</ul>}
-    {!!rows.length && <div className={styles.foot}><span>Сначала запросы, требующие ответа.</span>
-      <Link href="/employees?view=forces&tab=requests" className={styles.textLink}>Все запросы <ArrowRight className="size-3.5" aria-hidden /></Link></div>}
+      : <>
+        {rows.length ? <DepartmentRows rows={rows} /> : <div className={styles.empty}><strong>Нет запросов, требующих ответа</strong>Новые и возвращённые запросы появятся здесь.</div>}
+        {!!history.length && <details className={styles.history}>
+          <summary>История ответов и завершённых сборов ({history.length})</summary>
+          <DepartmentRows rows={history.slice(0, 6)} />
+          {history.length > 6 && <p className={styles.foot}>Показаны 6 из {history.length}. Остальные — в полном списке запросов.</p>}
+        </details>}
+        <div className={styles.foot}>{rows.length > 0 && <span>Показаны {rows.length} из {current.length} запросов, требующих ответа.</span>}
+          <Link href="/employees?view=forces&tab=requests" className={styles.textLink}>Все запросы <ArrowRight className="size-3.5" aria-hidden /></Link></div>
+      </>}
   </section>;
 }
 
