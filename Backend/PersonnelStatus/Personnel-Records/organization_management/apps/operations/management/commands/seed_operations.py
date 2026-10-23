@@ -21,6 +21,8 @@ from organization_management.apps.operations.services import (
 )
 
 PERMISSIONS = [
+    ("resource_calculation.view", "Просмотр расчёта сил и средств"),
+    ("resource_calculation.manage", "Ведение расчёта сил и средств"),
     ("duty.dispatch", "Расстановка выделенных на дежурство сотрудников"),
     ("*", "Все права"),
     ("admin.roles", "Управление ролями"),
@@ -190,6 +192,7 @@ PERMISSIONS = [
 #: 3. Ни одного права «на всякий случай»: лишнее право не заметят, пока им не
 #:    воспользуются не тем человеком.
 ROLES = [
+    ("RESOURCE_CALCULATION_PLANNER", "Планировщик расчёта сил и средств"),
     ("ADMIN", "Администратор системы"),
     # ── Основа ──────────────────────────────────────────────────────────
     ("EMPLOYEE", "Сотрудник"),
@@ -283,6 +286,7 @@ SECTION_READ = ("catalog.view", "personnel.view", "orgstructure.view",
 OPS_READ = ("event.view", *SECTION_READ)
 
 ROLE_PERMISSIONS = {
+    "RESOURCE_CALCULATION_PLANNER": ["event.view", "resource_calculation.view", "resource_calculation.manage"],
     "ADMIN": ["*"],
 
     # Рядовой сотрудник видит РОВНО пять экранов, названных заказчиком: мой

@@ -36,6 +36,7 @@ export interface ListOpsAuditLogsResponse {
  * в ленте её читают вслух при разбирательстве.
  */
 export const AUDIT_ACTION_LABEL: Record<string, string> = {
+  RESOURCE_CALCULATION_SAVED: "Расчёт сил и средств сохранён",
   STATUS_CREATED: "Статус заведён",
   STATUS_UPDATED: "Статус изменён",
   STATUS_CANCELLED: "Статус отменён",

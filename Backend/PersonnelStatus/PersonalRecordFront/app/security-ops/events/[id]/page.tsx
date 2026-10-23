@@ -296,6 +296,12 @@ function SecurityEventScreen() {
                 : ""
             } · ответственный: ${event.ownerName}`}
           />
+          {!permissionsLoading && (hasPermission('resource_calculation.view') || hasPermission('resource_calculation.manage')) && (
+            <Link href={`/security-ops/events/${encodeURIComponent(event.id)}/force-calculation`}
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary-ink hover:underline">
+              Расчёт сил и средств →
+            </Link>
+          )}
           {/* Карточка ОМ — хаб: объект кликабелен отсюда на любом этапе.
               Ссылки «Сводка ГВО →» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
               в сводку ведёт ссылка «Карточка визита →» в шапке бюллетеня

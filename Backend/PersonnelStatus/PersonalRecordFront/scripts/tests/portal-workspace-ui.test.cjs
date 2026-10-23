@@ -11,7 +11,7 @@ function fixture(codes=['*'], pathname='/workspace',state={}) {
     '@/lib/auth':{useAuth:()=>({user:{id:'test',name:'Test user'}})},
     '@/hooks/use-security-events':{useSecurityEvents:()=>({data:{total:0}})},
     '@/components/dashboard-layout':{DashboardLayout:({children})=>children},
-    '@/features/portal-workspace/work-queues':{AssistantWorkQueue:()=>null,DepartmentWorkQueue:()=>null,PersonalWork:()=>null,WorkdeskComposer:()=>null},
+    '@/features/portal-workspace/work-queues':{AssistantWorkQueue:()=>null,DepartmentWorkQueue:()=>null,PersonalWork:()=>null,WorkdeskComposer:()=>null,ResourceCalculationQueue:()=>React.createElement('section',{'aria-label':'Сохранённые расчёты'})},
     '@/shared/config/in-development':{inDevelopmentOfRoute:()=>null,inDevelopmentSummary:()=>''},
     '@tanstack/react-query':{useQueryClient:()=>client},
   };
@@ -43,6 +43,34 @@ test('home retains the main admin action without a duplicate navigation catalogu
     assert.match(html,/href="\/settings\/users"/);
     assert.doesNotMatch(html,/<aside|Быстрый переход|Основные рабочие задачи/);
   }finally{f.client.clear();}
+});
+
+test('dedicated calculation reader and planner see their desk without an extra sidebar module',()=>{
+  for(const grant of ['resource_calculation.view','resource_calculation.manage']) {
+    const f=fixture(['event.view',grant]);try {
+      const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/workspace').PortalWorkspace));
+      assert.match(html,/<h1[^>]*>Расчёт сил и средств<\/h1>/);
+      assert.match(html,/aria-label="Сохранённые расчёты"/);
+      const sidebar=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
+      assert.doesNotMatch(sidebar,/resource-calculations|force-calculation/);
+    }finally{f.client.clear();}
+  }
+});
+
+test('calculation queue distinguishes true emptiness from a failed or paginated read',()=>{
+  const row={eventId:'test-event',title:'Изолированный расчёт',dateFrom:'2026-10-23',dateTo:null,stage:'BULLETIN',ownerDivisionName:'Тестовый отдел',version:2,updatedAt:'2026-10-23T06:00:00Z',routeCount:2};
+  for(const queue of [
+    {data:{results:[row],count:26,next:'?page=2',previous:null}},
+    {data:{results:[],count:0,next:null,previous:null}},
+    {data:{results:[row],count:26,next:null,previous:'?page=1'},isError:true,readAccessBlocked:true},
+  ]) {
+    const f=fixture(['event.view','resource_calculation.view'],'/workspace',{queue:{...queue,refetch:()=>{}}});try {
+      const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/work-queues').ResourceCalculationQueue));
+      if(queue.isError) {assert.match(html,/role="alert"/);assert.doesNotMatch(html,/Изолированный расчёт|Расчётов пока нет/);}
+      else if(queue.data.count===0) {assert.match(html,/Расчётов пока нет/);assert.doesNotMatch(html,/Следующая страница/);}
+      else {assert.match(html,/events\/test-event\/force-calculation/);assert.match(html,/Следующая страница/);assert.match(html,/26/);}
+    }finally{f.client.clear();}
+  }
 });
 test('all authorized employee work modes stay reachable without duplicate destinations',()=>{
   for(const codes of [['*'],['forces.allocate','forces.command','status.view']]) for(const query of ['', 'view=forces&tab=collections', 'view=daily&businessDate=2026-10-23']) {

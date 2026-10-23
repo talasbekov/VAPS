@@ -125,8 +125,8 @@ class TestReferenceReads:
         api, _user = admin_client
         seed_role("VIEWER", ["status.view"])
         roles = api.get(ROLES_URL).json()["results"]
-        # The read-only integration role is provisioned by additive migration0144.
-        assert [r["code"] for r in roles] == ["ADMIN", "DIGITAL_TWIN_READER", "VIEWER"]
+        # Additive migrations0144/0147 provision the unassigned reference roles.
+        assert [r["code"] for r in roles] == ["ADMIN", "DIGITAL_TWIN_READER", "RESOURCE_CALCULATION_PLANNER", "VIEWER"]
         perms = [p["code"] for p in api.get(PERMISSIONS_URL).json()["results"]]
         # Права цепочки сбора сил заводит МИГРАЦИЯ 0047 (Plane №74), а не сид:
         # справочник прав живёт и на заполненных базах, где `seed_operations`
@@ -147,12 +147,16 @@ class TestReferenceReads:
             "digital_twin.read",
             # Миграция 0136 добавляет право расстановки и заполненным базам.
             "duty.dispatch",
+            # Migration0147 also bootstraps event.view on a clean installation.
+            "event.view",
             "forces.allocate",
             "forces.command",
             "forces.select",
             # Миграция 0137 добавляет право нормативных документов заполненным базам.
             "legal.manage",
             "placement.manage",
+            "resource_calculation.manage",
+            "resource_calculation.view",
             "service_summary.view",
             "status.manage",
             "status.view",
@@ -325,7 +329,7 @@ def test_permissions_search_looks_at_code_name_and_description():
     Permission.objects.create(
         code="reports.export", name="Выгрузка отчётов", description="в Excel"
     )
-    Permission.objects.create(code="event.view", name="Просмотр мероприятий")
+    Permission.objects.get_or_create(code="event.view", defaults={"name": "Просмотр мероприятий"})
 
     by_code = admin.get(f"{PERMISSIONS_URL}?search=reports").json()["results"]
     by_name = admin.get(f"{PERMISSIONS_URL}?search=Выгрузка").json()["results"]
