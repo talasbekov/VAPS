@@ -7,7 +7,7 @@ import { DashboardLayout } from '@/components/dashboard-layout';
 import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { portalWorkspace } from './model';
 import { workdeskKind, WORKDESK_COPY } from './desk-model';
-import { AssistantWorkQueue, DepartmentWorkQueue, PersonalWork, WorkdeskComposer } from './work-queues';
+import { AssistantWorkQueue, DepartmentWorkQueue, PersonalWork, ResourceCalculationQueue, WorkdeskComposer } from './work-queues';
 import styles from './workspace.module.css';
 
 export function PortalWorkspace() {
@@ -15,7 +15,8 @@ export function PortalWorkspace() {
   const client = useQueryClient();
   const tasks = portalWorkspace(access);
   const all = [...tasks.primary, ...tasks.more];
-  const kind = workdeskKind(all, access.hasGlobalPermission('admin.roles'));
+  const kind = workdeskKind(all, access.hasGlobalPermission('admin.roles'),
+    access.hasPermission('event.view') && (access.hasPermission('resource_calculation.view') || access.hasPermission('resource_calculation.manage')));
   const copy = WORKDESK_COPY[kind];
   const ready = !access.isLoading && !access.error && access.permissions !== undefined;
   const hasAssistant = all.some(task => task.id === 'assistant');
@@ -36,6 +37,7 @@ export function PortalWorkspace() {
         {kind === 'commander' && <WorkdeskComposer />}
         {kind === 'department' && <DepartmentWorkQueue />}
         {kind === 'personal' && <PersonalWork />}
+        {kind === 'resources' && <ResourceCalculationQueue />}
         {showLead && lead && <section className={styles.lead} aria-label="Главное действие">
           <h2>{lead.title}</h2><p>{lead.description}</p><Link href={lead.href} className={styles.action}>{lead.title}<ArrowRight className="size-4" aria-hidden /></Link>
         </section>}

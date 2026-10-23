@@ -312,3 +312,6 @@ from organization_management.apps.operations.models_duty_dispatch import (  # no
 from organization_management.apps.operations.models_assistant import (  # noqa: E402,F401
     OpsAssistantTask, OpsAssistantReceipt,
 )
+from organization_management.apps.operations.models_resource_calculation import (  # noqa: E402,F401
+    OpsResourceCalculation,
+)

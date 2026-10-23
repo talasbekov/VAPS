@@ -1262,6 +1262,29 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path, 
         kind="INTERNAL",
         actor=ACTOR,
     )
+    # The independent planning aggregate writes its own saved-version action
+    # through the real authenticated API, retaining exact ACTIONS equality.
+    from organization_management.apps.operations.tests.support import client_for
+    from organization_management.apps.ops.resource_calculation_rules import empty_document
+
+    calculation_api, calculation_author = client_for(
+        "resource-audit-coverage", "RESOURCE_AUDIT_COVERAGE",
+        ("event.view", "resource_calculation.manage"), scope_division_id=home.pk,
+    )
+    calculation_response = calculation_api.put(
+        f"/api/ops/security-events/{doomed.pk}/resource-calculation/",
+        {"expectedVersion": 0, "document": empty_document()}, format="json",
+    )
+    assert calculation_response.status_code == 200
+    calculation_entry = only_event(action=audit_service.RESOURCE_CALCULATION_SAVED)
+    assert calculation_entry.actor_user_id == str(calculation_author.pk)
+    assert calculation_entry.entity_type == audit_service.ENTITY_SECURITY_EVENT
+    assert calculation_entry.entity_id == doomed.pk
+    assert calculation_entry.old_value == {"version": 0}
+    assert calculation_entry.new_value == {
+        "version": 1, "ownerDivisionId": home.pk,
+        "routeCount": 0, "groupCount": 0, "segmentCount": 0,
+    }
     event_service.delete_event(doomed.pk, actor=ACTOR)
 
     # Завершение расстановки с НЕДОБОРОМ (`[РАС-06]`, Plane №396) — решение

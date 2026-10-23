@@ -132,3 +132,53 @@ export function PersonalWork() {
     {me.data.unlinked_reason || 'Обратитесь к администратору доступа. После привязки здесь появятся ваши назначения.'}</section>;
   return <MyNextShift employeeId={String(me.data.employee.id)} />;
 }
+
+interface ResourceCalculationRow {
+  eventId: string; title: string; dateFrom: string; dateTo: string | null;
+  stage: string; ownerDivisionName: string; version: number; updatedAt: string; routeCount: number;
+}
+interface ResourceCalculationPage {
+  results: ResourceCalculationRow[]; count: number; next: string | null; previous: string | null;
+}
+
+/** The server lists only saved calculations within the current owner's scope. */
+export function ResourceCalculationQueue() {
+  const reader = useOpsReadAccess('resource_calculation.view');
+  const manager = useOpsReadAccess('resource_calculation.manage');
+  const access = { ...reader, allowed: reader.allowed || manager.allowed };
+  const [selection, setSelection] = useState({ scope: access.scope, page: 1 });
+  const page = selection.scope === access.scope ? selection.page : 1;
+  const query = useOpsProtectedRead<ResourceCalculationPage>(['ops-resource-calculations', 'list'], [page], access,
+    () => opsApiClient.get(`/api/ops/resource-calculations/?page=${page}`));
+  const data = query.isError ? undefined : query.data;
+  return <section className={styles.panel} aria-label="Сохранённые расчёты">
+    <div className={styles.panelHead}><h2>Сохранённые расчёты</h2>
+      <Refresh label="Обновить расчёты" busy={query.isFetching} run={() => void query.refetch()} /></div>
+    {query.isError ? <p className={styles.empty} role="alert">{query.readAccessBlocked
+      ? 'Доступ к расчётам не подтверждён. Проверьте назначенную роль и область.'
+      : 'Не удалось загрузить расчёты. Повторите загрузку.'}</p>
+      : !data ? <p className={styles.empty} role="status">Загружаем расчёты…</p>
+      : <>
+        {data.results.length ? <ul>{data.results.map(row => <li key={row.eventId}>
+          <Link href={`/security-ops/events/${encodeURIComponent(row.eventId)}/force-calculation`} className={styles.row}>
+            <div className={styles.rowBody}><strong>{row.title}</strong>
+              <p className={styles.meta}>{assistantDate(row.dateFrom)}{row.dateTo && row.dateTo !== row.dateFrom ? ` — ${assistantDate(row.dateTo)}` : ''} · {row.ownerDivisionName}</p>
+              <p className={styles.next}>Маршрутов: {row.routeCount} · Версия {row.version}{row.stage === 'CLOSED' ? ' · ОМ закрыто, только просмотр' : ''}</p>
+            </div><ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+        </li>)}</ul> : <div className={styles.empty}><strong>{data.count === 0 ? 'Расчётов пока нет' : 'На этой странице расчётов нет'}</strong>
+          Откройте мероприятие в реестре и выберите «Расчёт сил и средств».</div>}
+        {(data.previous || data.next) && <div className={styles.foot} aria-label="Страницы расчётов">
+          <span>Страница {page} · Всего: {data.count}</span>
+          <div className="flex flex-wrap gap-4">
+            {data.previous && <button type="button" className={styles.textLink} disabled={query.isFetching}
+              onClick={() => setSelection({ scope: access.scope, page: Math.max(1, page - 1) })}>Предыдущая страница</button>}
+            {data.next && <button type="button" className={styles.textLink} disabled={query.isFetching}
+              onClick={() => setSelection({ scope: access.scope, page: page + 1 })}>Следующая страница</button>}
+          </div>
+        </div>}
+      </>}
+    <div className={styles.foot}><span>Новый расчёт создаётся в карточке ОМ.</span>
+      <Link href="/security-ops/events" className={styles.textLink}>Открыть реестр ОМ <ArrowRight className="size-3.5" aria-hidden /></Link></div>
+  </section>;
+}

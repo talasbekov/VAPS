@@ -383,6 +383,7 @@ class OpsSecurityEventAdmin(admin.ModelAdmin):
 
 from organization_management.admin_auto import register_allowed  # noqa: E402
 from organization_management.apps.operations.models_assistant import OpsAssistantTask, OpsAssistantReceipt  # noqa: E402
+from organization_management.apps.operations.models_resource_calculation import OpsResourceCalculation  # noqa: E402
 
 
 class AssistantHistoryAdmin(admin.ModelAdmin):
@@ -413,6 +414,17 @@ class AssistantReceiptAdmin(AssistantHistoryAdmin):
     list_display = ("id", "task", "operation_key", "executed_by", "created_at")
     list_filter = ("operation_key",)
     search_fields = ("executed_by", "operation_key")
+
+
+@admin.register(OpsResourceCalculation)
+class ResourceCalculationAdmin(AssistantHistoryAdmin):
+    """Inspect saved calculations; authenticated service owns revisions and audit."""
+
+    list_display = ("event", "owner_division", "version", "updated_by", "updated_at")
+    list_select_related = ("event", "owner_division")
+    search_fields = ("event__title", "owner_division__name", "updated_by")
+    list_filter = ("updated_at",)
+    actions = None
 
 register_allowed(
     "operations",

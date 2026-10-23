@@ -63,7 +63,7 @@ Interface: `AssistantProgress({task: AssistantTask})`; optional `task.event.prog
 - [x] Implement read-only progress projection and compact need/roster/remainder with pending departments. Use existing stage/action authorization for links; detailed analytics remains separate.
 - [x] Review each domain and combined diff; resolve cross-task mismatches, then run frontend gate, appropriate PostgreSQL tests and browser full journey on a frozen local build.
 - [x] Install rehearsal then primary with fresh quiet backup and data fingerprints; inspect desktop/mobile/dark screens and actual role reads.
-- [ ] Update role guide/tasks/journal/handoff, commit accepted source, publish bounded VAPS export under existing authorization and verify CI/tree. Report actual scope and remaining limitations.
+- [x] Update role guide/tasks/journal/handoff, commit accepted source, publish bounded VAPS export under existing authorization and verify CI/tree. Report actual scope and remaining limitations.
 
 ## Pre-flight decisions
 

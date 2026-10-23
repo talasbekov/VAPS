@@ -17,6 +17,18 @@ test('workdesk follows actual authorized destinations and retains mixed-role dep
   assert.equal(workdeskKind(tasks('statuses'), false), 'status');
   assert.equal(workdeskKind(tasks('personal'), false), 'personal');
 });
+
+test('calculation grant gets its desk while all existing work priorities remain intact', () => {
+  const { workdeskKind, WORKDESK_COPY } = load();
+  const tasks = (...ids) => ids.map(id => ({ id }));
+  assert.equal(workdeskKind(tasks('events', 'personal'), false, true), 'resources');
+  assert.equal(WORKDESK_COPY.resources.title, 'Расчёт сил и средств');
+  for (const [ids, admin, expected] of [
+    [['events'], true, 'admin'], [['department-forces'], false, 'department'],
+    [['assistant'], false, 'commander'], [['statuses'], false, 'status'],
+  ]) assert.equal(workdeskKind(tasks(...ids), admin, true), expected);
+  assert.equal(workdeskKind(tasks('events', 'personal'), false, false), 'personal');
+});
 const request = { allocationId: 'a/1', title: 'Встреча', businessDate: '2026-10-25', need: 20, allocating: null, assigned: 0, status: 'NOTIFIED', stage: 'FORCES', overdue: false, departmentName: 'Шестой департамент' };
 test('request links target exact allocation and preserve business date without injecting query parameters', () => {
   const result = load().departmentWorkRow(request);

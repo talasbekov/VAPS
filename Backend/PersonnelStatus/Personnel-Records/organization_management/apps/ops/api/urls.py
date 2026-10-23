@@ -1,5 +1,6 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
 from django.urls import path
+from organization_management.apps.ops.api.views_resource_calculation import ResourceCalculationViewSet
 from rest_framework.routers import DefaultRouter
 from organization_management.apps.ops.api.views_assistant import OpsAssistantTaskViewSet
 from organization_management.apps.ops.api.views_recon_materials import ReconMaterialsViewSet
@@ -273,6 +274,9 @@ router.register(
 # PUT /approval-route/ — замена маршрута целиком: роутер у коллекции знает
 # только GET/POST, поэтому явный путь стоит ПЕРЕД маршрутами роутера.
 urlpatterns = [
+    path("resource-calculations/", ResourceCalculationViewSet.as_view({"get": "list"}), name="ops-resource-calculations"),
+    path("security-events/<str:event_id>/resource-calculation/", ResourceCalculationViewSet.as_view({"get": "retrieve", "put": "replace"}), name="ops-resource-calculation"),
+    path("security-events/<str:event_id>/resource-calculation/export/", ResourceCalculationViewSet.as_view({"get": "export"}), name="ops-resource-calculation-export"),
     path(
         "security-events/<str:event_id>/visit-objects/<str:visit_object_id>/recon-materials/",
         ReconMaterialsViewSet.as_view({"get": "list", "post": "create"}),
