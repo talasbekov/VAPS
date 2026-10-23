@@ -111,6 +111,7 @@ export function useAcknowledgeMyAssignment() {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: MY_ASSIGNMENTS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["ops-profile-next", "assignments"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
     },
   });
@@ -133,6 +134,7 @@ export function useDeclineMyAssignment() {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: MY_ASSIGNMENTS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["ops-profile-next", "assignments"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
     },
   });

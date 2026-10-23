@@ -10,94 +10,29 @@
 «в строю» — человек на дежурстве, на соревнованиях или в отпуске по рапорту
 молча считался присутствующим.
 """
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.utils import timezone
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.catalog import (
+    LEGACY_REPORT_COLUMN_BY_STATUS as REPORT_COLUMN_BY_STATUS,
+    LEGACY_STATUS_PRIORITY as STATUS_PRIORITY,
+    PERSONNEL_REPORT_COLUMNS as ABSENCE_COLUMNS,
+    personnel_reporting_catalog,
+)
+from organization_management.apps.statuses.selectors import (
+    effective_status_types_by_employee,
+    statuses_effective_on_date,
+)
 from organization_management.apps.staff_unit.models import StaffUnit
 
 _ST = EmployeeStatus.StatusType
 
-# Колонка расхода для каждого типа статуса. Разбиение повторяет канонический
-# каталог ОМ (operations.StatusType.report_column_code): отпуск по рапорту
-# идёт в «Отпуск», соревнования и конференция — в «Учёбу», дежурство и отдых
-# после него — свои колонки (так же, как в бумажном расходе, см.
-# reports/utils.py).
-#
-# Принимающая сторона прикомандирования в этой карте не участвует вовсе: она
-# считается отдельно, по related_division строк SECONDED_TO (см. ниже). Эти
-# люди не из штата подразделения, и раскладывать их по его колонкам нельзя.
-REPORT_COLUMN_BY_STATUS: Dict[str, str] = {
-    _ST.IN_SERVICE: "in_service",
-    _ST.VACATION: "vacation",
-    _ST.LEAVE_BY_REPORT: "vacation",
-    _ST.SICK_LEAVE: "sick_leave",
-    _ST.BUSINESS_TRIP: "business_trip",
-    _ST.TRAINING: "training",
-    _ST.COMPETITION: "training",
-    _ST.CONFERENCE: "training",
-    _ST.ON_DUTY: "on_duty",
-    _ST.AFTER_DUTY: "after_duty",
-    _ST.OTHER_ABSENCE: "other_absence",
-    _ST.SECONDED_TO: "seconded_out",
-    # SECONDED_FROM в ту же колонку и это не описка: related_division такой
-    # строки — подразделение-ИСТОЧНИК, оно же родное для сотрудника, и в штате
-    # мы видим его именно там. Для родного подразделения человек ушёл.
-    # До колонки строка доходит редко: одобрение прикомандирования пытается
-    # завести пару SECONDED_TO + SECONDED_FROM на один период, но модель
-    # пересечения запрещает (EmployeeStatus.clean), а если пара всё же есть
-    # в данных — её разводит приоритет ниже.
-    _ST.SECONDED_FROM: "seconded_out",
-}
-
-# Порядок значимости при нескольких статусах на одну дату: меньше — важнее.
-# Числа повторяют приоритеты канонического каталога ОМ.
-#
-# Модель запрещает пересекающиеся статусы, так что обычно выбирать не из
-# чего. Разбор нужен для данных, заведённых мимо save() (импорт, bulk_create,
-# правка в БД): там пара «Откомандирован в» + «Прикомандирован из» встречается,
-# и SECONDED_TO (40) обязан выигрывать у SECONDED_FROM (50) — иначе у отдающей
-# стороны человек оказался бы «прикомандирован» к самому себе.
-STATUS_PRIORITY: Dict[str, int] = {
-    _ST.SICK_LEAVE: 10,
-    _ST.LEAVE_BY_REPORT: 15,
-    _ST.VACATION: 20,
-    _ST.BUSINESS_TRIP: 30,
-    _ST.TRAINING: 32,
-    _ST.COMPETITION: 34,
-    _ST.CONFERENCE: 36,
-    _ST.OTHER_ABSENCE: 38,
-    _ST.SECONDED_TO: 40,
-    _ST.SECONDED_FROM: 50,
-    _ST.AFTER_DUTY: 60,
-    _ST.ON_DUTY: 70,
-    _ST.IN_SERVICE: 999,
-}
-
-# Колонки расхода в порядке вывода. Генераторы (xlsx/docx/pdf) печатают
-# заголовки из этого же порядка — колонка, добавленная здесь, не потеряется
-# в документе.
-ABSENCE_COLUMNS: Tuple[Tuple[str, str], ...] = (
-    ("in_service", "В строю"),
-    ("vacation", "Отпуск"),
-    ("sick_leave", "Больничный"),
-    ("business_trip", "Командировка"),
-    ("training", "Учёба"),
-    ("on_duty", "На дежурстве"),
-    ("after_duty", "После дежурства"),
-    ("other_absence", "Прочие отсутствия"),
-    ("seconded_out", "Откомандировано"),
-)
-
-# «Наличествует» = кто в распоряжении подразделения на дату: свои в строю,
-# свои на дежурстве и прикомандированные извне. Отдых после дежурства сюда
-# НЕ входит — человек не в распоряжении. Определение собрано в одном месте
-# намеренно: это единственное место, где его придётся править, если владелец
-# читает «наличие» иначе.
+# In-service, on-duty and incoming staff are available to the division.
 PRESENT_OWN_COLUMNS: Tuple[str, ...] = ("in_service", "on_duty")
 
 
@@ -124,16 +59,10 @@ class DataAggregator:
         Отменённые исключены: отменённая строка остаётся в данных как след
         планирования, но фактом не является.
         """
-        return queryset.filter(start_date__lte=ref_date).exclude(
-            state=EmployeeStatus.StatusState.CANCELLED
-        ).filter(
-            Q(actual_end_date__gte=ref_date)
-            | Q(actual_end_date__isnull=True, end_date__gte=ref_date)
-            | Q(actual_end_date__isnull=True, end_date__isnull=True)
-        )
+        return statuses_effective_on_date(queryset, ref_date)
 
     def _effective_status_by_employee(
-        self, statuses: Iterable[EmployeeStatus]
+        self, statuses: Iterable[tuple], status_catalog
     ) -> Dict[int, str]:
         """Один статус на сотрудника — самый значимый из действующих.
 
@@ -146,16 +75,7 @@ class DataAggregator:
         Завершённые не отбрасываются вовсе: отчёт за прошедшую дату опирается
         именно на них.
         """
-        best: Dict[int, Tuple[int, int, str]] = {}
-        for employee_id, status_type, state in statuses:
-            rank = (
-                0 if state == EmployeeStatus.StatusState.ACTIVE else 1,
-                _priority(status_type),
-            )
-            current = best.get(employee_id)
-            if current is None or rank < current[:2]:
-                best[employee_id] = (*rank, status_type)
-        return {employee_id: value[2] for employee_id, value in best.items()}
+        return effective_status_types_by_employee(statuses, status_catalog)
 
     def collect_data(self, report) -> Dict[str, Any]:
         if report.division_id:
@@ -164,6 +84,7 @@ class DataAggregator:
             division_ids = list(Division.objects.values_list("id", flat=True))
 
         ref_date = self._reference_date(report)
+        status_catalog = personnel_reporting_catalog()
 
         # Штат подразделения — занятые штатные единицы. Подразделение человека
         # это подразделение его слота: другого признака у Employee нет.
@@ -180,24 +101,20 @@ class DataAggregator:
                     employee_id__in=list(division_by_employee.keys())
                 ),
                 ref_date,
-            ).values_list("employee_id", "status_type", "state")
+            ).values_list("employee_id", "status_type", "state", "start_date", "actual_end_date"), status_catalog
         )
 
         # Пустые счётчики на КАЖДОЕ подразделение области: подразделение без
         # сотрудников должно печататься нулевой строкой, а не исчезать.
         tally: Dict[int, Dict[str, int]] = {
-            did: {column: 0 for column, _label in ABSENCE_COLUMNS}
+            did: {column: 0 for column, _label in status_catalog.columns}
             for did in division_ids
         }
         for employee_id, did in division_by_employee.items():
             status_type = effective.get(employee_id)
             # Без действующего статуса человек в строю: отсутствие записи — не
             # отсутствие человека.
-            column = (
-                REPORT_COLUMN_BY_STATUS[status_type]
-                if status_type is not None
-                else "in_service"
-            )
+            column = status_catalog.column_for(status_type)
             tally[did][column] += 1
 
         # Прикомандированные считаются на ПРИНИМАЮЩЕЙ стороне по
@@ -208,7 +125,7 @@ class DataAggregator:
         incoming_rows = list(
             self._active_on_date(
                 EmployeeStatus.objects.filter(
-                    status_type=_ST.SECONDED_TO,
+                    status_type__in=status_catalog.aliases_for(_ST.SECONDED_TO),
                     related_division_id__in=division_ids,
                     employee__employment_status=Employee.EmploymentStatus.WORKING,
                 ),
@@ -225,11 +142,11 @@ class DataAggregator:
                     employee_id__in={employee_id for _did, employee_id in incoming_rows}
                 ),
                 ref_date,
-            ).values_list("employee_id", "status_type", "state")
+            ).values_list("employee_id", "status_type", "state", "start_date", "actual_end_date"), status_catalog
         )
         seconded_in_map: Dict[int, set] = {}
         for did, employee_id in incoming_rows:
-            if incoming_effective.get(employee_id) != _ST.SECONDED_TO:
+            if status_catalog.code_for(incoming_effective.get(employee_id)) != _ST.SECONDED_TO:
                 continue
             seconded_in_map.setdefault(did, set()).add(employee_id)
 
@@ -275,13 +192,6 @@ class DataAggregator:
         return {
             "division": report.division.name if report.division_id else "Вся организация",
             "date": str(ref_date),
-            "columns": list(ABSENCE_COLUMNS),
+            "columns": list(status_catalog.columns),
             "rows": rows,
         }
-
-
-def _priority(status_type: Optional[str]) -> int:
-    # Неизвестный код не должен вытеснять реальный статус: у него худший
-    # приоритет, а до колонки он всё равно не дойдёт (см. тест полноты
-    # REPORT_COLUMN_BY_STATUS).
-    return STATUS_PRIORITY.get(status_type, 10_000)

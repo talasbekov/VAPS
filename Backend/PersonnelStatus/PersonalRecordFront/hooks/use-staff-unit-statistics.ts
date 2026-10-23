@@ -1,8 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
 import { apiClient, type StaffUnitStatistics } from "@/lib/api";
-import { retryUnlessClientError } from "@/lib/query-retry";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
 
 /**
  * Счётчики штата по области актора. Кормит список отделов у фильтра на
@@ -14,17 +11,11 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
  * настоящая ошибка в ней потерялась бы.
  */
 export function useStaffUnitStatistics() {
-  const { status } = useSession();
-  const { hasPermission, isLoading, error } = useOpsPermissions();
-  return useQuery<StaffUnitStatistics>({
-    queryKey: ["staff-unit-statistics"],
-    enabled: status === "authenticated" && !isLoading && !error &&
-      (hasPermission("orgstructure.view") || hasPermission("status.view")),
-    queryFn: async () => {
-      return await apiClient.getStaffUnitStatistics();
-    },
-    retry: retryUnlessClientError,
-  });
+  const structure = useOpsReadAccess("orgstructure.view");
+  const status = useOpsReadAccess("status.view");
+  return useOpsProtectedRead<StaffUnitStatistics>(["staff-unit-statistics", "summary"], [],
+    { ...structure, allowed: structure.allowed || status.allowed },
+    () => apiClient.getStaffUnitStatistics(), { staleTime: 60_000 });
 }
 
 

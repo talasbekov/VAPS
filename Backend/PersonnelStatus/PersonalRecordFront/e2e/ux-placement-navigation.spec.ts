@@ -108,3 +108,29 @@ test('unknown object and post parameters normalize together without losing regis
   expect(new URL(page.url()).searchParams.get('back')).toBe('stage=PLACEMENT');
   expect(businessWrites).toEqual([]);
 });
+
+for (const binding of ['own', 'missing', 'legacy'] as const) {
+  test(`selected visit passport uses ${binding} binding without crossing objects`, async ({ page, request, businessWrites }) => {
+    const source = await readEvent(request);
+    const first = { ...source.visitObjects[0], id: 'passport-visit-a', objectId: '991001', objectName: 'Объект А', stage: 'PLACEMENT' as const };
+    const eventBinding = { objectId: '991001', objectName: 'Объект А', versionId: '991011', versionNumber: 1, effectiveFrom: '2026-01-01', boundAt: '2026-10-01T00:00:00Z' };
+    const secondBinding = { ...eventBinding, objectId: '991002', objectName: 'Объект Б', versionId: '991012' };
+    const second = { ...first, id: 'passport-visit-b', objectId: binding === 'legacy' ? '991001' : '991002', objectName: 'Объект Б', passportBinding: binding === 'own' ? secondBinding : null };
+    const event: SecurityEvent = { ...source, stage: 'PLACEMENT', objectId: '991001', passportBinding: eventBinding,
+      visitObjects: [first, second], placementAssignments: [], reconSectorPosts: [
+        { ...source.reconSectorPosts[0], id: 'passport-post-a', visitObjectId: first.id, post: 'Пост А' },
+        { ...source.reconSectorPosts[0], id: 'passport-post-b', visitObjectId: second.id, post: 'Пост Б' },
+      ] };
+    await page.route(url => url.pathname === `/api/ops/security-events/${event.id}/`, route => route.fulfill({ json: event }));
+    await signIn(page);
+    await page.goto(`/security-ops/events/${event.id}/?step=2&visit=${second.id}`);
+    const selected = page.getByRole('region', { name: 'Выбранный пост', exact: true });
+    await expect(selected).toContainText('Пост Б');
+    const link = selected.getByRole('link', { name: 'Паспорт поста →', exact: true });
+    if (binding === 'missing') await expect(link).toHaveCount(0);
+    else await expect(link).toHaveAttribute('href', binding === 'own'
+      ? '/security-ops/objects/991002/passports/991012/'
+      : '/security-ops/objects/991001/passports/991011/');
+    expect(businessWrites).toEqual([]);
+  });
+}

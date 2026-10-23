@@ -4,11 +4,14 @@
 // разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся то, что знает
 // только эта модалка: засев с сервера, сборка запроса и наряд.
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Controller } from "react-hook-form";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { employeeIdOfKey, staffUnitOfEmployeeKey } from "../model/row-key";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { calendarStatusDraft, calendarStatusFingerprint, type CalendarStatusContext, type CalendarPersonnelStatus } from "../model/calendar-status-draft";
 import { canManageStatusInDivision } from "@/entities/status/access";
 import {
   Dialog,
@@ -35,10 +38,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CalendarIcon, AlertTriangle, Clock, Save, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarIcon, AlertTriangle, Clock, Save, X } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
+import { captureOpsWriteAuthority } from "@/lib/ops-write-authority";
 import { parseIsoDate } from "@/shared/lib/date";
 import { opsExclusiveEndDate, statusServerDates, statusStartForSave, type StatusActionMode } from "../model/status-action-date";
 import {
@@ -50,6 +54,8 @@ import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { invalidateDutyViews, useDutyAssignment } from "@/hooks/use-duty-assignments";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { DutyAssignmentFields } from "./DutyAssignmentFields";
+import { DutyIntervalsFields } from "./DutyIntervalsFields";
+import { dutyIntervalDrafts, dutyIntervalsForNewStatus, dutyIntervalsPayload } from "../model/duty-intervals";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 import {
   EMPTY_PARTICIPATION_ROW,
@@ -80,6 +86,8 @@ interface EditStatusDialogProps {
   onSuccess?: () => void;
   initialStartDate?: Date; // Дата выбранного дня на экранах расхода.
   mode?: StatusActionMode;
+  /** Selected calendar day; an existing plan retains its full period. */
+  calendar?: CalendarStatusContext;
   /** Optional caller context retained for existing integrations. */
   employeePosition?: string;
   employeeDepartment?: string;
@@ -94,13 +102,18 @@ export function EditStatusDialog({
   onSuccess,
   initialStartDate,
   mode = "change",
+  calendar,
   employeePosition,
   employeeDepartment,
 }: EditStatusDialogProps) {
   const queryClient = useQueryClient();
   const savingRef = useRef(false);
+  const mountedRef = useRef(false);
+  useEffect(() => { mountedRef.current = open; return () => { mountedRef.current = false; }; }, [open]);
   const [isSaving, setIsSaving] = useState(false);
   const [dutyPlacementReady, setDutyPlacementReady] = useState(false);
+  const [dutyScheduleSeedNotice, setDutyScheduleSeedNotice] = useState<string | null>(null);
+  const [calendarTarget, setCalendarTarget] = useState<CalendarPersonnelStatus | null>(null);
   const serverDateQuery = useQuery({
     queryKey: ["daily-expense-board", "default-business-date"],
     queryFn: () => apiClient.getTomorrowBlockState({}),
@@ -123,6 +136,7 @@ export function EditStatusDialog({
     setValue,
     setError,
     watch,
+    getValues,
     formState: { errors, dirtyFields },
   } = useZodForm(editStatusFormSchema, EMPTY_EDIT_STATUS_FORM);
 
@@ -143,6 +157,23 @@ export function EditStatusDialog({
   const employeeDivision = staffUnitOfEmployeeKey(employeeId, staffUnits)?.division?.id;
   const canSaveStatus = !access.isLoading && !access.error && !employeeQuery.isError &&
     canManageStatusInDivision(access, employeeDivision);
+  const calendarTypes = useOpsStatusTypes(open && Boolean(calendar));
+  const calendarPlans = useQuery<{ current: CalendarPersonnelStatus | null; planned: CalendarPersonnelStatus[] }>({
+    queryKey: ["calendar-status-editor", wantedEmployeeId],
+    queryFn: () => apiClient.getEmployeePlannedStatuses(wantedEmployeeId!),
+    enabled: open && Boolean(calendar) && wantedEmployeeId !== null && canSaveStatus,
+    staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: false, retry: false,
+  });
+  const calendarSeed = useMemo(() => {
+    if (!calendar || !calendarPlans.data || calendarTypes.isLoading || calendarTypes.isError || !calendarTypes.all.length) return null;
+    try { return { draft: calendarStatusDraft(calendar, calendarTypes.all, calendarPlans.data.planned), error: null }; }
+    catch (error) { return { draft: null, error: error instanceof Error ? error.message : "Не удалось открыть статус." }; }
+  }, [calendar, calendarPlans.data, calendarTypes.all, calendarTypes.isLoading, calendarTypes.isError]);
+  const calendarTargetChanged = Boolean(calendarTarget && calendarPlans.data &&
+    calendarStatusFingerprint(calendarTarget) !== calendarStatusFingerprint(calendarPlans.data.planned.find(row => row.id === calendarTarget.id)));
+  const calendarReady = !calendar || Boolean(calendarSeed?.draft && !calendarTargetChanged && !calendarPlans.isError && !calendarPlans.isFetching && !calendarTypes.isFetching);
+  const actionMode = calendar && serverDates ? (calendar.date > serverDates.today ? "schedule" : "change") : mode;
+  const existingPlan = calendarTarget;
 
   // Ветки формы зависят только от статуса: у «В строю» дат нет, у «На
   // дежурстве» появляется наряд.
@@ -151,7 +182,8 @@ export function EditStatusDialog({
 
   const isInService = isInServiceStatus(statusCode);
   const hasDutyAssignment = usesDutyAssignment(statusCode);
-  const dutyQuery = useDutyAssignment(wantedEmployeeId, serverDates?.today ?? "", open && mode === "change" && hasDutyAssignment);
+  const dutyQuery = useDutyAssignment(wantedEmployeeId, initialStartDate ? format(initialStartDate, "yyyy-MM-dd") : serverDates?.today ?? "", open && !calendar && mode === "change" && hasDutyAssignment);
+  const dutyReadReady = Boolean(calendar || mode !== "change" || !hasDutyAssignment || (dutyQuery.allowed && dutyQuery.isSuccess && !dutyQuery.isFetching));
   const dutySeededForRef = useRef<string | null>(null);
 
 
@@ -164,7 +196,7 @@ export function EditStatusDialog({
   const seededForRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (open && employeeId && staffUnits.length > 0 && serverDates &&
+    if (open && employeeId && staffUnits.length > 0 && serverDates && calendarReady &&
         !serverDateQuery.isFetching && !serverDateQuery.isError) {
       if (seededForRef.current === employeeId) return;
 
@@ -179,6 +211,24 @@ export function EditStatusDialog({
       // Штатка с этим сотрудником пришла — форма засеяна, второй раз
       // сервер её не перезапишет.
       seededForRef.current = employeeId;
+
+      if (calendar && calendarSeed?.draft) {
+        const draft = calendarSeed.draft, placement = draft.placement;
+        setCalendarTarget(draft.target);
+        setValue("statusCode", draft.code);
+        setValue("status", naming.labelOf(draft.code, draft.code));
+        setValue("startDate", parseIsoDate(draft.start) ?? undefined);
+        setValue("endDate", draft.end ? parseIsoDate(draft.end) ?? undefined : undefined);
+        setValue("comment", draft.comment);
+        setValue("location", draft.location);
+        setValue("duty", placement ? {
+          dutyKind: placement.kind, objectId: placement.object_id, objectName: placement.object_name,
+          postId: placement.post_id ?? "", postName: placement.post_name ?? "",
+          groupId: placement.group_id ?? "", groupName: placement.group_name ?? "",
+        } : { ...EMPTY_DUTY_DRAFT });
+        setValue("dutyIntervals", dutyIntervalDrafts(placement));
+        return;
+      }
 
       // Проверяем оба формата: новый (unit.employee) и старый (unit.employees)
       const unitEmployee = (staffUnit as any).employee;
@@ -216,16 +266,15 @@ export function EditStatusDialog({
       setValue("endDate", end && end >= start ? end : undefined);
     }
   }, [open, employeeId, wantedEmployeeId, staffUnits, initialStartDate, mode, serverDates,
-    serverDateQuery.isFetching, serverDateQuery.isError, setValue]);
+    serverDateQuery.isFetching, serverDateQuery.isError, setValue, calendar, calendarReady, calendarSeed]);
 
   // Wait for server defaults, then seed once. A late response or refetch must
   // never overwrite a placement the user has already edited.
   useEffect(() => {
-    if (!open || mode !== "change" || !hasDutyAssignment || !employeeId || !serverDates || serverDateQuery.isFetching || !dutyQuery.allowed || !dutyQuery.isSuccess || dutyQuery.isFetching || dutySeededForRef.current === employeeId) return;
+    if (!open || calendar || mode !== "change" || !hasDutyAssignment || !employeeId || seededForRef.current !== employeeId || !serverDates || serverDateQuery.isFetching || !dutyQuery.allowed || !dutyQuery.isSuccess || dutyQuery.isFetching || dutySeededForRef.current === employeeId) return;
     dutySeededForRef.current = employeeId;
-    if (dirtyFields.duty) return;
     const placement = dutyQuery.assignment?.placement;
-    setValue(
+    if (!dirtyFields.duty) setValue(
       "duty",
       placement
         ? {
@@ -239,7 +288,17 @@ export function EditStatusDialog({
           }
         : EMPTY_DUTY_DRAFT
     );
-  }, [open, mode, hasDutyAssignment, employeeId, serverDates, serverDateQuery.isFetching, dutyQuery.allowed, dutyQuery.isSuccess, dutyQuery.isFetching, dutyQuery.assignment, dirtyFields.duty, setValue]);
+    const draftPlacement = getValues("duty");
+    const matchingPlacement = placement && draftPlacement.dutyKind === placement.kind && draftPlacement.objectId === placement.object_id &&
+      (placement.kind === "POST" ? draftPlacement.postId === placement.post_id : draftPlacement.groupId === placement.group_id);
+    if ((!dirtyFields.duty || matchingPlacement) && !dirtyFields.dutyIntervals) {
+      const start = getValues("startDate");
+      const date = start ? format(start, "yyyy-MM-dd") : initialStartDate ? format(initialStartDate, "yyyy-MM-dd") : serverDates.today;
+      const seeded = dutyIntervalsForNewStatus(placement, date);
+      setValue("dutyIntervals", seeded.intervals);
+      setDutyScheduleSeedNotice(seeded.adjusted ? `Для нового назначения оставлены выходы с ${date}; прежний график сохранён в истории.` : null);
+    }
+  }, [open, calendar, mode, hasDutyAssignment, employeeId, initialStartDate, staffUnits, serverDates, serverDateQuery.isFetching, dutyQuery.allowed, dutyQuery.isSuccess, dutyQuery.isFetching, dutyQuery.assignment, dirtyFields.duty, dirtyFields.dutyIntervals, getValues, setValue]);
 
   // Сброс формы при закрытии
   useEffect(() => {
@@ -247,6 +306,8 @@ export function EditStatusDialog({
       seededForRef.current = null;
       dutySeededForRef.current = null;
       setDutyPlacementReady(false);
+      setDutyScheduleSeedNotice(null);
+      setCalendarTarget(null);
       reset(EMPTY_EDIT_STATUS_FORM);
     }
   }, [open, reset]);
@@ -269,7 +330,7 @@ export function EditStatusDialog({
     error: statusTypesError,
     isFetching: statusTypesFetching,
     retry: retryStatusTypes,
-  } = useEmployeeStatusTypes(false);
+  } = useEmployeeStatusTypes();
   // 🔴 «ПРИВЛЕЧЁН НА МЕРОПРИЯТИЕ» В СПИСКЕ НЕ ПРЕДЛАГАЕТСЯ (Plane №486,
   // задача заказчика: «Убери статусы Привлечен на мероприятия(обе)»).
   //
@@ -384,6 +445,29 @@ export function EditStatusDialog({
       setError("root", { message: "Нет подтверждённого права изменять статус этого сотрудника. Черновик сохранён в форме." });
       return;
     }
+    if (!calendarReady) {
+      setError("root", { message: "Дождитесь проверки выбранного дня или повторите загрузку. Черновик сохранён." });
+      return;
+    }
+    if (calendar && existingPlan) {
+      // Re-read just before PATCH, including cases with no background refresh.
+      // Keep the draft rather than overwriting another editor's newer period.
+      let checkAuthority: () => void;
+      try { checkAuthority = captureOpsWriteAuthority(`/api/statuses/statuses/${existingPlan.id}/`, "PATCH"); }
+      catch { setError("root", { message: "Изменения недоступны до успешной проверки прав. Черновик сохранён." }); return; }
+      const latest = await calendarPlans.refetch();
+      if (!mountedRef.current) return;
+      try { checkAuthority(); }
+      catch { setError("root", { message: "Права доступа изменились во время проверки. Черновик сохранён; повторите проверку прав." }); return; }
+      if (latest.isError || !latest.data) {
+        setError("root", { message: "Не удалось перепроверить план перед сохранением. Черновик сохранён; повторите загрузку дня." });
+        return;
+      }
+      if (calendarStatusFingerprint(existingPlan) !== calendarStatusFingerprint(latest.data.planned.find(row => row.id === existingPlan.id))) {
+        setError("root", { message: "Запланированный статус уже изменён. Черновик сохранён; закройте форму, обновите календарь и откройте статус снова." });
+        return;
+      }
+    }
     if (!catalogReady) {
       setError("root", { message: "Дождитесь загрузки типов статусов или повторите её. Черновик сохранён в форме." });
       return;
@@ -396,14 +480,19 @@ export function EditStatusDialog({
       setError("root", { message: "Выберите объект и актуальный пост или группу." });
       return;
     }
+    if (usesDutyAssignment(values.statusCode) && !dutyReadReady) {
+      setError("root", { message: "Дождитесь загрузки текущего назначения и его выходов или повторите загрузку. Черновик сохранён." });
+      return;
+    }
     if (!serverDates || serverDateQuery.isError || serverDateQuery.isFetching) {
       setError("root", { message: "Дождитесь загрузки даты сервера." });
       return;
     }
     let startDateValue: string;
     try {
-      startDateValue = statusStartForSave({ mode, today: serverDates.today,
-        initialStartDate, chosenStartDate: values.startDate, inService: isInServiceStatus(values.statusCode) });
+      startDateValue = statusStartForSave({ mode: actionMode, today: serverDates.today,
+        initialStartDate: calendar ? parseIsoDate(calendar.date) ?? undefined : initialStartDate,
+        chosenStartDate: values.startDate, inService: isInServiceStatus(values.statusCode) });
     } catch (error) {
       setError("startDate", { message: error instanceof Error ? error.message : "Укажите дату начала." });
       return;
@@ -450,6 +539,10 @@ export function EditStatusDialog({
     // кто его поставил.
     //
     if (isEventParticipation) {
+      if (existingPlan) {
+        setError("root", { message: "Участие в ОМ оформляется отдельным назначением. Сначала измените период существующего плана в истории статусов." });
+        return;
+      }
       if (participations.length === 0) {
         // Без строки нельзя передать даже обязательный вид участия; пустое
         // мероприятие допустимо только внутри строки физнаря.
@@ -504,23 +597,26 @@ export function EditStatusDialog({
     const relatedDivision = staffUnitOfEmployeeKey(employeeId, staffUnits)?.division?.id;
 
     try {
-      await apiClient.createEmployeeStatus({
+      const payload = {
         employee: employeeIdNum,
         status_type: apiStatusType,
         start_date: startDateValue,
         end_date:
           valueIsInService || !values.endDate
-            ? undefined
+            ? (existingPlan ? null : undefined)
             : formatDate(values.endDate),
-        comment: values.comment || undefined,
+        comment: values.comment || (existingPlan ? "" : undefined),
         location: valueHasDutyAssignment ? undefined : values.location ?? "",
         related_division: relatedDivision,
         duty_assignment: valueHasDutyAssignment ? {
           kind: values.duty.dutyKind as "POST" | "GROUP",
           object_id: values.duty.objectId,
           ...(values.duty.dutyKind === "POST" ? { post_id: values.duty.postId } : { group_id: values.duty.groupId }),
+          ...dutyIntervalsPayload(values.dutyIntervals),
         } : undefined,
-      });
+      };
+      if (existingPlan) await apiClient.updateEmployeeStatusById(existingPlan.id, payload);
+      else await apiClient.createEmployeeStatus({ ...payload, end_date: payload.end_date ?? undefined });
 
       // Placement was saved atomically with the status, including future plans.
       void invalidateDutyViews(queryClient);
@@ -553,19 +649,53 @@ export function EditStatusDialog({
     finally { savingRef.current = false; setIsSaving(false); }
   };
 
+  const employeeUnit = staffUnitOfEmployeeKey(employeeId, staffUnits);
+  const employeeAssignment = employeeUnit?.employees?.find(row => row.employee?.id === wantedEmployeeId);
+  const employeeDetails = [
+    employeePosition || employeeAssignment?.position?.name,
+    employeeDepartment || employeeUnit?.division?.name,
+  ].filter(Boolean).join(" · ");
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!savingRef.current) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-[800px] w-full"
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-[800px]"
         onEscapeKeyDown={(event) => { if (savingRef.current) event.preventDefault(); }}
         onPointerDownOutside={(event) => { if (savingRef.current) event.preventDefault(); }}>
-        <DialogHeader>
-          <DialogTitle>Статусы сотрудника</DialogTitle>
-          <DialogDescription>
-            {employeeName ? `Сотрудник: ${employeeName}` : "Выберите новый статус для сотрудника"}
+        <DialogHeader className="shrink-0 gap-3 border-b px-4 py-4 text-left sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-center gap-3 pr-5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary-ink">
+              <BriefcaseBusiness className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 space-y-1.5">
+              <DialogTitle className="text-base leading-tight sm:text-lg">Статусы сотрудника</DialogTitle>
+              {status && <p className="text-xs text-muted-foreground">
+                Выбранный статус: <span className="font-medium text-foreground">{status}</span>
+              </p>}
+            </div>
+          </div>
+          <DialogDescription className="space-y-1 text-left">
+            <span className="block font-medium text-foreground">
+              {employeeName ? `Сотрудник: ${employeeName}` : "Выберите новый статус для сотрудника"}
+            </span>
+            {employeeDetails && <span className="block text-xs sm:text-sm">{employeeDetails}</span>}
           </DialogDescription>
         </DialogHeader>
 
-        {mode === "schedule" ? (
+        <form
+          onSubmit={(e) =>
+            void handleSubmit(submit, (invalid) => focusFirstError(invalid))(e)
+          }
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          noValidate
+        >
+        <div role="region" aria-label="Поля статуса" className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+        {calendar ? <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+          <p className="font-medium">{existingPlan ? "Изменение запланированного статуса" : "Статус на выбранный день"}</p>
+          {existingPlan ? <p>Изменится весь период: {format(parseIsoDate(existingPlan.start_date!)!, "dd.MM.yyyy")} — {existingPlan.end_date ? format(parseIsoDate(existingPlan.end_date)!, "dd.MM.yyyy") : "бессрочно"}.</p>
+            : <p>{format(parseIsoDate(calendar.date)!, "dd.MM.yyyy")}. Для временного статуса подставлен один день; период можно изменить.</p>}
+          {calendar.code === "DUTY" && <p className="mt-2 text-xs text-muted-foreground">Выходы из этого статуса задаются ниже. Для смен, назначенных отдельно дежурным департамента, откройте {access.hasPermission("duty.view") || access.hasPermission("duty.manage")
+            ? <Link className="text-primary underline underline-offset-4" href="/security-ops/duty-register/">журнал дежурств</Link> : "журнал дежурств у ответственного дежурного"}.</p>}
+        </div> : mode === "schedule" ? (
           <p className="text-sm font-medium">Планирование на будущую дату</p>
         ) : initialStartDate ? (
           <p className="text-sm">Статус на выбранную дату: {format(initialStartDate, "yyyy-MM-dd")}.</p>
@@ -593,16 +723,22 @@ export function EditStatusDialog({
             void employeeQuery.refetch();
           }}>Повторить проверку прав</Button>}
         </AlertDescription></Alert>}
-        <form
-          onSubmit={(e) =>
-            void handleSubmit(submit, (invalid) => focusFirstError(invalid))(e)
-          }
-          className="space-y-6"
-          noValidate
-        >
-          <fieldset disabled={isSaving || !serverDates || serverDateQuery.isFetching || serverDateQuery.isError} className="space-y-6 min-w-0">
+        {calendar && !calendarReady && <Alert><AlertDescription>
+          <p>{calendarTargetChanged ? "Запланированный статус уже изменён. Черновик сохранён; закройте форму, обновите календарь и откройте статус снова."
+            : calendarSeed?.error || (calendarPlans.isError || calendarTypes.isError ? "Не удалось проверить статусы выбранного дня." : "Проверяем статусы выбранного дня…")}</p>
+          {(calendarPlans.isError || calendarTypes.isError || calendarSeed?.error) && <Button type="button" variant="outline" size="sm" onClick={() => {
+            void calendarPlans.refetch(); calendarTypes.refetch();
+          }}>Повторить загрузку дня</Button>}
+        </AlertDescription></Alert>}
+          <fieldset disabled={isSaving || !serverDates || !calendarReady || serverDateQuery.isFetching || serverDateQuery.isError} className="min-w-0 space-y-5">
+          <section aria-labelledby="status-editor-direction" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <h3 id="status-editor-direction" className="text-sm font-semibold">Статус и направление</h3>
+            {serverDates && <p className="text-xs text-muted-foreground">Дата сервера: {format(parseIsoDate(serverDates.today)!, "dd.MM.yyyy")}</p>}
+          </div>
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Status Selection */}
-          <Field name="status" label="Новый статус" required error={errors.status}>
+          <Field name="status" label="Новый статус" required error={errors.status} className="min-w-0">
             {(field) => (
               <Controller
                 control={control}
@@ -618,7 +754,7 @@ export function EditStatusDialog({
                   }}>
                     <SelectTrigger
                       {...field}
-                      className="w-full"
+                      className="w-full min-w-0 [&>span]:truncate"
                       ref={input.ref}
                       onBlur={input.onBlur}
                     >
@@ -658,6 +794,13 @@ export function EditStatusDialog({
             )}
           </Field>
 
+          {!isInService && !hasDutyAssignment && (
+            <Field name="location" label={isOnDuty ? "Место дежурства" : "Место убытия"} error={errors.location} className="min-w-0">
+              {(field) => <Input {...field} {...register("location")} />}
+            </Field>
+          )}
+          </div>
+
           {statusTypesError && (
             <div className="space-y-2 text-sm">
               <p role="alert">Типы статусов не загрузились. Черновик сохранён.</p>
@@ -673,7 +816,10 @@ export function EditStatusDialog({
               Список мероприятий даёт окно — блок про право `event.view` не
               знает и знать не должен. */}
           {isEventParticipation && (
-            <div data-testid="participation-fields">
+            <div
+              data-testid="participation-fields"
+              className="min-w-0 [&>div]:border-0 [&>div]:p-0 [&>div>div.grid]:grid-cols-1 [&>div>div.grid]:gap-3 [&>div>div.grid]:rounded-lg [&>div>div.grid]:border [&>div>div.grid]:bg-muted/40 [&>div>div.grid]:p-3 [&>div>div.grid>button]:justify-self-end [&>div>div.grid>button]:min-h-9 [&>div>div.grid>p]:col-span-1"
+            >
               <EventParticipationFields
                 rows={participations}
                 onChange={setParticipations}
@@ -689,24 +835,25 @@ export function EditStatusDialog({
           )}
           {/* Наряд: только у «На дежурстве» */}
           {["DUTY_COMBAT", "DUTY_DAILY", "DUTY_OPERATIONAL"].includes(statusCode ?? "") && (
-            <p className="text-sm text-muted-foreground">
-              Сотрудник появится в разделе «Боевое дежурство по Службе» на даты статуса.
-              Сотрудник появится в «Расстановке дежурств» на даты статуса.
-              Объект, пост или группу и смену назначает дежурный принимающего департамента.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Сотрудник появится в «Журнале дежурств» на даты статуса.
+              Объект, пост или группу и смену назначает дежурный принимающего департамента в журнале.
             </p>
           )}
           {hasDutyAssignment && !hasOpsPermission("object.view") ? (
             <p role="alert" className="text-sm text-muted-foreground">Для назначения на объект нужен доступ к объектам.</p>
           ) : hasDutyAssignment && (
             <>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               После сохранения сотрудник появится в карточке выбранного объекта,
-              в разделе «Дежурные силы», на даты назначения. Пост или группу выбираете здесь.
+              в разделе «Дежурные силы», на даты выходов. Пост или группу выбираете здесь.
             </p>
             {dutyQuery.isError && <div role="alert" className="text-sm">
               Не удалось загрузить текущее назначение.
               <Button type="button" size="sm" variant="outline" disabled={dutyQuery.isFetching} onClick={() => void dutyQuery.refetch()}>Повторить загрузку назначения</Button>
             </div>}
+            {!dutyReadReady && !dutyQuery.isError && <p role="status" className="text-sm text-muted-foreground">Загружаем текущее назначение и выходы…</p>}
+            <div className="min-w-0 [&_button[role=combobox]]:w-full [&_button[role=combobox]]:min-w-0 [&_button[role=combobox]>span]:truncate">
             <Controller
               control={control}
               name="duty"
@@ -719,16 +866,27 @@ export function EditStatusDialog({
                 />
               )}
             />
+            </div>
+            <Controller control={control} name="dutyIntervals" render={({ field }) => (
+              <DutyIntervalsFields value={field.value} onChange={field.onChange} errors={errors.dutyIntervals} />
+            )} />
+            {dutyScheduleSeedNotice && <p role="status" className="text-sm text-muted-foreground">{dutyScheduleSeedNotice}</p>}
             </>
           )}
+          </section>
 
           {/* Период. У «В строю» дат нет — он бессрочный и стоит по умолчанию. */}
-          {isInService && mode === "change" ? (
+          <section aria-labelledby="status-editor-period" className="space-y-3 border-t pt-4">
+          <h3 id="status-editor-period" className="flex items-center gap-2 text-sm font-semibold text-primary-ink">
+            <CalendarIcon className="size-4" aria-hidden="true" />
+            Период
+          </h3>
+          {isInService && actionMode === "change" ? (
             <p className="text-sm text-muted-foreground">
               «{naming.labelOf(statusCode, status || IN_SERVICE_LABEL)}» — бессрочный статус, даты не указываются.
             </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
               <Field
                 name="startDate"
                 label="Дата начала"
@@ -750,7 +908,7 @@ export function EditStatusDialog({
                             variant="outline"
                             className="w-full justify-start text-left font-normal"
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            <CalendarIcon className="h-4 w-4" aria-hidden="true" />
                             {input.value
                               ? format(input.value, "dd MMMM yyyy", {
                                   locale: ru,
@@ -764,9 +922,9 @@ export function EditStatusDialog({
                             selected={input.value}
                             onSelect={input.onChange}
                             defaultMonth={input.value}
-                            disabled={(date) => !serverDates || (mode === "schedule"
+                            disabled={(date) => !serverDates || (actionMode === "schedule"
                               ? date < (parseIsoDate(serverDates.tomorrow) as Date)
-                              : !initialStartDate && date > (parseIsoDate(serverDates.today) as Date))}
+                              : !(initialStartDate || calendar) && date > (parseIsoDate(serverDates.today) as Date))}
                             initialFocus
                           />
                         </PopoverContent>
@@ -797,7 +955,7 @@ export function EditStatusDialog({
                             variant="outline"
                             className="w-full justify-start text-left font-normal"
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            <CalendarIcon className="h-4 w-4" aria-hidden="true" />
                             {input.value
                               ? format(input.value, "dd MMMM yyyy", {
                                   locale: ru,
@@ -822,12 +980,7 @@ export function EditStatusDialog({
           )}
 
           {!isInService && <p className="text-xs text-muted-foreground">Дата окончания включается в период статуса.</p>}
-
-          {!isInService && !hasDutyAssignment && (
-            <Field name="location" label={isOnDuty ? "Место дежурства" : "Место убытия"} error={errors.location}>
-              {(field) => <Input {...field} {...register("location")} />}
-            </Field>
-          )}
+          </section>
 
           {/* Comment */}
           <div className="space-y-2">
@@ -836,6 +989,7 @@ export function EditStatusDialog({
               id="comment"
               placeholder="Дополнительная информация о изменении статуса..."
               rows={3}
+              className="min-h-[88px]"
               {...register("comment")}
             />
           </div>
@@ -848,31 +1002,36 @@ export function EditStatusDialog({
             </Alert>
           )}
           </fieldset>
+        </div>
 
           {/* Submit Button */}
-          <div className="flex justify-end space-x-3">
+          <footer className="flex shrink-0 flex-col gap-3 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+            <p className="text-xs text-muted-foreground">* Обязательные поля</p>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
             <Button
               type="button"
               variant="outline"
+              className="min-h-11 min-w-0 px-3 sm:min-w-32 sm:px-4"
               disabled={isSaving}
               onClick={() => onOpenChange(false)}
             >
-              <X className="h-4 w-4 mr-2" />
+              <X className="hidden h-4 w-4 sm:block" aria-hidden="true" />
               Отмена
             </Button>
             <Button
               type="submit"
-              disabled={isSaving || !canSaveStatus || !catalogReady || !serverDates || serverDateQuery.isError || serverDateQuery.isFetching || (hasDutyAssignment && (!hasOpsPermission("object.view") || !dutyPlacementReady))}
-              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isSaving || !canSaveStatus || !calendarReady || !catalogReady || !serverDates || serverDateQuery.isError || serverDateQuery.isFetching || (hasDutyAssignment && (!hasOpsPermission("object.view") || !dutyPlacementReady || !dutyReadReady))}
+              className="min-h-11 min-w-0 px-3 sm:min-w-32 sm:px-4"
             >
               {isSaving ? (
-                <Clock className="h-4 w-4 mr-2 animate-spin" />
+                <Clock className="hidden h-4 w-4 animate-spin sm:block" aria-hidden="true" />
               ) : (
-                <Save className="h-4 w-4 mr-2" />
+                <Save className="hidden h-4 w-4 sm:block" aria-hidden="true" />
               )}
               {isSaving ? "Обновление..." : "Сохранить"}
             </Button>
-          </div>
+            </div>
+          </footer>
         </form>
       </DialogContent>
     </Dialog>

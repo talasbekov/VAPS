@@ -41,8 +41,11 @@ class ApplicationOnlyTests(unittest.TestCase):
         obj.base = ['docker', 'compose']
         obj.new_backend = 'new-backend'
         obj.new_frontend = 'new-frontend'
+        obj.new_proxy = 'new-proxy'
         obj.old_backend = 'old-backend-id'
         obj.old_frontend = 'sha256:old-frontend-id'
+        obj.old_proxy = 'sha256:old-proxy-id'
+        obj.proxy_configuration_sha256 = None
         obj.schedulers = ['beat'] if separate_beat else []
         obj.ids = {'db': 'db-id', 'worker': 'worker-id'}
         obj.db = {'Id': 'db-id', 'Mounts': [{'Name': 'original-volume'}]}

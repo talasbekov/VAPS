@@ -1,6 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
 import { ApiHttpError, apiClient } from "@/lib/api"
-import { retryUnlessClientError } from "@/lib/query-retry"
+import { useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read"
 
 /** Почему сводка недоступна. `unlinked` — учётка не привязана к сотруднику:
  *  ШТАТНОЕ состояние служебной учётки, а не поломка (Plane №340). Все 28
@@ -21,7 +20,8 @@ export function absenceStatsFailure(error: unknown): AbsenceStatsFailure | null 
 }
 
 export function useAbsenceStatistics(enabled = true) {
-  return useQuery<{
+  const access = useOpsReadAccess("status.view")
+  return useOpsProtectedRead<{
     period: {
       start_date: string
       end_date: string
@@ -43,16 +43,8 @@ export function useAbsenceStatistics(enabled = true) {
       seconded_from: number
       seconded_to: number
     }
-  }>({
-    queryKey: ["absence-statistics"],
-    enabled,
-    queryFn: async () => {
-      return await apiClient.getAbsenceStatistics()
-    },
-    // 4xx повтором не лечится, а трижды спрошенный отказ печатается в консоли
-    // четырьмя строками — за обход 28 учёток это 28 лишних записей.
-    retry: retryUnlessClientError,
-  })
+  }>(["absence-statistics", "summary"], [], access,
+    () => apiClient.getAbsenceStatistics(), { enabled, staleTime: 60_000 })
 }
 
 

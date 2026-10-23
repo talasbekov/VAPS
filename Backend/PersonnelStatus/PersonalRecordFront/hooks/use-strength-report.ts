@@ -1,13 +1,27 @@
 "use client";
 
 // Живой расход (строевая записка) — источник численности личного состава.
-import { useQuery } from "@tanstack/react-query";
+import { useOpsProtectedRead, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
+import type { UseQueryResult } from "@tanstack/react-query";
+import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   apiClient,
   type StrengthReport,
   type StrengthReportPeriod,
   type TrafficLightTree,
 } from "@/lib/api";
+
+type StrengthRead<T> = UseQueryResult<T, OpsApiFailure> &
+  Pick<ReturnType<typeof useOpsProtectedRead<T>>, "readAccessBlocked" | "readKey" | "canAct">;
+
+/** Preserve the query contract: isSuccess guarantees that data can be read. */
+function strengthRead<T>(result: ReturnType<typeof useOpsProtectedRead<T>>): StrengthRead<T> {
+  if (result.isSuccess && result.data === undefined) {
+    return { ...result, status: "pending", isSuccess: false, isPending: true,
+      isLoading: result.isFetching, isInitialLoading: result.isFetching } as StrengthRead<T>;
+  }
+  return result as StrengthRead<T>;
+}
 
 /**
  * Живой расход. Без `businessDate` — «сегодня» сервера по Clock раздела
@@ -21,11 +35,9 @@ import {
  * при наличии права (иначе экран ловил бы отказ как «ошибку загрузки»).
  */
 export function useStrengthReport(enabled: boolean, businessDate?: string) {
-  return useQuery<StrengthReport>({
-    queryKey: ["strength-report", "live", businessDate ?? "today"],
-    queryFn: () => apiClient.getStrengthReport({ businessDate }),
-    enabled,
-  });
+  const access = useOpsReadAccess("status.view");
+  return strengthRead<StrengthReport>(useOpsProtectedRead<StrengthReport>(["strength-report", "live"], [businessDate ?? "today"], access,
+    () => apiClient.getStrengthReport({ businessDate }), { enabled, staleTime: 60_000 }));
 }
 
 /**
@@ -42,16 +54,14 @@ export function useStrengthReportPeriod(
   // вперёд — на завтра и дальше, — а `FACT` (умолчание) закрыт для будущего.
   mode?: "FACT" | "PLAN"
 ) {
-  return useQuery<StrengthReportPeriod>({
-    queryKey: ["strength-report", "period", period?.from ?? "", period?.to ?? "", mode ?? "FACT"],
-    queryFn: () =>
+  const access = useOpsReadAccess("status.view");
+  return strengthRead<StrengthReportPeriod>(useOpsProtectedRead<StrengthReportPeriod>(["strength-report", "period"],
+    [period?.from ?? "", period?.to ?? "", mode ?? "FACT"], access, () =>
       apiClient.getStrengthReportPeriod({
         dateFrom: (period as { from: string; to: string }).from,
         dateTo: (period as { from: string; to: string }).to,
         mode,
-      }),
-    enabled: enabled && period !== null,
-  });
+      }), { enabled: enabled && period !== null, staleTime: 60_000 }));
 }
 
 /**
@@ -62,9 +72,7 @@ export function useStrengthReportPeriod(
  * разных днях (Plane №988).
  */
 export function useTrafficLightTree(enabled: boolean, businessDate?: string) {
-  return useQuery<TrafficLightTree>({
-    queryKey: ["traffic-light", "tree", businessDate ?? "today"],
-    queryFn: () => apiClient.getTrafficLightTree({ businessDate }),
-    enabled,
-  });
+  const access = useOpsReadAccess("status.view");
+  return strengthRead<TrafficLightTree>(useOpsProtectedRead<TrafficLightTree>(["traffic-light", "tree"], [businessDate ?? "today"], access,
+    () => apiClient.getTrafficLightTree({ businessDate }), { enabled, staleTime: 60_000 }));
 }

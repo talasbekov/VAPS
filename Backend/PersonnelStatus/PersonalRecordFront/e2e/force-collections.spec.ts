@@ -543,6 +543,64 @@ const campaign978Fixture = {
 test.describe('общее распределение сил по мероприятиям (Plane №978)', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
+  test('завершённые распределения раскрываются отдельно, а активные и довыделение остаются видимыми', async ({ page }) => {
+    const handedOver = { ...campaign978Fixture, id: '979', code: 'РМ-2026-0979', title: 'Переданное распределение', status: 'HANDED_OVER' }
+    const closed = { ...campaign978Fixture, id: '980', code: 'РМ-2026-0980', title: 'Закрытое распределение', status: 'CLOSED' }
+    const unknown = { ...campaign978Fixture, id: '981', code: 'РМ-2026-0981', title: 'Распределение с новым статусом', status: 'RETURNED' }
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/'),
+      (route) => route.fulfill({ json: { results: [handedOver, campaign978Fixture, closed, unknown] } }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/979/'),
+      (route) => route.fulfill({ json: handedOver }),
+    )
+    await page.route(
+      (url) => /\/security-events\/(201|202)\/force-collection\/$/.test(url.pathname),
+      (route) => route.fulfill({ json: { allocations: [], totals: { allocating: 0, sent: 0, shortage: 0 } } }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/collections/'),
+      (route) => route.fulfill({ json: { results: [{
+        eventId: '201', code: 'ОМ-201', title: 'Сбор с довыделением', businessDate: '2026-10-23',
+        requested: 3, allocating: 2, sent: 1, shortage: 2, need: 3, allocated: 3, gathered: 1,
+        boardStatus: { code: 'DISTRIBUTED', label: 'Распределено', answered: 1, total: 1 },
+        urgent: true, isNew: false, eventTime: null, location: '', visitObjects: [], stage: 'PLACEMENT',
+        departments: 1, collectionStatus: 'IN_PROGRESS', overdueCount: 1,
+      }] } }),
+    )
+
+    await page.goto(`${APP}/employees?view=forces&tab=collections&businessDate=2026-10-23`)
+    const panel = page.locator('section[aria-labelledby="force-campaigns-heading"]')
+    const disclosure = panel.locator('details')
+    await expect(disclosure.locator('summary')).toHaveText('Завершённые в этом списке · 2')
+    await expect(disclosure).toHaveJSProperty('open', false)
+    await expect(panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0978' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0981' })).toBeVisible()
+    await expect(panel.getByText('Статус уточняется', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0979', includeHidden: true })).toBeHidden()
+    const collection = page.locator('[data-slot="force-collection-row"]')
+    await expect(collection.getByRole('button', { name: 'Открыть сбор ОМ-201' })).toBeVisible()
+    await expect(collection.getByText('просрочено заявок: 1')).toBeVisible()
+
+    await disclosure.locator('summary').focus()
+    await disclosure.locator('summary').press('Enter')
+    await expect(disclosure).toHaveJSProperty('open', true)
+    await expect(disclosure.getByRole('button', { name: 'Открыть распределение РМ-2026-0980' })).toBeVisible()
+    await disclosure.getByRole('button', { name: 'Открыть распределение РМ-2026-0979' }).click()
+    await expect(page).toHaveURL(/campaign=979/)
+    await expect(page.getByRole('heading', { name: 'Переданное распределение', exact: true })).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Переданное распределение', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Открыть сбор ОМ-2026-0201', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Назад к распределениям' }).click()
+    await expect(disclosure).toHaveJSProperty('open', false)
+    expect(new URL(page.url()).searchParams.get('businessDate')).toBe('2026-10-23')
+    expect(new URL(page.url()).searchParams.get('campaign')).toBeNull()
+    await expect(collection.getByRole('button', { name: 'Открыть сбор ОМ-201' })).toBeVisible()
+  })
+
   test('штаб видит кампанию и открывает рабочее место общего пула', async ({ page }) => {
     await signIn(page)
     await page.route(

@@ -36,12 +36,6 @@ const DENIED = 'Недостаточно прав для просмотра'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
-// Изолированный acceptance-стенд кладёт две смены с этими маркерами. На
-// штатном смоуке переменная не задана: он всё равно проверяет реальную выдачу
-// CSV, а scope-пара строк относится к отдельной подготовленной проходке.
-const SCOPE_PROBE = process.env.SERVICE_REPORT_SCOPE_PROBE === '1'
-const FIRST_SCOPE_MARKER = 'E2E-1125-FIRST-DEPARTMENT'
-const SECOND_SCOPE_MARKER = 'E2E-1125-SECOND-DEPARTMENT'
 
 /** Пункты меню и подписи, под которыми они стоят.
  *
@@ -184,9 +178,7 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
     }
   })
 
-  test('отчёт CSV службы начальника второго департамента ограничен его областью', async ({ page }) => {
-    // Не администратор: `acc_dept_head_d2` несёт scoped HEAD_OPS_UNIT. Его
-    // старый глобальный OM_CATEGORY_ORG не должен расширить содержимое CSV.
+  test('начальник второго департамента открывает документы и историю без CSV', async ({ page }) => {
     await signIn(page, 'acc_dept_head_d2')
     await page.goto(`${APP}/security-ops/profile`)
 
@@ -203,62 +195,14 @@ test.describe(LIVE ? 'меню: видно только доступное' : '�
 
     await serviceReports.click()
     await expect(page).toHaveURL(/\/security-ops\/service-reports\/?$/)
-    await expect(page.getByRole('heading', { name: 'Отчёты по ОМ', exact: true })).toBeVisible()
-    await page.getByLabel('Начало периода').fill('2026-09-09')
-    await page.getByLabel('Конец периода').fill('2026-09-10')
-    const create = page.getByRole('button', { name: 'Сформировать отчёт' })
-    await expect(create).toBeEnabled()
-    const created = page.waitForResponse(response =>
-      response.request().method() === 'POST' &&
-      new URL(response.url()).pathname === '/api/ops/service-report-jobs/')
-    await create.click()
-    const createdResponse = await created
-    expect(createdResponse.ok()).toBeTruthy()
-    const { reportJobId } = await createdResponse.json() as { reportJobId: string }
-    expect(reportJobId).toMatch(/^report-job-\d+$/)
-    // A reused own job may be older than other visible jobs. Open the actual
-    // create response, not the first row of shared report history.
-    const jobLink = itemByHref(page.locator('main'), `/security-ops/service-reports/${reportJobId}`)
-    await expect(jobLink).toHaveAccessibleName('Карточка работы')
-    await expect(jobLink).toBeVisible({ timeout: 30_000 })
-    await jobLink.click()
-    await expect(page).toHaveURL(/\/security-ops\/service-reports\/report-job-/)
-    const ownJobPath = new URL(page.url()).pathname
-
-    const download = page.getByRole('button', { name: 'Скачать', exact: true })
-    await expect(download).toBeEnabled({ timeout: 30_000 })
-    // Клиент получает JSON с содержимым и сохраняет Blob сам: Playwright
-    // не обязан сообщать событие native-download. Проверяем реальную выдачу
-    // CSV по защищённой ручке, а не внутренний механизм браузерной загрузки.
-    const saved = page.waitForResponse((response) =>
-      response.request().method() === 'POST' &&
-      /\/service-report-artifacts\/[^/]+\/download\/?$/.test(response.url()),
-    )
-    await download.click()
-    const savedResponse = await saved
-    expect(savedResponse.status()).toBe(200)
-    const savedFile = (await savedResponse.json()) as {
-      fileName: string
-      content: string
-    }
-    // Это содержимое именно того CSV, который `saveFile` сразу передаёт в
-    // Blob: проверка не может стать зелёной от одного HTTP 200 без файла.
-    expect(savedFile.fileName).toMatch(/\.csv$/)
-    expect(savedFile.content).toContain('# Расход личного состава за период')
-    expect(savedFile.content).toContain('Дата;Сотрудник;Объект;Пост;Состояние')
-    if (SCOPE_PROBE) {
-      // Две реальные смены в соседних департаментах подготовлены до Chromium:
-      // файл второго департамента обязан содержать свою и не содержать чужую.
-      expect(savedFile.content).toContain(SECOND_SCOPE_MARKER)
-      expect(savedFile.content).not.toContain(FIRST_SCOPE_MARKER)
-    }
-
-    // У начальника первого департамента то же право, но другая scoped
-    // область. Прямая карточка не должна раскрывать чужой CSV: это серверный
-    // гейт, а не скрытая кнопка клиента.
-    await signIn(page, 'acc_dept_head')
-    await page.goto(`${APP}${ownJobPath}`)
-    await expect(page.getByRole('heading', { name: 'Работа недоступна' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Дежурства и документы ОМ', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Документы по мероприятию', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Сформировать отчёт|Скачать CSV/ })).toHaveCount(0)
+    await page.getByRole('link', { name: 'История отчётов', exact: true }).click()
+    await expect(page).toHaveURL(/\/security-ops\/service-reports\/history\/?$/)
+    await expect(page.getByRole('heading', { name: 'История отчётов', exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'Состояние работы', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Скачать|Новая редакция|^Повторить$/ })).toHaveCount(0)
   })
 
   test('отчёты службы закрыты начальнику управления', async ({ page }) => {

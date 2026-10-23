@@ -12,6 +12,7 @@ export { default } from "next-auth/middleware";
 // ре-экспорты страниц ОМ, их собственный гейт прав остаётся сверху.
 export const config = {
   matcher: [
+    "/workspace/:path*",
     "/dashboard/:path*",
     "/employees/:path*",
     "/service-employees/:path*",

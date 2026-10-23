@@ -29,25 +29,7 @@ function zipEntry(archive: Buffer, filename: string): string {
   throw new Error(`Workbook entry ${filename} is missing`);
 }
 
-function csvRecords(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], value = "", quoted = false;
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index];
-    if (character === '"') {
-      if (quoted && text[index + 1] === '"') { value += '"'; index++; }
-      else quoted = !quoted;
-    } else if (character === ";" && !quoted) { row.push(value); value = ""; }
-    else if ((character === "\r" || character === "\n") && !quoted) {
-      row.push(value); rows.push(row); row = []; value = "";
-      if (character === "\r" && text[index + 1] === "\n") index++;
-    } else value += character;
-  }
-  if (value !== "" || row.length > 0) { row.push(value); rows.push(row); }
-  return rows;
-}
-
-test("personnel reports show real scoped rows and download full exports", async ({ page }) => {
+test("personnel reports retain scoped read views and staffing Excel without absence CSV", async ({ page }) => {
   test.skip(!LIVE, "requires a live isolated stand with SMOKE_LIVE=1");
   const token = await page.request.post(`${API}/api/token/`, {
     data: { username: STAND_USERNAME, password: STAND_PASSWORD },
@@ -110,20 +92,11 @@ test("personnel reports show real scoped rows and download full exports", async 
   const absences = await response.json() as { count: number; rows: { person_days: number; unique_people: number }[]; totals: { person_days: number; unique_people: number } };
   await expect(absenceCard.getByText(`Дней отсутствия: ${absences.totals.person_days}`, { exact: false })).toBeVisible();
   await expect(absenceCard.getByText(`Сотрудников: ${absences.totals.unique_people}`, { exact: false })).toBeVisible();
-  const csvDownload = page.waitForEvent("download");
-  await absenceCard.getByRole("button", { name: "Скачать CSV" }).click();
-  const csv = await csvDownload;
-  expect(csv.suggestedFilename()).toMatch(/\.csv$/);
-  const csvBytes = await readFile((await csv.path())!);
-  expect(csvBytes.subarray(0, 3).toString("hex")).toBe("efbbbf");
-  const records = csvRecords(csvBytes.toString("utf8").replace(/^\uFEFF/, ""));
-  expect(records.length).toBe(absences.count + 1);
-  expect(records[0].join(" ")).toContain("человеко-дни");
-  expect(records.slice(1, absences.rows.length + 1).map(row => row.slice(3, 5))).toEqual(absences.rows.map(row => [String(row.person_days), String(row.unique_people)]));
+  await expect(absenceCard.getByRole("button", { name: "Скачать CSV" })).toHaveCount(0);
   await absenceCard.getByLabel("С", { exact: true }).fill("2026-10-10");
   await absenceCard.getByLabel("По", { exact: true }).fill("2026-10-01");
   await expect(absenceCard.getByRole("button", { name: "Сформировать" })).toBeDisabled();
-  await expect(absenceCard.getByRole("button", { name: "Скачать CSV" })).toBeDisabled();
+  await expect(absenceCard.getByRole("button", { name: "Скачать CSV" })).toHaveCount(0);
   await expect(page.locator("main [data-slot='in-development']")).toHaveCount(0);
 });
 

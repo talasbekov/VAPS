@@ -1,4 +1,14 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
+const root=path.resolve(__dirname,'../..'),pureModules=new Map();
+function productionModel(relative){
+ const file=path.join(root,relative+'.ts');
+ if(pureModules.has(file))return pureModules.get(file);
+ const exports={};pureModules.set(file,exports);
+ vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{
+  exports,Date,require:id=>id.startsWith('@/')?productionModel(id.slice(2)):require(id),
+ });
+ return exports;
+}
 function buttons(endDate,state='active',action=null,type='in_service'){
  let index=0;const current={id:5256,status_type:type,state,start_date:'2026-10-09',end_date:endDate,comment:''};
  const exports={};const deps={
@@ -10,6 +20,12 @@ function buttons(endDate,state='active',action=null,type='in_service'){
   '@/entities/status':{useStatusNaming:()=>({colorOf:()=>'',labelOf:()=>type})},
   '@/entities/daily-grid':{EVENT_PARTICIPATION_STATUS_CODES:new Set()},
   '../model/row-key':{employeeIdOfKey:()=>1},
+  './StatusDocuments':{StatusDocuments:()=>null},
+  './DutyIntervalsFields':{DutyIntervalsFields:()=>null},
+  '../model/duty-intervals':productionModel('features/employee-status-update/model/duty-intervals'),
+  '../model/edit-status-schema':productionModel('features/employee-status-update/model/edit-status-schema'),
+  '../model/calendar-status-draft':productionModel('features/employee-status-update/model/calendar-status-draft'),
+  '@/shared/lib/date':productionModel('shared/lib/date'),
  };
  const source=fs.readFileSync(path.join(__dirname,'../../features/employee-status-update/ui/PlannedStatusesDialog.tsx'),'utf8');
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:id=>deps[id]??(id.startsWith('@/')?new Proxy({},{get:(_,key)=>key}):require(id))});

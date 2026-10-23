@@ -26,6 +26,10 @@ import {
 import { toast } from "@/shared/hooks/use-toast";
 import { LoadFailure } from "@/components/load-failure";
 import { fetchNotificationReport, reportDownloadEndpoint } from "../model/report-download";
+import { OpsNotificationSync } from "@/features/ops-notifications/notification-bell";
+import { useRatingNotifications } from "@/hooks/use-ops-ratings";
+import { RATING_NOTIFICATION_TEXT, type RatingNotificationCode } from "@/entities/operational-rating";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 // Варианты анимации для списка уведомлений
 const listVariants = {
@@ -65,6 +69,7 @@ export function NotificationsDropdown() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [tab, setTab] = useState<"unread" | "rating">("unread");
   const downloadPending = useRef(false);
 
   const unreadQuery = useQuery({
@@ -73,7 +78,10 @@ export function NotificationsDropdown() {
     staleTime: 30000,
   });
 
-  const notifications = unreadQuery.data?.items ?? [];
+  const notifications = (unreadQuery.data?.items ?? []).filter(notification => !notification.is_read);
+  const ratingQuery = useRatingNotifications();
+  const ratingRows = ratingQuery.data?.results ?? [];
+  const ratingFailed = Boolean(ratingQuery.error || ratingQuery.authorityError) || ratingQuery.readAccessBlocked;
   // Часть ленты не пришла — это НЕ отказ всего колокольчика (Plane №565):
   // строки, которые загрузились, показываются, а про недостающую половину
   // говорится прямо. Прятать её молча значило бы объявить «это всё, что есть».
@@ -147,6 +155,8 @@ export function NotificationsDropdown() {
   }
 
   return (
+    <>
+    <OpsNotificationSync />
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         {/* Имя у кнопки-иконки: без него колокольчик для скринридера и для
@@ -193,7 +203,7 @@ export function NotificationsDropdown() {
       <DropdownMenuContent className="w-96 max-h-[70vh] overflow-y-auto" align="end">
         <DropdownMenuLabel className="flex justify-between items-center">
           <span className="font-medium">Уведомления</span>
-          {unreadCount > 0 && (
+          {tab === "unread" && unreadCount > 0 && (
             <motion.div
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
@@ -215,7 +225,56 @@ export function NotificationsDropdown() {
           )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <div role="tablist" aria-label="Разделы уведомлений" className="mb-2 grid grid-cols-2 gap-1 p-1">
+          {([
+            { key: "unread", label: "Непрочитанные" },
+            { key: "rating", label: "Оценивание" },
+          ] as const).map(item => (
+            <DropdownMenuItem key={item.key} role="tab" id={`notification-tab-${item.key}`}
+              data-notification-tab={item.key}
+              aria-controls={`notification-panel-${item.key}`} aria-selected={tab === item.key}
+              className={`justify-center text-sm ${tab === item.key ? "bg-primary/10 font-semibold text-primary-ink" : ""}`}
+              onClick={() => setTab(item.key)}
+              onKeyDown={event => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                event.stopPropagation();
+                const next = item.key === "unread" ? "rating" : "unread";
+                setTab(next);
+                event.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-notification-tab="${next}"]`)?.focus();
+              }}
+              onSelect={event => { event.preventDefault(); setTab(item.key); }}>
+              {item.label}
+            </DropdownMenuItem>
+          ))}
+        </div>
 
+        {tab === "rating" ? (
+          <div role="tabpanel" id="notification-panel-rating" aria-labelledby="notification-tab-rating" className="p-2">
+            <p className="mb-2 text-xs text-muted-foreground">Личная лента событий оценивания.</p>
+            {ratingFailed ? (
+              <LoadFailure what="события оценивания" onRetry={() => void ratingQuery.retryNotifications()}
+                isRetrying={ratingQuery.isFetching} className="px-2" />
+            ) : ratingQuery.isPending ? (
+              <p className="py-4 text-sm text-muted-foreground">Загрузка событий оценивания…</p>
+            ) : ratingQuery.data !== undefined && ratingRows.length === 0 ? (
+              <p className="py-4 text-sm text-muted-foreground">Событий оценивания пока нет.</p>
+            ) : null}
+            {ratingFailed && ratingRows.length > 0 && (
+              <p className="mb-2 text-xs text-muted-foreground">Показаны ранее загруженные события.</p>
+            )}
+            {ratingRows.map(row => {
+              const label = RATING_NOTIFICATION_TEXT[row.code as RatingNotificationCode] ?? "Событие оценивания";
+              const content = <><span>{label}</span><span className="mt-1 text-xs text-muted-foreground">{formatIsoDateTime(row.createdAt)}</span></>;
+              return row.deepLink ? (
+                <DropdownMenuItem key={row.id} className="flex flex-col items-start py-3"
+                  onSelect={() => { router.push(row.deepLink); setOpen(false); }}>
+                  {content}
+                </DropdownMenuItem>
+              ) : <div key={row.id} className="flex flex-col items-start px-2 py-3 text-sm">{content}</div>;
+            })}
+          </div>
+        ) : <div role="tabpanel" id="notification-panel-unread" aria-labelledby="notification-tab-unread">
         {unreadQuery.isLoading ? (
           <motion.div 
             className="flex justify-center py-6"
@@ -319,7 +378,9 @@ export function NotificationsDropdown() {
             </AnimatePresence>
           </motion.div>
         )}
+        </div>}
       </DropdownMenuContent>
     </DropdownMenu>
+    </>
   );
 }

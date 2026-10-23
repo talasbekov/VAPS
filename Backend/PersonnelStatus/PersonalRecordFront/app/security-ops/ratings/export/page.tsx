@@ -2,11 +2,6 @@
 
 import { CapabilityNotes } from "@/shared/ui/capability-notes";
 
-// Экспорт оперативного рейтинга (§19.29). Экран не собирает файл, не
-// придумывает ему имя и не строит ссылку: кнопка «Скачать» появляется, когда
-// работа READY и у неё есть артефакт, а сам файл выдаёт отдельная серверная
-// операция. Недоступные форматы и режимы приходят с сервера С ПРИЧИНОЙ.
-import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -19,12 +14,9 @@ import {
 } from "@/components/ui/table";
 import {
   useCancelRatingExport,
-  useCreateRatingExport,
-  useDownloadRatingExport,
   useRatingExports,
 } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
-import { newIdempotencyKey } from "@/entities/operational-rating";
 import type {
   RatingExportJob,
   RatingExportScope,
@@ -47,17 +39,6 @@ const SCOPE_LABEL: Record<RatingExportScope, string> = {
   INDIVIDUAL: "Индивидуальные оценки",
 };
 
-function saveFile(fileName: string, content: string): void {
-  const url = URL.createObjectURL(
-    new Blob([content], { type: "text/csv;charset=utf-8" })
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 // Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
 // отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
 // нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
@@ -66,13 +47,7 @@ export default function RatingExportPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useRatingExports();
   const data = query.data;
-  // Ключ живёт ОДИН заказ и переживает его повторные отправки (§19.26).
-  const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
-  const create = useCreateRatingExport();
   const cancel = useCancelRatingExport();
-  const download = useDownloadRatingExport((file) =>
-    saveFile(file.fileName, file.content)
-  );
 
   const artifactsByJob = new Map(
     (data?.artifacts ?? []).map((artifact) => [artifact.exportJobId, artifact])
@@ -87,8 +62,8 @@ export default function RatingExportPage() {
       <div className="space-y-4">
         <PageHeader
           eyebrow="Оценка и отчётность"
-          title="Выгрузка рейтинга"
-          description="Агрегированная сводка оперативного рейтинга. Отдельных оценок, оценщиков, комментариев и оснований в файле нет — он собирается из той же сводки, что и экран."
+          title="История выгрузок рейтинга"
+          description="Ранее созданные выгрузки оперативного рейтинга и состояния их обработки."
         />
 
         <RatingsNav />
@@ -106,45 +81,6 @@ export default function RatingExportPage() {
 
         {data !== undefined && (
           <>
-            <section className="rounded-xl border bg-card p-4">
-              <h2 className="mb-2 text-sm font-semibold">Заказать выгрузку</h2>
-              {!data.capabilities.operationalRatings && (
-                <p className="mb-2 text-xs text-destructive-ink">
-                  Оперативный рейтинг выключен: сводки, из которой собирается
-                  файл, не существует.
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {SCOPE_LABEL.AGGREGATE} · {data.formats.join(", ")}
-                </span>
-                <button
-                  type="button"
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                  disabled={
-                    create.isPending || !data.capabilities.operationalRatings
-                  }
-                  onClick={() => {
-                    create.mutate({
-                      scope: "AGGREGATE",
-                      format: "CSV",
-                      idempotencyKey,
-                    });
-                    // Следующий заказ — СВОЙ ключ: иначе повтор через минуту
-                    // вернул бы прежнюю работу вместо новой выгрузки.
-                    setIdempotencyKey(newIdempotencyKey());
-                  }}
-                >
-                  Заказать CSV
-                </button>
-              </div>
-              {create.error !== null && (
-                <p className="mt-2 text-sm text-destructive-ink">
-                  {create.error.message}
-                </p>
-              )}
-            </section>
-
             <section className="rounded-xl border bg-card">
               <Table>
                 <caption className="sr-only">Мои выгрузки рейтинга</caption>
@@ -191,20 +127,6 @@ export default function RatingExportPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            {job.state === "READY" && artifact !== undefined && (
-                              <button
-                                type="button"
-                                className="rounded-md border px-2.5 py-1 text-xs disabled:opacity-50"
-                                disabled={download.isPending}
-                                onClick={() =>
-                                  download.mutate({
-                                    artifactId: artifact.artifactId,
-                                  })
-                                }
-                              >
-                                Скачать
-                              </button>
-                            )}
                             {(job.state === "QUEUED" ||
                               job.state === "GENERATING") && (
                               <button
@@ -232,11 +154,6 @@ export default function RatingExportPage() {
               )}
             </section>
 
-            {download.error !== null && (
-              <p className="text-sm text-destructive-ink">
-                {download.error.message}
-              </p>
-            )}
             {cancel.error !== null && (
               <p className="text-sm text-destructive-ink">{cancel.error.message}</p>
             )}

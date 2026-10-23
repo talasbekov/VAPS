@@ -309,3 +309,6 @@ from organization_management.apps.operations.models_recon_material import (  # n
 from organization_management.apps.operations.models_duty_dispatch import (  # noqa: E402,F401
     OpsDutyDispatchConfig, OpsDutyDispatchAssignment,
 )
+from organization_management.apps.operations.models_assistant import (  # noqa: E402,F401
+    OpsAssistantTask, OpsAssistantReceipt,
+)

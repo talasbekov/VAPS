@@ -11,12 +11,16 @@ x-backend-env: &backend-env
   COOKIE_SECURE: ${COOKIE_SECURE:-0}
   TIME_ZONE: ${TIME_ZONE:-Asia/Almaty}
   ENABLE_BACKGROUND_TASKS: ${ENABLE_BACKGROUND_TASKS:-1}
+  OPS_ASSISTANT_PROVIDER: ${OPS_ASSISTANT_PROVIDER:-disabled}
+  OPS_ASSISTANT_OLLAMA_URL: ${OPS_ASSISTANT_OLLAMA_URL:-http://127.0.0.1:11434}
+  OPS_ASSISTANT_MODEL: ${OPS_ASSISTANT_MODEL:-qwen2.5:7b}
   POSTGRES_HOST: db
   POSTGRES_PORT: "5432"
   POSTGRES_DB: ${POSTGRES_DB:-smart_josparlau}
   POSTGRES_USER: ${POSTGRES_USER:-smart_josparlau}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run configure.py}
   REDIS_HOST: redis
+  TRUSTED_PROXY_HOSTS: proxy,frontend
   TZ: UTC
 x-backend: &backend
   image: ${BACKEND_IMAGE:?Missing images.env}
@@ -99,6 +103,7 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:?Run configure.py}
       NEXTAUTH_URL_INTERNAL: http://frontend:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Run configure.py}
+      TRUST_LOGIN_PROXY_HEADER: "1"
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PUBLIC_SENTRY_DSN: ""
       SENTRY_DSN: ""

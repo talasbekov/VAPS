@@ -12,7 +12,9 @@
 // было с каталогом раздела ОМ (Plane №342), и лечилось тем же: копия удалена,
 // читатели переведены на справочник.
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { apiClient } from "@/lib/api";
+import { isSelectableStatusType } from "@/entities/status/retired-types";
 
 export interface EmployeeStatusTypeItem {
   /** Код, который уходит на сервер в поле `status_type`. */
@@ -26,7 +28,7 @@ export interface EmployeeStatusTypeItem {
 
 /**
  * @param selectableOnly только то, что человек выбирает руками (без заглушек
- *   и без прикомандирования — у него свой процесс с заявкой).
+ *   и без отключённых видов статусов).
  */
 export function useEmployeeStatusTypes(selectableOnly = true) {
   const query = useQuery<EmployeeStatusTypeItem[]>({
@@ -37,8 +39,12 @@ export function useEmployeeStatusTypes(selectableOnly = true) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const types = useMemo(() => selectableOnly
+    ? (query.data ?? []).filter(isSelectableStatusType)
+    : query.data ?? [], [query.data, selectableOnly]);
+
   return {
-    types: query.data ?? [],
+    types,
     isLoading: query.isLoading,
     error: query.error,
     isFetching: query.isFetching,

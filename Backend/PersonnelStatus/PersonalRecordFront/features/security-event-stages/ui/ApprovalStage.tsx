@@ -65,6 +65,7 @@ import {
   type VisitObjectScope,
 } from "./useVisitObjectScope";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { PLACEMENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import { useMyEmployee } from "@/hooks/use-my-employee";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
@@ -738,7 +739,14 @@ function ApprovalRoute({
   rights: ApprovalRights;
 }) {
   const { data: session, status: sessionStatus } = useSession();
-  const { permissions, isLoading: permissionsLoading } = useOpsPermissions();
+  const authority = useOpsPermissions();
+  const { permissions, isLoading: permissionsLoading } = authority;
+  const canOpenSettings = permissions !== undefined && !permissionsLoading &&
+    authority.error === null && moduleOpenFor(
+      "/security-ops/settings",
+      authority.hasPermission,
+      code => authority.roles.some(role => role.code === code),
+    );
   const username = session?.user?.userData?.username ?? session?.user?.name ?? null;
   const decisionReason = (index: number) => approvalDecisionReason({
     route: view.route,
@@ -1055,9 +1063,11 @@ function ApprovalRoute({
       {route.length === 0 ? (
         <p className="px-3 py-3 text-xs text-muted-foreground" data-slot="approval-route-empty">
           Маршрут согласования не настроен — подписантов задаёт администратор в{" "}
-          <Link href="/security-ops/settings" className="font-semibold text-primary-ink">
-            «Администрировании»
-          </Link>
+          {canOpenSettings ? (
+            <Link href="/security-ops/settings" className="font-semibold text-primary-ink">
+              «Администрировании»
+            </Link>
+          ) : "«Администрировании»"}
           ; объект получит маршрут при отправке.
         </p>
       ) : (

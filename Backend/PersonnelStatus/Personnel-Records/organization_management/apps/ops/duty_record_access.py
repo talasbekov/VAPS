@@ -12,6 +12,7 @@ from organization_management.apps.ops.security_events import personnel_full_name
 
 READ_PERMISSIONS = ("duty.view", "analytics.view", "duty.manage", "status.manage")
 WRITE_PERMISSIONS = ("duty.manage", "status.manage")
+STATUS_EXECUTION_PERMISSIONS = WRITE_PERMISSIONS + ("duty.dispatch",)
 REGISTER_PERMISSIONS = READ_PERMISSIONS + ("duty.dispatch",)
 MAX_IDENTIFIER = 9223372036854775807
 MAX_BROWSER_IDENTIFIER = 9007199254740991
@@ -85,13 +86,15 @@ def person_for_id(employee_id):
 
 
 def parse_key(key):
-    match = re.fullmatch(r"(LOG|DISPATCH|PLAN):([1-9][0-9]{0,18})", str(key or ""))
-    if match is None or int(match[2]) > 9223372036854775807:
+    match = re.fullmatch(r"(LOG|DISPATCH|PLAN):([1-9][0-9]{0,18})|STATUS:([1-9][0-9]{0,18}):([0-9a-f]{64})", str(key or ""))
+    if match is None or int(match[2] or match[3]) > MAX_IDENTIFIER:
         raise DomainError("ENTITY_NOT_FOUND", 404, message="Запись дежурства не найдена.")
-    return match[1], int(match[2])
+    return (match[1], int(match[2])) if match[1] else ("STATUS", int(match[3]))
 
 
 def source_metadata(source, row, supplement=None):
+    if source == "STATUS":
+        return {name: row.snapshot[name] for name in ("employee_id", "employee_name", "division_id", "division_name")}
     if source == "LOG":
         return {name: getattr(row, name) for name in ("employee_id", "employee_name", "division_id", "division_name")}
     data = employee_data(person_for_id(row.employee_id))
@@ -112,7 +115,16 @@ def can_read(actor, source, row, metadata, scope=None, receiver_scope=None):
     )
 
 
-def can_write(actor, source, row, metadata):
+def can_write(actor, source, row, metadata, *, operation=None):
+    if source == "STATUS":
+        # Dispatch authority records execution, never classification or the
+        # personnel assignment itself. Both affiliation boundaries still hold.
+        permissions = WRITE_PERMISSIONS if operation == "classify" else STATUS_EXECUTION_PERMISSIONS
+        scope = division_scope(actor, permissions)
+        # A historical record cannot grant a new write in a division the
+        # actor cannot manage after the employee transfers.
+        live = employee_data(person_for_id(row.employee_id))
+        return in_scope(scope, metadata["division_id"]) and in_scope(scope, live["division_id"])
     if source == "DISPATCH":
         return in_scope(division_scope(actor, ("duty.dispatch",)), row.receiver_department_id)
     if source == "PLAN":
@@ -129,8 +141,32 @@ def can_write(actor, source, row, metadata):
 
 
 @transaction.atomic
-def resolve_record(actor, key, *, write=False, lock=False):
+def resolve_record(actor, key, *, write=False, lock=False, operation=None):
     source, pk = parse_key(key)
+    if source == "STATUS":
+        from organization_management.apps.statuses.models import EmployeeStatus
+        from organization_management.apps.staff_unit.models import StaffUnit
+        from organization_management.apps.ops import personnel_duty_records
+        if lock:
+            employee_id = EmployeeStatus.objects.filter(pk=pk).values_list("employee_id", flat=True).first()
+            # Match status and placement writers: employee before source.
+            # The staff row also serializes a direct personnel transfer.
+            Employee.objects.select_for_update().filter(pk=employee_id).first()
+            StaffUnit.objects.select_for_update().filter(employee_id=employee_id).first()
+            locked = EmployeeStatus.objects.select_for_update().filter(pk=pk).first()
+            if locked is not None and locked.employee_id != employee_id:
+                raise DomainError("DUTY_REGISTER_CONFLICT", 409, message="Сотрудник исходного статуса изменился. Обновите запись.")
+        row = personnel_duty_records.resolve(pk, key.rsplit(":", 1)[1])
+        if row is None:
+            raise DomainError("ENTITY_NOT_FOUND", 404, message="Выход на дежурство не найден.")
+        supplement = row.supplement
+        metadata = source_metadata(source, row, supplement)
+        allowed = can_write(actor, source, row, metadata, operation=operation) if write else can_read(actor, source, row, metadata)
+        if not allowed:
+            raise DomainError("PERMISSION_DENIED", 403, message="Запись находится вне доступной области подразделений.")
+        if write and (row.source_changed or row.start_at is None):
+            raise DomainError("DUTY_REGISTER_CONFLICT", 409, message="Кадровый выход изменён, отменён или не имеет точных часов. Проверьте исходный статус.")
+        return source, row, supplement, metadata
     model = {"LOG": OpsDutyLogEntry, "DISPATCH": OpsDutyDispatchAssignment, "PLAN": OpsDutyShift}[source]
     if lock and source == "PLAN":
         # Match the legacy writer: month before shift, including execution

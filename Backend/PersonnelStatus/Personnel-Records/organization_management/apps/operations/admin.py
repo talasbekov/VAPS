@@ -26,7 +26,11 @@ Backend/VAPS).
 выкатка, ровно по той же причине, по которой сюда попал контрольный час.
 """
 from django.contrib import admin
+from django import forms
 from organization_management.admin_auto import NullableDefaultsAdminForm
+from organization_management.apps.statuses.retirement import (
+    RetiredSecondmentTypeAdminFormMixin, is_retired_secondment_type,
+)
 
 from organization_management.apps.operations.models_submission import (
     OpsDivisionNotifyRecipient,
@@ -43,6 +47,7 @@ from organization_management.apps.operations.models_feedback import OpsFeedbackR
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     OpsStatusParticipation,
+    Secondment,
 )
 from organization_management.apps.operations.models_vehicle import OpsEventVehicle
 from organization_management.apps.operations.models_recon_material import OpsReconMaterial
@@ -248,20 +253,87 @@ class OpsEventVehicleInline(admin.TabularInline):
     autocomplete_fields = ("vehicle",)
 
 
+class OpsStatusParticipationAdminForm(forms.ModelForm):
+    class Meta:
+        model = OpsStatusParticipation
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        previous = self.instance.status if self.instance.pk else None
+        current = cleaned.get("status")
+        if (any(row and is_retired_secondment_type(row.status_type_code) for row in (previous, current))
+                and (not self.instance.pk or self.changed_data)):
+            self.add_error("status", forms.ValidationError(
+                "Прикомандирование и откомандирование больше недоступны.", code="feature_retired",
+            ))
+        return cleaned
+
+
+@admin.register(OpsStatusParticipation)
+class OpsStatusParticipationAdmin(admin.ModelAdmin):
+    form = OpsStatusParticipationAdminForm
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and is_retired_secondment_type(obj.status.status_type_code):
+            return False
+        return super().has_delete_permission(request, obj)
+
+
 class OpsStatusParticipationInline(admin.TabularInline):
     model = OpsStatusParticipation
+    form = OpsStatusParticipationAdminForm
     extra = 0
     fields = ("event_id", "kind_code", "role_code")
+
+    def has_add_permission(self, request, obj=None):
+        if obj and is_retired_secondment_type(obj.status_type_code):
+            return False
+        return super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and is_retired_secondment_type(obj.status_type_code):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and is_retired_secondment_type(obj.status_type_code):
+            return False
+        return super().has_delete_permission(request, obj)
+
+
+class OpsEmployeeStatusAdminForm(RetiredSecondmentTypeAdminFormMixin, forms.ModelForm):
+    retired_status_field = "status_type_code"
+
+    class Meta:
+        model = OpsEmployeeStatus
+        fields = "__all__"
 
 
 @admin.register(OpsEmployeeStatus)
 class OpsEmployeeStatusAdmin(admin.ModelAdmin):
+    form = OpsEmployeeStatusAdminForm
     list_display = (
         "employee_id", "status_type_code", "date_start", "date_end", "source",
     )
     search_fields = ("status_type_code", "comment", "document_basis", "source_ref")
     list_filter = ("source", "date_start", "date_end", "cancelled_at")
     inlines = (OpsStatusParticipationInline,)
+
+
+@admin.register(Secondment)
+class SecondmentHistoryAdmin(admin.ModelAdmin):
+    readonly_fields = tuple(field.name for field in Secondment._meta.fields)
+    list_display = ("id", "employee_id", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class OpsSecurityEventAdminForm(NullableDefaultsAdminForm):
@@ -310,6 +382,37 @@ class OpsSecurityEventAdmin(admin.ModelAdmin):
 
 
 from organization_management.admin_auto import register_allowed  # noqa: E402
+from organization_management.apps.operations.models_assistant import OpsAssistantTask, OpsAssistantReceipt  # noqa: E402
+
+
+class AssistantHistoryAdmin(admin.ModelAdmin):
+    """Receipts and task state are written through the authenticated workflow."""
+
+    def get_readonly_fields(self, request, obj=None):
+        return tuple(field.name for field in self.model._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OpsAssistantTask)
+class AssistantTaskAdmin(AssistantHistoryAdmin):
+    list_display = ("id", "initiated_by", "event", "status", "revision", "updated_at")
+    list_filter = ("status", "delegated")
+    search_fields = ("initiated_by", "request_key", "message")
+
+
+@admin.register(OpsAssistantReceipt)
+class AssistantReceiptAdmin(AssistantHistoryAdmin):
+    list_display = ("id", "task", "operation_key", "executed_by", "created_at")
+    list_filter = ("operation_key",)
+    search_fields = ("executed_by", "operation_key")
 
 register_allowed(
     "operations",

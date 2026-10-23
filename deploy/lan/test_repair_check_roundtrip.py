@@ -27,6 +27,10 @@ class CheckRepairTests(unittest.TestCase):
         self.backup = self.root / 'stack/backups/updates/schema-fixture'
         self.backup.mkdir(parents=True)
         source = path.with_name('schema-transition-checks.py').read_text(encoding='utf-8')
+        # This historical repair consumes the embedded 17 October policy, not a
+        # newer release's generated revision/graph binding.
+        source += "\nSOURCE_REVISION='381c21f34cad4e58d9cf29d5ee56370072a128b3'\n"
+        source += "APPROVED_PLANS=((),ACCESS_PLAN,tuple(item for item in APPROVED_PLAN if item[1] not in ('0007_employee_service_profile','0145_personnel_duty_execution')))\n"
         scope = {}
         exec(source, scope)
         self.original = {name: ('original ' + name).encode() for name in (

@@ -5,6 +5,7 @@
 // сводкой: список строк не знает, к какому полю относится «Выберите объект».
 import { z } from "zod";
 import { EMPLOYEE_STATUS_LABELS } from "@/lib/status";
+import { validateDutyIntervals } from "@/features/employee-status-update/model/duty-intervals";
 
 /** «В строю» — бессрочный статус по умолчанию, дат у него нет. */
 export const IN_SERVICE_LABEL = EMPLOYEE_STATUS_LABELS.in_service;
@@ -36,6 +37,8 @@ export const editStatusFormSchema = z
     status: z.string().min(1, "Выберите статус."),
     statusCode: z.string().default(""),
     duty: dutyDraftSchema,
+    dutyIntervals: z.array(z.object({ start: z.string(), end: z.string(),
+      original: z.object({ start_at: z.string(), end_at: z.string() }).optional() })).optional(),
     startDate: z.date().optional(),
     endDate: z.date().optional(),
     location: z.string().default(""),
@@ -48,6 +51,10 @@ export const editStatusFormSchema = z
     // Наряд — расшифровка статуса «На дежурстве»: без объекта и вида дежурства
     // он не говорит, где человек стоит.
     if (isOnDuty) {
+      for (const issue of validateDutyIntervals(values.dutyIntervals, values.startDate, values.endDate)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom,
+          path: issue.index === undefined ? ["dutyIntervals"] : ["dutyIntervals", issue.index, issue.field!], message: issue.message });
+      }
       if (values.duty.dutyKind === "") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -133,6 +140,7 @@ export const EMPTY_EDIT_STATUS_FORM: EditStatusFormValues = {
   status: "",
   statusCode: "",
   duty: EMPTY_DUTY_DRAFT,
+  dutyIntervals: undefined,
   startDate: undefined,
   endDate: undefined,
   location: "",

@@ -14,9 +14,15 @@
 """
 import datetime as dt
 import json
+from copy import deepcopy
 
 import pytest
 from django.core.management import call_command
+from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import AccessToken
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
@@ -28,6 +34,7 @@ from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
+    OpsPlacementDocumentVersion,
 )
 from organization_management.apps.operations.models_settings import (
     OpsPolicySectionVersion,
@@ -38,6 +45,9 @@ from organization_management.apps.operations.tests.test_bulk_status_api import (
     client_for,
 )
 from organization_management.apps.ops import security_events as event_service
+from .test_ops_security_events_api import manager, approver, make_employee  # noqa: F401
+from .test_ops_force_campaigns import jwt_manager, _auto_request  # noqa: F401
+from .test_ops_approval_stage import event_on_approval, add_approver
 
 pytestmark = pytest.mark.django_db
 
@@ -464,6 +474,134 @@ def test_operations_levels_and_event_card(analyst_api, ops_world):
         OPERATIONS, {"level": "EVENT", "event_id": "999999"}
     )
     assert missing.json()["error_code"] == "UNKNOWN_LEVEL_TARGET"
+
+
+@pytest.fixture
+def signed_stale_auto_event(manager, approver):  # noqa: F811
+    """A real approved v1 document; only its old auto-request JSON is stale."""
+    base, employee_id, _ = event_on_approval(manager)
+    route = add_approver(manager, base, name="Первый согласующий")
+    route = add_approver(manager, base, name="Второй согласующий")
+    sent = manager.post(f"{base}approval/send/")
+    assert sent.status_code == 200, sent.json()
+    for row in route:
+        response = approver.post(f"{base}approval/route/{row['id']}/decide/", {
+            "decision": "APPROVED", "comment": "Согласовано",
+        }, format="json")
+        assert response.status_code == 200, response.json()
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").split("/")[-1])
+    visit = event.visit_objects.get()
+    assert event.stage == visit.stage == "ACKNOWLEDGEMENT"
+    assert visit.approval_status == "APPROVED"
+    assert visit.document_version == 1
+    assert len(visit.approval_route) == 2
+    assert all(row["status"] == "APPROVED" for row in visit.approval_route)
+    assert all(row["signature"]["versionNumber"] == 1 for row in visit.approval_route)
+    assert len({row["signature"]["versionHash"] for row in visit.approval_route}) == 1
+    roster = [{"employeeId": employee_id, "name": "Назначенный сотрудник"}]
+    for index in range(9):
+        person = make_employee(last_name="Резерв", first_name=str(index))
+        roster.append({"employeeId": str(person.pk), "name": str(person)})
+    # Simulate the already-stored historical drift, without replaying handover
+    # or changing the approved placement/document snapshot.
+    OpsSecurityEvent.objects.filter(pk=event.pk).update(
+        force_requests=[_auto_request(10)], force_roster=roster,
+        force_handover={"at": "2026-08-10T08:00:00Z", "by": "prior-writer", "campaignId": "historical"},
+    )
+    event.refresh_from_db()
+    return event
+
+
+def _stored_read_facts():
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+    from organization_management.apps.operations.models_forces import (
+        OpsForceRequest, OpsDepartmentRequest, OpsUnitRequest,
+        OpsForceRequestMember, OpsForceCampaignAssignment, OpsForceCampaignHandover,
+    )
+    models = [OpsSecurityEvent, OpsSecurityEventVisitObject, OpsPlacementDocumentVersion,
+              OpsSecurityEventTransition, OpsAuditLog, OpsForceRequest, OpsDepartmentRequest,
+              OpsUnitRequest, OpsForceRequestMember, OpsForceCampaignAssignment, OpsForceCampaignHandover]
+    return {model._meta.label: list(model.objects.order_by("pk").values()) for model in models}
+
+
+def _assert_no_write_sql(captured):
+    assert not [row["sql"] for row in captured if row["sql"].lstrip().upper().startswith(("INSERT ", "UPDATE ", "DELETE "))]
+
+
+def test_signed_stale_auto_request_detail_and_registry_project_current_roster_without_writes(signed_stale_auto_event, jwt_manager):
+    from organization_management.apps.ops.api.serializers import serialize_security_event
+    event = signed_stale_auto_event
+    raw = deepcopy(event.force_requests)
+    identity = event.force_requests
+    stored = _stored_read_facts()
+    with CaptureQueriesContext(connection) as queries:
+        direct = serialize_security_event(event)
+        responses = [jwt_manager.get(f"/api/ops/security-events/{event.pk}/"),
+                     jwt_manager.get("/api/ops/security-events/", {"page_size": 50}),
+                     jwt_manager.get(f"/api/ops/security-events/{event.pk}/")]
+    _assert_no_write_sql(queries)
+    assert event.force_requests is identity
+    assert event.force_requests == raw
+    assert _stored_read_facts() == stored, "GET cannot backfill JSON, append ledger/audit, or alter signed versions"
+    expected = [{**_auto_request(10), "allocatedCount": 10, "status": "ALLOCATED"}]
+    assert direct["forceRequests"] == expected
+    for response in responses:
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        body = next(row for row in payload["results"] if row["id"] == str(event.pk)) if "results" in payload else payload
+        assert body["forceRequests"] == expected
+        assert len(body["forceRoster"]) == 10
+        assert body["stage"] == "ACKNOWLEDGEMENT"
+        assert body["approvalStale"] is False
+        assert body["visitObjects"][0]["documentVersion"] == 1
+    assert event.force_requests == raw
+
+
+def test_operations_projects_the_same_stale_signed_auto_request_without_mutation_or_writes(analyst_api, signed_stale_auto_event):
+    from organization_management.apps.ops import analytics
+    event = signed_stale_auto_event
+    api = APIClient()
+    user = get_user_model().objects.get(username="analytics-analyst")
+    api.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(user)}")
+    raw = deepcopy(event.force_requests)
+    identity = event.force_requests
+    stored = _stored_read_facts()
+    with CaptureQueriesContext(connection) as pure_queries:
+        projected = analytics._project_event(event)
+    assert len(pure_queries) == 0
+    assert event.force_requests is identity
+    assert event.force_requests == raw
+    with CaptureQueriesContext(connection) as queries:
+        responses = [api.get(OPERATIONS, {"level": "EVENT", "event_id": str(event.pk)}) for _ in range(2)]
+    _assert_no_write_sql(queries)
+    assert _stored_read_facts() == stored
+    assert projected.requested_total == projected.allocated_total == 10
+    for response in responses:
+        assert response.status_code == 200, response.json()
+        facts = {fact["code"]: fact for fact in response.json()["data"]["eventCard"]["facts"]}
+        assert facts["REQUESTED"]["displayValue"] == "10"
+        assert facts["ALLOCATED"]["displayValue"] == "10"
+    assert event.force_requests == raw
+
+
+@pytest.mark.parametrize("requests", [
+    [{**_auto_request(20), "group": "Ручная группа", "allocatedCount": 3}],
+    [{**_auto_request(20), "group": event_service.AUTO_FORCE_REQUEST_GROUP + " ", "allocatedCount": 3}],
+    [_auto_request(20), {**_auto_request(6), "id": "second", "allocatedCount": 4}],
+    [_auto_request(20), {**_auto_request(6), "id": "manual", "group": "Ручная группа", "allocatedCount": 4}],
+])
+def test_operations_keeps_manual_multiple_and_nonexact_request_counts(analyst_api, ops_world, requests):
+    api = APIClient()
+    user = get_user_model().objects.get(username="analytics-analyst")
+    api.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(user)}")
+    OpsSecurityEvent.objects.filter(pk=ops_world.pk).update(force_requests=deepcopy(requests), force_roster=[{}] * 10)
+    response = api.get(OPERATIONS, {"level": "EVENT", "event_id": str(ops_world.pk)})
+    assert response.status_code == 200, response.json()
+    facts = {fact["code"]: fact for fact in response.json()["data"]["eventCard"]["facts"]}
+    assert facts["REQUESTED"]["displayValue"] == str(sum(row["requestedCount"] for row in requests))
+    assert facts["ALLOCATED"]["displayValue"] == str(sum(row["allocatedCount"] for row in requests))
+    ops_world.refresh_from_db()
+    assert ops_world.force_requests == requests
 
 
 def test_funnel_built_from_transition_journal(analyst_api, ops_world):

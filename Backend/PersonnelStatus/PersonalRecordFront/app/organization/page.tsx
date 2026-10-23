@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import OrgChart from "@/features/organization-structure/ui/OrgChart";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -15,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download } from "lucide-react";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { LoadFailure } from "@/components/load-failure";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
@@ -93,39 +91,6 @@ function OrganizationScreen() {
     ];
   }, [statistics]);
 
-  // Выгружается ровно то, что показано в разрезе, — отдельной ручки выгрузки
-  // структуры на бэке нет.
-  const exportCsv = useCallback(() => {
-    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    // «Входит в» — та же колонка, что и подпись под именем на экране: выгрузка
-    // без пути повторила бы дефект №214 уже в файле.
-    const head = [
-      "Подразделение", "Входит в", "Уровень", "Штат", "Занято", "Вакансий",
-    ];
-    const body = rows.map((row) =>
-      [
-        row.name,
-        row.path.join(" › "),
-        row.level,
-        String(row.staffUnits),
-        String(row.employees),
-        String(row.vacancies),
-      ]
-        .map(cell)
-        .join(";")
-    );
-    // BOM — иначе Excel читает кириллицу как мусор.
-    const csv = `﻿${[head.map(cell).join(";"), ...body].join("\r\n")}`;
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" })
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "подразделения.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-  }, [rows]);
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -134,25 +99,6 @@ function OrganizationScreen() {
           eyebrow="Личный состав"
           title="Структура организации"
           description="Визуальная организационная диаграмма с иерархией подразделений"
-          actions={
-            // Бейдж «Обновлено: <сегодня>» убран. Он печатал `new Date()`
-            // прямо в разметке: дата была СЕГОДНЯШНЕЙ всегда и о свежести
-            // данных не говорила ничего — а ровно такой `new Date()` в JSX
-            // уже давал расхождение гидратации на /dashboard. Свежести своих
-            // данных ручка статистики не сообщает, поэтому подписи нет.
-            // Заодно отсюда убрана строка поиска: у неё не было ни состояния,
-            // ни обработчика, ни доступа к дереву — набранное в ней не делало
-            // ничего. Живой поиск теперь внутри OrgChart, рядом с деревом.
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportCsv}
-              disabled={statistics === undefined}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Экспорт CSV
-            </Button>
-          }
         />
 
         {/* Отказ запроса статистики: без этой врезки шесть плиток показывали
@@ -215,6 +161,8 @@ function OrganizationScreen() {
           />
         </div>
 
+        <OrgChart />
+
         {/* Разрез по подразделениям. Ручка статистики отдаёт его С САМОГО
             НАЧАЛА — три массива `departments`/`directorates`/`divisions` с
             теми же полями, что и сводка, — и страница их выбрасывала,
@@ -228,68 +176,75 @@ function OrganizationScreen() {
             чисел была бы дублем, а не переносом. */}
         {rows.length > 0 && (
           <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                Штат по подразделениям
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Уровни вложены друг в друга: числа управления включают его
-                отделы, поэтому строки не складываются в итог.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Подразделение</TableHead>
-                      <TableHead>Уровень</TableHead>
-                      <TableHead className="text-right">Штат</TableHead>
-                      <TableHead className="text-right">Занято</TableHead>
-                      <TableHead className="text-right">Вакансий</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => (
-                      <TableRow key={row.key}>
-                        <TableCell className="font-medium">
-                          {row.name}
-                          {/* Путь до подразделения (Plane №214). Имена
-                              уникальны только внутри родителя: «Первое
-                              управление» есть в каждом департаменте, «Первый
-                              отдел» — в каждом управлении, и на реальной
-                              структуре в таблице стояло девять одинаковых
-                              строк подряд. У корневых строк пути нет, и место
-                              под него не занимается. */}
-                          {row.path.length > 0 && (
-                            <div className="text-xs font-normal text-muted-foreground">
-                              {row.path.join(" › ")}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {row.level}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.staffUnits}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-green-700 dark:text-green-400">
-                          {row.employees}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-red-700 dark:text-red-400">
-                          {row.vacancies}
-                        </TableCell>
+            <details>
+              <summary
+                aria-label="Штат по подразделениям"
+                className="min-h-11 cursor-pointer rounded-t-xl p-4 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span>Штат по подразделениям</span>
+                <span aria-hidden="true" className="ml-2 text-sm font-normal text-muted-foreground">{rows.length}</span>
+              </summary>
+              <CardContent className="space-y-3 pt-0">
+                <p className="text-sm text-muted-foreground">
+                  Уровни вложены друг в друга: числа управления включают его
+                  отделы, поэтому строки не складываются в итог.
+                </p>
+                <div
+                  role="region"
+                  aria-label="Штат по подразделениям"
+                  tabIndex={0}
+                  className="max-h-[min(50vh,28rem)] overflow-auto rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Подразделение</TableHead>
+                        <TableHead>Уровень</TableHead>
+                        <TableHead className="text-right">Штат</TableHead>
+                        <TableHead className="text-right">Занято</TableHead>
+                        <TableHead className="text-right">Вакансий</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((row) => (
+                        <TableRow key={row.key}>
+                          <TableCell className="font-medium">
+                            {row.name}
+                            {/* Путь до подразделения (Plane №214). Имена
+                                уникальны только внутри родителя: «Первое
+                                управление» есть в каждом департаменте, «Первый
+                                отдел» — в каждом управлении, и на реальной
+                                структуре в таблице стояло девять одинаковых
+                                строк подряд. У корневых строк пути нет, и место
+                                под него не занимается. */}
+                            {row.path.length > 0 && (
+                              <div className="text-xs font-normal text-muted-foreground">
+                                {row.path.join(" › ")}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {row.level}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.staffUnits}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-green-700 dark:text-green-400">
+                            {row.employees}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-red-700 dark:text-red-400">
+                            {row.vacancies}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
               </div>
-            </CardContent>
+              </CardContent>
+            </details>
           </Card>
         )}
 
-        {/* Organization Chart */}
-        <OrgChart />
       </div>
     </DashboardLayout>
   );

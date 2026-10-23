@@ -1,17 +1,20 @@
-"""Database evidence for the reviewed September/October -> 17 October transition.
+"""Database evidence for the reviewed September/October -> 20 October transition.
 
 Imported without Django by unit tests; the same source is executed inside the
 verified backend image. No business row values are emitted, only checksums.
 """
 import hashlib
+import importlib
 import io
 import json
+from pathlib import Path
 import re
 
-SOURCE_REVISION = '381c21f34cad4e58d9cf29d5ee56370072a128b3'
+RELEASE_POLICY = 'smart-20261020-v1'
 ACCESS_PLAN = (('operations', '0144_workspace_and_digital_twin_access'),)
 APPROVED_PLAN = (
     ('employees', '0006_iin_format_validation'),
+    ('employees', '0007_employee_service_profile'),
     ('operations', '0132_group_evaluation_targets'),
     ('operations', '0133_recon_materials'),
     ('operations', '0134_duty_status_variants'),
@@ -25,9 +28,9 @@ APPROVED_PLAN = (
     ('operations', '0142_duty_register_big_identifiers'),
     ('operations', '0143_duty_creation_closure'),
     *ACCESS_PLAN,
+    ('operations', '0145_personnel_duty_execution'),
     ('statuses', '0005_employeestatus_duty_assignment'),
 )
-APPROVED_PLANS = ((), ACCESS_PLAN, APPROVED_PLAN)
 # Only these reviewed migrations insert rows into existing tables. Existing
 # rows in these tables remain protected by their original primary keys.
 SEED_TABLES = frozenset({'django_migrations', 'django_content_type', 'auth_permission', 'ops_roles',
@@ -59,10 +62,53 @@ def canonical_constraint(table, name, definition):
     return head + '(ARRAY[' + ', '.join('(' + value + ')::text' for value in literals) + '])))'
 
 
-def require_plan(plan):
-    if tuple(map(tuple, plan)) not in APPROVED_PLANS:
-        raise RuntimeError('Unreviewed migration plan; expected exactly access migration0144, '
-                           'the reviewed September 15 migrations or an already current schema')
+def migration_graph():
+    """Read the complete installed migration graph without opening a database."""
+    from django.db.migrations.loader import MigrationLoader
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    nodes = []
+    for key, migration in sorted(loader.disk_migrations.items()):
+        source = Path(importlib.import_module(migration.__module__).__file__)
+        parents = sorted(parent.key for parent in loader.graph.node_map[key].parents)
+        nodes.append({'app': key[0], 'name': key[1],
+                      'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                      'dependencies': [list(parent) for parent in parents]})
+    order, seen = [], set()
+    for leaf in loader.graph.leaf_nodes():
+        for key in loader.graph.forwards_plan(leaf):
+            if key not in seen:
+                order.append(list(key))
+                seen.add(key)
+    return {'format': 1, 'nodes': nodes, 'order': order,
+            'leaves': [list(key) for key in loader.graph.leaf_nodes()]}
+
+
+def require_graph(actual, expected):
+    if actual != expected or expected.get('format') != 1:
+        raise RuntimeError('The complete image migration graph differs from the reviewed release')
+    nodes = [(item['app'], item['name']) for item in expected['nodes']]
+    order = list(map(tuple, expected['order']))
+    if (len(nodes) != len(set(nodes)) or len(order) != len(set(order)) or set(nodes) != set(order)
+            or not set(APPROVED_PLAN).issubset(nodes)):
+        raise RuntimeError('Incomplete current migration graph; employees0007 and operations0145 are required')
+    positions = {key: index for index, key in enumerate(order)}
+    for item in expected['nodes']:
+        key = (item['app'], item['name'])
+        if not re.fullmatch('[0-9a-f]{64}', item['sha256']):
+            raise RuntimeError('Invalid migration source checksum')
+        if any(tuple(parent) not in positions or positions[tuple(parent)] >= positions[key]
+               for parent in item['dependencies']):
+            raise RuntimeError('Migration graph dependency order is invalid')
+
+
+def require_plan(plan, graph=None):
+    pending = tuple(map(tuple, plan))
+    allowed = set(APPROVED_PLAN)
+    order = tuple(map(tuple, graph['order'])) if graph is not None else APPROVED_PLAN
+    if (len(pending) != len(set(pending)) or any(item not in allowed for item in pending)
+            or pending != tuple(item for item in order if item in set(pending))):
+        raise RuntimeError('Unreviewed migration plan; only ordered pending migrations from the '
+                           'reviewed 20 October delta are allowed')
 
 
 def require_preserved(before, projected):
@@ -143,10 +189,12 @@ def capture(spec=None):
     return result
 
 
-def migrate_atomic(before, expected_schema=None):
+def migrate_atomic(before, expected_schema=None, graph=None):
     """Fence existing tables; rollback all DDL/data if original-row checks fail."""
     from django.core.management import call_command
     from django.db import connection, transaction
+    if graph is not None:
+        require_graph(migration_graph(), graph)
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL lock_timeout='15s'")
@@ -155,7 +203,7 @@ def migrate_atomic(before, expected_schema=None):
         if capture() != before:
             raise RuntimeError('Database changed before migration; no transition committed')
         plan = pending_plan()
-        require_plan(plan)
+        require_plan(plan, graph)
         if not plan:
             raise RuntimeError('Transition already applied; use the standard application updater')
         output = io.StringIO()

@@ -8,13 +8,13 @@ import { Button } from '@/components/ui/button'
 import { DepartmentRequestsTable } from '@/features/department-requests'
 import { ForceCollectionsTable } from '@/features/force-collections'
 import { DailyExpenseBoard } from '@/features/daily-expense'
-import { ResponsibleDailyExpense, DailyRetry } from '@/features/daily-expense/ui/ResponsibleDailyExpense'
+import { ResponsibleDailyExpense } from '@/features/daily-expense/ui/ResponsibleDailyExpense'
 import { useResponsibleDaily } from '@/features/daily-expense/model/directorate-summary'
-import { SUMMARY_ACTION_ANCHOR } from '@/features/daily-expense/ui/SummaryActionBar'
 import { useDepartmentRequests } from '@/hooks/use-department-requests'
 import { useOpsPermissions } from '@/hooks/use-ops-permissions'
 import { formatIsoDate, formatIsoDateTime } from '@/shared/lib/date'
 import { activeRequests, requestTotals, resolveWorkspaceView, responsibleDepartmentScope, workspaceHref, type WorkspaceRole } from '../model/workspace'
+import { DailyActionQueue } from './DailyActionQueue'
 import styles from './workspace.module.css'
 
 function Retry({ label, retry }: { label: string; retry: () => unknown }) {
@@ -45,16 +45,6 @@ function DailySnapshot({ query }: { query: URLSearchParams }) {
       : data && <p className={styles.pending}>Сдали {data.sources.filter(row => row.submission).length} из {data.sources.length} обязательных источников. {data.total.submission?.sent_at ? `Свод отправлен ${formatIsoDateTime(data.total.submission.sent_at)}.` : data.total.submission ? 'Свод собран, ожидает отправки.' : 'Свод ещё не собран.'}</p>)}
     <div className={styles.processNext}><p>Состояние сдачи и состав по подразделениям</p><Link className={styles.action} href={workspaceHref(query, 'daily')}>Открыть свод</Link></div>
   </article>
-}
-
-function DailyActionQueue({ query }: { query: URLSearchParams }) {
-  const { data, businessDate, submissions, report, divisions, structureError, clock } = useResponsibleDaily(query.get('businessDate') ?? undefined)
-  if (structureError) return <p role="alert" className={styles.pending}>{structureError}</p>
-  if (submissions.isError || report.isError || divisions.isError || (!businessDate && clock.isError)) return <DailyRetry label="Очередь ежедневного расхода недоступна" onRetry={() => Promise.all([clock.refetch(), submissions.refetch(), report.refetch(), divisions.refetch()])} />
-  if (!data || submissions.isPending) return <p role="status" className={styles.pending}>Загрузка очереди расхода…</p>
-  const missing = data.sources.filter(row => !row.submission)
-  if (missing.length === 0 && data.total.submission?.sent_at) return <p className={styles.pending}>Ежедневный свод отправлен. Нет ожидающих сдач.</p>
-  return <div className={styles.queueRow}><span className={styles.badge}>Расход</span><div><strong>{missing.length ? `Ожидаем сдачу: ${missing.map(row => row.division.name).join(', ')}` : data.total.submission ? 'Отправить собранный свод' : 'Собрать свод департамента'}</strong><p>{businessDate ? formatIsoDate(businessDate) : ''} · сдали {data.sources.length - missing.length} из {data.sources.length}</p></div><div /><Link className={styles.action} href={`${workspaceHref(query, 'daily')}#${SUMMARY_ACTION_ANCHOR}`}>Открыть свод</Link></div>
 }
 
 function ResponsibleDesk({ query }: { query: URLSearchParams }) {
@@ -91,12 +81,17 @@ function ResponsibleDesk({ query }: { query: URLSearchParams }) {
   </>
 }
 
-export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
+export function ForcesWorkspace({ role: defaultRole }: { role: WorkspaceRole }) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const access = useOpsPermissions()
   const query = new URLSearchParams(searchParams)
+  // Explicit headquarters destinations must survive a second department role.
+  // Without command authority the department workspace keeps its usual gates.
+  const commandTarget = query.get('tab') === 'collections' || Boolean(query.get('collection') || query.get('campaign'))
+  const role = commandTarget && access.hasPermission('forces.command') ? 'headquarters' : defaultRole
   const view = resolveWorkspaceView(role, query, access.hasPermission('status.view'))
+  const showCollection = role === 'headquarters'
   // The department workflow requires one assigned department. Global wildcard
   // authority and multiple/global responsible grants keep the generic picker.
   // Aggregate '*' may be scoped, so only globalPermissions can bypass scope.
@@ -121,6 +116,7 @@ export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
       {access.hasPermission('status.view') && <Link href={workspaceHref(query, 'daily')} aria-current={view === 'daily' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Расход департамента</Link>}
       {access.hasPermission('forces.allocate') && <Link href={workspaceHref(query, 'forces')} aria-current={view === 'forces' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Сбор сил на ОМ</Link>}
     </nav>}
+    {role === 'expense' && view === 'daily' && access.hasPermission('status.view') && singleDepartmentDaily && <DailyActionQueue query={query} standalone />}
     {view === 'desk' ? <ResponsibleDesk query={query} />
       : view === 'daily' ? access.hasPermission('status.view') ? singleDepartmentDaily ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {
         const next = new URLSearchParams(query); next.set('businessDate', date)
@@ -129,6 +125,6 @@ export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
         const next = new URLSearchParams(query); next.set('businessDate', date)
         router.replace(workspaceHref(next, 'daily'), { scroll: false })
       }} /> : <p role="alert">Недостаточно прав для просмотра расхода.</p>
-      : <div className={styles.detail}>{role === 'headquarters' ? <ForceCollectionsTable /> : <DepartmentRequestsTable />}</div>}
+      : <div className={styles.detail}>{showCollection ? <ForceCollectionsTable /> : <DepartmentRequestsTable />}</div>}
   </div></DashboardLayout>
 }

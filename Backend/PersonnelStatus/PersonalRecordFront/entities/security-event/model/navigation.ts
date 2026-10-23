@@ -9,3 +9,16 @@ export function eventWorkspaceHref(
   const suffix = query.toString();
   return `/security-ops/events/${encodeURIComponent(eventId)}${suffix ? `?${suffix}` : ''}`;
 }
+
+/** Read a document from the closed case without losing its selected object. */
+export function eventArchiveDocumentHref(
+  eventId: string,
+  currentQuery: URLSearchParams,
+  document: "recon" | "bulletin",
+): string {
+  const query = new URLSearchParams(currentQuery);
+  query.delete("stage");
+  query.set("step", "1");
+  query.set("document", document);
+  return `/security-ops/events/${encodeURIComponent(eventId)}/?${query.toString()}`;
+}

@@ -41,7 +41,7 @@ import {
 } from "@/entities/gvo-summary";
 import { Fact } from "./Fact";
 
-export function BulletinPanel({ event }: { event: SecurityEvent }) {
+export function BulletinPanel({ event, initiallyOpen = false }: { event: SecurityEvent; initiallyOpen?: boolean }) {
   // Рекогносцировка ещё не открыта — сведения сейчас и читают.
   const awaitingRecon = event.stage === "BULLETIN";
   // Раскрыта ТОЛЬКО пока ОМ на стадии «Бюллетень» — там он и есть предмет
@@ -53,7 +53,7 @@ export function BulletinPanel({ event }: { event: SecurityEvent }) {
   // задач. Оба решения совместимы: панель доступна везде, но сама лезет на
   // глаза только там, где её заполняют. Незаполненный бюллетень при этом не
   // теряется: раскрыватель называет его состояние строкой заголовка.
-  const [open, setOpen] = useState(awaitingRecon);
+  const [open, setOpen] = useState(initiallyOpen || awaitingRecon);
 
   return (
     <Card className="mb-4" data-testid="bulletin-panel">

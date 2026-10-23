@@ -97,6 +97,8 @@ DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED"
 # правку черновика: черновик — рабочая тетрадь, версия — утверждённый документ,
 # и предмет разбирательства («каким был паспорт и кто его утвердил») — она.
 PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
+# Additive catalog transfer; the receipt contains IDs/digest, never personnel.
+SECURITY_OBJECT_CATALOG_IMPORTED = "SECURITY_OBJECT_CATALOG_IMPORTED"
 # Снимок объекта-каталога (Plane SJ-1049) — тот же довод, что у
 # PROTECTED_PERSON_PHOTO_SET ниже: правка справочника, по которой спрашивают
 # «кто завёл снимок».
@@ -366,6 +368,7 @@ ACTIONS = frozenset(
         DOCUMENT_SUPERSEDED,
         DOCUMENT_DOWNLOADED,
         PASSPORT_VERSION_PUBLISHED,
+        SECURITY_OBJECT_CATALOG_IMPORTED,
         SECURITY_OBJECT_PHOTO_SET,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,

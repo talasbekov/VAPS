@@ -53,12 +53,20 @@ export function resolveWorkspaceView(role: WorkspaceRole, query: URLSearchParams
   return role === 'responsible' ? 'desk' : 'forces'
 }
 
-export function workspaceHref(query: URLSearchParams, view: WorkspaceView, request?: string) {
+type WorkspaceTarget = string | { collection: string } | { tab: 'requests' }
+
+export function workspaceHref(query: URLSearchParams, view: WorkspaceView, target?: WorkspaceTarget) {
   const next = new URLSearchParams(query)
   for (const key of ['request', 'collection', 'campaign', 'tab']) next.delete(key)
   if (view === 'desk') next.delete('view')
   else next.set('view', view)
-  if (request) next.set('request', request)
+  if (typeof target === 'string' && target) next.set('request', target)
+  else if (target && typeof target === 'object') {
+    if ('collection' in target) {
+      next.set('collection', target.collection)
+      next.set('tab', 'collections')
+    } else next.set('tab', target.tab)
+  }
   const suffix = next.toString()
   return `/employees${suffix ? `?${suffix}` : ''}`
 }

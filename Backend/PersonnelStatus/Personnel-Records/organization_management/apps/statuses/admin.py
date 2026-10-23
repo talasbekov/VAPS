@@ -2,12 +2,20 @@
 Настройки админ-панели для управления статусами сотрудников
 """
 from django.contrib import admin
+from django import forms
 from django.utils.html import format_html
 from organization_management.apps.statuses.models import (
     EmployeeStatus,
     StatusChangeHistory,
     StatusDocument
 )
+from organization_management.apps.statuses.retirement import RetiredSecondmentTypeAdminFormMixin
+
+
+class EmployeeStatusAdminForm(RetiredSecondmentTypeAdminFormMixin, forms.ModelForm):
+    class Meta:
+        model = EmployeeStatus
+        fields = "__all__"
 
 
 class StatusChangeHistoryInline(admin.TabularInline):
@@ -32,6 +40,8 @@ class StatusDocumentInline(admin.TabularInline):
 @admin.register(EmployeeStatus)
 class EmployeeStatusAdmin(admin.ModelAdmin):
     """Админ-панель для управления статусами сотрудников"""
+
+    form = EmployeeStatusAdminForm
 
     list_display = [
         'employee',

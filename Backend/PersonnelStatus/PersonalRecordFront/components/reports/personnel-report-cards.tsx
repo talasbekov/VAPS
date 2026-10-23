@@ -10,6 +10,8 @@ import { ReportSectionCard } from "@/components/reports/report-section-card";
 import { opsApiClient } from "@/lib/ops-api";
 import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useOpsReadAccess } from "@/hooks/use-ops-protected-read";
+import { useOpsReadSnapshot } from "@/hooks/use-ops-read-snapshot";
 
 type ReportKind = "staffing" | "absences";
 type Filters = Record<string, string>;
@@ -51,88 +53,91 @@ function reportUrl(kind: ReportKind, filters: Filters): string {
   return `/api/reports/reports/${kind}/?${query.toString()}`;
 }
 
+interface PersonnelPreview<T> { report: T | null; divisions: ReportDivision[]; asOf: string; filters: Filters }
+const EMPTY_PREVIEW = { report: null, divisions: [] as ReportDivision[], asOf: "", filters: {} };
+
 function usePersonnelReport<T extends ReportEnvelope>(kind: ReportKind, allowed: boolean, rightsLoading: boolean, filters: Filters) {
-  const [report, setReport] = useState<T | null>(null);
-  const [divisions, setDivisions] = useState<ReportDivision[]>([]);
-  const [asOf, setAsOf] = useState("");
+  const feature = useOpsReadAccess(kind === "staffing" ? "orgstructure.view" : "status.view");
+  const snapshot = useOpsReadSnapshot<PersonnelPreview<T>>({ ...feature,
+    allowed: feature.allowed && allowed && !rightsLoading }, EMPTY_PREVIEW);
+  const { report, divisions, asOf } = snapshot.value;
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadedFilters = useRef<Filters>({});
   const currentFilters = useRef(filters);
+  const loadedScope = useRef(feature.scope);
   currentFilters.current = filters;
   const requestVersion = useRef(0);
   const { toast } = useToast();
 
   const invalidate = useCallback(() => {
     requestVersion.current += 1;
-    setReport(null);
+    snapshot.setValue(previous => ({ ...previous, report: null }));
     setError(null);
     setLoading(false);
-  }, []);
+  }, [snapshot.setValue]);
 
   const load = useCallback(async (filters: Filters = {}, page = 1) => {
+    if (!snapshot.isCurrent()) return;
     const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
-    setReport(null);
+    snapshot.setValue(previous => ({ ...previous, report: null }));
     try {
       const result = await opsApiClient.get<T>(reportUrl(kind, { ...filters, page: String(page) }));
-      if (version !== requestVersion.current) return;
-      loadedFilters.current = { ...filters };
-      setReport(result);
-      setDivisions(result.divisions);
-      setAsOf(result.as_of);
+      if (version !== requestVersion.current || !snapshot.isCurrent()) return;
+      snapshot.setValue({ report: result, divisions: result.divisions, asOf: result.as_of, filters: { ...filters } });
     } catch (failure) {
-      if (version === requestVersion.current) {
+      if (version === requestVersion.current && snapshot.isCurrent()) {
+        const status = (failure as { status?: number } | null)?.status;
+        if (status === 401 || status === 403 || status === 404) snapshot.setValue(EMPTY_PREVIEW);
         setError(friendlyOpsErrorMessage(failure, "Нет доступа к данным этого отчёта в выбранной области."));
       }
     } finally {
-      if (version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current && snapshot.isCurrent()) setLoading(false);
     }
-  }, [kind]);
+  }, [kind, snapshot.isCurrent, snapshot.setValue]);
 
   useEffect(() => {
-    if (!rightsLoading && allowed) void load(currentFilters.current);
+    const changedScope = loadedScope.current !== feature.scope;
+    loadedScope.current = feature.scope;
+    setExporting(false);
+    if (!rightsLoading && allowed) void load(changedScope
+      ? { ...currentFilters.current, division_id: "" } : currentFilters.current);
     else invalidate();
     return () => { requestVersion.current += 1; };
-  }, [allowed, rightsLoading, load, invalidate]);
+  }, [allowed, rightsLoading, feature.scope, load, invalidate]);
 
   const download = async () => {
-    if (report === null || loading || exporting) return;
+    if (kind !== "staffing" || report === null || loading || exporting || !snapshot.canUseValue()) return;
     setExporting(true);
     setError(null);
-    const exportType = kind === "staffing" ? "xlsx" : "csv";
     // Export the same loaded filters; preview page limits never affect the file.
-    const filters: Filters = { ...loadedFilters.current, export: exportType };
-    if (kind === "absences") {
-      const period = report as unknown as AbsenceReport;
-      filters.date_from = period.date_from;
-      filters.date_to = period.date_to;
-    }
+    const filters: Filters = { ...snapshot.value.filters, export: "xlsx" };
     try {
       const { blob, filename } = await opsApiClient.download(reportUrl(kind, filters));
+      if (!snapshot.canUseValue()) return;
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = filename ?? `${kind}.${exportType}`;
+      anchor.download = filename ?? "staffing.xlsx";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
       toast({ title: "Отчёт скачан", description: "В файл включены все записи выбранной области." });
     } catch (failure) {
-      setError(friendlyOpsErrorMessage(failure, "Нет доступа к выгрузке этого отчёта."));
+      if (snapshot.canUseValue()) setError(friendlyOpsErrorMessage(failure, "Нет доступа к выгрузке этого отчёта."));
     } finally {
-      setExporting(false);
+      if (snapshot.isCurrent()) setExporting(false);
     }
   };
 
-  return { report, divisions, asOf, loading, exporting, error, load, invalidate, download };
+  return { report, divisions, asOf, loading, exporting, error, load, invalidate, download, scope: feature.scope };
 }
 
 function DivisionFilter({ id, value, divisions, disabled, onChange }: {
-  id: string; value: string; divisions: ReportDivision[]; disabled: boolean; onChange: (value: string) => void;
+  id: string; value: string; divisions: ReportDivision[]; disabled?: boolean; onChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-2 min-w-0">
@@ -171,6 +176,7 @@ function StaffingCard({ allowed, rightsLoading }: { allowed: boolean; rightsLoad
   const [division, setDivision] = useState("");
   const filters = { division_id: division };
   const state = usePersonnelReport<StaffingReport>("staffing", allowed, rightsLoading, filters);
+  useEffect(() => setDivision(""), [state.scope]);
   return (
     <ReportSectionCard className="md:col-span-2 lg:col-span-3" role="region" aria-label="Штатное расписание"
       icon={Users} iconClassName="text-purple-600" title="Штатное расписание"
@@ -221,6 +227,7 @@ function AbsenceCard({ allowed, rightsLoading }: { allowed: boolean; rightsLoadi
   const [dateTo, setDateTo] = useState("");
   const filters = { division_id: division, date_from: dateFrom, date_to: dateTo };
   const state = usePersonnelReport<AbsenceReport>("absences", allowed, rightsLoading, filters);
+  useEffect(() => setDivision(""), [state.scope]);
   useEffect(() => {
     if (state.report) { setDateFrom(state.report.date_from); setDateTo(state.report.date_to); }
   }, [state.report]);
@@ -235,19 +242,16 @@ function AbsenceCard({ allowed, rightsLoading }: { allowed: boolean; rightsLoadi
       {rightsLoading ? <p role="status">Проверка доступа…</p> : !allowed ?
         <p className="text-sm text-muted-foreground">Нет доступа к статусам сотрудников.</p> : <>
           <div className="flex flex-wrap items-end gap-3">
-            <DivisionFilter id="absences-division" value={division} divisions={state.divisions} disabled={state.exporting}
+            <DivisionFilter id="absences-division" value={division} divisions={state.divisions}
               onChange={(value) => { setDivision(value); state.invalidate(); }} />
             <div className="space-y-2"><label htmlFor="absences-from" className="text-sm font-medium">С</label>
-              <Input id="absences-from" type="date" className="w-40" max={today} value={dateFrom} disabled={state.exporting}
+              <Input id="absences-from" type="date" className="w-40" max={today} value={dateFrom}
                 onChange={(event) => { setDateFrom(event.target.value); state.invalidate(); }} /></div>
             <div className="space-y-2"><label htmlFor="absences-to" className="text-sm font-medium">По</label>
-              <Input id="absences-to" type="date" className="w-40" max={today} value={dateTo} disabled={state.exporting}
+              <Input id="absences-to" type="date" className="w-40" max={today} value={dateTo}
                 onChange={(event) => { setDateTo(event.target.value); state.invalidate(); }} /></div>
-            <Button onClick={() => void state.load(filters)} disabled={state.loading || state.exporting || periodError !== null}>
+            <Button onClick={() => void state.load(filters)} disabled={state.loading || periodError !== null}>
               {state.loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Сформировать
-            </Button>
-            <Button variant="outline" onClick={() => void state.download()} disabled={state.report === null || state.loading || state.exporting || periodError !== null}>
-              {state.exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Скачать CSV
             </Button>
           </div>
           {periodError && !state.loading && <p role="alert" className="text-sm text-destructive-ink">{periodError}</p>}
@@ -270,7 +274,7 @@ function AbsenceCard({ allowed, rightsLoading }: { allowed: boolean; rightsLoadi
                   </TableRow>;
                 })}</TableBody>
               </Table>}
-            <ReportPagination report={state.report} disabled={state.loading || state.exporting} onPage={(page) => void state.load(filters, page)} />
+            <ReportPagination report={state.report} disabled={state.loading} onPage={(page) => void state.load(filters, page)} />
           </>}
         </>}
     </ReportSectionCard>

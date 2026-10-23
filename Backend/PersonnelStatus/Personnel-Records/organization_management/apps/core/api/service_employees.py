@@ -124,6 +124,12 @@ class EmployeeDirectoryDetail(EmployeeBrief):
 class ServiceEmployeeViewSet(viewsets.ViewSet):
     permission_service_map = {'list': 'personnel.view', 'retrieve': 'personnel.view', 'options': 'personnel.view'}
 
+    @extend_schema(responses={200: dict})
+    @action(detail=True, methods=['get', 'put'], url_path='service-profile')
+    def service_profile(self, request, pk=None):
+        from .employee_service_profile import employee_service_profile
+        return employee_service_profile(request, pk)
+
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if resolve_actor_id(request) is None:

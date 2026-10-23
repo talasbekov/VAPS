@@ -94,6 +94,67 @@ test('the complete organization converter keeps unassigned and real roots as ind
   }
 });
 
+test('independent assigned roots remain siblings with their own descendants and personnel', () => {
+  const h = client(new Map());
+  const person = (id, level, current_status) => ({
+    position: { id: level, name: 'Должность ' + level, level },
+    employee: { id, first_name: 'Имя ' + id, last_name: 'Фамилия', current_status },
+  });
+  for (const [aId, bId] of [[10, 20], [20, 10]]) {
+    // Distinct division IDs are essential: row() otherwise merges both roots into division3.
+    const a = { ...row(aId), division: { id: 11, name: 'A' }, parent_id: null, employees: [
+      person('9007199254740993', 2, null),
+      person('102', 8, { status_type: null, state: null, start_date: null, end_date: null }),
+      { position: { id: 99, name: 'Вакантная ставка', level: 9 }, employee: null },
+    ] };
+    const b = { ...row(bId), division: { id: 22, name: 'B' }, parent_id: null, employees: [
+      person('201', 2, { status_type: 'leave', state: 'active', start_date: '2026-10-20', end_date: null }),
+    ] };
+    const aChild = { ...row(100), division: { id: 111, name: 'A child' }, parent_id: aId,
+      employees: [person('301', 8, undefined)] };
+    const bChild = { ...row(200), division: { id: 222, name: 'B child' }, parent_id: bId,
+      employees: [person('401', 8, null)] };
+    const units = [a, b, aChild, bChild];
+    const original = structuredClone(units);
+    const root = h.convertStaffUnitsResponseToOrgUnit(units);
+    assert.equal(root.id, 'organization-structure-root', 'minimum staff ID must not become a parent');
+    assert.equal(root.divisionId, undefined);
+    assert.equal(root.head, null);
+    assert.equal(root.employees.length, 0);
+    assert.deepEqual(Array.from(root.children, node => node.id), [String(aId), String(bId)]);
+    const aNode = root.children.find(node => node.divisionId === 11);
+    const bNode = root.children.find(node => node.divisionId === 22);
+    const expectedA = h.convertStaffUnitToOrgUnit({ ...a, children: [aChild] });
+    const expectedB = h.convertStaffUnitToOrgUnit({ ...b, children: [bChild] });
+    assert.deepEqual(structuredClone(aNode), structuredClone(expectedA));
+    assert.deepEqual(structuredClone(bNode), structuredClone(expectedB));
+    assert.deepEqual(Array.from(aNode.children, node => node.id), ['100']);
+    assert.deepEqual(Array.from(bNode.children, node => node.id), ['200']);
+    const descendants = node => [node, ...Array.from(node.children ?? []).flatMap(descendants)];
+    const realNodes = Array.from(root.children).flatMap(descendants);
+    assert.deepEqual(realNodes.map(node => node.id).sort(), [String(aId), String(bId), '100', '200'].sort());
+    assert.deepEqual(realNodes.map(node => node.divisionId).sort((a, b) => a - b), [11, 22, 111, 222]);
+    const people = realNodes.flatMap(node => [node.head, ...node.employees].filter(Boolean));
+    assert.deepEqual(people.filter(person => person.name !== 'Вакантная должность').map(person => person.id).sort(),
+      ['9007199254740993', '102', '201', '301', '401'].sort());
+    assert.equal(people.filter(person => person.name === 'Вакантная должность').length, 1);
+    assert.equal(aNode.head.id, '9007199254740993');
+    assert.equal(aNode.head.status, undefined);
+    const withoutStatus = aNode.employees.find(person => person.id === '102');
+    assert.equal(withoutStatus.status, null);
+    assert.equal(withoutStatus.statusStartDate, null);
+    assert.equal(withoutStatus.statusEndDate, undefined);
+    assert.equal(bNode.head.status, 'leave');
+    assert.equal(bNode.head.statusStartDate, '2026-10-20');
+    assert.equal(bNode.head.statusEndDate, undefined);
+    assert.equal(aNode.children[0].head.status, undefined);
+    // A genuine single-root tree still has its real root, not a neutral wrapper.
+    assert.deepEqual(structuredClone(h.convertStaffUnitsResponseToOrgUnit([a, aChild])), structuredClone(expectedA));
+    assert.deepEqual(units, original);
+  }
+  assert.equal(h.calls.length, 0);
+});
+
 function staffQuery(api) {
   const exports = {};
   const compiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../../hooks/use-staff-units.ts'), 'utf8'), {
@@ -102,7 +163,12 @@ function staffQuery(api) {
   vm.runInNewContext(compiled, {
     exports,
     require(name) {
-      if (name === '@tanstack/react-query') return { useQuery: options => options };
+      if (name === '@/hooks/use-ops-protected-read') return {
+        useOpsReadAccess: () => ({ allowed: true, scope: 'test' }),
+        useOpsProtectedRead: (prefix, parts, access, read) => ({
+          queryKey: [...prefix, access.scope, ...parts], queryFn: ({ signal }) => read(signal),
+        }),
+      };
       if (name === '@/lib/api') return { apiClient: api };
       throw Error('Unexpected import: ' + name);
     },

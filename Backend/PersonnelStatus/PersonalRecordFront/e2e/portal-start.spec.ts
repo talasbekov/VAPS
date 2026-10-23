@@ -13,7 +13,7 @@ async function authenticate(page: Page) {
 test.describe('permission-driven portal start', () => {
   test.skip(process.env.SMOKE_LIVE !== '1', 'Requires authenticated portal; only permission responses are browser fixtures');
 
-  test('head breadcrumb brand opens allowed statuses instead of command center', async ({ page }) => {
+  test('head breadcrumb brand opens the task home from statuses', async ({ page }) => {
     await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: {
       permissions: ['status.view', 'status.workspace', 'status.manage'], global_permissions: [], status_manage_division_ids: [3], roles: [{ code: 'DIRECTORATE_HEAD', name: 'Начальник управления', scope_division_id: 3, scope_division_name: 'Первое управление' }],
     } }));
@@ -21,9 +21,10 @@ test.describe('permission-driven portal start', () => {
     await page.goto(APP + '/statuses/?businessDate=2026-10-20');
     const trail = page.getByRole('navigation', { name: 'Хлебные крошки', exact: true });
     await expect(trail.locator('[aria-current="page"]')).toHaveText('Управление статусами');
-    await expect(trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true })).toHaveAttribute('href', '/statuses/');
+    await expect(trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true })).toHaveAttribute('href', /^\/workspace\/?$/);
     await trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true }).click();
-    await expect(page).toHaveURL(/\/statuses\/$/);
+    await expect(page).toHaveURL(/\/workspace\/?$/);
+    await expect(page.getByRole('heading', { name: 'Что нужно сделать?', exact: true })).toBeVisible();
   });
 
   test('expense breadcrumbs follow daily and forces views consistently with the screen heading', async ({ page }) => {
@@ -36,21 +37,25 @@ test.describe('permission-driven portal start', () => {
       const trail = page.getByRole('navigation', { name: 'Хлебные крошки', exact: true });
       await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toBeVisible();
       await expect(trail.locator('[aria-current="page"]')).toHaveText(title);
-      await expect(trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true })).toHaveAttribute('href', '/employees/');
+      await expect(trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true })).toHaveAttribute('href', /^\/workspace\/?$/);
     }
   });
 
-  test('authenticated user without work permissions reaches profile', async ({ page }) => {
+  test('authenticated user without work permissions reaches task home and opens personal assignments', async ({ page }) => {
     await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: {
       permissions: [], global_permissions: [], roles: [],
     } }));
     await authenticate(page);
     await page.goto(APP + '/', { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(/\/security-ops\/profile\/?$/);
-    await expect(page.getByRole('heading', { name: 'Мой профиль', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/workspace\/?$/);
+    const tasks = page.getByRole('region', { name: 'Основные рабочие задачи', exact: true });
+    await expect(tasks.getByRole('link')).toHaveCount(1);
     const navigation = page.getByRole('navigation', { name: 'Основная навигация', exact: true });
     await expect(navigation.getByRole('link', { name: 'Статусы сотрудников', exact: true })).toHaveCount(0);
     await expect(navigation.getByRole('link', { name: 'Сбор сил на ОМ', exact: true })).toHaveCount(0);
+    await tasks.getByRole('link', { name: /^Мои задания и дежурства/ }).click();
+    await expect(page).toHaveURL(/\/security-ops\/profile\/?$/);
+    await expect(page.getByRole('heading', { name: 'Мой профиль', exact: true })).toBeVisible();
   });
 
   test('pending and failed permissions keep login start in place, retry opens allowed work', async ({ page }) => {
@@ -83,7 +88,9 @@ test.describe('permission-driven portal start', () => {
     expect(visitedPaths.every(path => path === '/')).toBeTruthy();
     recover = true;
     await page.getByRole('button', { name: 'Повторить загрузку', exact: true }).click();
-    await expect(page).toHaveURL(/\/security-ops\/objects\/?$/);
+    await expect(page).toHaveURL(/\/workspace\/?$/);
+    await expect(page.getByRole('region', { name: 'Основные рабочие задачи', exact: true })
+      .getByRole('link', { name: /^Объекты и паспорта/ })).toBeVisible();
   });
 
   test('relative and same-origin absolute callback retain path, query and hash', async ({ page }) => {

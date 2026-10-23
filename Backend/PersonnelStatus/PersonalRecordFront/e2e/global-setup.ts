@@ -81,12 +81,15 @@ async function reserveFixtureDateRange(workers: number): Promise<void> {
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
   if (process.env.SMOKE_LIVE !== '1') return
+  // Playwright also tears down rejected setup. Any preparation failure must
+  // leave cleanup disabled, including probe, Python, subprocess and JSON errors.
+  process.env[PREFLIGHT_FAILED] = '1'
   const verdict = await standVerdict()
   if (verdict.alive) {
     await reserveFixtureDateRange(config.workers)
+    delete process.env[PREFLIGHT_FAILED]
     return
   }
-  process.env[PREFLIGHT_FAILED] = '1'
   throw new Error(
     `фронт-стенд ${verdict.url} не отвечает (${verdict.why}) — прогон не начат.\n` +
       '  Поднять прод-стенд:  npm run stand:prod   (порт 3108)\n' +

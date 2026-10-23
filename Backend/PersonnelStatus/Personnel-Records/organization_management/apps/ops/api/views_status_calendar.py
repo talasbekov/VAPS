@@ -27,6 +27,13 @@ from organization_management.apps.ops import status_calendar
 _READ_PERMISSION = "status.view"
 
 
+def _search(request):
+    value = request.query_params.get("search", "").strip()
+    if len(value) > 200:
+        raise ValidationError({"search": "Не более 200 символов."})
+    return value
+
+
 class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Календарь статусов: месяц по дням и занятость на выбранную дату.
 
@@ -34,7 +41,21 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
     GET /api/ops/status-calendar/day/ — три группы занятости поимённо.
     """
 
-    permission_map = {"month": _READ_PERMISSION, "day": _READ_PERMISSION}
+    permission_map = {"month": _READ_PERMISSION, "day": _READ_PERMISSION, "divisions": _READ_PERMISSION}
+
+    @action(detail=False, methods=["get"])
+    def divisions(self, request):
+        """Filter choices follow status.view, independently of orgstructure.view."""
+        from organization_management.apps.divisions.models import Division
+
+        scope = _resolve_division_scope(request, None, _READ_PERMISSION)
+        rows = Division.objects.all()
+        if scope is not None:
+            rows = rows.filter(pk__in=scope)
+        rows = list(rows.order_by("name", "id").values("id", "name", "parent_id"))
+        visible = {row["id"] for row in rows}
+        return Response({"results": [{"id": str(row["id"]), "name": row["name"],
+            "parent_id": str(row["parent_id"]) if row["parent_id"] in visible else None} for row in rows]})
 
     @extend_schema(
         parameters=[
@@ -54,6 +75,8 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpenApiParameter(
                 "page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
             ),
+            OpenApiParameter("search", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                description="Поиск по ФИО во всей выбранной области, до 200 символов."),
             OpenApiParameter(
                 "page_size", OpenApiTypes.INT, OpenApiParameter.QUERY,
                 required=False,
@@ -77,6 +100,7 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
             status_calendar.month_page(
                 first_day=first_day,
                 scope_division_ids=scope,
+                search=_search(request),
                 page=_parse_int_param(request, "page") or 1,
                 page_size=(
                     _parse_int_param(request, "page_size")
@@ -92,6 +116,8 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 required=True,
                 description="Дата ГГГГ-ММ-ДД.",
             ),
+            OpenApiParameter("search", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                description="Тот же фильтр ФИО, что и в месяце."),
             OpenApiParameter(
                 "division_id", OpenApiTypes.INT, OpenApiParameter.QUERY,
                 required=False,
@@ -111,5 +137,5 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
         division_id = _parse_int_param(request, "division_id")
         scope = _resolve_division_scope(request, division_id, _READ_PERMISSION)
         return Response(
-            status_calendar.day_panel(on_date=on_date, scope_division_ids=scope)
+            status_calendar.day_panel(on_date=on_date, scope_division_ids=scope, search=_search(request))
         )

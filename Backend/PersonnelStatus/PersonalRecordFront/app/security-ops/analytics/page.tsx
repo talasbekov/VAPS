@@ -18,11 +18,12 @@
 // питает его собственный экран: свой счёт «сдали / не сдали» разошёлся бы с
 // ним, а сличают их как раз тогда, когда что-то пошло не так.
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { AnalyticsNavigation } from "@/components/analytics/analytics-navigation";
 import { LoadFailure } from "@/components/load-failure";
 import {
   useAnalyticsDrilldown,
@@ -60,11 +61,16 @@ import {
   countSubmissions,
 } from "@/entities/daily-grid";
 import { opsApiClient } from "@/lib/ops-api";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  isServiceAnalyticsSource,
+  refreshServiceAnalyticsSources,
+  serviceAnalyticsSourceState,
+} from "@/features/service-analytics/model/refresh";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
 import { dutyWorkspaceHref } from "@/features/duty-register/model/workspace";
 import { DIVISIONS, ruPlural } from "@/lib/ru-plural";
 import {
@@ -146,7 +152,8 @@ export default function ServiceAnalyticsPage() {
 }
 
 function ServiceAnalyticsScreen() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const authority = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading } = authority;
   // §22.6 «Фильтры синхронизируй с URL»: период — единственный фильтр среза.
   const router = useRouter();
   const pathname = usePathname();
@@ -234,18 +241,19 @@ function ServiceAnalyticsScreen() {
   // hydration mismatch (тот же дефект чинили на /dashboard).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const lastAnswer = Math.max(
-    snapshotQuery.dataUpdatedAt,
-    attentionQuery.dataUpdatedAt
-  );
+  const queryClient = useQueryClient();
+  const refreshing = useIsFetching({ predicate: isServiceAnalyticsSource }) > 0;
+  const sources = serviceAnalyticsSourceState(queryClient);
   const freshness =
-    mounted && lastAnswer > 0
-      ? `данные на ${new Date(lastAnswer).toLocaleTimeString("ru-RU", {
+    !mounted ? null : sources.failed
+      ? "Часть источников не обновлена"
+      : sources.pending ? "Загрузка источников…"
+      : sources.updatedAt > 0
+      ? `Источники обновлены: ${new Date(sources.updatedAt).toLocaleTimeString("ru-RU", {
           hour: "2-digit",
           minute: "2-digit",
         })}`
       : null;
-  const refreshing = snapshotQuery.isFetching || attentionQuery.isFetching;
 
   // Расход закрыт своим правом (`status.view`), и его отсутствие называется
   // вслух в самом блоке: незагруженные права при этом ещё не отказ — тот же
@@ -256,6 +264,12 @@ function ServiceAnalyticsScreen() {
     : canReadStrength
       ? "allowed"
       : "denied";
+  const canOpenReports = authority.permissions !== undefined && !permissionsLoading &&
+    authority.error === null && moduleOpenFor(
+      "/reports",
+      hasPermission,
+      code => authority.roles.some(role => role.code === code),
+    );
 
   if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/analytics"])) {
     return <OpsAccessDenied what="сервисной аналитики" />;
@@ -271,44 +285,22 @@ function ServiceAnalyticsScreen() {
           actions={
             <>
               {freshness !== null && (
-                <span className="text-xs text-muted-foreground">{freshness}</span>
+                <span role="status" className="text-xs text-muted-foreground">{freshness}</span>
               )}
               <button
                 type="button"
                 className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                 disabled={refreshing}
-                onClick={() => {
-                  void presetsQuery.refetch();
-                  if (period !== null) {
-                    void snapshotQuery.refetch();
-                    void attentionQuery.refetch();
-                  }
-                }}
+                onClick={() => refreshServiceAnalyticsSources(queryClient)}
               >
-                {refreshing ? "Обновление…" : "Обновить"}
+                {refreshing ? "Обновление…" : "Обновить все данные"}
               </button>
             </>
           }
         />
 
         {(presetsQuery.isError || presetsQuery.readAccessBlocked) && <LoadFailure what="периоды аналитики" onRetry={() => void presetsQuery.refetch()} isRetrying={presetsQuery.isFetching} />}
-        <nav className="flex flex-wrap gap-2" aria-label="Разделы аналитики">
-          <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
-            Аналитика службы
-          </span>
-          <Link
-            href="/security-ops/analytics/operations"
-            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            Аналитика мероприятий
-          </Link>
-          <Link
-            href="/security-ops/ratings/analytics"
-            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            Аналитика рейтинга
-          </Link>
-        </nav>
+        <AnalyticsNavigation current="service" />
 
         {/* §22.6 общая шапка аналитики. */}
         <section
@@ -316,6 +308,9 @@ function ServiceAnalyticsScreen() {
           aria-label="Шапка аналитики"
           className="rounded-xl border bg-card p-4"
         >
+          <p className="mb-3 text-sm text-muted-foreground">
+            Период меняет показатели смен и график динамики. Кадровый расход ниже остаётся текущим.
+          </p>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {(presetsQuery.data?.results ?? []).map((preset) => (
               <button
@@ -331,13 +326,6 @@ function ServiceAnalyticsScreen() {
                 {preset.safeLabel}
               </button>
             ))}
-            <button
-              type="button"
-              className="rounded-md border px-3 py-1.5 text-sm"
-              onClick={() => void snapshotQuery.refetch()}
-            >
-              Обновить
-            </button>
             {filtersActive && (
               <>
                 <span className="text-xs font-semibold text-primary-ink">
@@ -404,15 +392,15 @@ function ServiceAnalyticsScreen() {
 
           {snapshot !== undefined && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-[auto_1fr_auto_1fr]">
-              <dt className="font-semibold">Период</dt>
+              <dt className="font-semibold">Период смен и динамики</dt>
               <dd>
                 {snapshot.period.from} — {snapshot.period.to}
               </dd>
-              <dt className="font-semibold">Business date</dt>
+              <dt className="font-semibold">Дата расчёта смен</dt>
               <dd>
                 {snapshot.businessDate} ({snapshot.timezone})
               </dd>
-              <dt className="font-semibold">Scope</dt>
+              <dt className="font-semibold">Область показателей смен</dt>
               <dd>{snapshot.scope.safeLabel}</dd>
               <dt className="font-semibold">Снимок сформирован</dt>
               <dd>{formatMoment(snapshot.generatedAt)}</dd>
@@ -443,7 +431,7 @@ function ServiceAnalyticsScreen() {
           businessDate={snapshot?.businessDate ?? null}
         />
 
-        <DaySubmissionSection gate={strengthGate} />
+        <DaySubmissionSection gate={strengthGate} canOpenReports={canOpenReports} />
 
         <LaggingRemindersSection gate={strengthGate} />
 
@@ -774,7 +762,7 @@ function LoadSection() {
         <h2 className="text-sm font-semibold">Нагрузка</h2>
         {view.policy !== null ? (
           <span className="text-[11px] text-muted-foreground">
-            Окно {view.policy.periodDays} сут. · методика {view.policy.policyVersion}
+            Последние {view.policy.periodDays} сут. по {query.data.businessDate} · методика {view.policy.policyVersion}
           </span>
         ) : (
           <span className="text-[11px] text-muted-foreground" role="status">
@@ -782,6 +770,9 @@ function LoadSection() {
           </span>
         )}
       </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Нагрузка использует своё окно расчёта и не меняется при выборе периода выше.
+      </p>
       {view.personalDetailSuppressed && <p className="mb-3 rounded-md border bg-muted/30 p-3 text-sm" role="status">
         {view.personalDetailReason || 'Персональная нагрузка показана только в пределах отдельного права доступа к сотрудникам.'}
       </p>}
@@ -949,6 +940,12 @@ function PersonnelSection({
 
   return (
     <>
+      <section aria-label="Дата кадрового расхода" className="rounded-xl border bg-card p-4">
+        <h2 className="text-sm font-semibold">Кадровый расход на {report.data.business_date}</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Численность, статусы и вакансии — текущий срез. Выбранный выше период относится к показателям смен и графику динамики.
+        </p>
+      </section>
       <PersonnelKpi report={report.data} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <AvailabilityChart
@@ -976,18 +973,18 @@ function PersonnelKpi({ report }: { report: StrengthReport }) {
   const items = [
     {
       key: "staff",
-      label: "Списочная численность",
+      label: "Штатная численность",
       value: formatNumber(totals.staff_total),
       cap: "по штатному расписанию",
     },
     {
       key: "list",
-      label: "Фактическая численность",
+      label: "Списочная численность",
       value: formatNumber(totals.list_total),
       cap:
         totals.staff_total === 0
           ? "штат не задан"
-          : `${sharePercent(totals.list_total, totals.staff_total)} от списочной`,
+          : `${sharePercent(totals.list_total, totals.staff_total)} от штатной`,
     },
     {
       key: "in-service",
@@ -1000,7 +997,7 @@ function PersonnelKpi({ report }: { report: StrengthReport }) {
           ? "в расходе нет колонки «в строю»"
           : totals.list_total === 0
             ? "списочной численности нет"
-            : `${sharePercent(inService, totals.list_total)} фактической`,
+            : `${sharePercent(inService, totals.list_total)} списочной`,
     },
     {
       key: "vacancies",
@@ -1106,7 +1103,7 @@ function AvailabilityChart({
         <div>
           <h2 className="text-sm font-semibold">Динамика доступности</h2>
           <p className="text-xs text-muted-foreground">
-            Фактическая численность и «в строю» по дням периода
+            Списочная численность и «в строю» по дням периода
           </p>
         </div>
         <div className="flex gap-2">
@@ -1764,13 +1761,44 @@ function DivisionTreeRow({
   );
 }
 
+function SubmissionTreeViewport({ children }: { children: ReactNode }) {
+  const [fullHeight, setFullHeight] = useState(false);
+  return (
+    <div>
+      <div className="mb-1 mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p id="day-submission-tree-label" className="text-xs font-semibold text-muted-foreground">
+          Подразделения
+        </p>
+        <button
+          type="button"
+          aria-controls="day-submission-tree"
+          aria-pressed={fullHeight}
+          onClick={() => setFullHeight((value) => !value)}
+          className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {fullHeight ? "Ограничить высоту дерева" : "Показать дерево целиком"}
+        </button>
+      </div>
+      <div
+        id="day-submission-tree"
+        role="region"
+        aria-labelledby="day-submission-tree-label"
+        tabIndex={0}
+        className={`overflow-y-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${fullHeight ? "" : "max-h-[min(50vh,28rem)]"}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** «Актуальность ежедневного расхода»: счёт берётся у СВЕТОФОРА — владельца
  * витрины сдачи дня, и раскладывается по корзинам ОБЩЕЙ функцией раздела
  * (`countSubmissions`, `entities/daily-grid`), а не своим маппингом. Свой
  * разбор разошёлся бы с карточкой «Расход дня» командного центра — ровно это
  * ревью ветки 22.08 и нашло. Разбивка здесь ТОНЬШЕ трёх корзин, но выведена
  * из них: «сдали» — это в точности «Сдано» карточки на том же дереве. */
-function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
+function DaySubmissionSection({ gate, canOpenReports }: { gate: StrengthGate; canOpenReports: boolean }) {
   const tree = useTrafficLightTree(gate === "allowed");
 
   if (gate === "loading" || (gate === "allowed" && tree.isPending)) {
@@ -1872,12 +1900,14 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
               : "Контрольный час не задан."}
           </p>
         </div>
-        <Link
-          href="/reports"
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-        >
-          Открыть расход
-        </Link>
+        {canOpenReports && (
+          <Link
+            href="/reports"
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            Открыть расход
+          </Link>
+        )}
       </div>
 
       <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
@@ -1900,10 +1930,7 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
       </div>
 
       {forest.roots.length > 0 && (
-        <>
-          <p className="mb-1 mt-3 text-xs font-semibold text-muted-foreground">
-            Подразделения
-          </p>
+        <SubmissionTreeViewport>
           <ul className="space-y-0.5">
             {forest.roots.map((root) => (
               <DivisionTreeRow
@@ -1914,7 +1941,7 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
               />
             ))}
           </ul>
-        </>
+        </SubmissionTreeViewport>
       )}
     </section>
   );

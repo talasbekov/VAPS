@@ -3,22 +3,19 @@
 /**
  * Карточка заявки департаменту (Plane №272, Ш-4).
  *
- * Четыре плитки, распределение по управлениям с правкой квот и список
- * выделенных — состав из эталона заказчика.
+ * Текущая задача, сохранённый ответ, распределение по управлениям и состав.
+ * Разделы раскрываются без размонтирования полей и потери черновиков.
  *
- * КЛЮЧЕВАЯ СТРОКА ЭТАЛОНА, ради которой сделан весь эпик: «Статус „На ОМ
- * (физнаряд)“ проставляют начальники управлений — выделенные сотрудники
- * появляются здесь автоматически». Это не подпись, а описание механики,
- * построенной в №274 Ш-5: список собирается ИЗ СТАТУСОВ, а не из ручного
- * набора штаба. Подпись оставлена дословно, потому что она отвечает на
- * вопрос «почему тут люди, которых я не добавлял».
+ * Начальники управлений выделяют сотрудников по запросу. Физический наряд
+ * сначала попадает в общий резерв; финальное участие создаётся при
+ * распределении Штабом. Специальные группы выделяются на конкретное ОМ.
  *
  * ПРАВКА КВОТ ЗАПЕРТА ПОСЛЕ ЗАПРОСА УПРАВЛЕНИЙ — правило сервера (Ш-1), и
  * экран его ПОВТОРЯЕТ, а не заменяет: поля выключаются и рядом стоит причина.
  * Выключить без объяснения значит оставить человека гадать, что он сделал не
  * так.
  */
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Plus, X } from "lucide-react";
 
@@ -44,9 +41,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type {
-  ForceAllocationDirectorate,
-  ForceGroupOffer,
+import {
+  STAGE_LABEL,
+  type ForceAllocationDirectorate,
+  type ForceGroupOffer,
 } from "@/entities/security-event";
 import {
   useDepartmentRequest,
@@ -69,6 +67,39 @@ import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
  * управления не запрошены.
  */
 const QUOTAS_LOCKED_STATUSES: string[] = ["SUBMITTED", "ACCEPTED", "RETURNED"];
+
+/** Open the relevant section on entry, then keep the operator's choice even
+ * when a mutation or background refresh changes the next recommended action.
+ * Native details keep every child mounted, including unsaved form values. */
+function RequestSection({
+  name,
+  title,
+  summary,
+  initiallyOpen = false,
+  children,
+}: {
+  name: string;
+  title: string;
+  summary: string;
+  initiallyOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return (
+    <details
+      data-slot={`department-${name}-section`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="min-w-0 rounded-xl border bg-card"
+    >
+      <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5">
+        <span className="ml-1 font-semibold">{title}</span>
+        <span className="mt-1 block text-sm text-muted-foreground">{summary}</span>
+      </summary>
+      {children}
+    </details>
+  );
+}
 
 /**
  * Управления ДЕПАРТАМЕНТА заявки — из общего справочника оргструктуры, а не
@@ -131,6 +162,9 @@ export function DepartmentRequestCard({
   const request = useDepartmentRequest(allocationId);
   const detail = request.data;
   const allocation = detail?.allocation;
+  // These later stages conclusively close the collection actions. Earlier
+  // RECON may already collect against published demand; keep that server rule.
+  const collectionClosed = ["APPROVAL", "ACKNOWLEDGEMENT", "CONDUCT", "CLOSED"].includes(detail?.stage ?? "");
   // 🔴 РАЗБИВКУ ЗАПИРАЕТ ФАКТ ЗАПРОСА УПРАВЛЕНИЙ, А НЕ «СТАТУС НЕ DRAFT»
   // (Plane №554). Прежнее условие ловило заодно ОТКАЗ: департамент, ответивший
   // «0» ещё до рассылки, получал погашенные поля квот, спрятанную кнопку
@@ -143,7 +177,7 @@ export function DepartmentRequestCard({
   // разрешает то, что ручка отобьёт, — или наоборот прячет разрешённое.
   const locked =
     allocation !== undefined &&
-    (allocation.notifiedAt !== null ||
+    (collectionClosed || allocation.notifiedAt !== null ||
       QUOTAS_LOCKED_STATUSES.includes(allocation.status));
 
   const split = useSplitDirectorateQuotas(detail?.eventId ?? "", allocationId);
@@ -318,7 +352,10 @@ export function DepartmentRequestCard({
 
   const quota = allocation.need;
   const groupAnswerLocked =
-    allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED" || respond.isPending;
+    collectionClosed || allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED" || respond.isPending;
+  const eventStageLabel = detail.stage && Object.prototype.hasOwnProperty.call(STAGE_LABEL, detail.stage)
+    ? STAGE_LABEL[detail.stage]
+    : undefined;
   // ПРЕДЕЛ РАСКЛАДКИ — ОТ «ВЫДЕЛЯЕМ» (`[СБС-22]`, Plane №392): раскладывать
   // между управлениями департамент обязан СВОЮ цифру, а не запрос штаба.
   // Пока ответа нет — запрос штаба, как и раньше.
@@ -336,13 +373,77 @@ export function DepartmentRequestCard({
   const ownFigure = splitCap;
   const hasAnswer = allocation.allocating !== null && allocation.allocating !== undefined;
   const sent = allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
-  const activeStep = sent ? 3 : allocation.notifiedAt !== null ? (assigned >= ownFigure ? 3 : 2) : hasAnswer ? 1 : 0;
-  const steps = [
-    { title: "Назвать количество", detail: hasAnswer ? `Выделяем ${allocation.allocating} из ${quota}` : "Ответ ещё не сохранён" },
-    { title: "Разделить по управлениям", detail: `Разложено ${splitTotal} из ${ownFigure}` },
-    { title: "Получить людей", detail: `Собрано ${assigned} из ${ownFigure}` },
-    { title: "Отправить список Штабу", detail: sent ? "Список у Штаба" : assigned === 0 ? "Сначала получите сотрудников" : "Можно с недобором после подтверждения" },
-  ];
+  const answerDirty = answer.allocating !== serverAllocating || answer.comment !== serverComment || groupOffersDirty;
+  const hasSpecialGroups = (allocation.groupDemands ?? []).length > 0 || groupOffers.length > 0;
+  // A zero physical answer is DECLINED even when positive group offers were
+  // saved. Only server offers establish that fact; the editable draft does not.
+  const declinedWithGroups = allocation.status === "DECLINED" &&
+    (allocation.groupOffers ?? []).some((offer) => offer.count > 0);
+  const canSubmit = !collectionClosed && (allocation.status === "NOTIFIED" || allocation.status === "RETURNED");
+  // Guidance is not a new workflow gate: splitting before an answer, sending a
+  // partial list and withdrawing after collection closes keep their own guards.
+  const next = (() => {
+    if (collectionClosed) return {
+      actor: "Штаб", title: "Сбор сил на этом этапе завершён", section: null,
+      description: allocation.status === "SUBMITTED"
+        ? "Список у Штаба. Ответ, раскладка и отправка списка на этом этапе недоступны; сохранённые сведения можно раскрыть ниже."
+        : "Ответ, раскладка и отправка списка на этом этапе недоступны. Сохранённые сведения можно раскрыть ниже.",
+    };
+    if (allocation.status === "SUBMITTED") return {
+      actor: "Штаб", title: "Список у Штаба", section: "send",
+      description: "Ожидаем решения Штаба. Если список нужно изменить, сначала отзовите его в разделе передачи списка.",
+    };
+    if (allocation.status === "ACCEPTED") return {
+      actor: "Штаб", title: "Список принят Штабом", section: null,
+      description: "Дополнительных действий департамента по этому списку сейчас нет. Ответ, раскладка и состав доступны ниже.",
+    };
+    if (declinedWithGroups) {
+      if (allocation.notifiedAt !== null) return {
+        actor: assigned > 0 ? "Ответственный департамента" : "Начальники управлений",
+        title: assigned > 0 ? "Проверьте состав специальных групп" : "Ожидаем сотрудников специальных групп",
+        section: "members",
+        description: "Специальные группы сохранены, управления оповещены. По физическому наряду сохранено «Выделяем: 0». Сотрудники появляются в составе по мере выделения управлениями.",
+      };
+      const hasGroupDemands = (allocation.groupDemands ?? []).length > 0;
+      return {
+        actor: "Ответственный департамента",
+        title: hasGroupDemands ? "Распределите специальные группы" : "Проверьте сохранённые специальные группы",
+        section: hasGroupDemands ? "split" : "answer",
+        description: hasGroupDemands
+          ? "Специальные группы сохранены. По физическому наряду — 0. Проверьте распределение запрошенных групп по управлениям и отправьте им заявку."
+          : "Специальные группы сохранены. По физическому наряду — 0. Состав, место и комментарии групп доступны в ответе департамента.",
+      };
+    }
+    if (allocation.status === "DECLINED") return {
+      actor: "Ответственный департамента", title: "Сохранён отказ департамента", section: "answer",
+      description: "В ответе сохранено «Выделяем: 0». Если решение изменилось, исправьте количество и сохраните ответ. Специальные группы доступны в том же разделе.",
+    };
+    if (allocation.status === "RETURNED") return {
+      actor: "Ответственный департамента", title: "Проверьте возвращённый список", section: assigned > 0 ? "send" : "members",
+      description: assigned > 0
+        ? "Учтите замечание Штаба, проверьте состав и отправьте список повторно. Недобор не запрещает отправку."
+        : "Учтите замечание Штаба и уточните состав у начальников управлений. Для повторной отправки нужен хотя бы один сотрудник.",
+    };
+    if (allocation.notifiedAt !== null || allocation.status === "NOTIFIED") return assigned > 0 ? {
+      actor: "Ответственный департамента", title: "Проверьте и отправьте список Штабу", section: "send",
+      description: `В списке ${assigned} сотрудников. Его можно отправить с недобором; окончательное решение примет Штаб.`,
+    } : {
+      actor: "Начальники управлений", title: "Ожидаем сотрудников от управлений", section: "members",
+      description: "Управления получили запрос. Выделенные сотрудники появятся в составе автоматически; пустой список отправить нельзя.",
+    };
+    if (!hasAnswer) return {
+      actor: "Ответственный департамента", title: hasSpecialGroups && quota === 0 ? "Подготовьте ответ по специальным группам" : "Подготовьте ответ департамента", section: "answer",
+      description: hasSpecialGroups && quota === 0
+        ? "Физический наряд не запрошен. Проверьте специальные группы в ответе; их распределение по управлениям доступно отдельным разделом."
+        : `Штаб запросил ${quota} сотрудников. Укажите, сколько выделяет департамент, и при необходимости добавьте комментарий.`,
+    };
+    return {
+      actor: "Ответственный департамента", title: "Проверьте распределение по управлениям", section: "split",
+      description: orgFailed
+        ? "Справочник подразделений не ответил. Повторите загрузку в разделе распределения — сохранённый ответ и черновики остаются на месте."
+        : "Разложите людей и специальные группы по управлениям. Перед отправкой проверьте адресатов: после оповещения раскладка закрепляется.",
+    };
+  })();
   // Группы списка по управлениям (`[СБС-23]`): порядок — как в таблице
   // управлений; люди вне управлений заявки — последней группой, названной
   // словами, а не молча выброшенной.
@@ -408,6 +509,7 @@ export function DepartmentRequestCard({
     silentRows.length > 0 && silentRows.length < directorateRows.length;
 
   async function save() {
+    if (collectionClosed) return;
     await split.mutateAsync({
       // 🔴 УЕЗЖАЮТ ТОЛЬКО СТРОКИ ДЕРЕВА (Plane №530). Таблица показывает и
       // управления, ВЫБЫВШИЕ из оргструктуры, но ещё живущие в заявке — их
@@ -440,12 +542,16 @@ export function DepartmentRequestCard({
             {detail.code}
           </Badge>
           <Badge variant="outline">{allocation.departmentName}</Badge>
-          <Badge variant="outline">{allocation.status === "ACCEPTED" ? "Принято Штабом" : allocation.status === "SUBMITTED" ? "Отправлено в Штаб" : allocation.status === "DECLINED" ? "Отказ" : allocation.status === "RETURNED" ? "Возвращено Штабом" : allocation.notifiedAt !== null ? "Собираем людей" : "Ответ формируется"}</Badge>
+          <Badge variant="outline">{allocation.status === "ACCEPTED" ? "Принято Штабом" : allocation.status === "SUBMITTED" ? "Отправлено в Штаб" : allocation.status === "DECLINED" ? declinedWithGroups ? "Отказ по физическому наряду" : "Отказ" : allocation.status === "RETURNED" ? "Возвращено Штабом" : allocation.notifiedAt !== null ? collectionClosed || !eventStageLabel ? "Управления оповещены" : "Собираем людей" : collectionClosed || !eventStageLabel ? "Ответ департамента" : "Ответ формируется"}</Badge>
         </div>
         <h2 className="text-xl font-semibold">{detail.title}</h2>
         <p className="text-muted-foreground text-sm">
           {formatIsoDate(detail.businessDate)} · {detail.location}
           {detail.eventTime !== null ? ` · ${detail.eventTime}` : ""}
+        </p>
+        <p role="status" className="text-sm text-muted-foreground">
+          {eventStageLabel ? `Этап мероприятия: ${eventStageLabel}` : "Этап мероприятия не определён"}
+          {collectionClosed && ". Ответ, распределение по управлениям, их оповещение и отправка списка на этом этапе недоступны."}
         </p>
         <p className={`text-sm ${allocation.overdue || allocation.submittedLate ? "text-destructive-ink" : "text-muted-foreground"}`}>
           {allocation.dueAt ? `Срок сдачи: ${formatIsoDateTime(allocation.dueAt)}` : "Срок сдачи не назначен"}
@@ -453,25 +559,14 @@ export function DepartmentRequestCard({
         </p>
       </div>
 
-      <ol aria-label="Этапы запроса сил" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {steps.map((step, index) => (
-          <li key={step.title} aria-current={index === activeStep ? "step" : undefined}
-            className={`min-w-0 rounded-xl border p-4 ${index === activeStep ? "border-primary bg-primary/5" : "bg-card"}`}>
-            <p className="text-xs font-medium text-muted-foreground">{index === 3 ? "Финиш" : `Шаг ${index + 1}`}</p>
-            <p className="mt-1 font-semibold">{step.title}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{step.detail}</p>
-          </li>
-        ))}
-      </ol>
-
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Итоги запроса">
-        <StatCard label="Запрошено Штабом" value={quota} caption="Физический наряд" />
-        <StatCard label="Выделяем" value={allocation.allocating ?? "—"} tone="info" caption={hasAnswer ? "Сохранённый ответ департамента" : "Ответ ещё не сохранён"} />
-        <StatCard label="Собрано" value={assigned} tone="success" caption="Сотрудники в списке" />
-        <StatCard label="Недобор к обещанию" value={hasAnswer ? Math.max(0, ownFigure - assigned) : "—"}
-          tone={hasAnswer && assigned < ownFigure ? "danger" : "neutral"}
-          caption={!hasAnswer ? "Ответ количеством не сохранён" : assigned > ownFigure ? `Сверх обещания: ${assigned - ownFigure}` : "От собственного ответа департамента"} />
-      </div>
+      <section aria-labelledby="request-next-heading" data-slot="department-next-action" className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5">
+        <p className="text-xs font-semibold text-muted-foreground">{next.actor}</p>
+        <h3 id="request-next-heading" className="text-lg font-semibold">{next.title}</h3>
+        <p className="text-sm">{next.description}</p>
+        {allocation.status === "RETURNED" && allocation.decisionComment !== "" && (
+          <p role="alert" className="text-sm text-destructive-ink">Возвращено Штабом: {allocation.decisionComment}</p>
+        )}
+      </section>
 
       {/* ШАПКА-ОТВЕТ (`[СБС-21]`, Plane №391): «Запрошено штабом: N ·
           Выделяем: [ввод] · Комментарий: [ввод]». Цифру ставит только
@@ -479,38 +574,33 @@ export function DepartmentRequestCard({
           «0» закрывает запрос статусом «Отказ». Правится до отправки
           списка. Комментарий необязателен: при цифре меньше запрошенной —
           подсказка «желательно пояснить», без блокировки. */}
+      <RequestSection
+        key={`answer-${allocationId}`}
+        name="answer"
+        title="Ответ департамента"
+        summary={`${hasAnswer ? `Выделяем ${allocation.allocating} · физический наряд` : "Ответ количеством ещё не сохранён"}${hasSpecialGroups ? " · есть специальные группы" : ""}${answerDirty ? " · есть несохранённые изменения" : ""}`}
+        initiallyOpen={next.section === "answer"}
+      >
       <section
         aria-labelledby="answer-heading"
-        className="rounded-xl border bg-card p-4 space-y-3"
+        className="space-y-3 border-t p-4 sm:p-5"
         data-slot="department-answer"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 id="answer-heading" className="font-semibold">
-            1. Ответ департамента
+            Физический наряд
           </h3>
         </div>
         <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-          Укажите физический наряд и специальные группы ниже, затем сохраните ответ. Можно выделить меньше, больше или 0; группы считаются отдельно.
+          {collectionClosed ? "Изменения на этом этапе недоступны." : "Укажите физический наряд и специальные группы ниже, затем сохраните ответ. Можно выделить меньше, больше или 0; группы считаются отдельно."}
         </p>
-        {allocation.status === "DECLINED" && (
-          <p role="status" className="text-destructive-ink text-sm">
-            Запрос закрыт отказом («Выделяем: 0»). Поставьте ненулевую цифру,
-            чтобы снять отказ.
-          </p>
-        )}
         {(() => {
           const answerLocked =
-            allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
+            collectionClosed || allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
           const parsed = Number(answer.allocating);
           const invalidCount = answer.allocating !== "" && (!Number.isSafeInteger(parsed) || parsed < 0);
           const short = Number.isFinite(parsed) && parsed > 0 && parsed < quota;
-          const dirty =
-            answer.allocating !==
-              (allocation.allocating === null || allocation.allocating === undefined
-                ? ""
-                : String(allocation.allocating)) ||
-            answer.comment !== (allocation.answerComment ?? "") ||
-            groupOffersDirty;
+          const dirty = answerDirty;
           return (
             <>
               <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
@@ -566,7 +656,7 @@ export function DepartmentRequestCard({
                 </Button>
                 {answerLocked ? (
                   <p className="text-muted-foreground text-sm">
-                    Список уже у штаба — цифра правится до отправки
+                    {collectionClosed ? "Изменение ответа на этом этапе недоступно" : "Список уже у штаба — цифра правится до отправки"}
                   </p>
                 ) : short && answer.comment.trim() === "" ? (
                   // Подсветка без блокировки — ровно как в спецификации.
@@ -597,7 +687,7 @@ export function DepartmentRequestCard({
       <section
         role="region"
         aria-label="Специальные группы"
-        className="space-y-3 rounded-xl border bg-card p-4"
+        className="space-y-3 border-t p-4 sm:p-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -730,16 +820,28 @@ export function DepartmentRequestCard({
           </div>
         )}
       </section>
+      </RequestSection>
 
-      <section aria-labelledby="split-heading" className="min-w-0 space-y-3 rounded-xl border bg-card p-4 sm:p-5">
+      <RequestSection
+        key={`split-${allocationId}`}
+        name="split"
+        title="Распределение по управлениям"
+        summary={`Разложено ${splitTotal} из ${ownFigure}${locked ? " · раскладка закреплена" : splitDirty ? " · есть несохранённые изменения" : ""}`}
+        initiallyOpen={next.section === "split"}
+      >
+      <section aria-labelledby="split-heading" className="min-w-0 space-y-3 border-t p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 id="split-heading" className="font-semibold">
-              2. Распределение по управлениям
+              Распределение по управлениям
             </h3>
             <p className="text-muted-foreground text-sm">
-              {locked
-                ? "Управления уже запрошены — цифры правятся до запроса"
+              {collectionClosed
+                ? "Изменения на этом этапе недоступны."
+                : locked
+                ? allocation.notifiedAt !== null
+                  ? "Управления уже запрошены — цифры правятся до запроса"
+                  : "После передачи списка Штабу раскладка по управлениям закреплена"
                 : allocation.allocating === null || allocation.allocating === undefined
                   ? "Разложите запрос по управлениям и отправьте им — начальники получат уведомление"
                   : `Разложите «Выделяем: ${allocation.allocating}» по управлениям и отправьте им`}
@@ -777,12 +879,29 @@ export function DepartmentRequestCard({
           </p>
         )}
 
+        {directorateRows.length === 0 ? (
+          orgLoading ? (
+            <div className="bg-muted h-5 w-full max-w-64 animate-pulse rounded" aria-label="Управления департамента загружаются" />
+          ) : orgFailed ? (
+            <p role="alert" className="text-destructive-ink text-sm">
+              Справочник подразделений не ответил — список управлений департамента неизвестен.
+              {orgError?.message ? ` ${orgError.message}` : ""}{" "}
+              <Button type="button" variant="link" size="sm" className="h-auto p-0 align-baseline" onClick={() => void refetchOrg()}>
+                Повторить
+              </Button>
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              У департамента «{allocation.departmentName}» нет действующих управлений — раскладывать некуда.
+            </p>
+          )
+        ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
-                {/* Колонки — эталон `[СБС-22]`: «Управление | В строю |
-                    Запрошено | Проставлено „Участие в ОМ“ | Статус». «В
+                {/* Колонки `[СБС-22]`: «Управление | В строю |
+                    Запрошено | Выделено | Статус». «В
                     строю» считает СЕРВЕР на деловую дату ОМ
                     (`inServiceByDirectorate`, Plane №944) тем же правилом,
                     что и разрез сбора на экране: без статуса или со статусом
@@ -791,62 +910,11 @@ export function DepartmentRequestCard({
                 <TableHead className="text-right">В строю</TableHead>
                 <TableHead className="w-32">Запрошено</TableHead>
                 <TableHead>Спецгруппы</TableHead>
-                <TableHead>Проставлено «Участие в ОМ»</TableHead>
+                <TableHead>Выделено</TableHead>
                 <TableHead>Статус</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {directorateRows.length === 0 && orgLoading && (
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    {/* Справочник ещё едет — сказать это, а не выдать ожидание
-                        за ответ (Plane №531). */}
-                    <div
-                      className="bg-muted h-5 w-64 animate-pulse rounded"
-                      aria-label="Управления департамента загружаются"
-                    />
-                  </TableCell>
-                </TableRow>
-              )}
-              {directorateRows.length === 0 && orgFailed && (
-                <TableRow>
-                  <TableCell colSpan={6} className="whitespace-normal">
-                    {/* 🔴 ОТКАЗ НАЗВАН ОТКАЗОМ (Plane №531). Здесь стояло
-                        «нет действующих управлений» — утверждение об
-                        оргструктуре, сделанное по молчанию сети. Причина
-                        сервера остаётся на экране: без неё поддержке нечего
-                        спросить. */}
-                    <p role="alert" className="text-destructive-ink text-sm">
-                      Справочник подразделений не ответил — список управлений
-                      департамента неизвестен.
-                      {orgError?.message ? ` ${orgError.message}` : ""}{" "}
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="h-auto p-0 align-baseline"
-                        onClick={() => void refetchOrg()}
-                      >
-                        Повторить
-                      </Button>
-                    </p>
-                  </TableCell>
-                </TableRow>
-              )}
-              {directorateRows.length === 0 && !orgLoading && !orgFailed && (
-                <TableRow>
-                  <TableCell colSpan={6} className="whitespace-normal">
-                    <p className="text-muted-foreground text-sm">
-                      {/* Пусто означает РОВНО ОДНО: справочник ответил, и в
-                          дереве оргструктуры у департамента нет ни одного
-                          действующего управления — а не «не загрузилось» и не
-                          «раскладка ещё не начата». */}
-                      У департамента «{allocation.departmentName}» нет
-                      действующих управлений — раскладывать некуда.
-                    </p>
-                  </TableCell>
-                </TableRow>
-              )}
               {directorateRows.map((row: ForceAllocationDirectorate) => (
                 <TableRow key={row.divisionId}>
                   <TableCell className="font-medium">{row.name}</TableCell>
@@ -946,6 +1014,7 @@ export function DepartmentRequestCard({
             </TableBody>
           </Table>
         </div>
+        )}
 
         {/* Кнопка живёт при наличии ПРАВИМЫХ строк, а не любых (Plane №530):
             у заявки, где все управления выбыли из оргструктуры, сохранять
@@ -978,15 +1047,23 @@ export function DepartmentRequestCard({
           </p>
         )}
       </section>
+      </RequestSection>
 
-      <section aria-labelledby="members-heading" className="min-w-0 space-y-3 rounded-xl border bg-card p-4 sm:p-5">
+      <RequestSection
+        key={`members-${allocationId}`}
+        name="members"
+        title="Выделенные сотрудники"
+        summary={assigned === 0 ? "Список пока пуст" : `${assigned} сотрудников в списке`}
+        initiallyOpen={next.section === "members"}
+      >
+      <section aria-labelledby="members-heading" className="min-w-0 space-y-3 border-t p-4 sm:p-5">
         <div>
           <h3 id="members-heading" className="font-semibold">
-            3. Выделенные сотрудники
+            Выделенные сотрудники
           </h3>
           <p className="text-muted-foreground text-sm">
-            Статус «Привлечён на мероприятие» проставляют начальники управлений
-            — выделенные сотрудники появляются здесь автоматически
+            Состав поступает от начальников управлений. Физический наряд сначала идёт в общий резерв,
+            Штаб распределяет его по ОМ и объектам. Специальные группы выделяются на конкретное мероприятие.
           </p>
           <p className="mt-1 text-sm font-medium tabular-nums">Собрано {assigned} из {ownFigure}</p>
         </div>
@@ -996,6 +1073,15 @@ export function DepartmentRequestCard({
             поддереву (`memberDirectorateById`) — тем же правилом, что и
             «выделено N из M» в таблице выше. Чип в одну строку: число — не
             текст, переноситься ему нечего. */}
+        {allocation.members.length === 0 ? (
+          <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+            Список пока пуст. {collectionClosed
+              ? "Выделенные сотрудники в этой заявке не сохранены."
+              : allocation.notifiedAt !== null || allocation.status === "NOTIFIED" || allocation.status === "RETURNED"
+                ? "Начальники управлений ещё не выделили сотрудников. Они появятся здесь автоматически."
+                : "Сотрудники появятся после выделения управлением. Запрос управлений доступен в разделе распределения."}
+          </p>
+        ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
@@ -1006,16 +1092,6 @@ export function DepartmentRequestCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {allocation.members.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3} className="whitespace-normal">
-                    <p className="text-muted-foreground text-sm">
-                      Никого не выделено — начальники управлений ещё не
-                      проставили статусы
-                    </p>
-                  </TableCell>
-                </TableRow>
-              )}
               {memberGroups.map((group) => (
                 <Fragment key={`group-${group.divisionId ?? "none"}`}>
                   <TableRow data-slot="member-group">
@@ -1056,17 +1132,28 @@ export function DepartmentRequestCard({
             </TableBody>
           </Table>
         </div>
+        )}
+      </section>
+      </RequestSection>
 
-        <section aria-labelledby="send-heading" className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <h3 id="send-heading" className="font-semibold">4. Отправить список Штабу</h3>
-          <p className="text-sm text-muted-foreground">{sent ? "Список передан Штабу" : allocation.notifiedAt === null ? "Сначала отправьте квоты в управления" : `В списке ${assigned} из ${ownFigure} — перед отправкой проверьте состав`}</p>
+      <RequestSection
+        key={`send-${allocationId}`}
+        name="send"
+        title="Передача списка Штабу"
+        summary={allocation.status === "ACCEPTED" ? "Принято Штабом" : allocation.status === "SUBMITTED" ? "Ожидаем решения Штаба" : collectionClosed ? "Отправка на этом этапе недоступна" : canSubmit && assigned > 0 ? "Список можно отправить после проверки" : "Список ещё не готов к отправке"}
+        initiallyOpen={next.section === "send"}
+      >
+        <section aria-labelledby="send-heading" className="space-y-3 border-t p-4 sm:p-5">
+          <h3 id="send-heading" className="font-semibold">Передача списка Штабу</h3>
+          <p className="text-sm text-muted-foreground">{sent ? allocation.status === "ACCEPTED" ? "Список принят Штабом" : "Список у Штаба" : collectionClosed ? "Отправка списка на этом этапе недоступна" : allocation.status === "DECLINED" ? declinedWithGroups ? "Передача списка при сохранённом отказе по физическому наряду недоступна. Специальные группы сохранены и доступны в ответе и составе." : "Сохранён отказ департамента. Если решение изменилось, сначала исправьте ответ." : allocation.notifiedAt === null && allocation.status !== "RETURNED" && allocation.status !== "NOTIFIED" ? "Сначала отправьте квоты в управления" : `В списке ${assigned} из ${ownFigure} — перед отправкой проверьте состав`}</p>
         {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-23]`): «Отправить
             список в штаб» жила только на панели мероприятия у ШТАБА
             (`ForcesSplitPanel`), куда у ответственного за департамент нет
             доступа. Ручка `.../submit/` разрешала действие СВОЕМУ
             департаменту всегда — экрана не было. */}
-        {(allocation.status === "NOTIFIED" || allocation.status === "RETURNED") && (
+        {canSubmit && (
           <div className="flex flex-wrap items-center gap-3">
+            {assigned > 0 && (
             <Button
               type="button"
               disabled={submit.isPending || assigned === 0}
@@ -1074,6 +1161,7 @@ export function DepartmentRequestCard({
             >
               Отправить список в штаб
             </Button>
+            )}
             {assigned === 0 ? (
               <p className="text-muted-foreground text-sm">Сначала дождитесь хотя бы одного сотрудника от управлений. Пустой список отправить нельзя.</p>
             ) : assigned < ownFigure && (
@@ -1113,13 +1201,19 @@ export function DepartmentRequestCard({
             {withdraw.error?.message ?? "Список не отозван"}
           </p>
         )}
-        {allocation.status === "RETURNED" && allocation.decisionComment !== "" && (
-          <p role="alert" className="text-destructive-ink text-sm">
-            Возвращено штабом: {allocation.decisionComment}
-          </p>
-        )}
         </section>
-      </section>
+      </RequestSection>
+
+      <RequestSection key={`totals-${allocationId}`} name="totals" title="Итоги запроса" summary={`Запрошено ${quota} · выделяем ${allocation.allocating ?? "—"} · собрано ${assigned}`}>
+        <div className="grid grid-cols-2 gap-3 border-t p-4 sm:p-5 xl:grid-cols-4" aria-label="Итоги запроса">
+          <StatCard label="Запрошено Штабом" value={quota} caption="Физический наряд" />
+          <StatCard label="Выделяем" value={allocation.allocating ?? "—"} tone="info" caption={hasAnswer ? "Сохранённый ответ департамента" : "Ответ ещё не сохранён"} />
+          <StatCard label="Собрано" value={assigned} tone="success" caption="Сотрудники в списке" />
+          <StatCard label="Недобор к обещанию" value={hasAnswer ? Math.max(0, ownFigure - assigned) : "—"}
+            tone={hasAnswer && assigned < ownFigure ? "danger" : "neutral"}
+            caption={!hasAnswer ? "Ответ количеством не сохранён" : assigned > ownFigure ? `Сверх обещания: ${assigned - ownFigure}` : "От собственного ответа департамента"} />
+        </div>
+      </RequestSection>
 
       {/* ПОДТВЕРЖДЕНИЕ ЗАПРОСА УПРАВЛЕНИЙ (Plane №532). Кнопка слала мутацию
           сразу: один случайный щелчок запирал раскладку насовсем — сервер
@@ -1127,7 +1221,7 @@ export function DepartmentRequestCard({
           а отзыв списка возвращает заявку в `NOTIFIED`, не в `DRAFT`. Диалог
           называет обе цены действия: необратимость и судьбу несохранённого
           черновика. */}
-      <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>
+      <Dialog open={notifyOpen && !collectionClosed} onOpenChange={setNotifyOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Отправить заявку в управления?</DialogTitle>
@@ -1204,8 +1298,9 @@ export function DepartmentRequestCard({
               Отмена
             </Button>
             <Button
-              disabled={nothingWillBeSent || notify.isPending || split.isPending}
+              disabled={collectionClosed || nothingWillBeSent || notify.isPending || split.isPending}
               onClick={() => {
+                if (collectionClosed) return;
                 // Сохранение и оповещение — ДВА запроса, и второй идёт
                 // только после успеха первого: иначе несохранённая
                 // раскладка запиралась бы вместе с сохранённой.
@@ -1233,7 +1328,7 @@ export function DepartmentRequestCard({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+      <Dialog open={submitOpen && !collectionClosed} onOpenChange={setSubmitOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Отправить список в штаб?</DialogTitle>
@@ -1273,9 +1368,9 @@ export function DepartmentRequestCard({
               Отмена
             </Button>
             <Button
-              disabled={submit.isPending || assigned === 0}
+              disabled={collectionClosed || submit.isPending || assigned === 0}
               onClick={() => {
-                if (submit.isPending || assigned === 0) return;
+                if (collectionClosed || submit.isPending || assigned === 0) return;
                 submit.mutate(
                   {},
                   { onSuccess: () => setSubmitOpen(false) }

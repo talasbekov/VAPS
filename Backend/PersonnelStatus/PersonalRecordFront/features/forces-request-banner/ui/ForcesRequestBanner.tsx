@@ -52,6 +52,7 @@ import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import {
   ParticipationKindPicker,
   type ParticipationBranch,
@@ -476,12 +477,12 @@ export function ForcesRequestBanner({
           {kindCode === "PHYSICAL_SQUAD"
             ? "До распределения в календаре и расходе будет виден резерв кампании. "
             : "Статус «Участие в ОМ» с датами мероприятия проставится сразу. "}
-          <Link
+          {moduleOpenFor("/security-ops/events", access.hasPermission) && <Link
             href={`/security-ops/events/${data.eventId}/`}
             className="text-primary-ink font-medium hover:underline"
           >
             Карточка мероприятия →
-          </Link>
+          </Link>}
         </span>
       </div>
       {select.data !== undefined && (

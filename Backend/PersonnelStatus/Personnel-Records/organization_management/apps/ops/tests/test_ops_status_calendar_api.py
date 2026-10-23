@@ -31,6 +31,66 @@ from organization_management.apps.operations.tests.test_bulk_status_api import (
 pytestmark = pytest.mark.django_db
 
 MONTH = "/api/ops/status-calendar/month/"
+DIVISIONS = "/api/ops/status-calendar/divisions/"
+
+
+def test_calendar_search_matches_full_name_before_pagination(viewer, division):
+    for _ in range(3):
+        make_employee(division)
+    wanted = make_employee(division)
+    wanted.last_name, wanted.first_name, wanted.middle_name = "Петров", "Аслан", "Ерланович"
+    wanted.save(update_fields=["last_name", "first_name", "middle_name"])
+    status(wanted, "DUTY", date(2026, 8, 4), date(2026, 8, 5))
+    response = viewer.get(MONTH, {"month": "2026-08", "search": "  аслан   петро  ", "page_size": 1})
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["count"] == 1
+    assert [row["id"] for row in body["results"]] == [str(wanted.pk)]
+    assert body["summary"][3]["on_duty"] == 1
+    assert body["summary"][3]["in_service"] == 0
+    day = viewer.get("/api/ops/status-calendar/day/", {"date": "2026-08-04", "search": "аслан петро"}).json()
+    assert day["total"] == 1
+    assert day["groups"]["on_duty"]["count"] == 1
+
+
+def test_calendar_search_cannot_expand_status_view_scope(division, catalog):
+    other = Division.objects.create(name="Чужое управление")
+    make_employee(division)
+    foreign = make_employee(other)
+    foreign.last_name = "Секретный"
+    foreign.save(update_fields=["last_name"])
+    api, _ = client_for("calendar-search-scope", "CALENDAR_SEARCH_SCOPE",
+        perms=("status.view",), scope_division_id=division.pk)
+    body = api.get(MONTH, {"month": "2026-08", "search": "Секретный"}).json()
+    assert body["count"] == 0
+    assert body["results"] == []
+    assert all(row["in_service"] == 0 for row in body["summary"])
+    assert api.get("/api/ops/status-calendar/day/", {"date": "2026-08-04", "search": "Секретный"}).json()["total"] == 0
+
+
+def test_calendar_division_filter_uses_status_scope_without_orgstructure_permission(division, catalog):
+    child = Division.objects.create(name="Отдел", parent=division)
+    foreign = Division.objects.create(name="Чужое управление")
+    api, _ = client_for("calendar-filter-scope", "CALENDAR_FILTER_SCOPE",
+        perms=("status.view",), scope_division_id=division.pk)
+    response = api.get(DIVISIONS)
+    assert response.status_code == 200, response.content
+    rows = response.json()["results"]
+    assert {row["id"] for row in rows} == {str(division.pk), str(child.pk)}
+    assert str(foreign.pk) not in {row["id"] for row in rows}
+    assert next(row for row in rows if row["id"] == str(child.pk))["parent_id"] == str(division.pk)
+
+
+def test_calendar_filter_requires_status_view(division):
+    api, _ = client_for("calendar-no-status", "CALENDAR_NO_STATUS", perms=("orgstructure.view",))
+    assert api.get(DIVISIONS).status_code == 403
+
+
+def test_calendar_search_is_bounded(viewer):
+    for path, params in [(MONTH, {"month": "2026-08"}), ("/api/ops/status-calendar/day/", {"date": "2026-08-04"})]:
+        response = viewer.get(path, {**params, "search": "a" * 201})
+        assert response.status_code == 400
+        assert "search" in response.json()
 
 
 @pytest.fixture

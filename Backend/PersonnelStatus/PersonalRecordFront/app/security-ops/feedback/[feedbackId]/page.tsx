@@ -175,7 +175,7 @@ export default function FeedbackDetailPage() {
               {/* Пока разбора не было — не копия заявленного. */}
               <dd>
                 {request.workingPriorityCode === null
-                  ? "не назначен — обращение ещё не разбирали"
+                  ? "не назначен"
                   : labelOf("priority", request.workingPriorityCode)}
               </dd>
             </div>
@@ -236,7 +236,7 @@ export default function FeedbackDetailPage() {
               {request.contact !== null && <p>Контакт: {request.contact}</p>}
               {request.attachments !== null && request.attachments.length > 0 && (
                 <p>
-                  Вложения (метаданные):{" "}
+                  Файлы (без содержимого):{" "}
                   {request.attachments
                     .map((file) => `${file.fileName} · ${formatSize(file.sizeBytes)}`)
                     .join("; ")}
@@ -465,7 +465,7 @@ export default function FeedbackDetailPage() {
 
         <section className="rounded-xl border border-dashed bg-muted/30 p-4">
           <h2 className="mb-2 text-sm font-semibold">
-            Чего карточка не показывает и почему
+            Ограничения карточки
           </h2>
           <ul className="flex flex-col gap-2">
             {data.unavailableBlocks.map((item) => (

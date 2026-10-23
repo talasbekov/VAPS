@@ -54,6 +54,5 @@ export function DutyRegisterGroups({ data, view, onFilter, busy, requestedPage, 
       <p className="text-sm text-muted-foreground">Показано {first + 1}–{Math.min(first + pageSize, rows.length)} из {rows.length}</p>
       {pages > 1 && <div className="flex items-center gap-2 print:hidden"><Button size="sm" variant="outline" disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>Назад</Button><span className="text-sm">{page} / {pages}</span><Button size="sm" variant="outline" disabled={busy || page >= pages} onClick={() => onPage(page + 1)}>Далее</Button></div>}
     </nav>}
-    <p className="text-xs text-muted-foreground">«Выгрузить сводку CSV» содержит все группы применённого отбора; «Выгрузить CSV» — отдельные записи. Перед выгрузкой сводка обновляется.</p>
   </div>;
 }

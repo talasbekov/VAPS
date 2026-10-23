@@ -2,6 +2,7 @@
 from django.core.exceptions import ValidationError
 
 from organization_management.apps.operations.models_object import OpsSecurityObject, OpsSecurityPost
+from organization_management.apps.statuses.duty_intervals import normalize_schedule
 
 DUTY_CODES = frozenset({"on_duty", "DUTY"})
 DUTY_GROUPS = {
@@ -53,8 +54,10 @@ def normalize_assignment(raw, *, status_type, start_date, end_date, previous=Non
     if kind == "GROUP" and (not isinstance(group_id, str) or group_id not in DUTY_GROUPS or raw.get("post_id")):
         invalid("Выберите группу из списка; пост для группы не указывается.")
     identity = {"kind": kind, "object_id": object_id, "post_id": post_id, "group_id": group_id}
-    if isinstance(previous, dict) and all(previous.get(key) == value for key, value in identity.items()):
-        return previous.copy()
+    same_placement = isinstance(previous, dict) and all(previous.get(key) == value for key, value in identity.items())
+    schedule = normalize_schedule(raw, start_date, end_date, previous=previous if same_placement else None)
+    if same_placement:
+        return {**previous, **schedule}
     obj = OpsSecurityObject.objects.filter(pk=object_id).first()
     if obj is None or obj.object_state != OpsSecurityObject.ObjectState.ACTIVE:
         invalid("Объект не найден или находится в архиве.")
@@ -66,7 +69,7 @@ def normalize_assignment(raw, *, status_type, start_date, end_date, previous=Non
     return {**identity, "object_name": obj.name,
         "post_name": post.name if post else None,
         "sector_name": post.sector.name if post else None,
-        "group_name": DUTY_GROUPS[group_id] if group_id else None}
+        "group_name": DUTY_GROUPS[group_id] if group_id else None, **schedule}
 
 
 def assignment_for_update(attrs, instance=None):

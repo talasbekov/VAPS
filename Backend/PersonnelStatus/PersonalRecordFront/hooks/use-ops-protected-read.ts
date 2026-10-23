@@ -45,8 +45,10 @@ export function assertOpsReadAuthority(client: QueryClient, access: OpsReadAcces
 
 export function useOpsProtectedRead<T>(
   prefix: readonly [string, string], parts: readonly unknown[], access: OpsReadAccess,
-  read: () => Promise<T>,
-  options: { enabled?: boolean; staleTime?: number; poll?: (data: T | undefined) => number | false } = {},
+  read: (signal: AbortSignal) => Promise<T>,
+  options: { enabled?: boolean; staleTime?: number; poll?: (data: T | undefined) => number | false;
+    /** Sibling source kinds with the same denial contract; the source's own filters always match. */
+    denialFamily?: readonly string[] } = {},
 ) {
   const client = useQueryClient();
   const key = [...prefix, access.scope, ...parts];
@@ -58,13 +60,17 @@ export function useOpsProtectedRead<T>(
         throw new OpsApiError({ status: 403, errorCode: "PERMISSION_AUTHORITY_UNAVAILABLE",
           message: "Дождитесь успешной проверки прав доступа.", details: {}, requestId: null });
       }
-      try { return await readWithAccessCheck(client, key, signal, read); }
+      try { return await readWithAccessCheck(client, key, signal, () => read(signal)); }
       catch (error) {
         const status = (error as { status?: number } | null)?.status;
         if (!signal.aborted && (status === 401 || status === 403 || status === 404)) {
           // Retain Query identity and its denial marker while removing the
-          // protected payload from every cached filter in this actor scope.
-          for (const cached of client.getQueryCache().findAll({ predicate: item => item.queryKey[0] === prefix[0] && item.queryKey[2] === access.scope })) {
+          // protected payload from every cached filter in this denial family.
+          // Omitted families preserve the existing group-wide contract.
+          for (const cached of client.getQueryCache().findAll({ predicate: item =>
+            item.queryKey[0] === prefix[0] && item.queryKey[2] === access.scope &&
+            (options.denialFamily === undefined || item.queryKey[1] === prefix[1] ||
+              options.denialFamily.some(source => item.queryKey[1] === source)) })) {
             blockReadAccess(client, cached.queryKey, true);
           }
         }

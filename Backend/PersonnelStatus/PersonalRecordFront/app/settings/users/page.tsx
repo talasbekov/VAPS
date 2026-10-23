@@ -374,7 +374,7 @@ function AccountDetails({
   const revoke = useRevokeAccessRole();
 
   const [roleCode, setRoleCode] = useState("");
-  const [scope, setScope] = useState<string>(WHOLE_SERVICE_VALUE);
+  const [scope, setScope] = useState("");
   const [pendingRevocation, setPendingRevocation] =
     useState<AccessUserRole | null>(null);
   const [pendingLock, setPendingLock] = useState(false);
@@ -392,9 +392,10 @@ function AccountDetails({
   const rolesReady = rolesQuery.isSuccess && !rolesQuery.isFetching;
   const selectedRole = roleOptions.find((role) => role.code === roleCode);
   const globalRole = selectedRole?.permissions.includes("*") === true;
+  const selectedScope = globalRole ? WHOLE_SERVICE_VALUE : scope;
   const scopesReady = globalRole || (divisionsQuery.isSuccess && !divisionsQuery.isFetching);
-  const scopeExists = scope === WHOLE_SERVICE_VALUE || divisions.some(division => String(division.id) === scope);
-  useEffect(() => { if (globalRole) setScope(WHOLE_SERVICE_VALUE); }, [globalRole]);
+  const scopeExists = selectedScope === WHOLE_SERVICE_VALUE || divisions.some(division => String(division.id) === selectedScope);
+  const canAssign = canManage && !assign.isPending && rolesReady && selectedRole !== undefined && scopesReady && scopeExists;
   // Показываются ДЕЙСТВУЮЩИЕ назначения: снятие оставляет строку в базе
   // (история выдач), но в списке ролей человека ей не место — там отвечают на
   // вопрос «что у него есть сейчас».
@@ -531,7 +532,10 @@ function AccountDetails({
                 disabled={!rolesReady}
                 className="h-[34px] w-full rounded-md border bg-background px-2 text-[12.5px]"
                 value={roleCode}
-                onChange={(event) => setRoleCode(event.target.value)}
+                onChange={(event) => {
+                  setRoleCode(event.target.value);
+                  setScope("");
+                }}
               >
                 <option value="">— выберите роль —</option>
                 {roleOptions.map((role) => (
@@ -557,11 +561,13 @@ function AccountDetails({
               <Label htmlFor="assign-scope">Область</Label>
               <select
                 id="assign-scope"
+                aria-describedby="assign-scope-help"
                 disabled={globalRole || !scopesReady}
                 className="h-[34px] w-full rounded-md border bg-background px-2 text-[12.5px]"
-                value={scope}
+                value={selectedScope}
                 onChange={(event) => setScope(event.target.value)}
               >
+                <option value="">— выберите область —</option>
                 <option value={WHOLE_SERVICE_VALUE}>
                   {WHOLE_SERVICE_SCOPE_LABEL}
                 </option>
@@ -573,9 +579,12 @@ function AccountDetails({
               </select>
               {!globalRole && divisionsQuery.isPending && <p role="status" className="text-sm text-muted-foreground">Загрузка областей назначения…</p>}
               {!globalRole && divisionsQuery.isError && <LoadFailure what="области назначения" onRetry={() => void divisionsQuery.refetch()} isRetrying={divisionsQuery.isFetching} />}
+              <p id="assign-scope-help" className="text-[11.5px] text-muted-foreground">
+                Подразделение включает подчинённые. Вся служба — доступ без ограничения подразделением.
+              </p>
               <p className="text-[11.5px] text-muted-foreground">
-                Одна роль в разных областях — это разные назначения: они живут
-                рядом и снимаются порознь.
+                Права всех назначений складываются. Узкая область не отменяет доступ на всю службу:
+                лишнее широкое назначение снимите отдельно.
               </p>
             </div>
             {selectedRole?.permissions.length === 0 && (
@@ -585,15 +594,16 @@ function AccountDetails({
               type="button"
               size="sm"
               className="h-8"
-              disabled={assign.isPending || !rolesReady || selectedRole === undefined || !scopesReady || !scopeExists}
-              onClick={() =>
+              disabled={!canAssign}
+              onClick={() => {
+                if (!canAssign) return;
                 assign.mutate({
                   user_id: String(account.id),
                   role_code: roleCode,
                   scope_division_id:
-                    scope === WHOLE_SERVICE_VALUE ? null : Number(scope),
-                })
-              }
+                    selectedScope === WHOLE_SERVICE_VALUE ? null : Number(selectedScope),
+                });
+              }}
             >
               Выдать
             </Button>

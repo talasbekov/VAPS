@@ -222,6 +222,10 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // Полоса готовности из прототипа
     await expect(page.getByRole('progressbar').first()).toBeVisible()
 
+    // Поиск виден сразу; период и ведущий доступны в дополнительном отборе.
+    await expect(page.getByRole('textbox', { name: 'Поиск мероприятий' })).toBeVisible()
+    await expect(page.getByLabel('Период с')).toBeHidden()
+    await page.getByRole('button', { name: 'Дополнительные фильтры', exact: true }).click()
     // Фильтр периода: число строк совпадает с ответом сервера на тот же запрос
     await page.getByLabel('Период с').fill(cut)
     await expect
@@ -235,6 +239,36 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const owner = all.owners[0]
     const select = page.getByLabel('Ведущий')
     await expect(select.locator('option', { hasText: owner })).toHaveCount(1)
+  })
+
+  test('дополнительный отбор сохраняется при сворачивании, обновлении и возврате по истории', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const filters = page.getByRole('button', { name: 'Дополнительные фильтры', exact: true })
+    await expect(filters).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('textbox', { name: 'Поиск мероприятий' })).toBeVisible()
+
+    // Клиентский переход и back/forward меняют useSearchParams без remount страницы.
+    await page.evaluate(() => window.history.pushState(null, '', '?stage=RECON&from=2026-01-01'))
+    await expect(filters).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByLabel('Этап', { exact: true })).toHaveValue('RECON')
+    await expect(page.getByLabel('Период с')).toHaveValue('2026-01-01')
+    await filters.click()
+    await expect(page.getByLabel('Период с')).toBeHidden()
+    await expect(page).toHaveURL(/stage=RECON&from=2026-01-01/)
+    await filters.click()
+    await expect(page.getByLabel('Этап', { exact: true })).toHaveValue('RECON')
+    await page.reload()
+    await expect(filters).toHaveAttribute('aria-expanded', 'true')
+
+    await page.goBack()
+    await expect(page.getByLabel('Этап', { exact: true })).toHaveValue('ALL')
+    await page.goForward()
+    await expect(filters).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByLabel('Период с')).toHaveValue('2026-01-01')
+    await page.getByRole('button', { name: 'Сбросить фильтры', exact: true }).click()
+    await expect(filters).toHaveAttribute('aria-expanded', 'false')
+    await expect(page).not.toHaveURL(/stage=|from=/)
   })
 
   test('карточка ОМ: ссылка на объект ведёт на его паспорт', async ({ page }) => {

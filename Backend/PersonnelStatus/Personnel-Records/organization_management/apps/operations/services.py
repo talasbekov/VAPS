@@ -43,6 +43,13 @@ class PermissionService:
     """Stateless-резолюция авторизации: все проверки идут через неё."""
 
     @staticmethod
+    def _active_role_permissions():
+        """One definition policy for access, scopes and notification recipients."""
+        return RolePermission.objects.filter(
+            role_code__is_active=True, permission_code__is_active=True
+        )
+
+    @staticmethod
     def roles_holding(permission_code) -> set:
         """Коды ролей, под которыми право `permission_code` есть (Plane №880).
 
@@ -62,23 +69,12 @@ class PermissionService:
         `role_code_id__in`, и множество снимает дубли, которые даёт таблица
         грантов при нескольких строках на роль.
 
-        🔴 `is_active` РОЛИ И ПРАВА ЗДЕСЬ НЕ СМОТРИТСЯ — НАМЕРЕННО, И ЭТО НЕ
-        УПУЩЕНИЕ (Plane №924, найдено ревью). У `Role` и `Permission` такой
-        флаг есть (`models.py`), но его не смотрит и ГЕЙТ:
-        `effective_permissions` берёт `RolePermission` по кодам ролей и про
-        активность не спрашивает. Совпадение обязательно: разойдись отбор
-        рассылки с отбором доступа — и вернётся дефект №481 наизнанку, когда
-        право у человека есть, а уведомления к нему не приходят (или
-        наоборот).
-
-        Совпадение это СЛУЧАЙНО по происхождению, и потому закреплено пробой
-        `test_disabled_role_answers_the_same_to_the_gate_and_to_the_dispatch`, а не
-        только этой строкой: «выключенная роль всё ещё даёт право» выглядит
-        как дефект, который однажды заведут карточкой, — и в тот день проба
-        покраснеет и потребует править ОБА места одним заходом, а не одно.
+        Отключённые определения роли/права исключаются тем же запросом,
+        что и при проверке доступа. Назначения и история не удаляются;
+        повторное включение определения возвращает прежние гранты.
         """
         return set(
-            RolePermission.objects.filter(
+            PermissionService._active_role_permissions().filter(
                 permission_code_id__in=[permission_code, WILDCARD]
             ).values_list("role_code_id", flat=True)
         )
@@ -130,7 +126,8 @@ class PermissionService:
         ]
         now = Clock.now()
         active_duties = TemporaryDutyPermission.objects.filter(
-            user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now
+            user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now,
+            duty_role_code__in=Role.objects.filter(is_active=True).values('code'),
         )
         grants += [(d.scope_division_id, d.duty_role_code) for d in active_duties]
         return grants + cls.derived_grants(grants)
@@ -223,7 +220,7 @@ class PermissionService:
         if not role_codes:
             return set()
         return set(
-            RolePermission.objects.filter(
+            cls._active_role_permissions().filter(
                 role_code_id__in=role_codes
             ).values_list("permission_code_id", flat=True)
         )
@@ -238,7 +235,7 @@ class PermissionService:
         if not matching_role_codes:
             return set()
         return set(
-            RolePermission.objects.filter(
+            cls._active_role_permissions().filter(
                 role_code_id__in=matching_role_codes
             ).values_list("permission_code_id", flat=True)
         )
@@ -270,7 +267,7 @@ class PermissionService:
         grants.extend(
             (str(user_id), scope_division_id, role_code)
             for user_id, scope_division_id, role_code in UserRole.objects.filter(
-                user_id__in=wanted, is_active=True
+                user_id__in=wanted, is_active=True, role_code__is_active=True
             ).values_list("user_id", "scope_division_id", "role_code_id")
         )
         now = Clock.now()
@@ -281,6 +278,7 @@ class PermissionService:
                 is_active=True,
                 starts_at__lte=now,
                 ends_at__gte=now,
+                duty_role_code__in=Role.objects.filter(is_active=True).values('code'),
             ).values_list("user_id", "scope_division_id", "duty_role_code")
         )
         if not grants:
@@ -301,7 +299,7 @@ class PermissionService:
                     for scope_division_id, role_code in cls.derived_grants(pairs, tree=tree)
                 )
         holding_roles = set(
-            RolePermission.objects.filter(
+            cls._active_role_permissions().filter(
                 role_code_id__in={role_code for _, _, role_code in grants},
                 permission_code_id__in=[permission_code, WILDCARD],
             ).values_list("role_code_id", flat=True)
@@ -358,7 +356,7 @@ class PermissionService:
             return set()
 
         holding_roles = set(
-            RolePermission.objects.filter(
+            cls._active_role_permissions().filter(
                 role_code_id__in={code for _, code in grants},
                 permission_code_id__in=[permission_code, WILDCARD],
             ).values_list("role_code_id", flat=True)
@@ -380,6 +378,39 @@ class PermissionService:
 
 class RoleAdminService:
     """Write-обёртки администрирования RBAC."""
+
+    @staticmethod
+    def _check_definition_deactivation(actor, *, role_code=None, permission_code=None):
+        """Definition edits must preserve the existing own-admin-access guard."""
+        from organization_management.apps.operations.exceptions import DomainError
+        from organization_management.apps.operations.models import Permission
+
+        # Serialize definition deactivations through the same admin definitions.
+        # Otherwise concurrent edits of two fallback roles can each see the
+        # other's uncommitted active definition and leave nobody with access.
+        list(Permission.objects.select_for_update().filter(
+            code__in=[ACCESS_ADMIN_PERMISSION, WILDCARD]
+        ).order_by('code').values_list('code', flat=True))
+        list(Role.objects.select_for_update(of=('self',)).filter(
+            role_permissions__permission_code_id__in=[ACCESS_ADMIN_PERMISSION, WILDCARD]
+        ).order_by('code').values_list('code', flat=True))
+        codes = [code for scope, code in PermissionService._active_grants(actor) if scope is None]
+        admin_grants = PermissionService._active_role_permissions().filter(
+            role_code_id__in=codes,
+            permission_code_id__in=[ACCESS_ADMIN_PERMISSION, WILDCARD],
+        )
+        if not admin_grants.exists():
+            return
+        projected = admin_grants
+        if role_code is not None:
+            projected = projected.exclude(role_code_id=role_code)
+        if permission_code is not None:
+            projected = projected.exclude(permission_code_id=permission_code)
+        if not projected.exists():
+            raise DomainError(
+                'LAST_ACCESS_ADMIN_ROLE', 422,
+                message='Нельзя отключить последнее право управления доступом у своей учётной записи.',
+            )
 
     @staticmethod
     @transaction.atomic
@@ -436,6 +467,8 @@ class RoleAdminService:
         from organization_management.apps.operations import audit_service
         from organization_management.apps.operations.models import Permission
 
+        if not is_active:
+            RoleAdminService._check_definition_deactivation(actor, permission_code=code)
         existing = Permission.objects.filter(code=code).first()
         old_value = (
             None
@@ -486,6 +519,8 @@ class RoleAdminService:
         """
         from organization_management.apps.operations import audit_service
 
+        if not is_active:
+            RoleAdminService._check_definition_deactivation(actor, role_code=code)
         existing = Role.objects.filter(code=code).first()
         old_value = (
             None
@@ -621,7 +656,8 @@ class RoleAdminService:
         """
         role_codes = list(
             UserRole.objects.filter(
-                user_id=user_id, is_active=True, scope_division_id__isnull=True
+                user_id=user_id, is_active=True, scope_division_id__isnull=True,
+                role_code__is_active=True,
             )
             .exclude(id=excluded_user_role_id)
             .values_list("role_code_id", flat=True)
@@ -629,7 +665,7 @@ class RoleAdminService:
         if not role_codes:
             return False
         codes = set(
-            RolePermission.objects.filter(role_code_id__in=role_codes).values_list(
+            PermissionService._active_role_permissions().filter(role_code_id__in=role_codes).values_list(
                 "permission_code_id", flat=True
             )
         )

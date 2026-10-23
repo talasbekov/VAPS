@@ -120,6 +120,9 @@ async function deactivateProbeRoles(token: string): Promise<string> {
 
 export default async function globalTeardown(): Promise<void> {
   if (process.env.SMOKE_LIVE !== '1') return
+  // Failed preparation ran no tests. Do not authenticate or clean up records
+  // from earlier runs merely because Playwright still invokes global teardown.
+  if (process.env[PREFLIGHT_FAILED] === '1') return
 
   // 🔴 ПОСЛЕПОЛЁТНАЯ ПРОВЕРКА СТЕНДА (Plane №823) — ПЕРВЫМ делом и до уборки.
   // Стенд, умерший ПОСРЕДИ прогона, предполётная проверка не ловит по

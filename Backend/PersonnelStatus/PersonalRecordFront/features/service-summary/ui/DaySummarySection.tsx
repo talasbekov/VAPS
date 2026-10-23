@@ -8,7 +8,7 @@
 // 12.09.2026): «отправить дежурному» на уровне Службы некому — он и есть
 // дежурный. Кнопка отправки, поле причины и подсказка про адресата, заведённые
 // №992, сняты; состояния свода Службы — «не собран» / «собран vN».
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,14 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
   });
 
   const assembled = day.rootSubmission !== undefined;
+  // A temporary context/read refresh hides data, but must not discard a
+  // mounted correction draft. Actual scope changes and denials discard it.
+  const correction = useRef<{ scope: string; rootId: number } | null>(null);
+  if (correction.current?.scope !== day.readScope || day.readBlocked) correction.current = null;
+  if (day.readAllowed && !day.isPending && !day.isError) {
+    correction.current = assembled && day.rootId !== null ? { scope: day.readScope, rootId: day.rootId } : null;
+  }
+  const correctionRootId = correction.current?.rootId ?? null;
   const rootStale = day.rootId !== null && day.isStale(day.rootId);
   const nameOf = useMemo(
     () => (id: number) => day.nodeById.get(id)?.name ?? `Подразделение №${id}`,
@@ -101,10 +109,15 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
     >
       {day.isPending && <p className="text-sm text-muted-foreground">Загрузка структуры и сдач…</p>}
       {!day.isPending && day.isError && (
-        <p role="alert" className="text-sm text-muted-foreground">Не удалось прочитать структуру подразделений</p>
+        <div role="alert" className="space-y-2 text-sm text-muted-foreground">
+          <p>{day.readBlocked ? "Доступ к структуре и состоянию сдачи не подтверждён. Проверьте права доступа." : "Не удалось прочитать структуру и состояние сдачи."}</p>
+          {!day.readBlocked && <Button type="button" size="sm" variant="outline" disabled={!day.canRetry} aria-busy={day.retryPending} onClick={() => void day.retry()}>
+            {day.retryPending ? "Загрузка свода…" : "Повторить загрузку свода"}
+          </Button>}
+        </div>
       )}
 
-      {assembled && day.rootId !== null && <SummaryCorrection key={`${businessDate}:${day.rootId}`} divisionId={day.rootId} businessDate={businessDate} workspaceReady={workspaceReady} dataReady={!day.isError && !day.isPending} />}
+      {correctionRootId !== null && <SummaryCorrection key={`${businessDate}:${correctionRootId}`} divisionId={correctionRootId} businessDate={businessDate} workspaceReady={workspaceReady} dataReady={day.readAllowed && !day.isError && !day.isPending && !day.retryPending} />}
 
       {!day.isPending && !day.isError && day.rootId !== null && (
         <>
@@ -133,7 +146,12 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
                 <Tile label="Отклонения" value={day.reportError ? "—" : day.totals?.deviations ?? "…"} />
                 <Tile label="Неполных сводов" value={day.incompleteDepartments.length} />
               </dl>
-              {day.reportError && <p role="alert" className="mt-2 text-xs text-muted-foreground">Расход на дату не прочитался — числа недоступны, дерево сдач показано без них.</p>}
+              {day.reportError && <div role="alert" className="mt-2 space-y-2 text-xs text-muted-foreground">
+                <p>{day.reportReadBlocked ? "Доступ к расходу на дату не подтверждён — числа недоступны. Проверьте права доступа." : "Расход на дату не прочитался — числа недоступны, дерево сдач показано без них."}</p>
+                {!day.reportReadBlocked && <Button type="button" size="sm" variant="outline" disabled={!day.canRetryReport} aria-busy={day.reportRetryPending} onClick={() => void day.retryReport()}>
+                  {day.reportRetryPending ? "Загрузка чисел…" : "Повторить загрузку чисел"}
+                </Button>}
+              </div>}
             </div>
             <div role="region" aria-label="Свод Службы" className="grid content-start gap-2 rounded-lg border bg-card p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">

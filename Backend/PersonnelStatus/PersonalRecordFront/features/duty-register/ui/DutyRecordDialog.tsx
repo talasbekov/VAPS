@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadFailure } from '@/components/load-failure';
-import { DUTY_SOURCE_LABELS, DUTY_STATE_LABELS, dutyDateTime, dutyHours, dutyRecordPath, type DutyRecord, type DutyRecordAction } from '@/entities/duty-register';
+import { DUTY_SOURCE_LABELS, dutyDateTime, dutyHours, dutyRecordPath, type DutyRecord, type DutyRecordAction } from '@/entities/duty-register';
 import { useDutyKinds, useDutyRecord, useInvalidateDutyRegister } from '@/hooks/use-duty-register';
 import { opsApiClient } from '@/lib/ops-api';
 import { friendlyOpsErrorMessage } from '@/lib/ops-errors';
 import { dutyInput } from './DutyRegisterFilters';
+import { DutyExecutionBadge, DutyExecutionTimeline } from './DutyExecutionTimeline';
 
 const actionLabels: Record<DutyRecordAction, string> = { acknowledge: 'Подтвердить', start: 'Отметить начало', complete: 'Отметить завершение', cancel: 'Отменить запись', classify: 'Уточнить вид', edit: 'Исправить план' };
 export function DutyRecordDialog({ id, scope, allowed, onClose, onEdit, onCopy, onSaved }: {
@@ -62,7 +63,9 @@ export function DutyRecordDialog({ id, scope, allowed, onClose, onEdit, onCopy, 
       {query.isError && <LoadFailure what="запись дежурства" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />}
       {query.isError && row && <p className="text-sm text-muted-foreground">Показана ранее загруженная запись. Изменения доступны после успешного обновления.</p>}
       {row && <div className="min-w-0 space-y-4">
-        <p className="break-words text-sm">{row.division_name || 'Подразделение неизвестно'} · {DUTY_SOURCE_LABELS[row.source]} · {DUTY_STATE_LABELS[row.state]}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2"><p className="break-words text-sm">{row.division_name || 'Подразделение неизвестно'} · {DUTY_SOURCE_LABELS[row.source]}</p><DutyExecutionBadge row={row} now={row.generated_at ?? ''} /></div>
+        <DutyExecutionTimeline row={row} now={row.generated_at ?? ''} zone={row.time_zone ?? 'Asia/Almaty'} />
+        <p className="text-xs text-muted-foreground">Ознакомление подтверждает получение назначения. Фактическое заступление отмечается отдельно.</p>
         <div className="grid min-w-0 gap-4 sm:grid-cols-2"><section className="rounded-lg border p-3"><h3 className="mb-2 font-semibold">План</h3><dl className="space-y-2 text-sm"><div><dt className="text-muted-foreground">Начало</dt><dd className="break-words">{row.planned_start ? dutyDateTime(row.planned_start, row.time_zone) : `Дата ${row.business_date}, время не указано`}</dd></div><div><dt className="text-muted-foreground">Завершение</dt><dd className="break-words">{row.planned_end ? dutyDateTime(row.planned_end, row.time_zone) : 'Время не указано'}</dd></div><div><dt className="text-muted-foreground">Часы всей записи</dt><dd>{dutyHours(row.planned_minutes)}</dd></div></dl></section><section className="rounded-lg border p-3"><h3 className="mb-2 font-semibold">Факт</h3><dl className="space-y-2 text-sm"><div><dt className="text-muted-foreground">Подтверждение</dt><dd className="break-words">{dutyDateTime(row.acknowledged_at, row.time_zone)}</dd></div><div><dt className="text-muted-foreground">Начало</dt><dd className="break-words">{dutyDateTime(row.actual_start, row.time_zone)}</dd></div><div><dt className="text-muted-foreground">Завершение</dt><dd className="break-words">{dutyDateTime(row.actual_end, row.time_zone)}</dd></div><div><dt className="text-muted-foreground">Часы всей записи</dt><dd>{dutyHours(row.actual_minutes)}</dd></div></dl></section></div>
         <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Место</dt><dd className="break-words">{row.location_label || 'Не указано'}</dd></div><div><dt className="text-muted-foreground">Основание</dt><dd className="break-words">{row.document_basis || 'Не указано'}</dd></div><div className="sm:col-span-2"><dt className="text-muted-foreground">Примечание</dt><dd className="whitespace-pre-wrap break-words">{row.note || 'Не указано'}</dd></div></dl>
         {row.state === 'CANCELLED' && <p className="rounded-lg bg-muted p-3 text-sm">Отменено: {dutyDateTime(row.cancelled_at, row.time_zone)}{row.cancelled_reason ? ` · ${row.cancelled_reason}` : ''}</p>}

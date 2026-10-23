@@ -2,9 +2,6 @@
 
 import { CapabilityNotes } from "@/shared/ui/capability-notes";
 
-// История отчётов (§22.25). Экран не решает, что можно делать со строкой:
-// доступность каждого действия и причина отказа приходят с сервера — здесь
-// нет ни одной ветки «если работа упала, выключить кнопку».
 import { RightGate } from "@/shared/ui/right-gate";
 import { Suspense, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,16 +10,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import {
-  useDownloadArtifact,
   useReportJobs,
-  useRerunReportJob,
 } from "@/hooks/use-ops-reports";
 import {
   ACTION_LABEL,
   JOB_STATE_LABEL,
   formatMoment,
   formatSize,
-  saveFile,
 } from "@/features/ops-reports/report-shared";
 import type {
   ReportArtifactSummary,
@@ -76,18 +70,6 @@ function ReportHistoryScreen() {
   const jobsQuery = useReportJobs({ state, mine });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [errorShown, setErrorShown] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content), jobsQuery.readKey);
-  const rerun = useRerunReportJob((result) => {
-    // Два исхода §22.25 названы разными словами: «отдан прежний файл» и
-    // «запущена новая работа» — разные события.
-    setNotice(
-      result.reused
-        ? "Готовый артефакт с теми же параметрами уже есть — новая работа не запускалась."
-        : "Запущена новая работа с теми же параметрами."
-    );
-  }, jobsQuery.readKey);
 
   const artifactsByJob = useMemo(() => {
     const map = new Map<string, ReportArtifactSummary>();
@@ -99,7 +81,7 @@ function ReportHistoryScreen() {
   const actionsByJob = useMemo(() => {
     const map = new Map<string, ReportJobAction[]>();
     for (const entry of jobsQuery.data?.actions ?? [])
-      map.set(entry.reportJobId, entry.actions);
+      map.set(entry.reportJobId, entry.actions.filter((action) => action.code === "OPEN_PARAMETERS" || action.code === "VIEW_ERROR"));
     return map;
   }, [jobsQuery.data]);
 
@@ -137,7 +119,7 @@ function ReportHistoryScreen() {
             href="/security-ops/service-reports"
             className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
           >
-            Запуск отчёта
+            Документы ОМ
           </Link>
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
             История отчётов
@@ -185,18 +167,6 @@ function ReportHistoryScreen() {
             приезжают (§22.24).
           </p>
         </section>
-
-        {notice !== null && (
-          <p role="status" className="text-sm font-semibold text-primary-ink">
-            {notice}
-          </p>
-        )}
-        {rerun.error !== null && (
-          <p className="text-sm text-destructive-ink">{rerun.error.message}</p>
-        )}
-        {download.error !== null && (
-          <p className="text-sm text-destructive-ink">{download.error.message}</p>
-        )}
 
         <section className="rounded-xl border bg-card p-4">
           {jobsQuery.isError && data !== undefined && <>
@@ -305,14 +275,11 @@ function ReportHistoryScreen() {
                                 className="rounded-md border px-2.5 py-1 text-xs disabled:opacity-50"
                                 disabled={
                                   !action.available ||
-                                  jobsQuery.canAct === false ||
-                                  download.isPending ||
-                                  rerun.isPending
+                                  jobsQuery.canAct === false
                                 }
                                 aria-describedby={describedBy}
                                 onClick={() => {
                                   if (jobsQuery.canAct === false) return;
-                                  setNotice(null);
                                   if (action.code === "OPEN_PARAMETERS") {
                                     setExpanded((current) =>
                                       current === job.reportJobId
@@ -325,23 +292,6 @@ function ReportHistoryScreen() {
                                         ? null
                                         : job.reportJobId
                                     );
-                                  } else if (
-                                    action.code === "DOWNLOAD" &&
-                                    artifact !== null
-                                  ) {
-                                    download.mutate({
-                                      artifactId: artifact.artifactId,
-                                    });
-                                  } else if (action.code === "RETRY") {
-                                    rerun.mutate({
-                                      reportJobId: job.reportJobId,
-                                      mode: "RETRY",
-                                    });
-                                  } else if (action.code === "NEW_REVISION") {
-                                    rerun.mutate({
-                                      reportJobId: job.reportJobId,
-                                      mode: "NEW_REVISION",
-                                    });
                                   }
                                 }}
                               >

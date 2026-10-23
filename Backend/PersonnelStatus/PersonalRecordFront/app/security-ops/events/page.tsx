@@ -35,6 +35,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { FilterBar } from "@/components/filter-bar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadFailure } from "@/components/load-failure";
 import { formatIsoDate, localIsoDate } from "@/shared/lib/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,7 @@ import {
 } from "@/components/ui/table";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
@@ -83,7 +84,7 @@ import { mayManageVisitObjects } from "@/entities/security-event/model/capabilit
 import { eventWorkspaceHref } from "@/entities/security-event/model/navigation";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
-import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
+import { friendlyOpsErrorMessage, OpsApiError, type OpsApiFailure } from "@/lib/ops-errors";
 import { REMARKS, ruCount } from "@/lib/ru-plural";
 
 const PAGE_SIZE = 20;
@@ -110,6 +111,12 @@ const FILTERABLE_STAGES = SECURITY_EVENT_STAGES.filter(
 
 function isStage(value: string | null): value is SecurityEventStage {
   return (FILTERABLE_STAGES as readonly string[]).includes(value ?? "");
+}
+
+function dateFilter(value: string | null): string {
+  if (value === null || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return "";
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : "";
 }
 
 /** «1 замечание · 2 замечания · 5 замечаний» — бейдж читают глазами, и
@@ -152,8 +159,8 @@ function SecurityEventsScreen() {
     stage: isStage(stageParam) ? stageParam : "ALL",
     // Период и ответственный фильтрует СЕРВЕР: тот же фильтр на клиенте сузил
     // бы только загруженную страницу и врал бы про пустой результат.
-    from: searchParams.get("from") ?? "",
-    to: searchParams.get("to") ?? "",
+    from: dateFilter(searchParams.get("from")),
+    to: dateFilter(searchParams.get("to")),
     owner: searchParams.get("owner") ?? "",
     page: Number(searchParams.get("page") ?? "1") || 1,
     pageSize: PAGE_SIZE,
@@ -178,10 +185,31 @@ function SecurityEventsScreen() {
 
   // Поиск фиксируется с задержкой: в URL и в запрос уезжает набранное слово, а
   // не каждая его буква. Само поле отвечает мгновенно — оно живёт в черновике.
-  const [searchDraft, setSearchDraft] = useDebouncedCommit(
+  const [searchDraft, setSearchDraft, cancelSearchDraft] = useDebouncedCommit(
     params.search ?? "",
     (value) => updateParam("search", value)
   );
+
+  const activeFilterCount = [
+    params.stage !== "ALL", params.from !== "", params.to !== "", params.owner !== "",
+  ].filter(Boolean).length;
+  const filtersId = useId();
+  const [filtersExpanded, setFiltersExpanded] = useState(activeFilterCount > 0);
+  // Ссылка и возврат по истории должны показывать, почему список отобран.
+  // Ручное сворачивание не меняет ни значения полей, ни серверный запрос.
+  useEffect(() => {
+    if (activeFilterCount > 0) setFiltersExpanded(true);
+  }, [activeFilterCount, params.stage, params.from, params.to, params.owner]);
+
+  function resetFilters(): void {
+    cancelSearchDraft();
+    setSearchDraft("");
+    setFiltersExpanded(false);
+    const next = new URLSearchParams(searchParams);
+    for (const key of ["search", "stage", "from", "to", "owner", "page"]) next.delete(key);
+    const qs = next.toString();
+    router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
+  }
 
   function updateParam(key: string, value: string): void {
     const next = new URLSearchParams(searchParams);
@@ -209,25 +237,15 @@ function SecurityEventsScreen() {
           title="Реестр ОМ"
           description="Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива"
           actions={
-            <div className="flex gap-2">
-              {/* Переключатель «Календарь ⇄ Список» из прототипа. Режим живёт
-                  в URL рядом с фильтрами: ссылкой делятся вместе с отбором, а
-                  возврат из карточки попадает в тот же вид, из которого ушли. */}
-              {/* Календарь — про мероприятия; во вкладке визитов его нет:
-                  кнопка «Календарь» там уводила бы из вкладки в сторону. */}
-              {view !== "gvo" && (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    updateParam("view", view === "calendar" ? "" : "calendar")
-                  }
-                >
-                  {view === "calendar" ? "К списку" : "Календарь"}
-                </Button>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
               {!permissionsLoading && hasPermission("event.create") && (
                 <Button onClick={() => setDialogOpen(true)}>
                   + Создать бюллетень
+                </Button>
+              )}
+              {!permissionsLoading && moduleOpenFor("/security-ops/assistant", hasPermission) && (
+                <Button variant="link" asChild>
+                  <Link href="/security-ops/assistant/">Поставить задачу помощнику</Link>
                 </Button>
               )}
             </div>
@@ -237,6 +255,7 @@ function SecurityEventsScreen() {
         {/* Вкладки реестра. «Визиты иностранных ОЛ» — сводный взгляд снятого
             модуля «Реестр ГВО» (Plane «Реестр ОМ-35.8»): заказчик убрал пункт
             меню, но список «кто едет» оставил внутри реестра ОМ. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
         <div
           role="tablist"
           aria-label="Вид реестра"
@@ -267,6 +286,16 @@ function SecurityEventsScreen() {
             );
           })}
         </div>
+        {/* Вид списка — рядом с вкладками; создание остаётся главным действием шапки. */}
+        {view !== "gvo" && (
+          <Button
+            variant="outline"
+            onClick={() => updateParam("view", view === "calendar" ? "" : "calendar")}
+          >
+            {view === "calendar" ? "К списку" : "Календарь"}
+          </Button>
+        )}
+        </div>
 
         {view === "gvo" ? (
           <GvoVisitsRegistry />
@@ -274,21 +303,36 @@ function SecurityEventsScreen() {
         <>
         <FilterBar
           onReset={
-            params.search !== "" ||
-            params.stage !== "ALL" ||
-            params.from !== "" ||
-            params.to !== "" ||
-            params.owner !== ""
-              ? () => router.replace(pathname, { scroll: false })
+            searchDraft !== "" || params.search !== "" || activeFilterCount > 0
+              ? resetFilters
               : undefined
           }
         >
           <Input
-            className="min-w-56 flex-1"
+            className="min-w-0 w-full sm:min-w-56 sm:flex-1"
+            aria-label="Поиск мероприятий"
             placeholder="Поиск по названию, объекту или ответственному"
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
           />
+          <Button
+            variant="outline"
+            aria-label="Дополнительные фильтры"
+            aria-expanded={filtersExpanded}
+            aria-controls={filtersId}
+            onClick={() => setFiltersExpanded((expanded) => !expanded)}
+          >
+            <ChevronDown aria-hidden="true" className={`size-4 transition-transform ${filtersExpanded ? "rotate-180" : ""}`} />
+            Дополнительные фильтры
+            {activeFilterCount > 0 && <span className="rounded-full bg-muted px-2 text-xs tabular-nums">{activeFilterCount}</span>}
+          </Button>
+          <div
+            id={filtersId}
+            hidden={!filtersExpanded}
+            className={filtersExpanded ? "order-last flex w-full flex-wrap items-end gap-3 border-t pt-3" : "hidden"}
+          >
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Этап
           <select
             // Высота НЕ задаётся здесь: её навязывает сам ряд FilterBar
             // (`[&_select]:h-9`) — так e2e/prototype-skin.spec.ts, тест
@@ -310,8 +354,9 @@ function SecurityEventsScreen() {
               </option>
             ))}
           </select>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            с
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Период с
             <Input
               type="date"
               aria-label="Период с"
@@ -320,8 +365,8 @@ function SecurityEventsScreen() {
               onChange={(e) => updateParam("from", e.target.value)}
             />
           </label>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            по
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Период по
             <Input
               type="date"
               aria-label="Период по"
@@ -335,19 +380,26 @@ function SecurityEventsScreen() {
               подпись колонки, которая теперь отдана СТАРШЕМУ наряда, — одно
               слово на две разные роли обещало бы отбор по старшему и
               отбирало бы по ведущему. */}
+          <label className="grid min-w-0 max-w-full gap-1 text-xs text-muted-foreground">
+            Ведущий
           <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
             aria-label="Ведущий"
             value={params.owner}
             onChange={(e) => updateParam("owner", e.target.value)}
           >
             <option value="">Все ведущие</option>
+            {params.owner !== "" && !(query.data?.owners ?? []).includes(params.owner) && (
+              <option value={params.owner}>{params.owner}</option>
+            )}
             {(query.data?.owners ?? []).map((owner) => (
               <option key={owner} value={owner}>
                 {owner}
               </option>
             ))}
           </select>
+          </label>
+          </div>
         </FilterBar>
 
         {view === "calendar" ? (
@@ -355,6 +407,9 @@ function SecurityEventsScreen() {
             backSuffix={backSuffix}
             isLoading={query.isLoading}
             isError={query.isError}
+            isFetching={query.isFetching}
+            error={query.error}
+            onRetry={() => void query.refetch()}
             events={query.data?.results ?? []}
           />
         ) : (
@@ -362,6 +417,9 @@ function SecurityEventsScreen() {
             backSuffix={backSuffix}
             isLoading={query.isLoading}
             isError={query.isError}
+            isFetching={query.isFetching}
+            error={query.error}
+            onRetry={() => void query.refetch()}
             events={query.data?.results ?? []}
             isEmpty={query.data !== undefined && query.data.results.length === 0}
           />
@@ -378,10 +436,38 @@ function SecurityEventsScreen() {
   );
 }
 
+function RegistryReadFailure({
+  error,
+  isFetching,
+  onRetry,
+}: {
+  error: OpsApiFailure | null;
+  isFetching: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-6 sm:p-9">
+        {error instanceof OpsApiError && error.status === 403 ? (
+          <div role="alert" className="space-y-1 text-center">
+            <p className="font-semibold">Доступ закрыт</p>
+            <p className="text-sm text-muted-foreground">Недостаточно прав для просмотра реестра ОМ.</p>
+          </div>
+        ) : (
+          <LoadFailure what="реестр ОМ" description={error?.message} onRetry={onRetry} isRetrying={isFetching} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ResultsTable({
   backSuffix,
   isLoading,
   isError,
+  isFetching,
+  error,
+  onRetry,
   events,
   isEmpty,
 }: {
@@ -389,6 +475,9 @@ function ResultsTable({
   backSuffix: string;
   isLoading: boolean;
   isError: boolean;
+  isFetching: boolean;
+  error: OpsApiFailure | null;
+  onRetry: () => void;
   events: SecurityEvent[];
   isEmpty: boolean;
 }) {
@@ -402,13 +491,7 @@ function ResultsTable({
     );
   }
   if (isError) {
-    return (
-      <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive-ink">
-          Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
-        </CardContent>
-      </Card>
-    );
+    return <RegistryReadFailure error={error} isFetching={isFetching} onRetry={onRetry} />;
   }
   if (isEmpty) {
     return (
@@ -1403,11 +1486,17 @@ function EventsCalendar({
   backSuffix,
   isLoading,
   isError,
+  isFetching,
+  error,
+  onRetry,
   events,
 }: {
   backSuffix: string;
   isLoading: boolean;
   isError: boolean;
+  isFetching: boolean;
+  error: OpsApiFailure | null;
+  onRetry: () => void;
   events: SecurityEvent[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -1425,13 +1514,7 @@ function EventsCalendar({
     );
   }
   if (isError) {
-    return (
-      <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive-ink">
-          Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
-        </CardContent>
-      </Card>
-    );
+    return <RegistryReadFailure error={error} isFetching={isFetching} onRetry={onRetry} />;
   }
   if (events.length === 0) {
     return (

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { LoadFailure } from "@/components/load-failure";
 import { useEmployeeDutyAssignments } from "@/hooks/use-duty-assignments";
 import { formatIsoDate, localIsoDate } from "@/shared/lib/date";
+import { dutyIntervalLabel, dutyIntervalsOnDate } from "@/features/employee-status-update/model/duty-intervals";
 
 function shiftTime(value: string, timeZone?: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
@@ -53,7 +54,10 @@ export function EmployeeDutyPlacementDialog({ employeeId, employeeName, onClose 
           </div>
         ) : (
           <ul className="space-y-3">
-            {roster.assignments.map((assignment) => (
+            {roster.assignments.map((assignment) => {
+              const dispatch = assignment.dispatch_assignment_id != null || assignment.source?.toUpperCase() === "DISPATCH";
+              const intervals = dispatch || assignment.placement.intervals === undefined ? undefined : dutyIntervalsOnDate(assignment.placement.intervals, date);
+              return (
               <li key={assignment.dispatch_assignment_id ? `dispatch:${assignment.dispatch_assignment_id}` : `status:${assignment.status_id}`} className="space-y-2 rounded-md border p-3 text-sm">
                 <p className="font-semibold">{assignment.placement.object_name || "Объект не указан"}</p>
                 {assignment.placement.kind === "POST" ? (
@@ -62,13 +66,17 @@ export function EmployeeDutyPlacementDialog({ employeeId, employeeName, onClose 
                     {assignment.placement.sector_name && <p className="text-muted-foreground">{assignment.placement.sector_name}</p>}
                   </div>
                 ) : <p>{assignment.placement.group_name || "Группа не указана"}</p>}
-                {assignment.start_at && assignment.end_at ? (
+                {intervals !== undefined ? (
+                  intervals.length > 0 ? <div><p className="text-xs text-muted-foreground">Выходы · время Астаны</p><ul className="mt-1 space-y-1">{intervals.map((interval, index) =>
+                    <li key={`${interval.start_at}:${interval.end_at}:${index}`}>{dutyIntervalLabel(interval)}</li>)}</ul></div>
+                    : <p>Выходов на выбранную дату нет.</p>
+                ) : assignment.start_at && assignment.end_at ? (
                   <p>{shiftTime(assignment.start_at, assignment.time_zone)} — {shiftTime(assignment.end_at, assignment.time_zone)}{assignment.time_zone && <span className="text-muted-foreground"> ({assignment.time_zone})</span>}</p>
                 ) : (
-                  <p>{formatIsoDate(assignment.start_date)} — {formatIsoDate(assignment.end_date)}. Время смены не указано.</p>
+                  <p>{formatIsoDate(assignment.start_date)} — {formatIsoDate(assignment.end_date)}. Время смены не указано. Круглосуточное нахождение на посту не подтверждено.</p>
                 )}
               </li>
-            ))}
+            ); })}
           </ul>
         )}
       </DialogContent>

@@ -114,6 +114,42 @@ def test_saved_status_is_the_placement_and_read_creates_no_shift_or_execution(ro
     assert [list(model.objects.values()) for model in models] == before
 
 
+def test_status_roster_exposes_all_exits_without_expanding_daily_row_keys(roster_scene):
+    scene = roster_scene
+    intervals = [{"start_at": "2026-10-07T09:00:00+05:00", "end_at": "2026-10-07T11:00:00+05:00"},
+                 {"start_at": "2026-10-07T23:00:00+05:00", "end_at": "2026-10-08T01:00:00+05:00"}]
+    saved = status_placement(scene, duty_assignment={**scene["placement"], "intervals": intervals})
+    row = people(read(reader()))[0]
+    assert len(row["placements"]) == 1
+    placement = row["placements"][0]
+    assert placement["source_id"] == saved.pk
+    assert placement.get("intervals") == intervals
+    assert placement["time_zone"] == "Asia/Almaty"
+    assert placement["start_at"] is None and placement["end_at"] is None
+
+
+def test_twin_daily_headcount_does_not_fill_gaps_or_empty_exact_schedules(roster_scene):
+    from organization_management.apps.ops.digital_twin import _duty_headcounts
+    scene = roster_scene
+    source = status_placement(scene, duty_assignment={**scene["placement"], "intervals": [
+        {"start_at": "2026-10-07T09:00:00+05:00", "end_at": "2026-10-07T11:00:00+05:00"}]})
+    assert _duty_headcounts(DAY)["placed_headcount"] == 1
+    assert _duty_headcounts(DAY + timedelta(days=1))["placed_headcount"] == 0
+    source.duty_assignment["intervals"] = []
+    source.save()
+    assert _duty_headcounts(DAY)["placed_headcount"] == 0
+
+
+def test_dispatch_hours_remain_authoritative_over_incidental_nested_schedule(roster_scene):
+    from organization_management.apps.ops.digital_twin import _duty_headcounts
+    scene = roster_scene
+    OpsDutyDispatchConfig.objects.create(singleton_key=1, receiver_department_id=scene["departments"][2].pk)
+    assigned = dispatch(scene)
+    assigned.placement = {**assigned.placement, "intervals": [], "time_zone": "Asia/Almaty"}
+    assigned.save(update_fields=["placement"])
+    assert _duty_headcounts(DAY)["placed_headcount"] == 1
+
+
 def test_allocated_person_without_a_saved_place_has_an_empty_placements_array(roster_scene):
     source = duty(roster_scene["people"][0], "GEV", comment="Дежурный состав")
     result = people(read(reader()))

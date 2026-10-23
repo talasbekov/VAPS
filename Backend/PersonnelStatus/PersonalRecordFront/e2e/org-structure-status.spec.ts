@@ -41,6 +41,18 @@ async function hydrated(page: Page): Promise<void> {
   })
 }
 
+/** Status assertions inspect the full employee list, so open its native disclosures. */
+async function openEmployeeLists(page: Page): Promise<void> {
+  const tree = page.getByRole('region', { name: 'Диаграмма структуры организации', exact: true })
+  await expect(tree).toBeVisible({ timeout: 25_000 })
+  const lists = tree.locator('details')
+  for (const details of await lists.all()) {
+    if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
+      await details.locator('summary').click()
+    }
+  }
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'оргструктура: статус' : 'оргструктура (скип: нет SMOKE_LIVE=1)', () => {
@@ -50,6 +62,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openEmployeeLists(page)
 
     // Ждём отрисовки дерева, а не просто загрузки страницы.
     await expect(page.getByText('Вакантная должность').first()).toBeVisible({ timeout: 25_000 })
@@ -97,6 +110,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openEmployeeLists(page)
     await expect(page.getByText('Вакантная должность').first()).toBeVisible({ timeout: 25_000 })
 
     const painted = await page.evaluate(() => {
@@ -163,6 +177,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
+    await openEmployeeLists(page)
     await expect.poll(() => injected, { timeout: 25_000 }).toBe(true)
 
     const node = page.getByText(MARK).first()

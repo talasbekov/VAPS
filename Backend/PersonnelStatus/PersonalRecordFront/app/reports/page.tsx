@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoadFailure } from "@/components/load-failure";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useOpsReadAccess } from "@/hooks/use-ops-protected-read";
+import { useOpsReadSnapshot } from "@/hooks/use-ops-read-snapshot";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import Link from "next/link";
-import { opsApiClient } from "@/lib/ops-api";
 import {
   Card,
   CardContent,
@@ -56,14 +57,25 @@ import {
 export default function ReportsPage() {
   const queryClient = useQueryClient();
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [report, setReport] = useState<StrengthReport | null>(null);
+  const reportAccess = useOpsReadAccess("status.view");
+  const reportSnapshot = useOpsReadSnapshot<StrengthReport | null>(reportAccess, null);
+  const report = reportSnapshot.value;
   const [reportError, setReportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Выгрузка идёт по одному подразделению, поэтому «занято» держим на строке,
   // а не одним флагом на всю карточку: общий флаг гасил бы кнопки всех строк.
   const [exportingIds, setExportingIds] = useState<ReadonlySet<number>>(new Set());
   const pendingExports = useRef(new Set<number>());
+  const requestVersion = useRef(0);
   const { toast } = useToast();
+  useEffect(() => {
+    requestVersion.current += 1;
+    pendingExports.current.clear();
+    setExportingIds(new Set());
+    setLoading(false);
+    setReportError(null);
+    return () => { requestVersion.current += 1; };
+  }, [reportAccess.scope, reportAccess.allowed]);
 
   // ГЕЙТ ПО ПРАВАМ РАЗДЕЛА (Plane №352, Ш-1). Экран был открыт каждому
   // вошедшему: видимость решало только меню, а прямой адрес пускал любого.
@@ -77,59 +89,26 @@ export default function ReportsPage() {
 
   const dateStr = date ? format(date, "yyyy-MM-dd") : undefined;
 
-  const [periodFrom, setPeriodFrom] = useState("");
-  const [periodTo, setPeriodTo] = useState("");
-  const [periodExporting, setPeriodExporting] = useState(false);
-
-  // Выгрузка периода — CSV с живой ручки period-export; отказы сервера
-  // (инверсия дат, будущее, слишком длинный период) показываем его словами.
-  const handlePeriodExport = async () => {
-    try {
-      setPeriodExporting(true);
-      const query = new URLSearchParams({
-        date_from: periodFrom,
-        date_to: periodTo,
-      });
-      const { blob, filename } = await opsApiClient.download(
-        `/api/operations/strength-report/period-export/?${query.toString()}`
-      );
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename ?? `расход_${periodFrom}_${periodTo}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      toast({ title: "Готово", description: "Расход за период скачан" });
-    } catch (error) {
-      toast({
-        title: "Выгрузка не удалась",
-        description:
-          error instanceof Error ? error.message : "Неизвестная ошибка",
-        variant: "destructive",
-      });
-    } finally {
-      setPeriodExporting(false);
-    }
-  };
-
   // Читаем ЖИВОЙ расход. `division_id` не передаём намеренно: бэк сужает
   // выборку по области видимости сам, и «свой департамент» — его решение.
   const handleLoad = async () => {
+    if (!reportSnapshot.isCurrent()) return;
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setReportError(null);
-      setReport(await apiClient.getStrengthReport({ businessDate: dateStr }));
+      const result = await apiClient.getStrengthReport({ businessDate: dateStr });
+      if (version === requestVersion.current && reportSnapshot.isCurrent()) reportSnapshot.setValue(result);
     } catch (error) {
-      setReport(null);
+      if (version !== requestVersion.current || !reportSnapshot.isCurrent()) return;
+      reportSnapshot.setValue(null);
       setReportError(
         error instanceof OpsApiError
           ? error.message
           : "Не удалось загрузить расход"
       );
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current && reportSnapshot.isCurrent()) setLoading(false);
     }
   };
 
@@ -137,7 +116,7 @@ export default function ReportsPage() {
   // Код DAY_NOT_SUBMITTED показываем как обычное сообщение, а не как ошибку:
   // это не поломка, а состояние дня, и красный тост пугал бы напрасно.
   const handleExport = async (row: StrengthReportRow) => {
-    if (!report || pendingExports.current.has(row.division_id)) return;
+    if (!report || !reportSnapshot.canUseValue() || pendingExports.current.has(row.division_id)) return;
     pendingExports.current.add(row.division_id);
     setExportingIds(new Set(pendingExports.current));
     const exportDate = report.business_date;
@@ -147,6 +126,7 @@ export default function ReportsPage() {
         businessDate: exportDate,
         fileFormat: "xlsx",
       });
+      if (!reportSnapshot.canUseValue()) return;
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -159,6 +139,7 @@ export default function ReportsPage() {
 
       toast({ title: "Готово", description: `Расход «${row.name}» скачан` });
     } catch (error) {
+      if (!reportSnapshot.canUseValue()) return;
       const notSubmitted =
         error instanceof OpsApiError && error.code === "DAY_NOT_SUBMITTED";
       toast({
@@ -170,8 +151,10 @@ export default function ReportsPage() {
         variant: notSubmitted ? "default" : "destructive",
       });
     } finally {
-      pendingExports.current.delete(row.division_id);
-      setExportingIds(new Set(pendingExports.current));
+      if (reportSnapshot.isCurrent()) {
+        pendingExports.current.delete(row.division_id);
+        setExportingIds(new Set(pendingExports.current));
+      }
     }
   };
 
@@ -239,7 +222,7 @@ export default function ReportsPage() {
                     </PopoverContent>
                   </Popover>
                 </div>
-                <Button onClick={handleLoad} disabled={loading || !date} aria-busy={loading}>
+                <Button onClick={handleLoad} disabled={loading || !date || !reportAccess.allowed} aria-busy={loading}>
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -372,70 +355,6 @@ export default function ReportsPage() {
                   </Table>
               )}
           </ReportSectionCard>
-
-          {/* «Расход за период» — карточка экрана прототипа «Отчёты» (РП).
-              Формат один — CSV: период смотрят, чтобы считать и строить
-              графики, а не подписывать (слова бэка, period-export). Обе даты
-              обязательны, инверсию и будущее сервер отбивает 400 — сообщение
-              показываем как есть. */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-purple-600" />
-                Расход за период
-              </CardTitle>
-              <CardDescription>
-                Одна таблица, строка на дату — динамика численности за
-                интервал. Дни без сдачи входят наравне с прочими.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-2">
-                  <label
-                    htmlFor="period-from"
-                    className="text-sm font-medium leading-none"
-                  >
-                    С
-                  </label>
-                  <input
-                    id="period-from"
-                    type="date"
-                    value={periodFrom}
-                    onChange={(e) => setPeriodFrom(e.target.value)}
-                    className="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label
-                    htmlFor="period-to"
-                    className="text-sm font-medium leading-none"
-                  >
-                    По
-                  </label>
-                  <input
-                    id="period-to"
-                    type="date"
-                    value={periodTo}
-                    onChange={(e) => setPeriodTo(e.target.value)}
-                    className="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={handlePeriodExport}
-                  disabled={periodExporting || periodFrom === "" || periodTo === ""}
-                >
-                  {periodExporting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-2 h-4 w-4" />
-                  )}
-                  Выгрузить CSV
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
 
           <PersonnelReportCards
             canReadStaffing={allowed && hasOpsPermission("orgstructure.view")}

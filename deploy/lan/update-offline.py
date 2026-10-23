@@ -170,6 +170,22 @@ def validate_container_owner(container, stack, project, service):
         raise RuntimeError('Running container belongs to a different compose directory/project: ' + service)
 
 
+def validate_proxy_layout(service):
+    """A preserved override must not mask the reviewed proxy protection files."""
+    if any(service.get(key) is not None for key in ('entrypoint', 'command')):
+        raise RuntimeError('Custom proxy startup requires review before updating')
+    if any(service.get(key) for key in ('configs', 'secrets', 'tmpfs', 'volumes_from')):
+        raise RuntimeError('Custom proxy configuration mounts require review before updating')
+    if set(service.get('environment') or {}) - {'TZ'}:
+        raise RuntimeError('Custom proxy environment can change reviewed startup/configuration; review required')
+    expected = {'/data/static', '/data/media', '/data/private'}
+    volumes = service.get('volumes') or []
+    if (len(volumes) != len(expected) or {item.get('target') for item in volumes} != expected
+            or any(item.get('type') != 'volume' or not item.get('source') or item.get('read_only') is not True
+                   for item in volumes)):
+        raise RuntimeError('Unsupported proxy mounts; only the three named read-only data volumes are reviewed')
+
+
 def fingerprint_code(plan):
     ignored = []
     if ['employees', '0005_employee_import_identity'] in plan:
@@ -214,11 +230,11 @@ class Update:
         for name in ('.env', 'images.env', 'docker-compose.yml'):
             if not (self.stack / name).is_file():
                 raise RuntimeError(f'Missing existing stack file: {name}')
-        for key in ('COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'BACKEND_IMAGE', 'FRONTEND_IMAGE'):
+        for key in ('COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'BACKEND_IMAGE', 'FRONTEND_IMAGE', 'PROXY_IMAGE'):
             if os.getenv(key):
                 raise RuntimeError(f'Unset shell override {key} before running the update')
         for line in (self.stack / '.env').read_text(encoding='utf-8-sig').splitlines():
-            if line.split('=', 1)[0].strip() in ('BACKEND_IMAGE', 'FRONTEND_IMAGE'):
+            if line.split('=', 1)[0].strip() in ('BACKEND_IMAGE', 'FRONTEND_IMAGE', 'PROXY_IMAGE'):
                 raise RuntimeError('Application image overrides in .env require manual review')
         self.base = ['docker', 'compose', '--project-directory', str(self.stack),
                      '--env-file', str(self.stack / 'images.env'), '--env-file', str(self.stack / '.env'),
@@ -228,6 +244,8 @@ class Update:
         required = {'db', 'redis', 'backend', 'worker', 'frontend', 'proxy'}
         if set(self.services) not in (required, required | {'beat'}):
             raise RuntimeError('Unsupported compose layout; expected the LAN services with optional separate beat')
+        validate_proxy_layout(self.services['proxy'])
+        self.proxy_configuration_sha256 = None
         self.schedulers = ['beat'] if 'beat' in self.services else []
         if self.schedulers:
             worker_command = self.services['worker'].get('command') or []
@@ -263,18 +281,33 @@ class Update:
             raise RuntimeError('This release is checked only with PostgreSQL 16')
         self.old_backend = running_image_id(self.backend)
         self.old_frontend = running_image_id(inspect(self.ids['frontend']))
+        self.old_proxy = running_image_id(inspect(self.ids['proxy']))
         self.database_image = running_image_id(self.db)
         self.base_backend = self.manifest['images']['backend']['tag']
         self.new_backend = self.base_backend + '-imports-v1' if self.manifest.get('compatibility_overlay') else self.base_backend
         self.new_frontend = self.manifest['images']['frontend']['tag']
+        self.new_proxy = self.manifest['images'].get('proxy', {}).get('tag', self.old_proxy)
         proposed = json.loads(run(self.base + ['config', '--format', 'json'], env={
             **os.environ, 'BACKEND_IMAGE': self.new_backend, 'FRONTEND_IMAGE': self.new_frontend,
+            'PROXY_IMAGE': self.new_proxy,
         }))['services']
         for name in ['backend', 'worker', *self.schedulers]:
             if proposed[name]['image'] != self.new_backend:
                 raise RuntimeError(f'{name} does not use BACKEND_IMAGE; configuration needs review')
         if proposed['frontend']['image'] != self.new_frontend:
             raise RuntimeError('frontend does not use FRONTEND_IMAGE; configuration needs review')
+        if 'proxy' in self.manifest['images'] and proposed['proxy']['image'] != self.new_proxy:
+            raise RuntimeError('proxy does not use PROXY_IMAGE; configuration needs review')
+        for service in ('backend', 'worker', 'frontend', 'proxy', *self.schedulers):
+            if self.services[service].get('pull_policy') != 'never':
+                raise RuntimeError('Offline update requires pull_policy: never on ' + service)
+        # Updating image references must leave every other service setting intact.
+        for name, original in self.services.items():
+            if {key: value for key, value in original.items() if key != 'image'} != {
+                    key: value for key, value in proposed[name].items() if key != 'image'}:
+                raise RuntimeError('Image selection changes existing service settings: ' + name)
+            if name in ('db', 'redis') and original != proposed[name]:
+                raise RuntimeError('Infrastructure configuration must remain unchanged: ' + name)
         print(f"Stack: {self.config['name']}; database volume: {self.volume}; {version}", flush=True)
 
     def load(self):

@@ -290,3 +290,123 @@ def test_document_prints_every_aggregated_column(org, author):
         assert label in headers
     assert "На дежурстве" in headers
     assert cells[headers.index("На дежурстве")] == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("code", ["DUTY_DAILY", "DUTY_COMBAT", "DUTY_OPERATIONAL"])
+def test_migration_seeded_duty_variants_reach_report_columns_and_document(org, author, code):
+    from organization_management.apps.operations.status_types import StatusType
+    from organization_management.apps.reports.infrastructure import report_table
+
+    duty = StatusType.objects.get(code=code)
+    assert duty.report_column_code == "ON_DUTY"
+    _status(org["employees"][0], code, timezone.localdate(), author)
+    data = DataAggregator().collect_data(FakeReport(org["division"], timezone.localdate()))
+    row = next(row for row in data["rows"] if row["division_id"] == org["division"].pk)
+    assert row["on_duty"] == 1
+    assert row["in_service"] == 5
+    assert row["headcount"] == 6
+    assert report_table.cells(data, row)[report_table.headers(data).index("На дежурстве")] == 1
+
+
+@pytest.mark.django_db
+def test_catalog_column_and_priority_apply_to_canonical_and_legacy_codes(org, author):
+    from organization_management.apps.operations.status_types import StatusType
+
+    StatusType.objects.update_or_create(code="COMMAND", defaults={
+        "name": "Changed command", "legacy_code": "business_trip", "priority": 1,
+        "report_column_code": "TRAINING",
+    })
+    person = org["employees"][0]
+    today = timezone.localdate()
+    EmployeeStatus.objects.bulk_create([
+        EmployeeStatus(employee=person, status_type=code, start_date=today - timedelta(days=1),
+                       end_date=today + timedelta(days=1), state=EmployeeStatus.StatusState.ACTIVE)
+        for code in ("business_trip", "sick_leave")
+    ])
+    _status(org["employees"][1], "COMMAND", today, author)
+    row = _row(org)
+    assert row["training"] == 2
+    assert row["sick_leave"] == row["business_trip"] == 0
+    assert row["in_service"] == 4
+
+
+@pytest.mark.django_db
+def test_custom_status_new_column_is_counted_and_printed_even_when_type_is_inactive(org, author):
+    from organization_management.apps.operations.status_types import StatusType
+    from organization_management.apps.reports.infrastructure import report_table
+
+    StatusType.objects.create(code="SPECIAL_WATCH", name="Special watch", priority=25,
+                              report_column_code="SPACE_WATCH", is_active=False)
+    _status(org["employees"][0], "SPECIAL_WATCH", timezone.localdate(), author)
+    data = DataAggregator().collect_data(FakeReport(org["division"], timezone.localdate()))
+    row = next(row for row in data["rows"] if row["division_id"] == org["division"].pk)
+    headers = report_table.headers(data)
+    assert "SPACE_WATCH" in headers
+    assert report_table.cells(data, row)[headers.index("SPACE_WATCH")] == 1
+    assert sum(row[key] for key, _label in data["columns"]) == row["headcount"] == 6
+    assert row["in_service"] == 5
+
+
+@pytest.mark.django_db
+def test_unknown_imported_type_counts_as_other_absence_instead_of_crashing(org, author):
+    _status(org["employees"][0], "OLD_MISSING_TYPE", timezone.localdate(), author)
+    row = _row(org)
+    assert row["other_absence"] == 1
+    assert row["in_service"] == 5
+
+
+@pytest.mark.django_db
+def test_same_day_return_wins_but_generic_planned_end_remains_inclusive(org, author):
+    today = timezone.localdate()
+    _status(org["employees"][0], _ST.SICK_LEAVE, today, author,
+            state=EmployeeStatus.StatusState.COMPLETED, actual_end_date=today)
+    EmployeeStatus.objects.create(employee=org["employees"][0], status_type=_ST.IN_SERVICE,
+                                  start_date=today, created_by=author)
+    _status(org["employees"][1], _ST.SICK_LEAVE, today - timedelta(days=1), author)
+    row = _row(org)
+    assert row["sick_leave"] == 1  # the second person's ordinary end is today
+    assert row["in_service"] == 5
+
+
+@pytest.mark.django_db
+def test_historical_return_still_wins_after_a_later_status_completes_the_return(org, author):
+    from organization_management.apps.statuses.application.services import StatusApplicationService
+
+    today = timezone.localdate()
+    returned = today - timedelta(days=1)
+    service = StatusApplicationService()
+    absence = service.create_status(employee_id=org["employees"][0].pk,
+        status_type=_ST.SICK_LEAVE, start_date=today - timedelta(days=4),
+        end_date=today + timedelta(days=5), user=author)
+    service.terminate_status_early(absence.pk, returned, "Returned yesterday", author)
+    service.create_status(employee_id=org["employees"][0].pk,
+        status_type=_ST.VACATION, start_date=today, end_date=today + timedelta(days=2), user=author)
+
+    row = _row(org, returned)
+    assert row["in_service"] == row["headcount"] == 6
+    assert row["sick_leave"] == row["vacation"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("planned_days,has_actual_end,expected_in_service", [
+    (0, True, 6), (5, True, 6), (None, True, 6), (0, False, 5),
+])
+def test_historical_return_boundary_uses_actual_end_and_keeps_generic_end_inclusive(
+    org, planned_days, has_actual_end, expected_in_service
+):
+    returned = timezone.localdate() - timedelta(days=3)
+    employee = org["employees"][0]
+    EmployeeStatus.objects.bulk_create([
+        EmployeeStatus(employee=employee, status_type=_ST.SICK_LEAVE,
+            start_date=returned - timedelta(days=4),
+            end_date=returned + timedelta(days=planned_days) if planned_days is not None else None,
+            actual_end_date=returned if has_actual_end else None,
+            state=EmployeeStatus.StatusState.COMPLETED),
+        EmployeeStatus(employee=employee, status_type=_ST.IN_SERVICE,
+            start_date=returned, actual_end_date=returned + timedelta(days=1),
+            state=EmployeeStatus.StatusState.COMPLETED),
+    ])
+    row = _row(org, returned)
+    assert row["in_service"] == expected_in_service
+    assert row["sick_leave"] == 6 - expected_in_service

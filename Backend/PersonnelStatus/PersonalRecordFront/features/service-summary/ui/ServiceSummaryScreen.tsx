@@ -26,6 +26,7 @@ import { formatIsoDate, localIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { useServiceDateRange } from "../model/date-range";
 import { useServiceTree } from "../model/use-service-tree";
 import { DaySummarySection } from "./DaySummarySection";
+import { DutyExecutionOverview } from "@/features/duty-register/ui/DutyExecutionOverview";
 
 function dateLabel(iso: string): string {
   const parsed = parseIsoDate(iso);
@@ -100,6 +101,7 @@ function ServiceSummaryBody({ workspaceReady }: { workspaceReady: boolean }) {
 
   return (
     <section role="region" aria-label="Свод по Службе" className="space-y-4">
+      {workspaceReady && <DutyExecutionOverview />}
       <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label="Режим" className="inline-flex overflow-hidden rounded-md border bg-card">
           <button type="button" aria-pressed={!rangeMode} className={`min-h-9 px-3 text-sm ${!rangeMode ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground"}`} onClick={() => replaceParams((next) => { next.delete("dateTo"); next.delete("day"); })}>День</button>

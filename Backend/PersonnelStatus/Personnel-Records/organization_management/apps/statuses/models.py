@@ -335,6 +335,9 @@ class EmployeeStatus(models.Model):
         if self.state != self.StatusState.ACTIVE:
             raise ValidationError("Можно досрочно завершить только активный статус.")
 
+        if termination_date > timezone.localdate():
+            raise ValidationError("Дата досрочного завершения не может быть позже сегодняшней даты.")
+
         if termination_date < self.start_date:
             raise ValidationError("Дата завершения не может быть раньше даты начала.")
 

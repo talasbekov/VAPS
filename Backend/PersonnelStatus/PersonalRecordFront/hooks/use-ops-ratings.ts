@@ -5,8 +5,13 @@
 // новая оценка входит в агрегат, и оставить сводку прежней значило бы показать
 // вчерашнее число как сегодняшнее.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useOpsMockWorker } from "@/hooks/use-ops-mock-worker";
+import { hasCurrentOpsReadAuthority, useOpsProtectedRead, useOpsReadAccess, type OpsReadAccess } from "@/hooks/use-ops-protected-read";
+import { currentOpsAuthorityStamp } from "@/lib/ops-write-authority";
 import { opsApiClient } from "@/lib/ops-api";
-import type { OpsApiFailure } from "@/lib/ops-errors";
+import { OpsApiError, type OpsApiFailure } from "@/lib/ops-errors";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import {
   EVALUATION_REGISTRY_PATH,
@@ -46,29 +51,28 @@ import type {
   SubmittedEvaluationDetailResponse,
 } from "@/entities/operational-rating";
 
+// These aggregate sources share the same scope guard; other rating reads have independent access contracts.
+const AGGREGATE_READ_FAMILY = ["operational", "dynamics", "employee-detail", "registry"] as const;
+
 // options.enabled — для экранов, где агрегат показывается ПО ПРАВУ
 // (`rating.view_aggregate`): без права запрос не уходит вовсе, иначе
 // расстановка на каждом рендере получает с бэка 403.
 export function useOperationalRatings(options: { enabled?: boolean } = {}) {
-  return useQuery<ListOperationalRatingsResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "operational"],
-    queryFn: () =>
-      opsApiClient.get<ListOperationalRatingsResponse>(OPERATIONAL_RATINGS_PATH),
-    enabled: options.enabled ?? true,
-  });
+  const access = useOpsReadAccess("rating.view_aggregate");
+  return useOpsProtectedRead<ListOperationalRatingsResponse>(["ops-ratings", "operational"], [], access,
+    () => opsApiClient.get<ListOperationalRatingsResponse>(OPERATIONAL_RATINGS_PATH),
+    { enabled: options.enabled, staleTime: 60_000, denialFamily: AGGREGATE_READ_FAMILY });
 }
 
 /** Динамика (§19.20): выбранный сотрудник — часть ключа кэша. */
 export function useRatingDynamics(employeeId: string | null) {
-  return useQuery<RatingDynamicsResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "dynamics", employeeId],
-    queryFn: () =>
+  const access = useOpsReadAccess("rating.view_aggregate");
+  return useOpsProtectedRead<RatingDynamicsResponse>(["ops-ratings", "dynamics"], [employeeId], access, () =>
       opsApiClient.get<RatingDynamicsResponse>(
         employeeId === null
           ? OPERATIONAL_RATING_DYNAMICS_PATH
           : `${OPERATIONAL_RATING_DYNAMICS_PATH}?employee=${encodeURIComponent(employeeId)}`
-      ),
-  });
+      ), { staleTime: 60_000, denialFamily: AGGREGATE_READ_FAMILY });
 }
 
 /** Рабочее пространство (§19.14): мероприятие входит в ключ кэша. */
@@ -148,6 +152,7 @@ export function useCorrectEvaluation(
 
 /** Реестр (§19.15): фильтры едут в запрос и входят в ключ кэша. */
 export function useEvaluationRegistry(filters: RegistryFilters, options: { enabled?: boolean } = {}) {
+  const access = useOpsReadAccess("rating.view_aggregate");
   const search = new URLSearchParams();
   if (filters.from !== null) search.set("from", filters.from);
   if (filters.to !== null) search.set("to", filters.to);
@@ -160,16 +165,12 @@ export function useEvaluationRegistry(filters: RegistryFilters, options: { enabl
   if (filters.search !== "") search.set("search", filters.search);
   if (filters.page !== 1) search.set("page", String(filters.page));
   const query = search.toString();
-  return useQuery<EvaluationRegistryResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "registry", query],
-    enabled: options.enabled ?? true,
-    queryFn: () =>
+  return useOpsProtectedRead<EvaluationRegistryResponse>(["ops-ratings", "registry"], [query], access, () =>
       opsApiClient.get<EvaluationRegistryResponse>(
         query === ""
           ? EVALUATION_REGISTRY_PATH
           : `${EVALUATION_REGISTRY_PATH}?${query}`
-      ),
-  });
+      ), { enabled: options.enabled, staleTime: 60_000, denialFamily: AGGREGATE_READ_FAMILY });
 }
 
 /**
@@ -195,9 +196,8 @@ export function useEvaluationRegistry(filters: RegistryFilters, options: { enabl
 const MAX_EVALUATION_PAGES = 50;
 
 export function useAllEvaluationsOf(employeeId: string, options: { enabled?: boolean } = {}) {
-  return useQuery<EvaluationRegistryResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "registry", "all-of", employeeId],
-    queryFn: async () => {
+  const access = useOpsReadAccess("rating.view_aggregate");
+  return useOpsProtectedRead<EvaluationRegistryResponse>(["ops-ratings", "registry"], ["all-of", employeeId], access, async () => {
       const pageOf = (page: number) =>
         opsApiClient.get<EvaluationRegistryResponse>(
           `${EVALUATION_REGISTRY_PATH}?employee=${encodeURIComponent(employeeId)}` +
@@ -214,46 +214,54 @@ export function useAllEvaluationsOf(employeeId: string, options: { enabled?: boo
       // тип: `results` полон, `page`/`pageCount` говорят «одна страница»,
       // потому что для читателя она и есть одна.
       return { ...first, results, page: 1, pageCount: 1 };
-    },
-    enabled: employeeId !== "" && (options.enabled ?? true),
-  });
+    }, { enabled: employeeId !== "" && (options.enabled ?? true), staleTime: 60_000, denialFamily: AGGREGATE_READ_FAMILY });
 }
 
 export function useRatingEmployeeDetail(employeeId: string | null) {
-  return useQuery<RatingEmployeeDetailResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "employee-detail", employeeId],
-    queryFn: () =>
+  const access = useOpsReadAccess("rating.view_aggregate");
+  return useOpsProtectedRead<RatingEmployeeDetailResponse>(["ops-ratings", "employee-detail"], [employeeId], access, () =>
       opsApiClient.get<RatingEmployeeDetailResponse>(
         `${RATING_EMPLOYEE_DETAIL_PATH}?employee=${encodeURIComponent(employeeId ?? "")}`
-      ),
-    enabled: employeeId !== null,
-  });
+      ), { enabled: employeeId !== null, staleTime: 60_000, denialFamily: AGGREGATE_READ_FAMILY });
 }
 
 export function useRatingNotifications() {
-  return useQuery<RatingNotificationsResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "notifications"],
-    queryFn: () =>
-      opsApiClient.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH),
-  });
+  // This is personal authenticated data; no rating or analytics grant is required.
+  const client = useQueryClient();
+  const permissions = useOpsPermissions();
+  const ready = useOpsMockWorker();
+  const { data: session, status } = useSession();
+  const actor = (session?.user as { id?: string } | undefined)?.id ?? session?.user?.email ?? "";
+  const scope = currentOpsAuthorityStamp(client, actor);
+  const access: OpsReadAccess = {
+    actor, scope: scope ?? JSON.stringify([actor, "unavailable"]),
+    allowed: ready && status === "authenticated" && (session as { error?: string } | null)?.error === undefined &&
+      !permissions.isLoading && !permissions.error && scope !== null,
+  };
+  const query = useOpsProtectedRead<RatingNotificationsResponse>(["ops-ratings", "notifications"], [], access,
+    () => {
+      if (!hasCurrentOpsReadAuthority(client, access)) throw new OpsApiError({ status: 403,
+        errorCode: "PERSONAL_NOTIFICATIONS_AUTHORITY_UNAVAILABLE", message: "Дождитесь проверки доступа к личной ленте.",
+        details: {}, requestId: null });
+      return opsApiClient.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH);
+    }, { staleTime: 30_000, denialFamily: [] });
+  return { ...query, authorityError: permissions.error,
+    retryNotifications: () => permissions.error
+      ? client.resetQueries({ queryKey: ["ops-me"], exact: true }) : query.refetch() };
 }
 
 export function useRatingAudit(page: number) {
-  return useQuery<RatingAuditResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "audit", page],
-    queryFn: () =>
+  const access = useOpsReadAccess("rating.view_audit");
+  return useOpsProtectedRead<RatingAuditResponse>(["ops-ratings", "audit"], [page], access, () =>
       opsApiClient.get<RatingAuditResponse>(
         page === 1 ? RATING_AUDIT_PATH : `${RATING_AUDIT_PATH}?page=${page}`
-      ),
-  });
+      ), { staleTime: 60_000, denialFamily: [] });
 }
 
 export function useRatingAnalytics() {
-  return useQuery<RatingAnalyticsResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "analytics"],
-    queryFn: () =>
-      opsApiClient.get<RatingAnalyticsResponse>(RATING_ANALYTICS_PATH),
-  });
+  const access = useOpsReadAccess("analytics.view");
+  return useOpsProtectedRead<RatingAnalyticsResponse>(["ops-ratings", "analytics"], [], access,
+    () => opsApiClient.get<RatingAnalyticsResponse>(RATING_ANALYTICS_PATH), { denialFamily: [] });
 }
 
 /** §19.29: список опрашивается, пока есть незавершённые работы, и опрос
@@ -261,22 +269,15 @@ export function useRatingAnalytics() {
 export const RATING_EXPORT_POLL_INTERVAL_MS = 700;
 
 export function useRatingExports() {
-  return useQuery<ListRatingExportsResponse, OpsApiFailure>({
-    queryKey: ["ops-ratings", "exports"],
-    queryFn: () =>
-      opsApiClient.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH),
-    // Опрос не идёт на скрытой вкладке: ~85 запросов в минуту ожидания
-    // уходили в фон, где результат всё равно никто не видит.
-    refetchIntervalInBackground: false,
-    refetchInterval: (query) => {
-      const data = query.state.data;
+  const access = useOpsReadAccess("rating.export");
+  return useOpsProtectedRead<ListRatingExportsResponse>(["ops-ratings", "exports"], [], access,
+    () => opsApiClient.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH), { staleTime: 60_000, denialFamily: [], poll: data => {
       if (data === undefined) return false;
       const running = data.results.some(
         (job) => job.state === "QUEUED" || job.state === "GENERATING"
       );
       return running ? RATING_EXPORT_POLL_INTERVAL_MS : false;
-    },
-  });
+    } });
 }
 
 export function useCreateRatingExport() {

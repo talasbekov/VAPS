@@ -6,11 +6,16 @@
  */
 export type DutyKindCode = "POST" | "GROUP";
 
+export interface DutyInterval { start_at: string; end_at: string }
+
 export interface DutyPlacementInput {
   kind: DutyKindCode;
   object_id: string;
   post_id?: string;
   group_id?: string;
+  /** Missing is unknown time; an explicit empty array means no scheduled exits. */
+  intervals?: DutyInterval[];
+  time_zone?: string;
 }
 
 export interface DutyPlacement {
@@ -22,9 +27,12 @@ export interface DutyPlacement {
   sector_name: string | null;
   group_id: string | null;
   group_name: string | null;
+  intervals?: DutyInterval[];
+  time_zone?: string;
 }
 
 export interface ServerDutyAssignment {
+  source?: string;
   dispatch_assignment_id?: number;
   start_at?: string;
   end_at?: string;
@@ -79,6 +87,7 @@ export const DUTY_GROUPS: readonly DutyGroupDefinition[] = [
  * Personnel labels come from the server current staff record.
  */
 export interface DutyAssignment {
+  intervals?: DutyInterval[];
   shiftStart?: string;
   shiftEnd?: string;
   timeZone?: string;

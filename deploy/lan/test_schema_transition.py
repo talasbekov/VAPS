@@ -29,6 +29,7 @@ class CheckRoundtripTests(unittest.TestCase):
               'JOURNAL_ENTRY_TYPES', 'POST_REQUIREMENT_GROUPS', 'PLACEMENT_ROLES',
               'EVENT_PARTICIPATION_KINDS', 'EVENT_GROUP_ROLES', 'PLACEMENT_SECTIONS')),
             ('ops_duty_record_supplements', 'chk_duty_supplement_source', 'source_type', ('DISPATCH', 'PLAN')),
+            ('ops_duty_record_supplements', 'chk_duty_supplement_source', 'source_type', ('DISPATCH', 'PLAN', 'STATUS')),
         ]
 
     @staticmethod
@@ -39,7 +40,7 @@ class CheckRoundtripTests(unittest.TestCase):
         restored = head + '(ARRAY[' + ', '.join('(' + value + ')::text' for value in literals) + '])))'
         return original, restored
 
-    def test_exact_two_production_definitions_survive_roundtrip(self):
+    def test_production_and_current_release_definitions_survive_roundtrip(self):
         for table, name, column, values in self.cases:
             original, restored = self.forms(column, values)
             with self.subTest(table=table):
@@ -120,17 +121,14 @@ class PreservationTests(unittest.TestCase):
 
 
 class ApprovedPlanTests(unittest.TestCase):
-    def test_only_reviewed_full_or_access_plan_or_current_schema_is_accepted(self):
+    def test_only_ordered_subsets_of_the_current_reviewed_delta_are_accepted(self):
         checks = load('schema-transition-checks')
-        self.assertEqual(checks.SOURCE_REVISION, '381c21f34cad4e58d9cf29d5ee56370072a128b3')
-        self.assertEqual(len(checks.APPROVED_PLAN), 15)
-        self.assertEqual(checks.ACCESS_PLAN, (('operations', '0144_workspace_and_digital_twin_access'),))
         checks.require_plan([list(item) for item in checks.APPROVED_PLAN])
         checks.require_plan([list(item) for item in checks.ACCESS_PLAN])
         checks.require_plan([])
-        legacy = [item for item in checks.APPROVED_PLAN if item not in checks.ACCESS_PLAN]
-        for plan in (legacy, checks.APPROVED_PLAN[:-1], checks.APPROVED_PLAN[1:],
-                     checks.ACCESS_PLAN * 2, list(checks.APPROVED_PLAN) + [('operations', '9999_other')],
+        checks.require_plan(checks.APPROVED_PLAN[:-1])
+        checks.require_plan(checks.APPROVED_PLAN[1:])
+        for plan in (checks.ACCESS_PLAN * 2, list(checks.APPROVED_PLAN) + [('operations', '9999_other')],
                      list(reversed(checks.APPROVED_PLAN)), [('employees', '0005_employee_import_identity')]):
             with self.subTest(plan=plan), self.assertRaises(RuntimeError):
                 checks.require_plan(plan)
@@ -162,6 +160,9 @@ class LifecycleTests(unittest.TestCase):
             obj.volume, obj.schedulers = 'original-volume', ['beat']
             obj.old_backend, obj.old_frontend = 'old-backend', 'old-front'
             obj.new_backend, obj.new_frontend = 'new-backend', 'new-front'
+            obj.old_proxy, obj.new_proxy = 'old-proxy', 'new-proxy'
+            obj.proxy_configuration_sha256 = None
+            obj.manifest = {'source_revision': 'c' * 40}
             obj.require_transition = Mock(return_value=list(updater.checks.APPROVED_PLAN if plan is None else plan))
             obj.check_space = Mock()
             obj.wrap_image = Mock(side_effect=lambda value: value + '-no-migrations')
@@ -256,6 +257,7 @@ class LifecycleTests(unittest.TestCase):
         updater = load('update-with-migrations')
         obj = updater.TransitionUpdate.__new__(updater.TransitionUpdate)
         obj.services = {'backend': {}}
+        obj.graph = {'order': [list(item) for item in updater.checks.APPROVED_PLAN]}
         obj.readonly = Mock(return_value=[['operations', '9999_other']])
         with patch.object(updater.base, 'run') as run:
             with self.assertRaises(RuntimeError):
@@ -280,26 +282,40 @@ class PackageIntegrityTests(unittest.TestCase):
             for name in names:
                 (root / name).write_text('reviewed ' + name, encoding='utf-8')
             images = {key: {'tag': 'smart/' + key, 'id': 'sha256:' + key, 'os': 'linux', 'architecture': 'amd64'}
-                      for key in ('backend', 'frontend')}
-            transition = {'source_revision': updater.checks.SOURCE_REVISION, 'images': copy.deepcopy(images),
-                          'plans': [[list(item) for item in plan] for plan in updater.checks.APPROVED_PLANS],
+                      for key in ('backend', 'frontend', 'proxy')}
+            graph = {'format': 1, 'nodes': [{'app': app, 'name': name, 'sha256': 'a' * 64, 'dependencies': []}
+                        for app, name in updater.checks.APPROVED_PLAN],
+                     'order': [list(item) for item in updater.checks.APPROVED_PLAN], 'leaves': []}
+            (root / 'migration-graph.json').write_text(json.dumps(graph), encoding='utf-8')
+            (root / 'source-revision.txt').write_text('c' * 40 + '\n', encoding='utf-8')
+            transition = {'source_revision': 'c' * 40, 'images': copy.deepcopy(images),
+                          'policy': updater.checks.RELEASE_POLICY,
+                          'reviewed_migrations': [list(item) for item in updater.checks.APPROVED_PLAN],
+                          'graph_sha256': hashlib.sha256((root / 'migration-graph.json').read_bytes()).hexdigest(),
                           'files': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                                     for name in ('update-with-migrations.py', 'schema-transition-checks.py')}}
             if change == 'old-plan':
-                transition['plans'] = [list(updater.checks.APPROVED_PLAN[:-1])]
+                transition['reviewed_migrations'] = [list(item) for item in updater.checks.APPROVED_PLAN[:-1]]
             if change == 'foreign-images':
                 transition['images']['backend']['id'] = 'sha256:another-image'
             (root / 'schema-transition.json').write_text(json.dumps(transition), encoding='utf-8')
             obj = updater.TransitionUpdate.__new__(updater.TransitionUpdate)
-            obj.manifest = {'source_revision': updater.checks.SOURCE_REVISION, 'images': images,
+            obj.manifest = {'source_revision': 'c' * 40, 'images': images,
                             'files': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.iterdir()}}
+            obj.new_backend = 'smart/backend'
+            obj.new_proxy, obj.base = 'smart/proxy', ['docker', 'compose']
+            obj.services = {'proxy': {'volumes': [
+                {'type': 'volume', 'source': name, 'target': '/data/' + name, 'read_only': True}
+                for name in ('static', 'media', 'private')]}}
             if change == 'old-source':
                 obj.manifest['source_revision'] = '98d594db9f45efbac183f670f915ea92d2ebda01'
             if change == 'tampered-script':
                 (root / 'update-with-migrations.py').write_text('changed', encoding='utf-8')
             if change == 'missing-transition-checksum':
                 del obj.manifest['files']['schema-transition.json']
-            with patch.object(updater, 'HERE', root), patch.object(updater.base, 'run') as run, \
+            proof = 'a' * 64 + '  /etc/nginx/nginx.conf\n'
+            with patch.object(updater, 'HERE', root), patch.object(updater.base, 'run', return_value=proof) as run, \
+                 patch.object(updater, 'run_json', return_value=graph), \
                  patch.object(updater.base, 'exported_config_ids', return_value={key: value['id'] for key, value in images.items()}), \
                  patch.object(updater.base, 'inspect', side_effect=lambda tag: next({'Id': v['id'], 'Architecture': 'amd64', 'Os': 'linux'} for v in images.values() if v['tag'] == tag)):
                 if change:
@@ -307,7 +323,7 @@ class PackageIntegrityTests(unittest.TestCase):
                         obj.load()
                 else:
                     obj.load()
-                run.assert_not_called()
+                self.assertEqual(run.call_count, 0 if change else 2)
 
     def test_complete_matching_package_accepts_already_loaded_images(self):
         self.exercise()

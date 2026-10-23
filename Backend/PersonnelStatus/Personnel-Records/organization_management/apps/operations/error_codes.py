@@ -28,6 +28,7 @@ docs/registries/error-codes.yaml лежат коды, которых разде�
 
 # Код → допустимые HTTP-статусы.
 CODES = {
+    "ASSISTANT_TASK_CONFLICT": frozenset({409}),
     "PLACEMENT_MAP_UNAVAILABLE": frozenset({503}),
     "LEGAL_DOCUMENT_STALE": frozenset({409}),
     "LEGAL_DOCUMENT_STORAGE_FAILED": frozenset({503}),
@@ -194,6 +195,7 @@ CODES = {
     "DUTY_CONFLICT_DETECTED": frozenset({409}),
     "DUTY_DISPATCH_CONFLICT": frozenset({409}),
     "DUTY_REGISTER_CONFLICT": frozenset({409}),
+    "DUTY_REGISTER_LIMIT": frozenset({422}),
     "DUTY_CREATION_CLOSED": frozenset({409}),
     # ── Боевые группы (§24, мок-контракт отдаёт все отказы 422-ми) ───────
     "INVALID_BUSINESS_DATE": frozenset({422}),

@@ -208,10 +208,17 @@ function SecurityEventScreen() {
   const stepInRange =
     Number.isInteger(parsedStep) && parsedStep >= 1 && parsedStep <= EVENT_STEPS.length;
   const requestedIndex = stepInRange ? parsedStep - 1 : currentIndex;
+  // Архивные ссылки открывают уже доступные сведения event.view на чтение.
+  // Это не перевод стадии: живые этапы и полномочие обхода остаются прежними.
+  const documentParam = searchParams.get("document");
+  const archiveDocument = objectStage === "CLOSED" && requestedIndex === 0 &&
+    (documentParam === "recon" || documentParam === "bulletin") ? documentParam : null;
   const stepAllowed =
     canOverrideStage ||
+    archiveDocument !== null ||
     (currentIndex > placementStepIndex && requestedIndex === placementStepIndex);
   const viewedIndex = stepInRange && stepAllowed ? requestedIndex : currentIndex;
+  const archiveBulletin = archiveDocument === "bulletin" && viewedIndex === 0;
   const viewingOtherStep = viewedIndex !== currentIndex;
   // Открытая назад расстановка — НЕ «просмотр чужого шага»: форма живая, и
   // гасить её `inert` значило бы показать человеку то, что он не может
@@ -394,15 +401,15 @@ function SecurityEventScreen() {
           раскрывается сама вне «Бюллетеня» (Plane №468) — свёрнутая строка
           заголовка работу вниз не отжимает. С 07.09.2026 (Plane №943) панель
           — только справка «Сведения об ОМ»: текста бюллетеня в проекте нет.
-          У закрытого ОМ панели по-прежнему нет. */}
-      {event.stage !== "CLOSED" && (
-        <BulletinPanel key={`bulletin-${objectStage}`} event={event} />
+          В закрытом деле панель открывается только по ссылке на бюллетень. */}
+      {(event.stage !== "CLOSED" || archiveBulletin) && (
+        <BulletinPanel key={`bulletin-${objectStage}-${archiveBulletin ? "document" : "stage"}`} event={event} initiallyOpen={archiveBulletin} />
       )}
       {/* Панели «Информация по ГВО» в карточке БОЛЬШЕ НЕТ (`[ГВО-03]`, Plane
           №441): сводка визита живёт своей страницей, на этапах — только
           ссылка «Карточка визита →» в шапке бюллетеня. */}
 
-      <StageHeading stage={viewedStage} />
+      {!archiveBulletin && <StageHeading stage={viewedStage} />}
 
       {viewingOtherStep && (
         <StageViewNotice
@@ -412,19 +419,19 @@ function SecurityEventScreen() {
           viewedStage={viewedStage}
           viewedStepIndex={viewedIndex}
           editing={editingReopenedPlacement}
-          canOverrideStage={canOverrideStage}
+          canOverrideStage={canOverrideStage && archiveDocument === null}
           onLeaveView={() => selectStep(currentIndex)}
         />
       )}
 
-      {/* Расстановка сама отключает запись в режиме просмотра, сохраняя
-          выбор поста, поиск, ссылки и карту. Остальные формы чужого этапа
-          остаются inert. Ключ по этапу сохраняет ввод при обновлении данных. */}
-      <div
-        inert={(viewingOtherStep && !editingReopenedPlacement && viewedIndex !== placementStepIndex) || undefined}
+      {/* Расстановка и архивная рекогносцировка сами отключают запись,
+          сохраняя просмотр и скачивание разрешённых материалов. Остальные
+          формы чужого этапа остаются inert. */}
+      {!archiveBulletin && <div
+        inert={(viewingOtherStep && !editingReopenedPlacement && viewedIndex !== placementStepIndex && archiveDocument !== "recon") || undefined}
       >
         <ActiveStage key={viewedStage} event={event} stage={viewedStage} readOnly={viewingOtherStep && !editingReopenedPlacement} />
-      </div>
+      </div>}
     </DashboardLayout>
   );
 }
@@ -452,7 +459,7 @@ const STAGE_HEADING: Record<
     step: 1,
     title: "Рекогносцировка объекта",
     description:
-      "Открывается после бюллетеня: осмотр объекта и расчёт постов старшим наряда",
+      "Выбор объекта и начало рекогносцировки; зоны и посты уточняет старший наряда",
   },
   RECON: {
     step: 1,
@@ -695,7 +702,7 @@ function ActiveStage({
     case "BULLETIN":
       return <AwaitingReconStage event={event} />;
     case "RECON":
-      return <ReconStage event={event} />;
+      return <ReconStage event={event} readOnly={readOnly} />;
     // Сбор группы и выделение сил живут ВНУТРИ шага «Расстановка» — своих
     // экранов у них больше нет, как и в прототипе.
     case "DEMAND":

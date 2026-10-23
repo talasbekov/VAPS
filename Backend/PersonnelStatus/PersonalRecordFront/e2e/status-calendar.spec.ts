@@ -30,6 +30,7 @@ test.describe('календарь статусов', () => {
     await page.goto(`${APP}/statuses`)
 
     await page.getByRole('tab', { name: 'Календарь статусов' }).click()
+    await page.getByRole('tab', { name: 'Месяц', exact: true }).click()
 
     const grid = page.getByRole('grid', { name: /Занятость/ })
     await expect(grid).toBeVisible({ timeout: 30_000 })
@@ -62,6 +63,7 @@ test.describe('календарь статусов', () => {
     await signIn(page)
     await page.goto(`${APP}/statuses`)
     await page.getByRole('tab', { name: 'Календарь статусов' }).click()
+    await page.getByRole('tab', { name: 'Месяц', exact: true }).click()
 
     const grid = page.getByRole('grid', { name: /Занятость/ })
     await expect(grid).toBeVisible({ timeout: 30_000 })
@@ -86,6 +88,7 @@ test.describe('панель занятости за день', () => {
     await signIn(page)
     await page.goto(`${APP}/statuses`)
     await page.getByRole('tab', { name: 'Календарь статусов' }).click()
+    await page.getByRole('tab', { name: 'Месяц', exact: true }).click()
 
     const grid = page.getByRole('grid', { name: /Занятость/ })
     await expect(grid).toBeVisible({ timeout: 30_000 })
@@ -141,7 +144,7 @@ test.describe('вид «Матрица»', () => {
     await page.getByRole('tab', { name: 'Календарь статусов' }).click()
 
     // Переключатель видов: «Месяц» и «Матрица» — два вида взамен прежнего.
-    await page.getByRole('tab', { name: 'Матрица', exact: true }).click()
+    await page.getByRole('tab', { name: 'Шахматка', exact: true }).click()
 
     const table = page.getByRole('table', { name: /Статусы сотрудников по дням/ })
     await expect(table).toBeVisible({ timeout: 30_000 })

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useObjectDutyForces } from "@/hooks/use-duty-assignments";
+import { dutyIntervalLabel } from "@/features/employee-status-update/model/duty-intervals";
 
 export const NO_DUTY_FORCES_TEXT = "На объекте нет заступивших сотрудников";
 
@@ -105,9 +106,13 @@ export function DutyForcesSection({ objectId, initialDate }: DutyForcesSectionPr
                             {assignment.positionName !== ""
                               ? ` · ${assignment.positionName}`
                               : ""}
-                            {assignment.shiftStart && assignment.shiftEnd
+                            {assignment.intervals !== undefined ? (
+                              assignment.intervals.length > 0 ? <ul className="mt-1 space-y-1" aria-label="Выходы, время Астаны">{assignment.intervals.map((interval, index) =>
+                                <li key={`${interval.start_at}:${interval.end_at}:${index}`}>{dutyIntervalLabel(interval)} · время Астаны</li>)}</ul>
+                                : <span> · Выходов на выбранную дату нет</span>
+                            ) : assignment.shiftStart && assignment.shiftEnd
                               ? ` · ${shiftTime(assignment.shiftStart, assignment.timeZone)} — ${shiftTime(assignment.shiftEnd, assignment.timeZone)}`
-                              : ` · с ${assignment.startDate} по ${assignment.endDate}`}
+                              : ` · с ${assignment.startDate} по ${assignment.endDate}. Время выходов не указано; круглосуточное нахождение не подтверждено.`}
                           </li>
                         ))}
                       </ul>

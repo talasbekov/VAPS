@@ -15,6 +15,7 @@ import {
   useForceCampaign,
   useForceCampaigns,
   useHandOverForceCampaign,
+  type ForceCampaign,
 } from "@/hooks/use-force-campaigns";
 import { formatIsoDate } from "@/shared/lib/date";
 import { useForceCollection } from "@/hooks/use-force-collections";
@@ -51,6 +52,27 @@ const STATUS_LABEL = {
   CLOSED: "Закрыто",
 } as const;
 
+function CampaignQueueCard({ campaign, onOpen }: { campaign: ForceCampaign; onOpen: (id: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(campaign.id)}
+      aria-label={`Открыть распределение ${campaign.code}`}
+      className="flex min-h-16 items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span>
+        <span className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="font-mono">{campaign.code}</Badge>
+          <Badge variant="outline">{STATUS_LABEL[campaign.status] ?? "Статус уточняется"}</Badge>
+        </span>
+        <span className="mt-1 block font-medium">{campaign.title}</span>
+        <span className="text-muted-foreground text-xs">ОМ: {campaign.events.length} · Общий пул: {campaign.pool.length}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+    </button>
+  );
+}
+
 interface Props {
   enabled: boolean;
   collectionRows: ForceCollectionRow[];
@@ -75,6 +97,10 @@ export function ForceCampaignsPanel({ enabled, collectionRows, openedId, onOpen 
   }
 
   const rows = campaigns.data?.results ?? [];
+  // Only explicit terminal states may be collapsed. A new or unknown status
+  // remains visible; collections below can still have top-ups and returned lists.
+  const completed = rows.filter((row) => row.status === "HANDED_OVER" || row.status === "CLOSED");
+  const active = rows.filter((row) => row.status !== "HANDED_OVER" && row.status !== "CLOSED");
   return (
     <section aria-labelledby="force-campaigns-heading" className="space-y-3 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -123,31 +149,28 @@ export function ForceCampaignsPanel({ enabled, collectionRows, openedId, onOpen 
         </form>
       )}
 
-      {campaigns.isError && <p role="alert" className="text-destructive-ink text-sm">Кампании не загрузились.</p>}
+      {campaigns.isPending && <p role="status" className="text-muted-foreground text-sm">Загрузка распределений…</p>}
+      {campaigns.isError && <p role="alert" className="text-destructive-ink text-sm">Распределения не загрузились.</p>}
       {!campaigns.isPending && !campaigns.isError && rows.length === 0 && (
         <p className="text-muted-foreground text-sm">Отдельных распределений пока нет.</p>
       )}
-      <div className="grid gap-2 lg:grid-cols-2">
-        {rows.map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            onClick={() => onOpen(row.id)}
-            aria-label={`Открыть распределение ${row.code}`}
-            className="flex min-h-16 items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span>
-              <span className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="font-mono">{row.code}</Badge>
-                <Badge variant="outline">{STATUS_LABEL[row.status]}</Badge>
-              </span>
-              <span className="mt-1 block font-medium">{row.title}</span>
-              <span className="text-muted-foreground text-xs">ОМ: {row.events.length} · Общий пул: {row.pool.length}</span>
-            </span>
-            <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
-          </button>
-        ))}
-      </div>
+      {active.length > 0 && <div className="grid gap-2 lg:grid-cols-2" aria-label="Распределения в работе">
+        {active.map((row) => <CampaignQueueCard key={row.id} campaign={row} onOpen={onOpen} />)}
+      </div>}
+      {!campaigns.isPending && !campaigns.isError && completed.length > 0 && active.length === 0 && (
+        <p className="text-muted-foreground text-sm">В этом списке нет распределений в работе. Переданные на расстановку и закрытые — ниже.</p>
+      )}
+      {completed.length > 0 && <details className="rounded-lg border">
+        <summary className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Завершённые в этом списке · {completed.length}
+        </summary>
+        <div className="space-y-3 border-t p-3">
+          <p className="text-muted-foreground text-sm">Переданные на расстановку и закрытые распределения. Довыделение и возвраты списков — в сборах мероприятий ниже.</p>
+          <div className="grid gap-2 lg:grid-cols-2">
+            {completed.map((row) => <CampaignQueueCard key={row.id} campaign={row} onOpen={onOpen} />)}
+          </div>
+        </div>
+      </details>}
     </section>
   );
 }
@@ -220,7 +243,7 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
         <ArrowLeft className="size-4" aria-hidden="true" /> Назад к распределениям
       </Button>
       <div>
-        <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary" className="font-mono">{campaign.code}</Badge><Badge variant="outline">{STATUS_LABEL[campaign.status]}</Badge></div>
+        <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary" className="font-mono">{campaign.code}</Badge><Badge variant="outline">{STATUS_LABEL[campaign.status] ?? "Статус уточняется"}</Badge></div>
         <h2 className="mt-2 text-2xl font-semibold">{campaign.title}</h2>
         <p className="text-muted-foreground text-sm">{campaign.events.map((row) => `${row.code} · ${formatIsoDate(row.businessDate)}`).join("; ")}</p>
       </div>

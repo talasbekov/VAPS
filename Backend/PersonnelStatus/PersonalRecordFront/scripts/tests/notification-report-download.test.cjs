@@ -37,7 +37,8 @@ function dropdown({ fail = false, link = '/api/reports/42/download/' } = {}) {
  const file = 'features/notifications/ui/NotificationsDropdown.tsx';
  const source = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
  const exports = {};
- const notification = { id: 7, source: 'legacy', notification_type: 'report_ready', link, title: 'Report', message: 'Ready' };
+ const notification = { id: 7, source: 'legacy', notification_type: 'report_ready', link, title: 'Report', message: 'Ready',
+  is_read: false, created_at: '2026-10-21T08:00:00Z' };
  const deps = {
   react: { ...require('react'), useState: initial => [initial, () => {}], useRef: initial => ({ current: initial }) },
   'next/navigation': { useRouter: () => ({ push: url => calls.push(['navigate', url]) }) },
@@ -46,12 +47,17 @@ function dropdown({ fail = false, link = '/api/reports/42/download/' } = {}) {
   '../api/notifications-api': { notificationKey: n => `${n.source}:${n.id}` },
   '../model/report-download': { reportDownloadEndpoint: link => /^\/api\/reports\/(?:reports\/)?42\/download\/$/.test(link) ? '/api/reports/reports/42/download/' : null, fetchNotificationReport: async endpoint => { calls.push(['download', endpoint]); if (failDownload) throw Error('fixture'); return { blob: 'blob', filename: 'report.xlsx' }; } },
   '@/shared/hooks/use-toast': { toast: notice => notices.push(notice) },
+  '@/hooks/use-ops-ratings': { useRatingNotifications: () => ({ data: { results: [], unavailableViews: [] },
+    error: null, authorityError: null, readAccessBlocked: false, isPending: false, isLoading: false, isFetching: false }) },
  };
  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: id => deps[id] ?? (id.startsWith('@/') ? new Proxy({}, { get: (_, key) => key }) : require(id)), window: { URL: { createObjectURL: () => 'blob:fixture', revokeObjectURL() {} } }, document: { body: { appendChild() {} }, createElement: () => ({ click: () => calls.push(['save']), remove() {} }) } });
  const nodes = [];
  function walk(node) { if (Array.isArray(node)) return node.forEach(walk); if (!node || typeof node !== 'object') return; nodes.push(node); walk(node.props?.children); }
  walk(exports.NotificationsDropdown());
- const select = () => nodes.find(node => node.type === 'DropdownMenuItem').props.onSelect({ preventDefault() {} });
+ const textOf = node => Array.isArray(node) ? node.map(textOf).join('') : node == null || typeof node === 'boolean'
+  ? '' : typeof node === 'object' ? textOf(node.props?.children) : String(node);
+ const select = () => nodes.find(node => node.type === 'DropdownMenuItem' && textOf(node).startsWith('Report'))
+  .props.onSelect({ preventDefault() {} });
  return { calls, notices, select, recover: () => { failDownload = false; } };
 }
 test('report notification downloads before marking read and never navigates to API', async () => {

@@ -1233,18 +1233,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     )
   })
 
-  test('«Экспорт CSV» выгружает ВЕСЬ ОТБОР, а не показанную страницу', async ({ page }) => {
-    /**
-     * Кнопка была без обработчика вовсе; потом собирала файл из загруженного
-     * списка. С 27.08.2026 реестр листается по пятьдесят строк (Plane №228), и
-     * проба переписана под это:
-     *
-     * 🔴 «В файле есть строки» вакуумно — зеленеет и на выгрузке страницы.
-     * Отличает одно от другого ровно одно: строк в файле СТОЛЬКО ЖЕ, сколько
-     * сервер насчитал по отбору («Показано N из M» — берётся M), и это число
-     * БОЛЬШЕ страницы. Иначе человек, нажавший «Экспорт» на пяти тысячах
-     * сотрудников, получил бы полсотни и не узнал бы об этом.
-     */
+  test('реестр сохраняет отбор и счётчик строк без экспорта CSV', async ({ page }) => {
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
     // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
@@ -1271,34 +1260,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const [shown, matched] = counter.match(/\d+/g)!.map(Number)
     expect(matched, 'отбор ничего не нашёл').toBeGreaterThan(0)
 
-    const download = await Promise.all([
-      page.waitForEvent('download'),
-      page.getByRole('button', { name: /Экспорт CSV/ }).click(),
-    ]).then(([event]) => event)
-
-    const stream = await download.createReadStream()
-    const chunks: Buffer[] = []
-    for await (const chunk of stream) chunks.push(chunk as Buffer)
-    const csv = Buffer.concat(chunks).toString('utf8')
-
-    const lines = csv.trim().split('\r\n')
-    expect(lines[0], 'в файле нет шапки').toContain('Дата найма')
-    expect(
-      lines.length - 1,
-      `в файле ${lines.length - 1} строк, а отбору отвечает ${matched}: выгружена страница, а не отбор`,
-    ).toBe(matched)
-    expect(csv).toContain(firstSurname)
-
-    // Имя, которого в отборе нет, в файл не попадает. Берём его из полного
-    // списка: там есть люди с другими фамилиями.
-    const alien = allNames
-      .map((cell) => cell.split('\n')[0].trim().split(' ')[0])
-      .find((surname) => surname !== firstSurname && !surname.startsWith(firstSurname))
-    expect(alien, 'на стенде все однофамильцы — проба вырождена').toBeTruthy()
-    expect(csv, `в файл попало отсечённое отбором имя «${alien}»`).not.toContain(alien!)
-
-    // И «показано» на экране — это страница, а не весь отбор: если они равны,
-    // страниц нет, и проба ничего не сторожит.
+    const filteredNames = await column(page, 'ФИО')
+    expect(filteredNames).toHaveLength(shown)
+    expect(filteredNames.every((name) => name.includes(firstSurname))).toBe(true)
+    await expect(page.getByRole('button', { name: /Экспорт CSV/ })).toHaveCount(0)
     expect(shown).toBeLessThanOrEqual(matched)
   })
 

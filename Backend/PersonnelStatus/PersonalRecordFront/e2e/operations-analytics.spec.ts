@@ -177,31 +177,33 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
       )
     }
 
-    // Воронка: первый этап и его конверсия — 100% от самого себя.
+    // Входы по журналу — разные группы: ОМ может начинаться сразу с RECON.
     const funnelCard = page
       .locator('[data-slot="card"]', { hasText: 'Прохождение этапов подготовки' })
       .first()
-    const first = funnel!.stages[0]
-    const firstItem = funnelCard.getByRole('listitem').filter({ hasText: first.safeLabel }).first()
-    await expect(firstItem).toContainText(String(first.values.REACHED))
-    await expect(firstItem).toContainText('конверсия 100,0%')
-    await expect(funnelCard).toContainText(`событий — ${funnel!.transitionCount}`)
+    await expect(funnelCard.getByRole('button', { name: 'Диаграмма', exact: true })).toBeVisible()
+    for (const stage of funnel!.stages) {
+      const item = funnelCard.getByRole('listitem').filter({ hasText: stage.safeLabel }).first()
+      const displayed = (await item.locator('.tabular-nums').innerText()).replace(/\s+/g, '')
+      expect(displayed).toBe(stage.values.REACHED == null
+        ? 'нетданных'
+        : `${stage.values.REACHED}${funnel!.measures[0].unit}`)
+    }
+    await expect(funnelCard).not.toContainText(/\d[\d\s,.]*%/)
+    await expect(funnelCard.getByText(/Показаны входы в этапы по журналу/)).toBeVisible()
+    await expect(funnelCard).toContainText(`Учтено переходов между этапами: ${funnel!.transitionCount}`)
 
-    // Второй этап конверсией 100% быть НЕ обязан: если бы экран печатал
-    // константу, эта проверка её и поймала бы.
-    const second = funnel!.stages[1]
-    const secondShare = `${(((second.values.REACHED ?? 0) / (first.values.REACHED ?? 1)) * 100)
-      .toFixed(1)
-      .replace('.', ',')}%`
-    await expect(
-      funnelCard.getByRole('listitem').filter({ hasText: second.safeLabel }).first(),
-    ).toContainText(`конверсия ${secondShare}`)
-
-    // Причины сервера печатаются его же словами, а не пересказом.
+    // Every unavailable source measure remains visible with a reason;
+    // known codes may use concise business labels.
     expect(unavailableMeasures.length, 'сервер не назвал ни одного недоступного показателя').toBeGreaterThan(0)
-    const missing = page.locator('[data-slot="card"]', { hasText: 'Чего в этой аналитике нет' }).first()
-    for (const measure of unavailableMeasures) {
-      await expect(missing).toContainText(measure.label)
+    const missing = page.locator('[data-slot="card"]', { hasText: 'О данных' }).first()
+    const measures = missing.locator('[data-unavailable-measure]')
+    await expect(measures).toHaveCount(unavailableMeasures.length)
+    for (const [index, measure] of unavailableMeasures.entries()) {
+      const item = measures.nth(index)
+      await expect(item).toHaveAttribute('data-unavailable-measure', measure.code)
+      await expect(item).toContainText(measure.code === 'CANCELLED_COUNT' ? 'Отменённые мероприятия' : measure.label)
+      await expect(item.locator('[data-unavailable-reason]')).not.toBeEmpty()
     }
   })
 
@@ -280,7 +282,7 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
     }
     // Колонок объекта на этом уровне быть не должно: их подписи не совпадают.
     await expect(headers.filter({ hasText: 'Утверждённая потребность' })).toHaveCount(0)
-    await expect(page.getByText('Факты мероприятия из его карточки')).toBeVisible()
+    await expect(page.getByText('Основные сведения о мероприятии. Для недоступных данных указана причина.')).toBeVisible()
   })
 
   test('поиск и порядок правят снимок обратимо', async ({ page }) => {
@@ -342,6 +344,62 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
     await page.getByRole('textbox', { name: 'Поиск по названию' }).fill(rows[1].safeLabel)
     await expect(table.locator('tbody tr')).toHaveCount(1)
     await expect(table.locator('tbody tr').first()).toContainText(rows[1].safeLabel)
+  })
+
+  test('Task19: отдельные входы 1/20 сохраняют все меры без конверсии', async ({ page }) => {
+    // Client-only business DTO under the ordinary unchanged JWT. No server rows/grants are changed.
+    test.info().annotations.push({ type: 'client-only-business-fixture', description: 'syntheticTransport=true; serverDataUnchanged=true; serverGrantsUnchanged=true' })
+    const token = await apiToken()
+    const snapshot = await analytics(token, 'level=ALL')
+    expect(snapshot.data.funnel).not.toBeNull()
+    const measures = snapshot.data.funnel!.measures
+    expect(measures.map(item => item.code)).toEqual(['REACHED', 'CURRENT', 'TRANSITIONS', 'RETURNS', 'AVERAGE_HOURS', 'MEDIAN_HOURS'])
+    const values = [
+      { REACHED: 1, CURRENT: 0, TRANSITIONS: 1, RETURNS: 0, AVERAGE_HOURS: null, MEDIAN_HOURS: null },
+      { REACHED: 20, CURRENT: 3, TRANSITIONS: 27, RETURNS: 7, AVERAGE_HOURS: 1.5, MEDIAN_HOURS: 1.25 },
+    ]
+    const fixture = { ...snapshot, data: { ...snapshot.data, funnel: { ...snapshot.data.funnel!, transitionCount: 28,
+      stages: ['BULLETIN', 'RECON'].map((code, index) => ({
+        ...snapshot.data.funnel!.stages.find(stage => stage.stateCode === code)!, values: values[index],
+      })),
+    } } }
+    await page.route(url => url.pathname === '/api/ops/operations-analytics/', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: fixture }) : route.fallback())
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const card = page.locator('[data-slot="card"]').filter({ has: page.getByText('Прохождение этапов подготовки', { exact: true }) }).first()
+    await expect(card).toBeVisible()
+    const diagram = card.getByRole('button', { name: 'Диаграмма', exact: true })
+    const table = card.getByRole('button', { name: 'Таблица', exact: true })
+    const expected = [['1', '20'], ['0', '3'], ['1', '27'], ['0', '7'], ['нет данных', '1,5'], ['нет данных', '1,3']]
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect(card.getByText(/Показаны входы в этапы по журналу/)).toBeVisible()
+      await expect(card).toContainText('с объектом может начинаться с рекогносцировки, без объекта — с бюллетеня')
+      await expect(card).not.toContainText(/\d[\d\s,.]*%/)
+      for (const [index, measure] of measures.entries()) {
+        await diagram.click()
+        await card.getByRole('button', { name: measure.safeLabel, exact: true }).click()
+        const items = card.getByRole('listitem')
+        await expect(items).toHaveCount(2)
+        for (const [stageIndex, item] of (await items.all()).entries()) {
+          const value = expected[index][stageIndex]
+          await expect(item.locator('.tabular-nums')).toHaveText(value === 'нет данных' ? value : `${value} ${measure.unit}`)
+        }
+        await table.click()
+        await expect(card.getByRole('columnheader')).toHaveCount(7)
+        await expect(card.getByRole('columnheader', { name: 'Конверсия', exact: true })).toHaveCount(0)
+        for (const stageIndex of [0, 1]) {
+          const cells = card.locator('tbody tr').nth(stageIndex).locator('td')
+          await expect(cells).toHaveCount(7)
+          for (let column = 0; column < measures.length; column++) await expect(cells.nth(column + 1)).toHaveText(expected[column][stageIndex])
+        }
+        await diagram.click()
+        const retained = expected[index][1]
+        await expect(card.getByRole('listitem').nth(1).locator('.tabular-nums')).toHaveText(retained === 'нет данных' ? retained : `${retained} ${measure.unit}`)
+      }
+      await expect(card).toContainText('Учтено переходов между этапами: 28')
+    }
   })
 
   test('незагруженные права — не отказ, отсутствие права названо вслух', async ({ page }) => {

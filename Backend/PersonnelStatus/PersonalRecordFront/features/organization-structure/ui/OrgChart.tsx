@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +40,25 @@ const statusStateLabels = {
   cancelled: "Отменен",
 };
 
+function centerOrgUnit(viewport: HTMLDivElement, unitId: string): boolean {
+  const card = Array.from(viewport.querySelectorAll<HTMLElement>("[data-org-unit-id]"))
+    .find((node) => node.dataset.orgUnitId === unitId);
+  if (!card || viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return false;
+  const port = viewport.getBoundingClientRect();
+  const box = card.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0) return false;
+  const left = viewport.scrollLeft + box.left - port.left - viewport.clientLeft
+    + (box.width > viewport.clientWidth ? -8 : (box.width - viewport.clientWidth) / 2);
+  const top = viewport.scrollTop + box.top - port.top - viewport.clientTop
+    + (box.height > viewport.clientHeight ? -8 : (box.height - viewport.clientHeight) / 2);
+  viewport.scrollTo({
+    left: Math.max(0, Math.min(left, viewport.scrollWidth - viewport.clientWidth)),
+    top: Math.max(0, Math.min(top, viewport.scrollHeight - viewport.clientHeight)),
+    behavior: "auto",
+  });
+  return true;
+}
+
 export default function OrgChart() {
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
@@ -53,11 +72,7 @@ export default function OrgChart() {
     refetch,
   } = useStaffUnits();
 
-  const error = queryError
-    ? queryError instanceof Error
-      ? queryError.message
-      : "Произошла ошибка"
-    : null;
+  const error = Boolean(queryError);
 
   // Преобразуем данные из API в формат OrgUnit
   const orgData = useMemo(() => {
@@ -71,6 +86,9 @@ export default function OrgChart() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [focusedUnitId, setFocusedUnitId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const focusViewportOnRequest = useRef(false);
+  const [focusRequest, setFocusRequest] = useState(0);
 
   // Обновляем expandedUnits и focusedUnitId при изменении данных
   useEffect(() => {
@@ -78,8 +96,46 @@ export default function OrgChart() {
       // Устанавливаем корневой элемент как развернутый
       setExpandedUnits(new Set([orgData.id]));
       setFocusedUnitId(orgData.id);
+      setFocusRequest((request) => request + 1);
     }
   }, [orgData?.id]);
+
+  // Only explicit focus requests and viewport resize reposition the tree.
+  // Content/disclosure changes and ordinary user panning keep their scroll.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !orgData) return;
+    const frame = requestAnimationFrame(() => {
+      centerOrgUnit(viewport, focusedUnitId || orgData.id);
+      if (focusViewportOnRequest.current) {
+        focusViewportOnRequest.current = false;
+        viewport.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest, focusedUnitId, orgData?.id]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !orgData) return;
+    const initial = viewport.getBoundingClientRect();
+    let width = initial.width;
+    let height = initial.height;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      const box = viewport.getBoundingClientRect();
+      if (box.width === width && box.height === height) return;
+      width = box.width;
+      height = box.height;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => centerOrgUnit(viewport, focusedUnitId || orgData.id));
+    });
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [focusedUnitId, orgData?.id]);
 
   const toggleExpand = (unitId: string) => {
     const newExpanded = new Set(expandedUnits);
@@ -92,7 +148,9 @@ export default function OrgChart() {
   };
 
   const focusOnUnit = (unitId: string) => {
+    focusViewportOnRequest.current = true;
     setFocusedUnitId(unitId);
+    setFocusRequest((request) => request + 1);
     const newExpanded = new Set(expandedUnits);
     const findPath = (
       unit: OrgUnit,
@@ -119,9 +177,7 @@ export default function OrgChart() {
   const resetFocus = () => {
     if (orgData?.id) {
       setFocusedUnitId(orgData.id);
-      // Положение дерева (`treePosition`) снято: его НЕ ЧИТАЛ никто —
-      // ни стиль, ни трансформация, — и сброс здесь только вызывал лишнюю
-      // перерисовку (Plane №767). Прокрутка и масштаб у схемы браузерные.
+      setFocusRequest((request) => request + 1);
     }
   };
 
@@ -259,31 +315,33 @@ export default function OrgChart() {
   };
 
   return (
-    <div className="space-y-6">
+    <section aria-label="Схема организации" className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={expandAll} variant="outline" size="sm">
+          <Button onClick={expandAll} disabled={!orgData} variant="outline" size="sm">
             Развернуть все
           </Button>
-          <Button onClick={collapseAll} variant="outline" size="sm">
+          <Button onClick={collapseAll} disabled={!orgData} variant="outline" size="sm">
             Свернуть все
           </Button>
-          <Button onClick={resetFocus} variant="outline" size="sm">
+          <Button onClick={resetFocus} disabled={!orgData} variant="outline" size="sm">
             Сбросить фокус
           </Button>
           {error && (
             <Button onClick={() => refetch()} variant="outline" size="sm">
               <RefreshCw className="w-4 h-4 mr-2" />
-              Обновить
+              Повторить загрузку
             </Button>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-sm text-primary-ink">
-          <Sparkles className="w-4 h-4 shrink-0 text-primary-ink" aria-hidden="true" />
-          {focusedUnitId === orgData?.id
-            ? "Кликните на подразделение для фокуса"
-            : `Фокус: ${focusedUnitName || "неизвестный узел"}`}
-        </div>
+        {orgData && (
+          <div className="flex min-w-0 items-center gap-2 text-sm text-primary-ink">
+            <Sparkles className="w-4 h-4 shrink-0 text-primary-ink" aria-hidden="true" />
+            {focusedUnitId === orgData.id
+              ? "Кликните на подразделение для фокуса"
+              : `Фокус: ${focusedUnitName || "неизвестный узел"}`}
+          </div>
+        )}
       </div>
 
       {/* Поиск по структуре */}
@@ -335,31 +393,38 @@ export default function OrgChart() {
       {loading && (
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-          <p className="text-sm text-muted-foreground">Загрузка данных...</p>
+          <p className="text-sm text-muted-foreground">Загрузка структуры организации…</p>
         </div>
       )}
 
-      {(!loading || error) && (
-        <div className="bg-card p-8 rounded-2xl min-h-[800px] overflow-auto border border-border shadow-lg relative">
+      {(!loading || error) && (orgData ? (
+        <div
+          ref={viewportRef}
+          role="region"
+          aria-label="Диаграмма структуры организации"
+          tabIndex={0}
+          className="relative h-[min(70vh,44rem)] min-h-80 w-full min-w-0 overflow-auto rounded-2xl border border-border bg-card p-3 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-6"
+        >
           <div className="flex w-max min-w-full justify-center">
-            <div className="w-max min-w-full">
-              {orgData ? (
-                renderOrgUnit(orgData)
-              ) : (
-                <div className="flex flex-col items-center justify-center h-64 gap-4">
-                  <AlertCircle className="w-12 h-12 text-muted-foreground" />
-                  <p className="text-lg text-muted-foreground">
-                    Нет данных для отображения
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Данные не загружены из API
-                  </p>
-                </div>
-              )}
-            </div>
+            <div className="w-max min-w-full">{renderOrgUnit(orgData)}</div>
           </div>
         </div>
-      )}
+      ) : (
+        <div
+          role={error ? "alert" : "status"}
+          className="flex min-h-64 w-full min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-card p-4 text-center shadow-lg sm:p-8"
+        >
+          <AlertCircle className="h-12 w-12 shrink-0 text-muted-foreground" />
+          <p className="max-w-full break-words text-lg text-muted-foreground">
+            {error ? "Не удалось загрузить структуру организации" : "Нет данных для диаграммы"}
+          </p>
+          <p className="max-w-full break-words text-sm text-muted-foreground">
+            {error
+              ? "Нажмите «Повторить загрузку», чтобы попробовать ещё раз."
+              : "В доступной области пока нет штатных единиц."}
+          </p>
+        </div>
+      ))}
       {/* Красивое модальное окно */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent
@@ -629,6 +694,6 @@ export default function OrgChart() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   );
 }

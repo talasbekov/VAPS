@@ -8,7 +8,8 @@ from django.urls import path, include
 from django.views.decorators.cache import cache_page
 from django.views.static import serve as serve_static
 from rest_framework.permissions import AllowAny
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
+from organization_management.apps.common.login import ProtectedTokenObtainPairView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 
@@ -22,22 +23,28 @@ def report_file_legacy(request, name):
     raise Http404
 
 
+def status_document_file_legacy(request, name):
+    """Personnel documents require the scoped, authenticated download action."""
+    raise Http404
+
+
 def public_media(request, path, document_root=None):
     # static.serve normalizes dot segments after URL routing. Check that same
     # normalized path so /media/employees/../reports/file cannot bypass denial.
     normalized = posixpath.normpath(path.replace('\\', '/')).lstrip('/')
-    if normalized.split('/', 1)[0] in ('reports', '..'):
+    if normalized.split('/', 1)[0].casefold() in ('reports', 'status_documents', '..'):
         raise Http404
     return serve_static(request, path, document_root=document_root)
 
 urlpatterns = [
     path('media/reports/<path:name>', report_file_legacy, name='report_file_legacy'),
+    path('media/status_documents/<path:name>', status_document_file_legacy, name='status_document_file_legacy'),
     path("admin/", admin.site.urls),
 
     # JWT Authentication
     path(
         "api/token/",
-        TokenObtainPairView.as_view(permission_classes=[AllowAny]),
+        ProtectedTokenObtainPairView.as_view(),
         name="token_obtain_pair",
     ),
     path(

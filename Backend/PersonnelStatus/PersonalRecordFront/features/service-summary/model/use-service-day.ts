@@ -11,12 +11,16 @@
 // МОЛОЖЕ действующего свода узла. Это ось `superseded` ручки
 // `/daily-summaries/freshness/`; своя ручка на каждый департамент дала бы
 // N запросов на срез, а признак тот же (см. Decisions №1232).
-import { useCallback, useMemo } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { StrengthReportRow, TrafficLightNode } from "@/lib/api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { hasCurrentOpsReadAuthority, useOpsReadAccess } from "@/hooks/use-ops-protected-read";
+import { isReadAccessBlocked } from "@/lib/query-read-access";
 import type { DaySubmission } from "@/entities/daily-grid";
 import { useServiceTree, type ServiceTree } from "./use-service-tree";
+import { ServiceSummaryRootContext } from "./workspace-context";
 
 export interface NodeFigures {
   listTotal: number;
@@ -27,6 +31,10 @@ export interface NodeFigures {
 export interface ServiceDay extends ServiceTree {
   reportPending: boolean;
   reportError: boolean;
+  reportReadBlocked: boolean;
+  reportRetryPending: boolean;
+  canRetryReport: boolean;
+  retryReport: () => Promise<void>;
   /** Числа поддерева узла: список, в строю, отклонения. */
   figures: (divisionId: number) => NodeFigures;
   /** Точная строка расхода подразделения (без потомков). */
@@ -67,8 +75,21 @@ function figuresOfRows(rows: StrengthReportRow[], inServiceColumn: string | unde
 
 export function useServiceDay(businessDate: string): ServiceDay {
   const tree = useServiceTree(businessDate);
-  const report = useStrengthReport(true, businessDate);
-  const catalog = useOpsStatusTypes();
+  const report = useStrengthReport(tree.readAllowed, businessDate);
+  const client = useQueryClient();
+  const access = useOpsReadAccess("status.view");
+  const canonicalRootId = useContext(ServiceSummaryRootContext);
+  const identity = JSON.stringify([access.scope, canonicalRootId, businessDate]);
+  const current = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  current.current = tree.readAllowed ? identity : null;
+  const retryReport = useCallback(async () => {
+    if (!mounted.current || current.current !== identity || !hasCurrentOpsReadAuthority(client, access) ||
+      isReadAccessBlocked(client, report.readKey) || client.isFetching({ queryKey: report.readKey, exact: true }) > 0) return;
+    await report.refetch();
+  }, [identity, access.allowed, access.scope, client, report.refetch]);
+  const catalog = useOpsStatusTypes(tree.readAllowed);
   const inServiceColumn = catalog.all.find((row) => row.code === "IN_SERVICE")?.report_column_code;
 
   const rowsById = useMemo(() => {
@@ -156,6 +177,10 @@ export function useServiceDay(businessDate: string): ServiceDay {
     ...tree,
     reportPending: report.isPending,
     reportError: report.isError,
+    reportReadBlocked: report.readAccessBlocked,
+    reportRetryPending: report.isFetching,
+    canRetryReport: tree.readAllowed && !report.readAccessBlocked && !report.isFetching,
+    retryReport,
     figures,
     exactFigures,
     totals,

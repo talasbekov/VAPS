@@ -17,7 +17,7 @@ import { Building2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ParticleField } from "@/components/login/particle-field";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { defaultPortalRoute } from "@/entities/portal-access";
+import { PORTAL_HOME_PATH } from "@/features/portal-workspace/model";
 import { useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -93,7 +93,7 @@ function LoginScreen() {
     // «/dashboard» без `orgstructure.view` показывал человеку отказ сразу
     // после успешного входа.
     if (!permissionsLoading && !permissionsError && permissions !== undefined) {
-      router.replace(defaultPortalRoute(hasPermission, (code) => roles.some(role => role.code === code), permissions));
+      router.replace(PORTAL_HOME_PATH);
     }
   }, [hasPermission, roles, permissions, permissionsError, permissionsLoading, router, searchParams, user]);
 

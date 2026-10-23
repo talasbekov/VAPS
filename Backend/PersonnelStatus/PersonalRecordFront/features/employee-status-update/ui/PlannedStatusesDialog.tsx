@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { EVENT_PARTICIPATION_STATUS_CODES, addDaysIso } from "@/entities/daily-grid";
 import { employeeIdOfKey } from "../model/row-key";
+import { StatusDocuments } from "./StatusDocuments";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,8 @@ import {
   X,
   CalendarIcon,
   Plus,
+  CheckCircle2,
+  LockKeyhole,
 } from "lucide-react";
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
@@ -46,6 +49,12 @@ import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { PERSONNEL_STATUS_SOURCE, apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
+import type { DutyPlacement } from "@/entities/duty-assignment";
+import { DutyIntervalsFields } from "./DutyIntervalsFields";
+import { dutyIntervalDrafts, dutyIntervalLabel, dutyIntervalsPayload, validateDutyIntervals, type DutyIntervalDraft } from "../model/duty-intervals";
+import { usesDutyAssignment } from "../model/edit-status-schema";
+import { calendarStatusFingerprint } from "../model/calendar-status-draft";
+import { parseIsoDate } from "@/shared/lib/date";
 
 type EmployeeStatusState = "planned" | "active" | "completed" | "cancelled";
 
@@ -72,11 +81,19 @@ interface EmployeeStatusDto {
   end_date: string | null;
   effective_end_date?: string | null;
   comment: string;
+  duty_assignment?: DutyPlacement | null;
 }
 
 interface PlannedStatusesResponse {
   current: EmployeeStatusDto | null;
   planned: EmployeeStatusDto[];
+}
+
+function DutyScheduleReadout({ placement }: { placement: DutyPlacement | null | undefined }) {
+  if (placement?.intervals === undefined) return <p className="text-sm text-muted-foreground">Время выходов не указано. Период статуса не означает круглосуточное нахождение на посту.</p>;
+  if (placement.intervals.length === 0) return <p className="text-sm text-muted-foreground">Выходов на дежурство нет.</p>;
+  return <div className="text-sm"><p className="text-xs text-muted-foreground">Выходы · время Астаны</p><ul className="mt-1 space-y-1">{placement.intervals.map((interval, index) =>
+    <li key={`${interval.start_at}:${interval.end_at}:${index}`}>{dutyIntervalLabel(interval)}</li>)}</ul></div>;
 }
 
 interface PlannedStatusesDialogProps {
@@ -148,6 +165,7 @@ export function PlannedStatusesDialog({
     start_date: Date | undefined;
     end_date: Date | undefined;
     comment: string;
+    dutyIntervals?: DutyIntervalDraft[];
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -286,9 +304,10 @@ export function PlannedStatusesDialog({
     setCurrentAction(null);
     setEditForm({
       status_type: status.status_type,
-      start_date: status.start_date ? new Date(status.start_date) : undefined,
-      end_date: status.end_date ? new Date(status.end_date) : undefined,
+      start_date: status.start_date ? parseIsoDate(status.start_date) ?? undefined : undefined,
+      end_date: status.end_date ? parseIsoDate(status.end_date) ?? undefined : undefined,
       comment: status.comment || "",
+      dutyIntervals: dutyIntervalDrafts(status.duty_assignment),
     });
   };
 
@@ -366,7 +385,7 @@ export function PlannedStatusesDialog({
     // случаев и нужны, а пустое поле заставляло бы искать их глазами.
     setExtendDate(
       statuses?.current?.end_date
-        ? new Date(statuses.current.end_date)
+        ? parseIsoDate(statuses.current.end_date) ?? undefined
         : undefined
     );
     setTerminateDate(new Date());
@@ -417,18 +436,37 @@ export function PlannedStatusesDialog({
 
   const handleSaveEdit = async (statusId: number) => {
     if (!editForm || !employeeIdNum) return;
+    const original = statuses?.planned.find(row => row.id === statusId);
+    const withPlacement = usesDutyAssignment(editForm.status_type);
+    if (withPlacement) {
+      if (editForm.dutyIntervals !== undefined && !original?.duty_assignment) { setActionError("Для выходов сначала укажите объект и пост или группу в полной форме статуса из календаря."); return; }
+      const issues = validateDutyIntervals(editForm.dutyIntervals, editForm.start_date, editForm.end_date);
+      if (issues.length) { setActionError(issues[0].message); return; }
+    }
 
     const formatDateForApi = (date?: Date) => {
       return date ? format(date, "yyyy-MM-dd") : undefined;
     };
 
-    await mutateStatus(() => apiClient.updateEmployeeStatusById(statusId, {
+    await mutateStatus(async () => {
+      if (withPlacement && original?.duty_assignment) {
+        const latest = await apiClient.getEmployeePlannedStatuses(employeeIdNum);
+        if (calendarStatusFingerprint(original) !== calendarStatusFingerprint(latest.planned.find((row: typeof original) => row.id === statusId))) {
+          throw new Error("Запланированный статус уже изменён. Черновик сохранён; закройте форму и откройте статус снова после обновления.");
+        }
+      }
+      await apiClient.updateEmployeeStatusById(statusId, {
       employee: employeeIdNum,
       status_type: editForm.status_type,
       start_date: formatDateForApi(editForm.start_date),
       end_date: formatDateForApi(editForm.end_date),
       comment: editForm.comment,
-    }), "Не удалось обновить статус");
+      ...(withPlacement && original?.duty_assignment ? { duty_assignment: {
+        kind: original.duty_assignment.kind, object_id: original.duty_assignment.object_id,
+        ...(original.duty_assignment.kind === "POST" ? { post_id: original.duty_assignment.post_id ?? undefined } : { group_id: original.duty_assignment.group_id ?? undefined }),
+        ...dutyIntervalsPayload(editForm.dutyIntervals),
+      } } : {}),
+    }); }, "Не удалось обновить статус");
   };
 
   // Что вообще можно сделать с действующим статусом — решает модель, а не
@@ -461,8 +499,8 @@ export function PlannedStatusesDialog({
 
   const formatDate = (date: string | null | undefined) => {
     if (!date) return "Не указано";
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return "Не указано";
+    const d = parseIsoDate(date);
+    if (!d) return "Не указано";
     return d.toLocaleDateString("ru-RU");
   };
 
@@ -471,16 +509,31 @@ export function PlannedStatusesDialog({
   // плановых статусов читался как «Не обновлено» — то есть окно уверяло, что
   // статус не проставлен, показывая при этом его даты.
   const getStatusBadge = (statusType: EmployeeStatusDto["status_type"]) => (
-    <Badge className={naming.colorOf(statusType)}>
+    <Badge className={`${naming.colorOf(statusType)} whitespace-normal text-left`}>
       {naming.labelOf(statusType)}
     </Badge>
   );
+  const isEventStatus = (status: OpsEmployeeStatusRow) =>
+    EVENT_PARTICIPATION_STATUS_CODES.has(status.status_type_code) ||
+    status.participations.length > 0;
+
+  const showCurrentActionForm =
+    currentAction !== null &&
+    (currentAction !== "extend" || canExtendCurrent);
+  const returnToServiceDate = terminateDate
+    ? format(terminateDate, "dd.MM.yyyy")
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!savingRef.current) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-[1000px] w-full max-h-[90vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Запланированные статусы сотрудника</DialogTitle>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1000px]">
+        <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-6 sm:py-5 sm:pr-12">
+          <DialogTitle className="flex items-center gap-3 text-lg leading-6">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Calendar className="h-5 w-5" aria-hidden="true" />
+            </span>
+            Запланированные статусы сотрудника
+          </DialogTitle>
           <DialogDescription>
             {employeeName
               ? `Сотрудник: ${employeeName}`
@@ -489,85 +542,51 @@ export function PlannedStatusesDialog({
         </DialogHeader>
 
         {loading && (
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
+          <div className="flex items-center justify-center px-4 py-8 text-muted-foreground">
             <Clock className="h-5 w-5 mr-2 animate-spin" />
             Загрузка данных о статусах...
           </div>
         )}
 
         {!loading && error && (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="m-4 w-auto sm:mx-6">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
-        {refreshError && <Alert><AlertDescription>
+        {refreshError && <Alert className="m-4 w-auto sm:mx-6"><AlertDescription>
           <p>{refreshError}</p>
           <Button type="button" variant="outline" disabled={isSaving} onClick={() => void retryRead()}>Повторить загрузку статусов</Button>
         </AlertDescription></Alert>}
         {!loading && !error && statuses && (
-          <fieldset disabled={isSaving || refreshRequired} className="min-w-0 max-h-[60vh] pr-4 overflow-y-auto space-y-6">
+          <fieldset disabled={isSaving || refreshRequired} className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             {/* Текущий статус */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-green-600" />
+            <section aria-labelledby="current-status-heading" className="space-y-3">
+              <h3 id="current-status-heading" className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Clock className="h-4 w-4 text-primary" aria-hidden="true" />
                 Текущий статус
               </h3>
               {statuses.current ? (
-                <div className="rounded-lg border bg-muted p-4 flex flex-col gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {getStatusBadge(statuses.current.status_type)}
-                    <Badge
-                      className={getStateBadgeColor(statuses.current.state)}
-                    >
-                      {statuses.current.state_display}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-foreground">
-                    <div>
-                      <div className="font-medium">Дата начала</div>
-                      <div>{formatDate(statuses.current.start_date)}</div>
+                <article aria-label="Текущий статус" className="flex min-w-0 flex-col gap-3 rounded-lg border bg-muted/50 p-3 sm:p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      {getStatusBadge(statuses.current.status_type)}
+                      <Badge className={getStateBadgeColor(statuses.current.state)}>
+                        {statuses.current.state_display}
+                      </Badge>
                     </div>
-                    <div>
-                      <div className="font-medium">Дата окончания</div>
-                      <div>{formatDate(statuses.current.end_date)}</div>
-                    </div>
-                    <div>
-                      <div className="font-medium">Фактическое окончание</div>
-                      <div>
-                        {formatDate(statuses.current.effective_end_date)}
-                      </div>
-                    </div>
-                  </div>
-                  {statuses.current.comment && (
-                    <div className="text-sm text-muted-foreground">
-                      <span className="font-medium">Комментарий: </span>
-                      {statuses.current.comment}
-                    </div>
-                  )}
-
-                  {/* Действия над ДЕЙСТВУЮЩИМ статусом.
-                      Правки здесь нет и не будет: сервер отказывает любому
-                      PATCH активного статуса, и карандаш обещал то, чего
-                      система не допускает — окно не давало сохранить НИКОГДА
-                      (Plane №255). Кнопки видимы всегда, а не по наведению:
-                      это единственный способ тронуть текущий статус, и
-                      прятать его под hover значило бы прятать всю операцию. */}
-                  {statuses.current.state === "active" &&
-                    (currentAction === null ||
-                    (currentAction === "extend" && !canExtendCurrent) ? (
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {/* Активный статус допускает только продление и завершение. */}
+                    {statuses.current.state === "active" && !showCurrentActionForm && (
+                      <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
                         {canExtendCurrent && (
                           <Button
                             variant="outline"
                             size="sm"
+                            className="w-full sm:w-auto"
                             onClick={() => openCurrentAction("extend")}
                           >
-                            <CalendarIcon
-                              className="h-4 w-4 mr-2"
-                              aria-hidden="true"
-                            />
+                            <CalendarIcon className="h-4 w-4" aria-hidden="true" />
                             Продлить
                           </Button>
                         )}
@@ -575,44 +594,130 @@ export function PlannedStatusesDialog({
                           <Button
                             variant="outline"
                             size="sm"
+                            className="w-full sm:w-auto"
                             onClick={() => openCurrentAction("terminate")}
                           >
-                            <X className="h-4 w-4 mr-2" aria-hidden="true" />
+                            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                             Завершить досрочно
                           </Button>
                         )}
                         {!canExtendCurrent && !canTerminateCurrent && (
-                          <p className="text-xs text-muted-foreground">
+                          <p className="max-w-sm text-xs text-muted-foreground">
                             Бессрочный статус: он снимается сам, когда
                             сотруднику заводят новый — кнопкой «Запланировать»
                             ниже.
                           </p>
                         )}
                       </div>
-                    ) : (
-                      <div className="space-y-3 rounded-md border bg-background p-3">
-                        <h4 className="text-sm font-semibold">
-                          {currentAction === "extend"
-                            ? "Продление статуса"
-                            : "Досрочное завершение статуса"}
-                        </h4>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 text-sm text-foreground sm:grid-cols-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Дата начала</div>
+                      <div className="mt-1 font-medium">{formatDate(statuses.current.start_date)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Дата окончания</div>
+                      <div className="mt-1 font-medium">{formatDate(statuses.current.end_date)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Фактическое окончание</div>
+                      <div className="mt-1 font-medium">
+                        {formatDate(statuses.current.effective_end_date)}
+                      </div>
+                    </div>
+                  </div>
+                  {statuses.current.comment && (
+                    <div className="break-words text-sm text-muted-foreground">
+                      <span className="font-medium">Комментарий: </span>
+                      {statuses.current.comment}
+                    </div>
+                  )}
+                  {usesDutyAssignment(statuses.current.status_type) && <DutyScheduleReadout placement={statuses.current.duty_assignment} />}
 
-                        {currentAction === "extend" ? (
+                  <StatusDocuments key={statuses.current.id} statusId={statuses.current.id} />
+
+                  {statuses.current.state === "active" && showCurrentActionForm && (
+                    <div className="space-y-3 rounded-lg border bg-background p-3 sm:p-4">
+                      <h4 className="flex items-center gap-2 text-sm font-semibold">
+                        {currentAction === "extend"
+                          ? <CalendarIcon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                          : <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
+                        {currentAction === "extend"
+                          ? "Продление статуса"
+                          : "Досрочное завершение статуса"}
+                      </h4>
+
+                      {currentAction === "extend" ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="extend-date">
+                            Новая дата окончания{" "}
+                            <span className="text-destructive-ink">*</span>
+                          </Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                id="extend-date"
+                                variant="outline"
+                                className="w-full justify-start text-left font-normal"
+                                aria-required="true"
+                                aria-invalid={dateError !== null}
+                                aria-describedby={dateError ? "extend-date-error" : "extend-date-hint"}
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {extendDate
+                                  ? format(extendDate, "dd MMMM yyyy", {
+                                      locale: ru,
+                                    })
+                                  : "Выберите дату"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-auto p-0"
+                              align="start"
+                            >
+                              <CalendarComponent
+                                mode="single"
+                                selected={extendDate}
+                                onSelect={(date) => {
+                                  setExtendDate(date);
+                                  if (date) setDateError(null);
+                                }}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          {dateError !== null ? (
+                            <p id="extend-date-error" role="alert" className="text-destructive-ink text-sm">
+                              {dateError}
+                            </p>
+                          ) : (
+                            <p id="extend-date-hint" className="text-xs text-muted-foreground">
+                              Должна быть позже текущей —{" "}
+                              {formatDate(statuses.current.end_date)}.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
                           <div className="space-y-2">
-                            <Label htmlFor="extend-date">
-                              Новая дата окончания{" "}
+                            <Label htmlFor="terminate-date">
+                              Дата выхода в строй{" "}
                               <span className="text-destructive-ink">*</span>
                             </Label>
                             <Popover>
                               <PopoverTrigger asChild>
                                 <Button
-                                  id="extend-date"
+                                  id="terminate-date"
                                   variant="outline"
                                   className="w-full justify-start text-left font-normal"
+                                  aria-required="true"
+                                  aria-invalid={dateError !== null}
+                                  aria-describedby={dateError ? "terminate-date-hint terminate-date-error" : "terminate-date-hint"}
                                 >
                                   <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {extendDate
-                                    ? format(extendDate, "dd MMMM yyyy", {
+                                  {terminateDate
+                                    ? format(terminateDate, "dd MMMM yyyy", {
                                         locale: ru,
                                       })
                                     : "Выберите дату"}
@@ -624,165 +729,122 @@ export function PlannedStatusesDialog({
                               >
                                 <CalendarComponent
                                   mode="single"
-                                  selected={extendDate}
+                                  selected={terminateDate}
                                   onSelect={(date) => {
-                                    setExtendDate(date);
+                                    setTerminateDate(date);
                                     if (date) setDateError(null);
                                   }}
                                   initialFocus
                                 />
                               </PopoverContent>
                             </Popover>
-                            {dateError !== null ? (
-                              <p role="alert" className="text-destructive-ink text-sm">
+                            <p id="terminate-date-hint" className="text-xs leading-relaxed text-muted-foreground">
+                              Выбранная дата — первый день статуса «В строю»
+                              {returnToServiceDate ? `: ${returnToServiceDate}` : ""}.
+                              {" "}Текущий статус будет завершён досрочно.
+                              {" "}Даты учитываются по календарю сервера.
+                            </p>
+                            {dateError !== null && (
+                              <p id="terminate-date-error" role="alert" className="text-destructive-ink text-sm">
                                 {dateError}
                               </p>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                Должна быть позже текущей —{" "}
-                                {formatDate(statuses.current.end_date)}.
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="terminate-reason">
+                              Причина{" "}
+                              <span className="text-destructive-ink">*</span>
+                            </Label>
+                            <Textarea
+                              id="terminate-reason"
+                              rows={2}
+                              required
+                              className="min-h-20 resize-y"
+                              value={terminateReason}
+                              aria-invalid={reasonError !== null}
+                              aria-describedby={
+                                reasonError !== null
+                                  ? "terminate-reason-error"
+                                  : undefined
+                              }
+                              onChange={(e) => {
+                                setTerminateReason(e.target.value);
+                                if (reasonError !== null) setReasonError(null);
+                              }}
+                              placeholder="Почему статус завершается раньше срока"
+                            />
+                            {/* Ошибка У ПОЛЯ, а не сводкой наверху: сервер
+                                причину тоже требует, и без неё отказ
+                                приходил бы уже с сервера. */}
+                            {reasonError !== null && (
+                              <p
+                                id="terminate-reason-error"
+                                role="alert"
+                                className="text-destructive-ink text-sm"
+                              >
+                                {reasonError}
                               </p>
                             )}
                           </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="space-y-2">
-                              <Label htmlFor="terminate-date">
-                                Дата завершения{" "}
-                                <span className="text-destructive-ink">*</span>
-                              </Label>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    id="terminate-date"
-                                    variant="outline"
-                                    className="w-full justify-start text-left font-normal"
-                                  >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {terminateDate
-                                      ? format(terminateDate, "dd MMMM yyyy", {
-                                          locale: ru,
-                                        })
-                                      : "Выберите дату"}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  className="w-auto p-0"
-                                  align="start"
-                                >
-                                  <CalendarComponent
-                                    mode="single"
-                                    selected={terminateDate}
-                                    onSelect={(date) => {
-                                      setTerminateDate(date);
-                                      if (date) setDateError(null);
-                                    }}
-                                    initialFocus
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              {dateError !== null ? (
-                                <p role="alert" className="text-destructive-ink text-sm">
-                                  {dateError}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-muted-foreground">
-                                  С этого дня сотрудник снова «В строю» — статус
-                                  заводится автоматически.
-                                </p>
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="terminate-reason">
-                                Причина{" "}
-                                <span className="text-destructive-ink">*</span>
-                              </Label>
-                              <Textarea
-                                id="terminate-reason"
-                                rows={2}
-                                value={terminateReason}
-                                aria-invalid={reasonError !== null}
-                                aria-describedby={
-                                  reasonError !== null
-                                    ? "terminate-reason-error"
-                                    : undefined
-                                }
-                                onChange={(e) => {
-                                  setTerminateReason(e.target.value);
-                                  if (reasonError !== null) setReasonError(null);
-                                }}
-                                placeholder="Почему статус завершается раньше срока"
-                              />
-                              {/* Ошибка У ПОЛЯ, а не сводкой наверху: сервер
-                                  причину тоже требует, и без неё отказ
-                                  приходил бы уже с сервера. */}
-                              {reasonError !== null && (
-                                <p
-                                  id="terminate-reason-error"
-                                  role="alert"
-                                  className="text-destructive-ink text-sm"
-                                >
-                                  {reasonError}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {actionError !== null && (
-                          <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertDescription>{actionError}</AlertDescription>
-                          </Alert>
-                        )}
-
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={closeCurrentAction}
-                            disabled={isSaving}
-                          >
-                            <X className="h-4 w-4 mr-2" />
-                            Отмена
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={
-                              currentAction === "extend"
-                                ? handleExtend
-                                : handleTerminate
-                            }
-                            disabled={isSaving}
-                          >
-                            {isSaving ? (
-                              <Clock className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Save className="h-4 w-4 mr-2" />
-                            )}
-                            {currentAction === "extend"
-                              ? "Продлить"
-                              : "Завершить"}
-                          </Button>
                         </div>
+                      )}
+
+                      {actionError !== null && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>{actionError}</AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t bg-background pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-w-0 flex-1 sm:flex-none"
+                          onClick={closeCurrentAction}
+                          disabled={isSaving}
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                          Отмена
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="min-w-0 flex-1 sm:flex-none"
+                          onClick={
+                            currentAction === "extend"
+                              ? handleExtend
+                              : handleTerminate
+                          }
+                          disabled={isSaving}
+                        >
+                          {isSaving ? (
+                            <Clock className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Save className="h-4 w-4" aria-hidden="true" />
+                          )}
+                          {currentAction === "extend"
+                            ? "Продлить"
+                            : "Завершить"}
+                        </Button>
                       </div>
-                    ))}
-                </div>
+                    </div>
+                  )}
+                </article>
               ) : (
                 <div className="text-sm text-muted-foreground">
                   Текущий активный статус отсутствует.
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Запланированные статусы */}
-            <div className="space-y-3">
+            <section aria-labelledby="planned-statuses-heading" className="space-y-3">
               {/* Кнопка стоит У СПИСКА, а не в шапке диалога: она пополняет
                   именно его, и при пустом списке это единственная подсказка,
                   чем его заполнить. */}
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-blue-600" />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 id="planned-statuses-heading" className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Calendar className="h-4 w-4 text-primary" aria-hidden="true" />
                   Запланированные статусы
                 </h3>
                 {onSchedule && (
@@ -796,7 +858,7 @@ export function PlannedStatusesDialog({
                         : "Запланировать статус"
                     }
                   >
-                    <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+                    <Plus className="h-4 w-4" aria-hidden="true" />
                     Запланировать
                   </Button>
                 )}
@@ -804,15 +866,20 @@ export function PlannedStatusesDialog({
               {statuses.planned.length + plannedOpsStatuses.length > 0 ? (
                 <div className="space-y-3">
                   {statuses.planned.map((status) => (
-                    <div
+                    <article
                       key={`employee-${status.id}`}
-                      className="rounded-lg border p-4 flex flex-col gap-2 bg-card relative group"
+                      aria-label={`Запланированный статус: ${naming.labelOf(status.status_type)}`}
+                      className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 sm:p-4"
                     >
                       {editingStatusId === status.id && editForm ? (
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h4 className="text-sm font-semibold">Редактирование запланированного статуса</h4>
+                            <Badge className={getStateBadgeColor(status.state)}>{status.state_display}</Badge>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                             <div className="space-y-2">
-                              <Label>Статус</Label>
+                              <Label htmlFor={`planned-status-${status.id}`}>Статус</Label>
                               <Select
                                 value={editForm.status_type}
                                 onValueChange={(value) =>
@@ -823,7 +890,9 @@ export function PlannedStatusesDialog({
                                 }
                               >
                                 <SelectTrigger
+                                  id={`planned-status-${status.id}`}
                                   aria-label="Статус"
+                                  className="w-full"
                                   // `aria-busy` — единственный признак, по
                                   // которому скринридер узнаёт, что список
                                   // ещё едет; глазу об этом говорит подпись.
@@ -867,79 +936,90 @@ export function PlannedStatusesDialog({
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="space-y-2">
-                              <Label>Даты</Label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      className="w-full justify-start text-left font-normal"
+                            <div className="sm:col-span-2">
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`planned-start-${status.id}`}>Дата начала</Label>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        id={`planned-start-${status.id}`}
+                                        variant="outline"
+                                        className="w-full justify-start text-left font-normal"
+                                      >
+                                        <CalendarIcon className="h-4 w-4" aria-hidden="true" />
+                                        {editForm.start_date
+                                          ? format(
+                                              editForm.start_date,
+                                              "dd.MM.yyyy"
+                                            )
+                                          : "Начало"}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-auto p-0"
+                                      align="start"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {editForm.start_date
-                                        ? format(
-                                            editForm.start_date,
-                                            "dd.MM.yyyy"
-                                          )
-                                        : "Начало"}
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent
-                                    className="w-auto p-0"
-                                    align="start"
-                                  >
-                                    <CalendarComponent
-                                      mode="single"
-                                      selected={editForm.start_date}
-                                      onSelect={(date) =>
-                                        setEditForm({
-                                          ...editForm,
-                                          start_date: date,
-                                        })
-                                      }
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      className="w-full justify-start text-left font-normal"
+                                      <CalendarComponent
+                                        mode="single"
+                                        selected={editForm.start_date}
+                                        onSelect={(date) =>
+                                          setEditForm({
+                                            ...editForm,
+                                            start_date: date,
+                                          })
+                                        }
+                                        initialFocus
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`planned-end-${status.id}`}>Дата окончания</Label>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        id={`planned-end-${status.id}`}
+                                        variant="outline"
+                                        className="w-full justify-start text-left font-normal"
+                                      >
+                                        <CalendarIcon className="h-4 w-4" aria-hidden="true" />
+                                        {editForm.end_date
+                                          ? format(
+                                              editForm.end_date,
+                                              "dd.MM.yyyy"
+                                            )
+                                          : "Конец"}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-auto p-0"
+                                      align="start"
                                     >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {editForm.end_date
-                                        ? format(
-                                            editForm.end_date,
-                                            "dd.MM.yyyy"
-                                          )
-                                        : "Конец"}
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent
-                                    className="w-auto p-0"
-                                    align="start"
-                                  >
-                                    <CalendarComponent
-                                      mode="single"
-                                      selected={editForm.end_date}
-                                      onSelect={(date) =>
-                                        setEditForm({
-                                          ...editForm,
-                                          end_date: date,
-                                        })
-                                      }
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
+                                      <CalendarComponent
+                                        mode="single"
+                                        selected={editForm.end_date}
+                                        onSelect={(date) =>
+                                          setEditForm({
+                                            ...editForm,
+                                            end_date: date,
+                                          })
+                                        }
+                                        initialFocus
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
                               </div>
                             </div>
                           </div>
+                          {usesDutyAssignment(editForm.status_type) && <DutyIntervalsFields value={editForm.dutyIntervals}
+                            onChange={dutyIntervals => setEditForm({ ...editForm, dutyIntervals })} />}
                           <div className="space-y-2">
-                            <Label>Комментарий</Label>
+                            <Label htmlFor={`planned-comment-${status.id}`}>Комментарий</Label>
                             <Textarea
+                              id={`planned-comment-${status.id}`}
+                              className="min-h-20 resize-y"
                               value={editForm.comment}
                               onChange={(e) =>
                                 setEditForm({
@@ -950,25 +1030,33 @@ export function PlannedStatusesDialog({
                               rows={2}
                             />
                           </div>
-                          <div className="flex justify-end gap-2">
+                          {actionError !== null && (
+                            <Alert variant="destructive">
+                              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                              <AlertDescription>{actionError}</AlertDescription>
+                            </Alert>
+                          )}
+                          <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t bg-card pt-3">
                             <Button
                               variant="outline"
                               size="sm"
+                              className="min-w-0 flex-1 sm:flex-none"
                               onClick={handleCancelEdit}
                               disabled={isSaving}
                             >
-                              <X className="h-4 w-4 mr-2" />
+                              <X className="h-4 w-4" aria-hidden="true" />
                               Отмена
                             </Button>
                             <Button
                               size="sm"
+                              className="min-w-0 flex-1 sm:flex-none"
                               onClick={() => handleSaveEdit(status.id)}
                               disabled={isSaving}
                             >
                               {isSaving ? (
-                                <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                <Clock className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
-                                <Save className="h-4 w-4 mr-2" />
+                                <Save className="h-4 w-4" aria-hidden="true" />
                               )}
                               Сохранить
                             </Button>
@@ -976,8 +1064,8 @@ export function PlannedStatusesDialog({
                         </div>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
                               {getStatusBadge(status.status_type)}
                               <Badge
                                 className={getStateBadgeColor(status.state)}
@@ -988,75 +1076,85 @@ export function PlannedStatusesDialog({
                             {status.state === "planned" && (
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                size="sm"
+                                className="ml-auto"
                                 onClick={() => handleEditClick(status)}
                                 aria-label={`Изменить запланированный статус: ${status.state_display}`}
                               >
                                 <Edit className="h-4 w-4" aria-hidden="true" />
+                                Изменить
                               </Button>
                             )}
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-foreground">
+                          <div className="grid grid-cols-1 gap-3 text-sm text-foreground sm:grid-cols-3">
                             <div>
-                              <div className="font-medium">Дата начала</div>
-                              <div>{formatDate(status.start_date)}</div>
+                              <div className="text-xs text-muted-foreground">Дата начала</div>
+                              <div className="mt-1 font-medium">{formatDate(status.start_date)}</div>
                             </div>
                             <div>
-                              <div className="font-medium">Дата окончания</div>
-                              <div>{formatDate(status.end_date)}</div>
+                              <div className="text-xs text-muted-foreground">Дата окончания</div>
+                              <div className="mt-1 font-medium">{formatDate(status.end_date)}</div>
                             </div>
                             <div>
-                              <div className="font-medium">
+                              <div className="text-xs text-muted-foreground">
                                 Эффективная дата окончания
                               </div>
-                              <div>{formatDate(status.effective_end_date)}</div>
+                              <div className="mt-1 font-medium">{formatDate(status.effective_end_date)}</div>
                             </div>
                           </div>
+                          {usesDutyAssignment(status.status_type) && <DutyScheduleReadout placement={status.duty_assignment} />}
                           {status.comment && (
-                            <div className="text-sm text-muted-foreground">
+                            <div className="break-words text-sm text-muted-foreground">
                               <span className="font-medium">Комментарий: </span>
                               {status.comment}
                             </div>
                           )}
                         </>
                       )}
-                    </div>
+                      <StatusDocuments statusId={status.id} />
+                    </article>
                   ))}
                   {plannedOpsStatuses.map((status) => (
-                    <div
+                    <article
                       key={`operations-${status.id}`}
                       data-status-source="operations"
-                      className="rounded-lg border p-4 flex flex-col gap-3 bg-card"
+                      aria-label={`Запланированный статус ${isEventStatus(status) ? "ОМ" : "раздела"}: ${opsStatusTypes.labelOf(status.status_type_code)}`}
+                      className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 sm:p-4"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className={naming.colorOf(status.status_type_code)}>
-                          {opsStatusTypes.labelOf(status.status_type_code)}
-                        </Badge>
-                        <Badge variant="outline">Запланирован</Badge>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <Badge className={`${naming.colorOf(status.status_type_code)} whitespace-normal text-left`}>
+                            {opsStatusTypes.labelOf(status.status_type_code)}
+                          </Badge>
+                          <Badge variant="outline">Запланирован</Badge>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <LockKeyhole className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          Только просмотр
+                        </span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-foreground">
                         <div>
-                          <div className="font-medium">Дата начала</div>
-                          <div>{formatDate(status.date_start)}</div>
+                          <div className="text-xs text-muted-foreground">Дата начала</div>
+                          <div className="mt-1 font-medium">{formatDate(status.date_start)}</div>
                         </div>
                         <div>
-                          <div className="font-medium">Дата окончания</div>
+                          <div className="text-xs text-muted-foreground">Дата окончания</div>
                           {/* Раздел хранит [start, end) — на экране день
                               окончания включительно, как у кадровых карточек
                               выше (`[ОМ-РШ-17]`, проходка №1142: участие на ОМ
                               05–06.10 печаталось «по 07.10»). */}
-                          <div>{formatDate(addDaysIso(status.date_end, -1))}</div>
+                          <div className="mt-1 font-medium">{formatDate(addDaysIso(status.date_end, -1))}</div>
                         </div>
                       </div>
                       {status.comment && (
-                        <div className="text-sm text-muted-foreground">
+                        <div className="break-words text-sm text-muted-foreground">
                           <span className="font-medium">Комментарий: </span>
                           {status.comment}
                         </div>
                       )}
                       {status.participations.length > 0 && (
-                        <div className="text-sm text-muted-foreground">
+                        <div className="break-words text-sm text-muted-foreground">
                           <span className="font-medium">Мероприятия: </span>
                           {status.participations
                             .map((participation) =>
@@ -1067,7 +1165,12 @@ export function PlannedStatusesDialog({
                             .join("; ")}
                         </div>
                       )}
-                    </div>
+                      <p className="text-xs text-muted-foreground">
+                        {isEventStatus(status)
+                          ? "Изменения выполняются в разделе ОМ."
+                          : "Изменения выполняются в разделе назначения."}
+                      </p>
+                    </article>
                   ))}
                 </div>
               ) : (
@@ -1075,7 +1178,7 @@ export function PlannedStatusesDialog({
                   Для сотрудника нет запланированных статусов.
                 </div>
               )}
-            </div>
+            </section>
 
           </fieldset>
         )}

@@ -75,6 +75,9 @@ from organization_management.apps.operations.tests.test_status_service import (
     seed_types,
 )
 from organization_management.apps.staff_unit.models import StaffUnit
+from organization_management.apps.ops.tests.test_object_catalog_transfer import (
+    bundle_from_source, run_import, transfer,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -587,7 +590,7 @@ def test_journal_row_is_written_synchronously_and_rolls_back(types):
     assert events() == []
 
 
-def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
+def test_every_declared_action_is_actually_written(types, home, host, tmp_path, transfer):
     # Закрытый словарь работает в обе стороны: событие, которого никто не
     # пишет, — обещание фильтра, возвращающего пустоту. Ровно поэтому в этом
     # срезе из ACTIONS снят STATUSES_BULK_CREATED (сводки у пачки нет).
@@ -1537,6 +1540,25 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         duty_log.mark_execution(ACTOR, log["id"], "complete")
         second, _ = duty_log.create_record(ACTOR, body)
         duty_log.cancel_record(ACTOR, second["id"], "Запись внесена ошибочно")
+
+    # The portable importer already writes the real append-only receipt. Cover
+    # that mutation here too, retaining the exact declared/emitted equality.
+    from organization_management.apps.operations.tests.support import client_for
+    _, importer = client_for(
+        "catalog-audit-coverage", "CATALOG_AUDIT_COVERAGE", ("object.view", "object.manage"),
+    )
+    import_department = Division.objects.create(
+        name="Synthetic catalog audit department", division_type="department",
+    )
+    bundle = bundle_from_source(transfer, importer)
+    receipt = run_import(transfer, bundle, importer, import_department, apply=True)
+    assert receipt["applied"] is True
+    import_events = events(action=audit_service.SECURITY_OBJECT_CATALOG_IMPORTED)
+    assert len(import_events) == 1
+    assert import_events[0].new_value["receipt"] == receipt
+    retry = run_import(transfer, bundle, importer, import_department, apply=True)
+    assert retry["reused"] is True
+    assert len(events(action=audit_service.SECURITY_OBJECT_CATALOG_IMPORTED)) == 1
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

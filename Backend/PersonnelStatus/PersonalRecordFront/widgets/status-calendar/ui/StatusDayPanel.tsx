@@ -41,11 +41,12 @@ interface Props {
   /** Выбранный день; `null` — день ещё не выбран. */
   date: string | null;
   divisionId?: string | null;
+  search?: string;
 }
 
-export function StatusDayPanel({ date, divisionId = null }: Props) {
+export function StatusDayPanel({ date, divisionId = null, search = "" }: Props) {
   const { data, isLoading, isError, refetch, isFetching } = useStatusCalendarDay(
-    { date, divisionId }
+    { date, divisionId, search }
   );
 
   return (

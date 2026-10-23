@@ -2,7 +2,7 @@
 
 // Layout сегмента /security-ops: поднимает host-MSW ДО рендера страниц
 // (иначе первые запросы TanStack Query уйдут в сеть до готовности перехвата),
-// запускает транспорт уведомлений и колокольчик раздела.
+// запускает транспорт уведомлений. Общий вход в ленту находится в шапке.
 // DashboardLayout страницы оборачивают сами — по конвенции остальных страниц.
 //
 // Toaster отсюда СНЯТ и поднят в корневой app/layout.tsx. Пока он стоял
@@ -19,7 +19,6 @@
 // сегмент. Честный 403 сюда НЕ попадает и обрабатывается страницами как
 // прежде (OpsAccessDenied).
 import { Fragment, useEffect, type ReactNode } from "react";
-import { OpsNotificationBell } from "@/features/ops-notifications/notification-bell";
 import { OpsPermissionBoundary } from "@/components/ops-permission-boundary";
 import { useOpsMockWorker } from "@/hooks/use-ops-mock-worker";
 import { startOpsWs, stopOpsWs } from "@/lib/ops-ws";
@@ -53,14 +52,7 @@ export default function SecurityOpsLayout({
 
   return (
     <OpsPermissionBoundary>
-      {/* 🔴 `children` приходит от Next МАССИВОМ сегментов. Отрендеренный
-          рядом с соседом (колокольчиком) он читается React как список, и
-          на каждом экране раздела в консоль летело «Each child in a list
-          should have a unique key» — ошибка в оверлее dev-режима, найдено
-          22.08.2026. Именованный Fragment делает массив ЕДИНСТВЕННЫМ
-          потомком, и обход списка не начинается. */}
       <Fragment key="ops-segment">{children}</Fragment>
-      <OpsNotificationBell />
     </OpsPermissionBoundary>
   );
 }

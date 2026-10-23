@@ -307,7 +307,7 @@ def _duty_officer_recipients():
 
     recipients = []
     for user_id in (
-        UserRole.objects.filter(role_code_id="DUTY_OFFICER", is_active=True)
+        UserRole.objects.filter(role_code_id="DUTY_OFFICER", is_active=True, role_code__is_active=True)
         .order_by("user_id")
         .values_list("user_id", flat=True)
     ):

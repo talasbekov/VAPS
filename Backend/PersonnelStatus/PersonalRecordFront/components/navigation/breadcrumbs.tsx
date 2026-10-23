@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { defaultPortalRoute } from "@/entities/portal-access";
+import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
+import { PORTAL_HOME_PATH } from "@/features/portal-workspace/model";
 import { legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole, resolveWorkspaceView } from "@/features/forces-workspace/model/workspace";
 
 /**
@@ -92,8 +93,10 @@ function BreadcrumbsInner() {
   const query = useSearchParams();
   const access = useOpsPermissions();
   const trusted = !access.isLoading && !access.error && access.permissions !== undefined;
-  const brandHref = trusted ? defaultPortalRoute(access.hasPermission, code => access.roles.some(role => role.code === code), access.permissions) : "";
-  const workspaceRole = resolveWorkspaceRole(access);
+  const hasRole = (code: string) => access.roles.some(role => role.code === code);
+  const brandHref = trusted ? PORTAL_HOME_PATH : "";
+  const headquartersTarget = access.hasPermission('forces.command') && Boolean(query.get('collection') || query.get('campaign') || query.get('tab') === 'collections');
+  const workspaceRole = headquartersTarget ? 'headquarters' : resolveWorkspaceRole(access);
   const workspaceView = workspaceRole === "responsible" || workspaceRole === "expense" || workspaceRole === "headquarters"
     ? resolveWorkspaceView(workspaceRole, new URLSearchParams(query), access.hasPermission("status.view")) : null;
   const employeesLabel = workspaceView === "desk" ? "Рабочий стол"
@@ -106,12 +109,21 @@ function BreadcrumbsInner() {
   let href = "";
   for (const segment of segments) {
     href += `/${segment}`;
-    const label = href === "/employees" ? employeesLabel : SEGMENT_LABELS[segment];
+    // Аналитика службы — соседний источник, а не родитель аналитики ОМ.
+    if (pathname.replace(/\/+$/, "") === "/security-ops/analytics/operations" && href === "/security-ops/analytics") continue;
+    const label = href === PORTAL_HOME_PATH ? "Моя работа"
+      : href === "/security-ops/assistant" ? "Помощник по ОМ"
+      : href === "/security-ops/ratings/employees" ? "Агрегированный рейтинг участника"
+      : href === "/security-ops/ratings/analytics" ? "Аналитика рейтинга"
+      : href === "/employees" ? employeesLabel : SEGMENT_LABELS[segment];
+    const moduleHref = (href === "/settings" ? "/security-ops/settings" : href).replace(/\/+$/, "");
     if (label)
       crumbs.push({
         href: `${href}/`,
         label,
-        linked: !SEGMENTS_WITHOUT_PAGE.has(segment),
+        linked: trusted && !SEGMENTS_WITHOUT_PAGE.has(segment) &&
+          Object.prototype.hasOwnProperty.call(MODULE_PERMISSION, moduleHref) &&
+          moduleOpenFor(moduleHref, access.hasPermission, hasRole),
       });
   }
 

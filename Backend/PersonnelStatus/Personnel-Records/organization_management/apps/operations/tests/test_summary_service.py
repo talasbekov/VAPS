@@ -580,6 +580,26 @@ def _default_duty_recipient(value):
     settings.save()
 
 
+def test_disabled_duty_role_stops_summary_notifications_but_preserves_explicit_fallback(types, tree):
+    from organization_management.apps.operations.models import Role
+    from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.operations.summary_service import send_summary
+
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+    grant = _duty_officer("42")
+    _default_duty_recipient("explicit-recipient")
+    Role.objects.filter(code="DUTY_OFFICER").update(is_active=False)
+    with clock.override(MORNING):
+        send_summary(division_id=root.pk, business_date=TODAY, actor=ACTOR)
+    assert list(OpsNotification.objects.filter(kind=OpsNotification.Kind.SUMMARY_SENT)
+                .values_list("recipient", flat=True)) == ["explicit-recipient"]
+    grant.refresh_from_db()
+    assert grant.is_active
+
+
 def test_send_summary_notifies_every_duty_officer_and_the_default_recipient(types, tree):
     """RED до фикса: `send_summary` писал только аудит — дежурный узнавал о
     своде, лишь открыв экран (`[ДОП-20-09]`, решение заказчика 12.09.2026)."""

@@ -22,7 +22,8 @@ import { RatingDynamicsSection } from "@/features/ops-ratings/rating-dynamics-se
 import { DATA_STATE_LABEL } from "@/entities/operational-rating";
 import type { OperationalRatingSummary } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
-import { LoadFailure } from "@/components/load-failure";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { isRatingScopeUnavailable, RatingReadFailure } from "@/features/ops-ratings/rating-read-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Печать канонического значения: округляет сервер, здесь только запятая —
@@ -41,11 +42,11 @@ function periodLabel(summary: OperationalRatingSummary): string {
 export default function OperationalRatingsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useOperationalRatings({
-    enabled: !permissionsLoading && hasPermission("rating.view_aggregate"),
+    enabled: !permissionsLoading && hasPermission(MODULE_PERMISSION["/security-ops/ratings"]),
   });
-  const data = query.data;
+  const data = isRatingScopeUnavailable(query.error) ? undefined : query.data;
 
-  if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/ratings"])) {
     return <OpsAccessDenied what="рейтингов" />;
   }
 
@@ -67,7 +68,8 @@ export default function OperationalRatingsPage() {
           /* Сырое серверное сообщение человеку не адресовано: у мутаций
              5xx уже обезличивается (use-ops-mutation), у запросов такой
              развилки не было. Плюс повтор — раньше это был тупик. */
-          <LoadFailure
+          <RatingReadFailure
+            error={query.error}
             what="оперативный рейтинг"
             onRetry={() => void query.refetch()}
             isRetrying={query.isFetching}

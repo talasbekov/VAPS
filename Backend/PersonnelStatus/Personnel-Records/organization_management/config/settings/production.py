@@ -62,3 +62,9 @@ CACHES = {
         }
     }
 }
+CACHES['auth_throttle'] = {
+    'BACKEND': 'django_redis.cache.RedisCache',
+    'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/2',
+    'KEY_PREFIX': 'smart-login',
+    'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+}
