@@ -588,13 +588,13 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
   }, [activeHref, revealActive]);
 
   return (
-    <aside className={`${embedded ? 'h-full min-h-0' : 'h-screen'} w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col`} onClick={event => {
+    <aside className={`workdesk-sidebar ${embedded ? 'h-full min-h-0' : 'h-screen'} w-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col`} onClick={event => {
       if ((event.target as HTMLElement).closest('a[href]')) onNavigate?.();
     }}>
       {/* Логотип */}
       {!embedded && <div
         data-slot="sidebar-brand"
-        className="bg-sidebar border-sidebar-border flex h-16 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
+        className="bg-sidebar border-sidebar-border flex h-20 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
       >
         {/* Прототип: плитка 36px, radius 10px, bg-primary, белый текст 800/13px.
             Заливка ушла с шапки на плитку — шапка стала светлой.
@@ -637,7 +637,9 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
           {navigationReady && <section aria-label="Моя работа" className="mb-5">
             <ul className="space-y-1">
               <li><NavLink href={PORTAL_HOME_PATH} name="Моя работа" icon={House} active={pathname === PORTAL_HOME_PATH} /></li>
-              {primaryTasks.map(task => <li key={task.id}><NavLink href={portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams())} name={task.title} icon={ClipboardCheck} active={activeTaskId === task.id} /></li>)}
+              {primaryTasks.map(task => <li key={task.id}><NavLink href={portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams())} name={task.title}
+                icon={task.id === 'assistant' ? Sparkles : task.id === 'users' || task.id === 'department-forces' || task.id === 'headquarters' ? Users : task.id === 'roles' ? KeyRound : task.id === 'personal' ? UserRound : ClipboardCheck}
+                active={activeTaskId === task.id} /></li>)}
             </ul>
           </section>}
           {navigationReady && currentItem && <section aria-label="Текущий раздел" className="mb-5">

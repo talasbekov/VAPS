@@ -24,7 +24,7 @@ test.describe('permission-driven portal start', () => {
     await expect(trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true })).toHaveAttribute('href', /^\/workspace\/?$/);
     await trail.getByRole('link', { name: 'Smart Жоспарлау', exact: true }).click();
     await expect(page).toHaveURL(/\/workspace\/?$/);
-    await expect(page.getByRole('heading', { name: 'Что нужно сделать?', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Люди и ежедневная работа', exact: true })).toBeVisible();
   });
 
   test('expense breadcrumbs follow daily and forces views consistently with the screen heading', async ({ page }) => {

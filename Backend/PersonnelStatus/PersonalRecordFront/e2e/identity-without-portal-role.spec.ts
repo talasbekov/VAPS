@@ -41,7 +41,7 @@ test.describe(
       await page.goto(`${APP}/security-ops/profile/`, { waitUntil: 'domcontentloaded' })
 
       const header = page.locator('header').first()
-      await expect(header.getByText(/Раздел ОМ:/)).toBeVisible({ timeout: 25_000 })
+      await expect(header.getByLabel('Рабочая роль', { exact: true })).toBeVisible({ timeout: 25_000 })
 
       // Кадрового бейджа больше нет НИ В КАКОМ виде: имена портальных ролей
       // начинались с «Роль-N», и возврат любой из девяти краснит эту строку.

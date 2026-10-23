@@ -7,6 +7,7 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
+import { AssistantBrief } from "@/features/om-assistant/brief";
 import { STAGE_LABEL, STAGE_ORDER } from "@/entities/security-event/model/stage-meta";
 import { SECURITY_EVENT_KIND_LABEL } from "@/entities/security-event/model/types";
 import { useAssistantAccess, useAssistantCatalogs, useAssistantConfiguration, useAssistantTask, useAssistantTasks, useAssistantWriter } from "@/features/om-assistant/api";
@@ -16,7 +17,6 @@ import { ASSISTANT_PATH, assistantDate, assistantTaskTitle, assistantListPage, a
 const panel = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900";
 const input = "mt-1 w-full rounded-lg border border-slate-300 bg-background px-3 py-2 text-sm text-foreground disabled:opacity-60 dark:border-slate-600";
 const label = "block text-sm font-medium";
-const example = "Подготовь наряд на внутреннее мероприятие «Встреча» 25.10.2026 на объекте Аккорда. Запроси во втором департаменте 4 человека, в шестом 6.";
 function count(value: unknown[] | number | undefined) { return Array.isArray(value) ? value.length : typeof value === "number" ? value : null; }
 
 function GatheringPreparation({ task, isHeadquarters }: { task: AssistantTask; isHeadquarters: boolean }) {
@@ -331,16 +331,13 @@ function AssistantAuthorizedWorkspace() {
           {configuration.data?.enabled === false && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" role="status">Понимание текста отключено. Заполните форму — поручение можно сохранить и продолжить.</p>}
           {configuration.isError && <p role="status" className="mb-4 text-sm text-amber-700">Не удалось проверить понимание текста. Можно заполнить форму.</p>}
           {mode === "text" ? <>
-          <label className="block text-lg font-semibold" htmlFor="om-assistant-message">Какой наряд нужно подготовить?</label>
-          <textarea id="om-assistant-message" className={`${input} mt-3 min-h-32 resize-y text-base leading-relaxed`} maxLength={4000} disabled={frozen} value={message} onChange={event => setMessage(event.target.value)} placeholder="Название, дата, объект и сколько человек запросить…" />
+          <AssistantBrief value={message} onChange={setMessage} disabled={frozen} pending={writer.pending}
+            onSubmit={() => void writer.create(message, eventContext ? { eventId: eventContext } : {}, true)} />
           {eventContext && <p className="mt-2 text-sm text-blue-700 dark:text-blue-300">Поручение связано с выбранным ОМ. Его фактические сведения проверит сервер.</p>}
-          <details className="mt-3 text-sm text-slate-500"><summary className="cursor-pointer">Пример поручения</summary><p className="mt-2 leading-relaxed">{example}</p><button className="mt-2 font-medium text-blue-700 underline dark:text-blue-300" disabled={frozen} onClick={() => setMessage(example)}>Вставить пример</button></details>
-          <p className="mt-3 text-xs text-slate-500">Помощник сохранит поручение и запросит недостающие сведения.</p>
           </> : <DraftEditor draft={draft} onChange={setDraft} catalogs={catalogs.data} metadata disabled={frozen} />}
-          <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" disabled={frozen || (mode === "text" && !message.trim())}
-            onClick={() => mode === "manual" ? manual() : void writer.create(message, eventContext ? { eventId: eventContext } : {}, true)}>
-            {writer.pending ? "Сохраняем поручение…" : mode === "manual" ? "Сохранить по указанным сведениям" : "Подготовить по поручению"}
-          </Button>
+          {mode === "manual" && <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" disabled={frozen} onClick={manual}>
+            {writer.pending ? "Сохраняем поручение…" : "Сохранить по указанным сведениям"}
+          </Button>}
         </section>}
         {taskParam && !taskId && <p className={panel} role="alert">Некорректная ссылка на поручение. Откройте его из списка или начните новую задачу.</p>}
         {taskId && !task && !selected.isError && <p className={panel} role="status">Загружаем поручение…</p>}

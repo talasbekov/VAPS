@@ -1,3 +1,21 @@
+/* Local shell tokens keep controls and document surfaces in their own theme. */
+.workdesk-sidebar {
+  --sidebar: 218 35% 14%;
+  --sidebar-foreground: 215 30% 94%;
+  --sidebar-accent: 216 30% 23%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 218 23% 26%;
+  --muted-foreground: 216 22% 74%;
+  --primary-ink: 210 100% 81%;
+  --primary: 215 85% 62%;
+}
+.workdesk-sidebar nav { padding-top: 24px; }
+.workdesk-sidebar nav a { min-height: 44px; }
+.workdesk-sidebar nav a[aria-current='page'] { background: #3154aa; color: white; }
+.workdesk-sidebar nav > details { border: 0; border-top: 1px solid hsl(var(--sidebar-border)); border-radius: 0; padding-top: 18px; }
+.workdesk-sidebar .sidebar-role-card { animation: none; }
+.workdesk-sidebar .sidebar-nav-item { animation: none; }
+
 /* Stagger анимация для пунктов навигации */
 .sidebar-nav-item {
   animation: slideIn 0.4s ease-out forwards;

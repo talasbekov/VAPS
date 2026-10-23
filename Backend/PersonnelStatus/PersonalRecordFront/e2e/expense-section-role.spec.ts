@@ -79,7 +79,7 @@ test.describe(LIVE ? 'расход под ролью раздела' : 'расх
 
     // Шапка называет роль РАЗДЕЛА. Имя роли берётся с сервера, не из литерала.
     const header = page.locator('header').first()
-    await expect(header.getByText(/Раздел ОМ:/)).toBeVisible()
+    await expect(header.getByLabel('Рабочая роль', { exact: true })).toBeVisible()
     for (const role of actor.roles) await expect(header).toContainText(role.name)
 
     // Плашка про «ограниченные права» кадровой роли снята: она утверждала бы
