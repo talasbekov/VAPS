@@ -123,7 +123,8 @@ test("missing passport policy is explained and retry reloads the registry", asyn
   await page.goto("/security-ops/objects/");
   await expect(page.getByRole("alert").filter({ hasText: "Политика актуальности паспорта не настроена." })).toBeVisible();
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
-  await expect(page.getByText("Объекты не найдены", { exact: true })).toBeVisible();
+  await expect(page.getByText("Объектов пока нет", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Поиск по реестру объектов", { exact: true })).toHaveCount(0);
   expect(attempts).toBe(2);
 });
 
@@ -143,7 +144,8 @@ test("object server failures have a retry action and do not expose technical det
   const attemptsBeforeRetry = attempts;
   recovered = true;
   await page.getByRole("button", { name: "Повторить", exact: true }).click();
-  await expect(page.getByText("Объекты не найдены", { exact: true })).toBeVisible();
+  await expect(page.getByText("Объектов пока нет", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Поиск по реестру объектов", { exact: true })).toHaveCount(0);
   expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
 });
 

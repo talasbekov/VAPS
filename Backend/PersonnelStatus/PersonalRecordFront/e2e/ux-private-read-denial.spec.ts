@@ -50,12 +50,25 @@ for (const status of [403,404]) for (const kind of ['passport','version'] as con
 
 for (const status of [403,404]) test(`registry: denied${status} hides cached regions and aggregates until200`,async ({ page,businessWrites })=>{
   const state=await prepare(page);await page.goto('/security-ops/objects/');
+  const summary=page.locator('main summary').filter({hasText:'Сводка по объектам'});
+  await summary.click();
   const kpi=page.getByRole('region',{name:'Показатели реестра',exact:true});await expect(kpi).toBeVisible();
-  state.fail.registry=status;await refresh(page);await expect(page.getByText('Не удалось загрузить реестр объектов.',{exact:true})).toBeVisible();
+  state.fail.registry=status;await refresh(page);
+  if(status===403){
+    await expect(page.getByRole('heading',{name:'Доступ закрыт',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Повторить',exact:true})).toHaveCount(0);
+  }else{
+    await expect(page.getByText('Не удалось загрузить реестр объектов.',{exact:true})).toBeVisible();
+  }
   await expect(kpi).toHaveCount(0);await expect(page.getByRole('group',{name:'Раздел реестра',exact:true})).toHaveCount(0);
   await expect(page.getByText('Регион закрытых данных',{exact:true})).toHaveCount(0);
-  state.fail.registry=503;const count=state.responses.registry,response=page.waitForResponse(row=>new URL(row.url()).pathname===paths.registry&&row.status()===503);await page.getByRole('button',{name:'Повторить',exact:true}).click();await(await response).finished();await expect.poll(()=>state.responses.registry).toBe(count+2);await expect(page.getByRole('button',{name:'Повторить',exact:true})).toBeEnabled();await expect(kpi).toHaveCount(0);
-  state.fail.registry=0;await page.getByRole('button',{name:'Повторить',exact:true}).click();await expect(kpi).toBeVisible();expect(businessWrites).toEqual([]);
+  state.fail.registry=503;
+  const count=state.responses.registry,response=page.waitForResponse(row=>new URL(row.url()).pathname===paths.registry&&row.status()===503);
+  if(status===403)await refresh(page);else await page.getByRole('button',{name:'Повторить',exact:true}).click();
+  await(await response).finished();await expect.poll(()=>state.responses.registry).toBe(count+2);
+  await expect(page.getByRole('button',{name:'Повторить',exact:true})).toBeEnabled();await expect(kpi).toHaveCount(0);
+  state.fail.registry=0;await page.getByRole('button',{name:'Повторить',exact:true}).click();
+  await summary.click();await expect(kpi).toBeVisible();expect(businessWrites).toEqual([]);
 });
 
 for(const source of ['objectHistory','personHistory'] as const) for(const status of [403,404]) test(`${source}: denial${status} removes saved rows and inline retry waits for200`,async({page,businessWrites})=>{

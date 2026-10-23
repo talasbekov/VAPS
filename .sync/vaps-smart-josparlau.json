@@ -1,5 +1,5 @@
 {
-  "base_revision": "79e29137d1f3b05f77287a91ad256c7072a0e97f",
+  "base_revision": "39bfb79128b4fed548ddc279e8234815f263cbcc",
   "excluded_categories": [
     "runtime credentials and database/media backups",
     "external docs/vault notes",
@@ -309,10 +309,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/passports/[versionId]/page.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx": {
-      "bytes": 42008,
+      "bytes": 44562,
       "mode": "100644",
-      "sha": "f4219a655781ee9a71fa68ce913d5cf61bceff92",
-      "sha256": "30ff0ec81a690c119a32f103c487484d542deaaf1efc7ce1407352f0e02d46cc",
+      "sha": "403a07a288c783df51620a3abf736c3043122f63",
+      "sha256": "438dd42b6431e47da833190a2c3f7b6561df9891367a733e4d5a1c2d5989e508",
       "source": "PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/persons/page.tsx": {
@@ -2842,6 +2842,13 @@
       "sha256": "3524bca3b7a6d3a3a3ab3348bf949ad1eb7f2aadce8c4ad4107dbdaabc462aa7",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-multi-object-forces.spec.ts"
     },
+    "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-objects-registry-scenario.spec.ts": {
+      "bytes": 12364,
+      "mode": "100644",
+      "sha": "2329deaa2bfe620441dd842960252483a2ec90da",
+      "sha256": "6f3f00dde4899b0b416205de2cf6cfd155c6cb80414c0748cc54b34891d57139",
+      "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-objects-registry-scenario.spec.ts"
+    },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-offline-map.spec.ts": {
       "bytes": 10645,
       "mode": "100644",
@@ -2920,10 +2927,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-placement-reading.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-private-read-denial.spec.ts": {
-      "bytes": 9892,
+      "bytes": 10337,
       "mode": "100644",
-      "sha": "cfe00ca8b492879da846322ed4327af648c1e54c",
-      "sha256": "883af648ba920c7524d29084f68bc5358216c3e654f5294f6cfac63dcc93df1e",
+      "sha": "bffb45795f8ee800b73316f460622a5dc8f191c4",
+      "sha256": "062d0db7bea2bcf36f34ae69e3d134a5b694312ffd8283a46201edeb6f61e80b",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-private-read-denial.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-profile-assignment-filters.spec.ts": {
@@ -6728,10 +6735,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/tailwind.config.js"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/tests/frontend-runtime.spec.ts": {
-      "bytes": 8472,
+      "bytes": 8700,
       "mode": "100644",
-      "sha": "4a3e9b389b7b548e16caf13dcd683e9d1092921e",
-      "sha256": "1faafb598db49fec482a4f30e61e59acea3d87f876884866905d24395204e674",
+      "sha": "d879170c1aa1601bcc9343a02e40f4608eb3559a",
+      "sha256": "7e3a16f2bd81bd98026f9359596eca81baba4a8d7ae70d1c961c03017cd19c39",
       "source": "PersonnelStatus/PersonalRecordFront/tests/frontend-runtime.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/tests/group-rating-live.spec.ts": {
@@ -16877,6 +16884,13 @@
       "sha256": "c31f6944765f9bd4b15f1a8370781014b02d0cc9087af0ac298240bb994421cd",
       "source": "docs/superpowers/plans/2026-10-22-role-usability.md"
     },
+    "docs/superpowers/plans/2026-10-23-objects-registry-scenarios.md": {
+      "bytes": 8073,
+      "mode": "100644",
+      "sha": "e67aa1d44cdda058a044b3aa7f8bc5733dc36d1f",
+      "sha256": "48db8034fe71567682417e7889c2d6e713b4aaa8b49c23ecd8109eb1bbc98953",
+      "source": "docs/superpowers/plans/2026-10-23-objects-registry-scenarios.md"
+    },
     "docs/superpowers/specs/2026-09-23-dictionary-values-foundation-design.md": {
       "bytes": 15400,
       "mode": "100644",
@@ -17462,42 +17476,25 @@
   "format": 1,
   "repository": "talasbekov/VAPS",
   "source_layout": "PersonnelStatus",
-  "source_revision": "a8a1ce25aa879de4f0abd7754d5c42b0b2fc22f6",
+  "source_revision": "f4a866df941a9c130e83ba1b0edc8dcb249e6a6a",
   "target_layout": "Backend/PersonnelStatus",
   "verification": {
-    "backend": [
-      {
-        "command": [
-          "python",
-          "-m",
-          "pytest",
-          "-q",
-          "-p",
-          "no:cacheprovider",
-          "--create-db",
-          "--junitxml=/tmp/vaps-tests.xml"
-        ],
-        "exitCode": 0
-      },
-      {
-        "command": [
-          "python",
-          "manage.py",
-          "makemigrations",
-          "--check",
-          "--dry-run",
-          "--settings=organization_management.config.settings.test"
-        ],
-        "exitCode": 0
-      }
-    ],
+    "backend": {
+      "carriedPassed": 7664,
+      "carriedSkipped": 1,
+      "exactUnchangedImage": "sha256:8fdd24e1854d5274aafde9c369ea29b8de76f236d3c2d75f580cf31cdc30c9a6",
+      "exactUnchangedSourceFiles": 1283,
+      "migrationsCheck": "No changes detected",
+      "provenance": "23Oct prior VAPS publication full backend verification"
+    },
     "frontend": {
+      "productionBrowserTests": 51,
       "productionBuildPages": 45,
       "tests": 914
     },
     "sourceDigests": {
       "backend": "2b5a5e68ec5703a9a4b832dfa00137adbc6629650a62668759de7c72b095fb04",
-      "frontend": "8c34ec0adbd6f776a056906ae398fd77aa5438fe2018c1f1b4d365826e9df9ce"
+      "frontend": "0fd16c2f803a238be43ebac80765d8683b3c60a750e975ba2a7940da9bb9fcee"
     }
   }
 }
