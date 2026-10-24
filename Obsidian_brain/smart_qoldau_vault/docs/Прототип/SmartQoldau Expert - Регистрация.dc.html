@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} input::placeholder{color:#a9bdb9} input{outline:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#ffffff;display:flex;flex-direction:column;align-items:center;padding:72px 26px 28px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <button onClick="{{ onBack }}" style="position:absolute;top:64px;left:24px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+      <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <sc-if value="{{ isPhoneStep }}" hint-placeholder-val="{{ true }}">
+      <div style="width:100%;display:flex;flex-direction:column;align-items:center">
+        <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin-bottom:28px">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a">Вход для специалистов</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.45">Новый номер — создадим профиль специалиста</div>
+        </div>
+
+        <div style="width:100%;display:flex;flex-direction:column;gap:14px;margin-bottom:20px">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font-size:12.5px;font-weight:600;color:#3a5450">Номер телефона</label>
+            <div style="width:100%;height:52px;border-radius:16px;border:1.5px solid {{ phoneBorderColor }};background:#fafcfb;display:flex;align-items:center;box-sizing:border-box;padding:0 4px 0 14px;gap:8px">
+              <span style="font-size:15px;font-weight:600;color:#0f3f3a;white-space:nowrap">🇰🇿 +7</span>
+              <div style="width:1px;height:22px;background:#e6efec"></div>
+              <input type="tel" inputmode="numeric" value="{{ phoneFormatted }}" onChange="{{ onPhoneChange }}" placeholder="701 123 45 67" style="flex:1;height:100%;border:none;background:transparent;padding:0 10px;font-size:15px;font-family:inherit;color:#0f3f3a;box-sizing:border-box;min-width:0"/>
+            </div>
+            <sc-if value="{{ phoneError }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:12px;font-weight:600;color:#c0392b">Введите полный номер телефона</div>
+            </sc-if>
+            <sc-if value="{{ noPhoneError }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:12px;font-weight:500;color:#8fa6a1">Пришлём одноразовый код по SMS</div>
+            </sc-if>
+          </div>
+        </div>
+
+        <button onClick="{{ onGetCode }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4)">Получить код</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCodeStep }}" hint-placeholder-val="{{ false }}">
+      <div style="width:100%;display:flex;flex-direction:column;align-items:center;flex:1">
+        <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin-bottom:32px">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a">Введите код</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.45">Мы отправили SMS с кодом на номер +7 {{ phoneFormatted }}</div>
+        </div>
+
+        <input type="tel" inputmode="numeric" maxlength="4" value="{{ code }}" onChange="{{ onCodeChange }}" placeholder="••••" style="width:180px;height:64px;border-radius:16px;border:1.5px solid {{ codeBorderColor }};background:#fafcfb;text-align:center;font-size:28px;font-weight:700;letter-spacing:14px;color:#0f3f3a;font-family:inherit;box-sizing:border-box;padding:0 0 0 14px"/>
+
+        <sc-if value="{{ codeError }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;font-weight:600;color:#c0392b;margin-top:10px">Неверный код. Попробуйте снова</div>
+        </sc-if>
+
+        <div style="font-size:13px;font-weight:600;color:#8fa6a1;margin-top:20px">Отправить код повторно через <span style="color:#0f766e">00:45</span></div>
+
+        <button onClick="{{ onConfirmCode }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4);margin-top:28px">Подтвердить</button>
+
+        <div style="font-size:13px;font-weight:500;color:#8fa6a1;margin-top:auto" onClick="{{ onBackToPhone }}">Изменить <span style="color:#0f766e;font-weight:700;cursor:pointer">номер телефона</span></div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { step: 'phone', phone: '', phoneError: false, code: '', codeError: false };
+  static REGISTERED_NUMBER = '7760012288';
+  static VALID_CODE = '1234';
+  formatPhone(digits) {
+    return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 8), digits.slice(8, 10)].filter(Boolean).join(' ');
+  }
+  renderVals() {
+    const s = this.state;
+    return {
+      isPhoneStep: s.step === 'phone',
+      isCodeStep: s.step === 'code',
+      phoneFormatted: this.formatPhone(s.phone),
+      phoneError: s.phoneError,
+      noPhoneError: !s.phoneError,
+      phoneBorderColor: s.phoneError ? '#e6a0a0' : '#e6efec',
+      code: s.code,
+      codeError: s.codeError,
+      codeBorderColor: s.codeError ? '#e6a0a0' : '#e6efec',
+      onPhoneChange: (e) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+        this.setState({ phone: digits, phoneError: false });
+      },
+      onCodeChange: (e) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+        this.setState({ code: digits, codeError: false });
+      },
+      onGetCode: () => {
+        if (this.state.phone.length < 10) { this.setState({ phoneError: true }); return; }
+        this.setState({ step: 'code', code: '', codeError: false });
+      },
+      onConfirmCode: () => {
+        if (this.state.code === Component.VALID_CODE) {
+          if (this.state.phone === Component.REGISTERED_NUMBER) { window.location.href = './SmartQoldau Expert - Главная.dc.html'; return; }
+          window.location.href = './SmartQoldau Expert - Профессиональный профиль.dc.html';
+          return;
+        }
+        this.setState({ codeError: true });
+      },
+      onBackToPhone: () => this.setState({ step: 'phone', code: '', codeError: false }),
+      onBack: () => {
+        if (this.state.step === 'code') { this.setState({ step: 'phone' }); return; }
+        window.location.href = './SmartQoldau Expert - Добро пожаловать.dc.html';
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

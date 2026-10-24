@@ -1,0 +1,27 @@
+{
+  "nodes": [
+    {"id": "canon-drift", "kind": "root_cause"},
+    {"id": "legacy-parallel-apis", "kind": "root_cause"},
+    {"id": "opt-in-security", "kind": "root_cause"},
+    {"id": "shared-live-test-state", "kind": "root_cause"},
+    {"id": "missing-fast-feedback", "kind": "root_cause"},
+    {"id": "large-cross-domain-files", "kind": "root_cause"},
+    {"id": "review-backlog", "kind": "root_cause"},
+    {"id": "authorization-findings", "kind": "finding_cluster"},
+    {"id": "false-green-findings", "kind": "finding_cluster"},
+    {"id": "contract-drift-findings", "kind": "finding_cluster"},
+    {"id": "regression-frequency", "kind": "impact"}
+  ],
+  "edges": [
+    {"from": "canon-drift", "to": "contract-drift-findings"},
+    {"from": "legacy-parallel-apis", "to": "authorization-findings"},
+    {"from": "opt-in-security", "to": "authorization-findings"},
+    {"from": "shared-live-test-state", "to": "false-green-findings"},
+    {"from": "missing-fast-feedback", "to": "false-green-findings"},
+    {"from": "large-cross-domain-files", "to": "contract-drift-findings"},
+    {"from": "review-backlog", "to": "canon-drift"},
+    {"from": "authorization-findings", "to": "regression-frequency"},
+    {"from": "false-green-findings", "to": "regression-frequency"},
+    {"from": "contract-drift-findings", "to": "regression-frequency"}
+  ]
+}

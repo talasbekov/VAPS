@@ -1,0 +1,61 @@
+{
+  "nodes": 315,
+  "changed_links": 10,
+  "changes": [
+    {
+      "code": "6702",
+      "previous_parent_code": "6701",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6703",
+      "previous_parent_code": "6701",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6705",
+      "previous_parent_code": "6704",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6706",
+      "previous_parent_code": "6704",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6769",
+      "previous_parent_code": "0",
+      "parent_code": null
+    },
+    {
+      "code": "6823",
+      "previous_parent_code": "6822",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6850",
+      "previous_parent_code": "6745",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6851",
+      "previous_parent_code": "6745",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6863",
+      "previous_parent_code": "6701",
+      "parent_code": "6769"
+    },
+    {
+      "code": "6950",
+      "previous_parent_code": "6701",
+      "parent_code": "6769"
+    }
+  ],
+  "roots": [
+    "6769"
+  ],
+  "cycles": 0,
+  "missing_parents": 0
+}

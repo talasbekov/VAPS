@@ -1,0 +1,12 @@
+Command: npm run check:stand
+Working directory: Backend/PersonnelStatus/PersonalRecordFront
+Observed HEAD: 504b99d009b37fbc0c53fe01d58e9e431b102f47
+Exit code: 0
+
+> my-v0-project@0.1.0 check:stand
+> bash scripts/tests/neighbours-test.sh
+
+23 проверки пройдены, включая «слушающий сервер без метки — владелец не назвался».
+neighbours.sh: все проверки пройдены
+
+Исполнитель: Кодекс Астра 6.

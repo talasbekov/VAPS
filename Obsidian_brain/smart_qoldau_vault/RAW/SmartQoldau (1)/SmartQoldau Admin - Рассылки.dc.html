@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} select,textarea,input{font-family:inherit}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1520px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18)">
+
+    <div style="width:250px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:26px 16px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:32px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">ADMIN</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="9">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="flex:1;font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+            <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><div style="min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center">{{ n.badge }}</div></sc-if>
+            <sc-if value="{{ n.restricted }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 11V7a7 7 0 0114 0v4 M5 11h14v9H5z" stroke="rgba(255,255,255,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div onClick="{{ openRoleSheet }}" style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08);cursor:pointer">
+        <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+        <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Админ Ержанова</div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">{{ roleLabel }}</div></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="rgba(255,255,255,0.4)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:34px 38px;box-sizing:border-box;overflow-y:auto">
+      <div style="margin-bottom:24px"><div style="font-size:24px;font-weight:800;color:#0f3f3a">Рассылки</div><div style="font-size:14px;font-weight:500;color:#6b8580;margin-top:4px">Push и email по сегментам пользователей</div></div>
+
+      <div style="display:grid;grid-template-columns:1.1fr 0.9fr;gap:20px;margin-bottom:24px">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;padding:24px">
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Тип рассылки</div>
+          <div style="display:flex;gap:8px;margin-bottom:20px">
+            <sc-for list="{{ typeOptions }}" as="t" hint-placeholder-count="2">
+              <div onClick="{{ t.onClick }}" style="flex:1;text-align:center;padding:12px 8px;border-radius:12px;border:1.5px solid {{ t.border }};background:{{ t.bg }};cursor:pointer">
+                <div style="font-size:13px;font-weight:700;color:{{ t.color }}">{{ t.label }}</div>
+                <div style="font-size:11px;font-weight:500;color:#8fa6a1;margin-top:2px">{{ t.desc }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ isIncident }}" hint-placeholder-val="{{ false }}">
+            <sc-if value="{{ isModerator }}" hint-placeholder-val="{{ false }}">
+              <div style="border-radius:14px;background:#fdedec;border:1px solid #f6d3cf;padding:14px;margin-bottom:16px">
+                <div style="font-size:12.5px;font-weight:800;color:#c0392b">Инцидент-алерты доступны только супер-админу</div>
+              </div>
+            </sc-if>
+          </sc-if>
+
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Сегмент получателей</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+            <select style="height:42px;padding:0 12px;border-radius:12px;border:1.5px solid #edf2f0;font-size:13px;color:#0f3f3a"><option>Все клиенты</option><option>Клиенты Premium</option><option>Клиенты — обычные</option><option>Все специалисты</option><option>Специалисты — Старт</option><option>Специалисты — Про/Топ</option><option>Неактивные 14+ дней</option></select>
+            <select style="height:42px;padding:0 12px;border-radius:12px;border:1.5px solid #edf2f0;font-size:13px;color:#0f3f3a"><option>Все города</option><option>Астана</option><option>Алматы</option><option>Шымкент</option></select>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:#f2fbf8;margin-bottom:20px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13px;font-weight:700;color:#0f3f3a">Получателей: {{ recipientCount }}</div>
+          </div>
+
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Канал</div>
+          <div style="display:flex;gap:16px;margin-bottom:20px">
+            <sc-for list="{{ channels }}" as="c" hint-placeholder-count="2">
+              <div onClick="{{ c.onClick }}" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <div style="width:18px;height:18px;border-radius:5px;border:2px solid {{ c.border }};background:{{ c.bg }};display:flex;align-items:center;justify-content:center">
+                  <sc-if value="{{ c.checked }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+                </div>
+                <div style="font-size:13px;font-weight:600;color:#0f3f3a">{{ c.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Заголовок</div>
+          <input value="{{ title }}" onInput="{{ onTitle }}" placeholder="Например: Новые специалисты со скидкой 15%" style="width:100%;height:44px;border:1.5px solid #edf2f0;border-radius:12px;padding:0 14px;font-size:13.5px;color:#0f3f3a;box-sizing:border-box;margin-bottom:14px"/>
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Текст сообщения</div>
+          <textarea value="{{ body }}" onInput="{{ onBody }}" placeholder="Текст рассылки..." style="width:100%;height:90px;border:1.5px solid #edf2f0;border-radius:12px;padding:12px;font-size:13.5px;color:#0f3f3a;box-sizing:border-box;resize:none;margin-bottom:20px"></textarea>
+
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ onSendNow }}" style="flex:1;height:50px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Отправить сейчас</button>
+            <button onClick="{{ onSchedule }}" style="flex:1;height:50px;border:1.5px solid #e3e9e7;border-radius:14px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Запланировать</button>
+          </div>
+        </div>
+
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;padding:24px;display:flex;flex-direction:column;align-items:center">
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;align-self:flex-start;margin-bottom:16px">Предпросмотр push-уведомления</div>
+          <div style="width:280px;border-radius:24px;background:#0f3f3a;padding:18px;box-shadow:0 20px 40px -16px rgba(15,63,58,0.4)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <div style="width:20px;height:20px;border-radius:6px;background:#0f766e;display:flex;align-items:center;justify-content:center"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5l-8-3z" stroke="#fff" stroke-width="2"/></svg></div>
+              <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.7)">SmartQoldau · сейчас</div>
+            </div>
+            <div style="font-size:13.5px;font-weight:800;color:#fff;margin-bottom:3px">{{ previewTitle }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.75);line-height:1.4">{{ previewBody }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;overflow:hidden">
+        <div style="padding:18px 22px;border-bottom:1px solid #eef2f0"><div style="font-size:15px;font-weight:800;color:#0f3f3a">История рассылок</div></div>
+        <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr;padding:12px 22px;background:#f8faf9;border-bottom:1px solid #eef2f0">
+          <div style="font-size:11px;font-weight:700;color:#8fa6a1">ДАТА</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">ЗАГОЛОВОК</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">СЕГМЕНТ</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">ПОЛУЧАТЕЛЕЙ</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">СТАТУС</div>
+        </div>
+        <sc-for list="{{ history }}" as="h" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr;padding:13px 22px;border-bottom:1px solid #f5f7f6;align-items:center">
+            <div style="font-size:12.5px;font-weight:600;color:#6b8580">{{ h.date }}</div>
+            <div style="font-size:12.5px;font-weight:700;color:#0f3f3a">{{ h.title }}</div>
+            <div style="font-size:12px;font-weight:600;color:#6b8580">{{ h.segment }}</div>
+            <div style="font-size:12.5px;font-weight:700;color:#0f3f3a">{{ h.count }}</div>
+            <div style="display:inline-flex;padding:3px 9px;border-radius:9px;background:{{ h.statusBg }};font-size:11px;font-weight:700;color:{{ h.statusColor }};width:fit-content">{{ h.status }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0f3f3a;color:#fff;padding:14px 22px;border-radius:14px;font-size:13.5px;font-weight:700;z-index:70">{{ toast }}</div>
+  </sc-if>
+
+  <sc-if value="{{ showRoleSheet }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeRoleSheet }}" style="position:fixed;inset:0;background:rgba(15,40,37,0.45);z-index:80;display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:360px;background:#fff;border-radius:20px;padding:20px;box-sizing:border-box">
+        <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:12px">Роль доступа (демо)</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <sc-for list="{{ roleOptions }}" as="opt" hint-placeholder-count="2">
+            <div onClick="{{ opt.onClick }}" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:{{ opt.bg }};cursor:pointer">
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ opt.label }}</div><div style="font-size:11px;font-weight:500;color:#8fa6a1">{{ opt.desc }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { type: 'marketing', channelPush: true, channelEmail: false, title: '', body: '', showRoleSheet: false, toast: '' };
+  renderVals() {
+    const role = localStorage.getItem('sq_admin_role') || 'super_admin';
+    const isModerator = role === 'moderator';
+    const s = this.state;
+    const nav = (active) => [
+      { label: 'Дашборд', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Admin - Дашборд.dc.html' },
+      { label: 'Верификация', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z', href: './SmartQoldau Admin - Верификация.dc.html', badge: 5 },
+      { label: 'Жалобы', icon: 'M12 2L2 20h20L12 2z M12 9v5M12 17v.1', href: './SmartQoldau Admin - Жалобы.dc.html', badge: 3 },
+      { label: 'Рассылки', icon: 'M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z', href: './SmartQoldau Admin - Рассылки.dc.html' },
+      { label: 'Финансы', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Admin - Финансы.dc.html', restricted: isModerator },
+      { label: 'Специалисты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Admin - Специалисты.dc.html' },
+      { label: 'Клиенты', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Admin - Клиенты.dc.html' },
+      { label: 'B2B-контракты', icon: 'M4 21V7l8-4 8 4v14 M9 21v-6h6v6 M9 9h.01M9 13h.01M15 9h.01M15 13h.01', href: './SmartQoldau Admin - B2B.dc.html', restricted: isModerator },
+      { label: 'B2G-контракты', icon: 'M3 21h18 M5 21V9l7-6 7 6v12 M9 21v-6h6v6', href: './SmartQoldau Admin - B2G.dc.html', restricted: isModerator },
+      { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', href: './SmartQoldau Admin - Настройки.dc.html', restricted: isModerator },
+    ].map(n => { const a = n.label === active; return { ...n, bg: a ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.55)'), textColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.6)'), onClick: a ? () => {} : () => { window.location.href = n.href; } }; });
+    const isIncident = s.type === 'incident';
+    return {
+      navItems: nav('Рассылки'),
+      roleLabel: isModerator ? 'Модератор' : 'Супер-админ',
+      isModerator,
+      showRoleSheet: s.showRoleSheet,
+      openRoleSheet: () => this.setState({ showRoleSheet: true }),
+      closeRoleSheet: () => this.setState({ showRoleSheet: false }),
+      stop: (e) => e.stopPropagation(),
+      roleOptions: [
+        { id: 'super_admin', label: 'Супер-админ', desc: 'Полный доступ ко всем разделам' },
+        { id: 'moderator', label: 'Модератор', desc: 'Верификация и жалобы, без финансов и настроек' },
+      ].map(o => ({ ...o, bg: role === o.id ? '#f2fbf8' : 'transparent', onClick: () => { localStorage.setItem('sq_admin_role', o.id); window.location.reload(); } })),
+      isIncident,
+      typeOptions: [
+        { id: 'marketing', label: 'Маркетинг', desc: 'Новости, акции, продукт' },
+        { id: 'incident', label: 'Инцидент-алерт', desc: 'Критичное — только супер-админ' },
+      ].map(t => ({ ...t, border: s.type === t.id ? '#0f766e' : '#edf2f0', bg: s.type === t.id ? '#f2fbf8' : '#fff', color: s.type === t.id ? '#0f766e' : '#0f3f3a', onClick: () => this.setState({ type: t.id }) })),
+      recipientCount: s.type === 'incident' ? '4 812' : '3 260',
+      channels: [
+        { id: 'push', label: 'Push', checked: s.channelPush, border: s.channelPush ? '#0f766e' : '#d8e4e0', bg: s.channelPush ? '#0f766e' : '#fff', onClick: () => this.setState(st => ({ channelPush: !st.channelPush })) },
+        { id: 'email', label: 'Email', checked: s.channelEmail, border: s.channelEmail ? '#0f766e' : '#d8e4e0', bg: s.channelEmail ? '#0f766e' : '#fff', onClick: () => this.setState(st => ({ channelEmail: !st.channelEmail })) },
+      ],
+      title: s.title, onTitle: (e) => this.setState({ title: e.target.value }),
+      body: s.body, onBody: (e) => this.setState({ body: e.target.value }),
+      previewTitle: s.title || 'Заголовок уведомления',
+      previewBody: s.body || 'Текст рассылки появится здесь по мере ввода.',
+      onSendNow: () => { this.setState({ toast: 'Рассылка отправлена', title: '', body: '' }); setTimeout(() => this.setState({ toast: '' }), 2500); },
+      onSchedule: () => { this.setState({ toast: 'Рассылка запланирована' }); setTimeout(() => this.setState({ toast: '' }), 2500); },
+      toast: s.toast,
+      history: [
+        { date: '2 сент', title: 'Скидка 15% на новых специалистов', segment: 'Все клиенты', count: '3 260', status: 'Отправлено', statusBg: '#e3f3ee', statusColor: '#159a7c' },
+        { date: '30 авг', title: 'Плановые технические работы 23:00–01:00', segment: 'Все пользователи', count: '4 812', status: 'Отправлено', statusBg: '#e3f3ee', statusColor: '#159a7c' },
+        { date: '28 авг', title: 'Изменение комиссии пакета «Про»', segment: 'Специалисты — Про/Топ', count: '77', status: 'Отправлено', statusBg: '#e3f3ee', statusColor: '#159a7c' },
+        { date: '25 авг', title: 'Новые медитации в разделе Материалы', segment: 'Клиенты Premium', count: '540', status: 'Отправлено', statusBg: '#e3f3ee', statusColor: '#159a7c' },
+        { date: '5 сент', title: 'Возвращайтесь — новая скидка на первую сессию', segment: 'Неактивные 14+ дней', count: '812', status: 'Запланировано', statusBg: '#fdf3e3', statusColor: '#c98a2e' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

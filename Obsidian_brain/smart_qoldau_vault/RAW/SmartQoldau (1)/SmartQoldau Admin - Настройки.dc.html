@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} input{font-family:inherit}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1520px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18)">
+
+    <div style="width:250px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:26px 16px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:32px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">ADMIN</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="8">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="flex:1;font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+            <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><div style="min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center">{{ n.badge }}</div></sc-if>
+            <sc-if value="{{ n.restricted }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 11V7a7 7 0 0114 0v4 M5 11h14v9H5z" stroke="rgba(255,255,255,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div onClick="{{ openRoleSheet }}" style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08);cursor:pointer">
+        <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+        <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Админ Ержанова</div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">{{ roleLabel }}</div></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="rgba(255,255,255,0.4)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:34px 38px;box-sizing:border-box;overflow-y:auto">
+      <sc-if value="{{ isModerator }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:70vh;text-align:center;gap:10px">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M5 11V7a7 7 0 0114 0v4 M5 11h14v9H5z" stroke="#c4d3cf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:17px;font-weight:800;color:#0f3f3a">Доступ ограничен для роли «Модератор»</div>
+          <div style="font-size:13px;font-weight:500;color:#8fa6a1;max-width:340px">Раздел «Настройки» доступен только супер-админу</div>
+          <button onClick="{{ switchToSuper }}" style="margin-top:8px;height:44px;padding:0 20px;border:none;border-radius:22px;background:#0f766e;color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Переключиться на супер-админа (демо)</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ !isModerator }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-bottom:22px"><div style="font-size:24px;font-weight:800;color:#0f3f3a">Настройки платформы</div><div style="font-size:14px;font-weight:500;color:#6b8580;margin-top:4px">Пакеты, темы, контент, журнал действий</div></div>
+
+      <div style="display:flex;gap:6px;margin-bottom:22px;border-bottom:1px solid #eef2f0">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <div onClick="{{ t.onClick }}" style="padding:10px 16px;font-size:13px;font-weight:700;color:{{ t.color }};border-bottom:2px solid {{ t.border }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ tab === 'packages' }}" hint-placeholder-val="{{ true }}">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;padding:22px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 0.8fr;padding:10px 0;border-bottom:1px solid #eef2f0">
+            <div style="font-size:11px;font-weight:700;color:#8fa6a1">ПАКЕТ</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">ПЛАТА / МЕС</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">КОМИССИЯ</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">ВИДИМОСТЬ</div><div></div>
+          </div>
+          <sc-for list="{{ packages }}" as="p" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 0.8fr;padding:14px 0;border-bottom:1px solid #f5f7f6;align-items:center">
+              <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ p.name }}</div>
+              <input value="{{ p.price }}" style="width:100px;height:36px;border:1.5px solid #edf2f0;border-radius:10px;padding:0 10px;font-size:12.5px"/>
+              <input value="{{ p.commission }}" style="width:80px;height:36px;border:1.5px solid #edf2f0;border-radius:10px;padding:0 10px;font-size:12.5px"/>
+              <div style="font-size:12.5px;font-weight:600;color:#6b8580">{{ p.visibility }}</div>
+              <button style="height:36px;padding:0 14px;border:none;border-radius:10px;background:#0f766e;color:#fff;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;width:fit-content">Сохранить</button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab === 'topics' }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;padding:22px">
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:14px">Темы обращений (тэги для матчинга)</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+            <sc-for list="{{ topics }}" as="t" hint-placeholder-count="10">
+              <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:12px;background:#f2f2f0;font-size:12.5px;font-weight:700;color:#0f3f3a">{{ t }}<span onClick="{{ removeTopic }}" style="cursor:pointer;color:#a9bdb9">✕</span></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input placeholder="Новая тема..." style="flex:1;height:40px;border:1.5px solid #edf2f0;border-radius:12px;padding:0 14px;font-size:13px"/>
+            <button style="height:40px;padding:0 16px;border:none;border-radius:12px;background:#0f766e;color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">Добавить</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab === 'content' }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #eef2f0">
+            <div style="font-size:13px;font-weight:700;color:#0f3f3a">Материалы (статьи, медитации, музыка)</div>
+            <button style="height:36px;padding:0 14px;border:none;border-radius:10px;background:#0f766e;color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">+ Добавить материал</button>
+          </div>
+          <sc-for list="{{ content }}" as="c" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:14px 20px;border-bottom:1px solid #f5f7f6;align-items:center">
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ c.title }}</div>
+              <div style="font-size:12.5px;font-weight:600;color:#6b8580">{{ c.type }}</div>
+              <div style="display:inline-flex;padding:3px 10px;border-radius:10px;background:{{ c.statusBg }};font-size:11.5px;font-weight:700;color:{{ c.statusColor }};width:fit-content">{{ c.status }}</div>
+              <div style="font-size:12px;font-weight:700;color:#0f766e;cursor:pointer">{{ c.action }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab === 'audit' }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 1fr 2.5fr;padding:14px 20px;background:#f8faf9;border-bottom:1px solid #eef2f0">
+            <div style="font-size:11px;font-weight:700;color:#8fa6a1">ВРЕМЯ</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">АДМИН</div><div style="font-size:11px;font-weight:700;color:#8fa6a1">ДЕЙСТВИЕ</div>
+          </div>
+          <sc-for list="{{ auditLog }}" as="a" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:1fr 1fr 2.5fr;padding:13px 20px;border-bottom:1px solid #f5f7f6;align-items:center">
+              <div style="font-size:12.5px;font-weight:600;color:#6b8580">{{ a.time }}</div>
+              <div style="font-size:12.5px;font-weight:700;color:#0f3f3a">{{ a.admin }}</div>
+              <div style="font-size:12.5px;font-weight:500;color:#0f3f3a">{{ a.action }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{ showRoleSheet }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeRoleSheet }}" style="position:fixed;inset:0;background:rgba(15,40,37,0.45);z-index:80;display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:360px;background:#fff;border-radius:20px;padding:20px;box-sizing:border-box">
+        <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:12px">Роль доступа (демо)</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <sc-for list="{{ roleOptions }}" as="opt" hint-placeholder-count="2">
+            <div onClick="{{ opt.onClick }}" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:{{ opt.bg }};cursor:pointer">
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ opt.label }}</div><div style="font-size:11px;font-weight:500;color:#8fa6a1">{{ opt.desc }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tab: 'packages', showRoleSheet: false };
+  renderVals() {
+    const role = localStorage.getItem('sq_admin_role') || 'super_admin';
+    const isModerator = role === 'moderator';
+    const nav = (active) => [
+      { label: 'Дашборд', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Admin - Дашборд.dc.html' },
+      { label: 'Верификация', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z', href: './SmartQoldau Admin - Верификация.dc.html', badge: 5 },
+      { label: 'Жалобы', icon: 'M12 2L2 20h20L12 2z M12 9v5M12 17v.1', href: './SmartQoldau Admin - Жалобы.dc.html', badge: 3 },
+      { label: 'Рассылки', icon: 'M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z', href: './SmartQoldau Admin - Рассылки.dc.html' },
+      { label: 'Финансы', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Admin - Финансы.dc.html', restricted: isModerator },
+      { label: 'Специалисты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Admin - Специалисты.dc.html' },
+      { label: 'Клиенты', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Admin - Клиенты.dc.html' },
+      { label: 'B2B-контракты', icon: 'M4 21V7l8-4 8 4v14 M9 21v-6h6v6 M9 9h.01M9 13h.01M15 9h.01M15 13h.01', href: './SmartQoldau Admin - B2B.dc.html', restricted: isModerator },
+      { label: 'B2G-контракты', icon: 'M3 21h18 M5 21V9l7-6 7 6v12 M9 21v-6h6v6', href: './SmartQoldau Admin - B2G.dc.html', restricted: isModerator },
+      { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', href: './SmartQoldau Admin - Настройки.dc.html', restricted: isModerator },
+    ].map(n => { const a = n.label === active; return { ...n, bg: a ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.55)'), textColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.6)'), onClick: a ? () => {} : () => { window.location.href = n.href; } }; });
+    const s = this.state;
+    const tabs = [
+      { id: 'packages', label: 'Пакеты экспертов' },
+      { id: 'topics', label: 'Темы обращений' },
+      { id: 'content', label: 'Контент' },
+      { id: 'audit', label: 'Журнал действий' },
+    ].map(t => ({ ...t, color: s.tab === t.id ? '#0f766e' : '#8fa6a1', border: s.tab === t.id ? '#0f766e' : 'transparent', onClick: () => this.setState({ tab: t.id }) }));
+    return {
+      navItems: nav('Настройки'),
+      roleLabel: isModerator ? 'Модератор' : 'Супер-админ',
+      isModerator,
+      switchToSuper: () => { localStorage.setItem('sq_admin_role', 'super_admin'); window.location.reload(); },
+      showRoleSheet: s.showRoleSheet,
+      openRoleSheet: () => this.setState({ showRoleSheet: true }),
+      closeRoleSheet: () => this.setState({ showRoleSheet: false }),
+      stop: (e) => e.stopPropagation(),
+      roleOptions: [
+        { id: 'super_admin', label: 'Супер-админ', desc: 'Полный доступ ко всем разделам' },
+        { id: 'moderator', label: 'Модератор', desc: 'Верификация и жалобы, без финансов и настроек' },
+      ].map(o => ({ ...o, bg: role === o.id ? '#f2fbf8' : 'transparent', onClick: () => { localStorage.setItem('sq_admin_role', o.id); window.location.reload(); } })),
+      tabs,
+      tab: s.tab,
+      packages: [
+        { name: 'Старт', price: '0 ₸', commission: '0%', visibility: 'Пониженная' },
+        { name: 'Базовый', price: '0 ₸', commission: '15%', visibility: 'Стандартная' },
+        { name: 'Про', price: '12 000 ₸', commission: '13%', visibility: 'Приоритет 2' },
+        { name: 'Топ', price: '20 000 ₸', commission: '10–11%', visibility: 'Приоритет 1' },
+      ],
+      topics: ['Тревога и стресс', 'Отношения', 'Семья', 'Эмоциональное выгорание', 'Самооценка', 'Панические состояния', 'Зависимости', 'Жизненные кризисы', 'Одиночество', 'Проблемы со сном', 'Другое'],
+      removeTopic: () => {},
+      content: [
+        { title: 'Как справиться с тревогой перед экзаменом', type: 'Статья', status: 'Опубликовано', statusBg: '#e3f3ee', statusColor: '#159a7c', action: 'Скрыть' },
+        { title: 'Медитация «Спокойный вечер»', type: 'Медитация', status: 'Опубликовано', statusBg: '#e3f3ee', statusColor: '#159a7c', action: 'Скрыть' },
+        { title: 'Дождь и лес — расслабляющий трек', type: 'Музыка', status: 'На проверке', statusBg: '#fdf3e3', statusColor: '#c98a2e', action: 'Опубликовать' },
+        { title: 'Выгорание: 5 ранних признаков', type: 'Статья', status: 'На проверке', statusBg: '#fdf3e3', statusColor: '#c98a2e', action: 'Опубликовать' },
+        { title: 'Дыхательная практика 4-7-8', type: 'Медитация', status: 'Опубликовано', statusBg: '#e3f3ee', statusColor: '#159a7c', action: 'Скрыть' },
+      ],
+      auditLog: [
+        { time: 'Сегодня, 14:12', admin: 'Ержанова А.', action: 'Одобрила заявку специалиста Жанар Тулегенова' },
+        { time: 'Сегодня, 11:40', admin: 'Ержанова А.', action: 'Закрыла жалобу №3 — вынесено предупреждение специалисту' },
+        { time: 'Вчера, 17:05', admin: 'Ержанова А.', action: 'Изменила комиссию пакета «Про»: 14% → 13%' },
+        { time: 'Вчера, 10:22', admin: 'Сапаров Б. (модератор)', action: 'Отклонила заявку специалиста — дубликат ИИН' },
+        { time: '30 авг, 16:00', admin: 'Ержанова А.', action: 'Заблокировала специалиста Тимур Абенов' },
+        { time: '29 авг, 09:30', admin: 'Ержанова А.', action: 'Продлила B2B-контракт «Halyk Finance» до 15 дек 2026' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

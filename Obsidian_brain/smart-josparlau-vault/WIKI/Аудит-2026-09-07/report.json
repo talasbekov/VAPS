@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "project": "Smart Josparlau",
+  "date": "2026-09-07",
+  "executor": "Кодекс Астра 6",
+  "plane_issue": 770,
+  "repository_head": "f28e9e54978c1c855740d4141020df5320d4e879",
+  "final_observed_head": "504b99d009b37fbc0c53fe01d58e9e431b102f47",
+  "verdict": "NO-GO",
+  "direction": "correct_domain_direction_but_unsustainable_delivery_system",
+  "release_blockers": [
+    "BACKEND-001"
+  ],
+  "source_anchored_critical_pending_runtime": [
+    "BACKEND-002",
+    "BACKEND-003",
+    "BACKEND-004",
+    "BACKEND-006"
+  ],
+  "counts": {
+    "plane_total": 959,
+    "plane_review": 548,
+    "plane_on_test": 42,
+    "archived_files": 38,
+    "formal_requirement_codes": 120,
+    "untraced_requirement_codes": 10,
+    "frontend_routes": 46,
+    "frontend_e2e_specs": 114,
+    "backend_test_files": 334
+  },
+  "safe_checks": [
+    {"command":"npx tsc --noEmit","result":"pass"},
+    {"command":"npm run check:rewrites","result":"pass"},
+    {"command":"npm run check:shots","result":"pass"},
+    {"command":"npm run check:stand","result":"pass_after_plane_945","exit_code":0,"passed":23,"historical_result_on_f28e9e54":"22 passed, 1 failed"}
+  ],
+  "not_run": [
+    "full backend pytest because another process owned the shared test database at check time",
+    "live role matrix",
+    "load and performance tests",
+    "browser accessibility and visual audit"
+  ],
+  "documentation_actions": {
+    "archived": [
+      "Archive/completed-plans-2026-09-07: 11 files",
+      "Archive/sessions: 3 added files",
+      "Archive/outputs-2026-09-02: 3 files",
+      "Archive/qa-audits/2026-08-23-full-release-audit: 16 files",
+      "Archive/superseded-product-docs-2026-09-07: 5 files"
+    ],
+    "updated": [
+      "00-Index.md",
+      "WIKI/README.md",
+      "Требования/Канон.md",
+      "Продукт/Прототип.md",
+      "Продукт/Охранные-мероприятия/Реестр-ОМ.md",
+      "Продукт/Охранные-мероприятия/Реестр-ГВО.md",
+      "Frontend/Status.md",
+      "Personnel-Records/Status.md",
+      "Infrastructure/Status.md",
+      "Archive/README.md"
+    ]
+  },
+  "recommended_order": [
+    "Close authorization and scope program",
+    "Repair mandatory gates and false-green tests",
+    "Arbitrate canon conflicts",
+    "Consolidate duplicate APIs and boundary adapters",
+    "Split large cross-domain modules",
+    "Remove proven unreachable code under regression tests"
+  ],
+  "details": "report.md"
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "level": "error",
+    "message": "API request failed: 400 {\"error\":\"Пользователь не привязан к сотруднику\"}",
+    "timestamp": "2026-09-10T13:02:46.961Z",
+    "url": "chrome-extension://fmkadmapgofadopljbjfkapdkoienihi/build/installHook.js"
+  },
+  {
+    "level": "error",
+    "message": "API request failed: ApiHttpError: Пользователь не привязан к сотруднику\n    at p.getAbsenceStatistics (http://localhost:3108/_next/static/chunks/6634-8e5a9372b3315918.js:1:62055)\n    at async queryFn (http://localhost:3108/_next/static/chunks/app/dashboard/page-fd4508b19502db0b.js:1:14219)",
+    "timestamp": "2026-09-10T13:02:46.961Z",
+    "url": "chrome-extension://fmkadmapgofadopljbjfkapdkoienihi/build/installHook.js"
+  }
+]

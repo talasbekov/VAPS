@@ -1,0 +1,13 @@
+import { open, shot, sleep } from './walk.mjs'
+const { page, close } = await open('u_musakhan')
+await page.goto('http://localhost:3106/security-ops/events/')
+await page.waitForLoadState('networkidle')
+await shot(page, 'musakhan-registry')
+const btn = page.getByRole('button', { name: /Создать бюллетень/ })
+console.log('button visible:', await btn.isVisible())
+await btn.click()
+await sleep(1500)
+await shot(page, 'musakhan-create-dialog')
+const dlg = page.getByRole('dialog')
+console.log(await dlg.innerText())
+await close()

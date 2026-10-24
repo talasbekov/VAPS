@@ -1,0 +1,481 @@
+{
+  "config": {
+    "configFile": "/tmp/qa1267-targets.config.cjs",
+    "rootDir": "/home/erda/.codex/worktrees/6190/Smart Josparlau/Backend/PersonnelStatus/PersonalRecordFront/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/QA-Audits/MVP-2026-09-15/1267-integration-evidence/targeted-ui.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/QA-Audits/MVP-2026-09-15/1267-integration-evidence/targeted-ui-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/home/erda/.codex/worktrees/6190/Smart Josparlau/Backend/PersonnelStatus/PersonalRecordFront/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "my-profile.spec.ts",
+          "object-passport.spec.ts",
+          "leadership-status-1223.spec.ts",
+          "dictionary-ui.spec.ts",
+          "dictionary-errors.spec.ts"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.56.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dictionary-errors.spec.ts",
+      "file": "dictionary-errors.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "DRF dictionary field errors survive parsing",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-18T00:31:47.828Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "227c4d19313985f25af5-9feaedf59872919a456d",
+          "file": "dictionary-errors.spec.ts",
+          "line": 4,
+          "column": 5
+        },
+        {
+          "title": "renaming a person preserves links carrying the stable person id",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-18T00:31:47.842Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "227c4d19313985f25af5-20f549b3605c876c2423",
+          "file": "dictionary-errors.spec.ts",
+          "line": 13,
+          "column": 5
+        },
+        {
+          "title": "native DRF detail and server errors keep their meaning",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-18T00:31:47.850Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "227c4d19313985f25af5-fb07d092a016c9e96b4a",
+          "file": "dictionary-errors.spec.ts",
+          "line": 20,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "dictionary-ui.spec.ts",
+      "file": "dictionary-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "dictionary reader sees values without write actions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 430,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-18T00:31:47.862Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "12905d9761c7ebd35796-862ab8f62d3657bb6b2e",
+          "file": "dictionary-ui.spec.ts",
+          "line": 6,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "leadership-status-1223.spec.ts",
+      "file": "leadership-status-1223.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "№1223 — рабочие места дежурного и ответственного",
+          "file": "leadership-status-1223.spec.ts",
+          "line": 33,
+          "column": 6,
+          "specs": [
+            {
+              "title": "«Свод по Службе» — дежурному; «Руководство Службы» раскрывается с «Проставить»",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 840,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:48.388Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf79af3790a3d5955d2d-de0fe026fe6673855c4a",
+              "file": "leadership-status-1223.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "ответственному «Свод по Службе» закрыт",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 510,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:49.236Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf79af3790a3d5955d2d-5dc9083f1aea42af559a",
+              "file": "leadership-status-1223.spec.ts",
+              "line": 59,
+              "column": 7
+            },
+            {
+              "title": "у ответственного «Руководство департамента» раскрывается до людей с «Проставить»",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1246,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:49.758Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf79af3790a3d5955d2d-1b2c7cf3b7a9fd10746b",
+              "file": "leadership-status-1223.spec.ts",
+              "line": 66,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "my-profile.spec.ts",
+      "file": "my-profile.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "мой профиль",
+          "file": "my-profile.spec.ts",
+          "line": 133,
+          "column": 6,
+          "specs": [
+            {
+              "title": "№434: сотрудник видит подписи своей должности и подразделения без общих справочников",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1125,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:51.028Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "33355a81bdc3e2f705ab-9af3c8e2ab1c520f3dfc",
+              "file": "my-profile.spec.ts",
+              "line": 381,
+              "column": 7
+            },
+            {
+              "title": "№434: администратор видит те же подписи в чужом профиле",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 960,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:52.159Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "33355a81bdc3e2f705ab-b6bf9d69ff04aeb21e5e",
+              "file": "my-profile.spec.ts",
+              "line": 416,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "object-passport.spec.ts",
+      "file": "object-passport.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "паспорт объекта",
+          "file": "object-passport.spec.ts",
+          "line": 155,
+          "column": 6,
+          "specs": [
+            {
+              "title": "читатель паспорта видит черновик только для чтения и не может начать сохранение (Plane #1276)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 825,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-18T00:31:53.136Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "44c49f920ff731464ced-988c74f27a61a5e0fee6",
+              "file": "object-passport.spec.ts",
+              "line": 361,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-18T00:31:47.491Z",
+    "duration": 6596.814,
+    "expected": 10,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

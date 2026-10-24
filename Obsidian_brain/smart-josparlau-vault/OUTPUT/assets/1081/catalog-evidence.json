@@ -1,0 +1,181 @@
+[
+  {
+    "user": "acc_dir_head",
+    "code": "EVENT_PARTICIPATION_KINDS",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_dir_head",
+    "code": "EVENT_GROUP_ROLES",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_employee_d2",
+    "code": "EVENT_PARTICIPATION_KINDS",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_employee_d2",
+    "code": "EVENT_GROUP_ROLES",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_ops_staff",
+    "code": "EVENT_PARTICIPATION_KINDS",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_ops_staff",
+    "code": "EVENT_GROUP_ROLES",
+    "status": 403,
+    "body": {
+      "detail": "PERMISSION_DENIED"
+    }
+  },
+  {
+    "user": "acc_admin",
+    "code": "EVENT_PARTICIPATION_KINDS",
+    "status": 200,
+    "body": {
+      "results": [
+        {
+          "id": "27",
+          "dictionaryCode": "EVENT_PARTICIPATION_KINDS",
+          "code": "CANINE_GROUP",
+          "label": "Кинологическая группа",
+          "description": "",
+          "isActive": true,
+          "groupCode": null,
+          "updatedAt": "2026-09-05T23:22:33.848582+00:00",
+          "usage": {
+            "status": "TRACKED",
+            "reason": null,
+            "references": [
+              {
+                "sourceLabel": "Роли внутри группы",
+                "count": 1,
+                "samples": [
+                  "Кинолог"
+                ]
+              }
+            ],
+            "totalCount": 1
+          }
+        },
+        {
+          "id": "25",
+          "dictionaryCode": "EVENT_PARTICIPATION_KINDS",
+          "code": "PHYSICAL_SQUAD",
+          "label": "Физический наряд",
+          "description": "",
+          "isActive": true,
+          "groupCode": null,
+          "updatedAt": "2026-09-05T23:22:33.845569+00:00",
+          "usage": {
+            "status": "TRACKED",
+            "reason": null,
+            "references": [],
+            "totalCount": 0
+          }
+        },
+        {
+          "id": "26",
+          "dictionaryCode": "EVENT_PARTICIPATION_KINDS",
+          "code": "SCREENING_GROUP",
+          "label": "Группа досмотра",
+          "description": "",
+          "isActive": true,
+          "groupCode": null,
+          "updatedAt": "2026-09-05T23:22:33.847066+00:00",
+          "usage": {
+            "status": "TRACKED",
+            "reason": null,
+            "references": [
+              {
+                "sourceLabel": "Роли внутри группы",
+                "count": 2,
+                "samples": [
+                  "Досмотрщик",
+                  "Старший группы досмотра"
+                ]
+              }
+            ],
+            "totalCount": 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    "user": "acc_admin",
+    "code": "EVENT_GROUP_ROLES",
+    "status": 200,
+    "body": {
+      "results": [
+        {
+          "id": "30",
+          "dictionaryCode": "EVENT_GROUP_ROLES",
+          "code": "DOG_HANDLER",
+          "label": "Кинолог",
+          "description": "",
+          "isActive": true,
+          "groupCode": "CANINE_GROUP",
+          "updatedAt": "2026-09-05T23:22:33.852987+00:00",
+          "usage": {
+            "status": "NOT_TRACKED",
+            "reason": "Роль пока не проставляется ни одному статусу — потребителя кода в модели нет.",
+            "references": [],
+            "totalCount": 0
+          }
+        },
+        {
+          "id": "28",
+          "dictionaryCode": "EVENT_GROUP_ROLES",
+          "code": "SCREENER",
+          "label": "Досмотрщик",
+          "description": "",
+          "isActive": true,
+          "groupCode": "SCREENING_GROUP",
+          "updatedAt": "2026-09-05T23:22:33.850091+00:00",
+          "usage": {
+            "status": "NOT_TRACKED",
+            "reason": "Роль пока не проставляется ни одному статусу — потребителя кода в модели нет.",
+            "references": [],
+            "totalCount": 0
+          }
+        },
+        {
+          "id": "29",
+          "dictionaryCode": "EVENT_GROUP_ROLES",
+          "code": "SCREENING_LEAD",
+          "label": "Старший группы досмотра",
+          "description": "",
+          "isActive": true,
+          "groupCode": "SCREENING_GROUP",
+          "updatedAt": "2026-09-05T23:22:33.851556+00:00",
+          "usage": {
+            "status": "NOT_TRACKED",
+            "reason": "Роль пока не проставляется ни одному статусу — потребителя кода в модели нет.",
+            "references": [],
+            "totalCount": 0
+          }
+        }
+      ]
+    }
+  }
+]

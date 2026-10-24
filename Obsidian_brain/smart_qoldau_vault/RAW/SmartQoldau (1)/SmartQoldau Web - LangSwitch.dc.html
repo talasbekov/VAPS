@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="display:flex;align-items:center;gap:2px;background:#f2f2f0;border-radius:12px;padding:2px;position:relative;flex-shrink:0">
+  <div onClick="{{ onRu }}" style="padding:4px 9px;border-radius:10px;background:{{ ruBg }};font-size:11px;font-weight:700;color:{{ ruColor }};cursor:pointer">RU</div>
+  <div onClick="{{ onKz }}" style="padding:4px 9px;border-radius:10px;background:{{ kzBg }};font-size:11px;font-weight:700;color:{{ kzColor }};cursor:pointer">KZ</div>
+  <sc-if value="{{ showSoon }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:32px;right:0;background:#0f3f3a;color:#fff;font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:8px;white-space:nowrap;z-index:110">Қазақша нұсқа жасалып жатыр</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { lang: 'ru', showSoon: false };
+  renderVals() {
+    const s = this.state;
+    return {
+      ruBg: s.lang === 'ru' ? '#0f766e' : 'transparent', ruColor: s.lang === 'ru' ? '#fff' : '#6b8580',
+      kzBg: s.lang === 'kz' ? '#0f766e' : 'transparent', kzColor: s.lang === 'kz' ? '#fff' : '#6b8580',
+      onRu: () => this.setState({ lang: 'ru', showSoon: false }),
+      showSoon: s.showSoon,
+      onKz: () => { this.setState({ showSoon: true }); setTimeout(() => this.setState({ showSoon: false }), 2200); },
+    };
+  }
+}
+</script>
+</body>
+</html>

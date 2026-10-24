@@ -1,0 +1,230 @@
+{
+  "main": {
+    "id": "c46633fe5dc2217e",
+    "type": "split",
+    "children": [
+      {
+        "id": "2102f3c783b9e094",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "728db8f05a44926e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "superpowers/plans/2026-08-21-submission-deadline-lockout.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "2026-08-21-submission-deadline-lockout"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "fd245a0791d9ed9e",
+    "type": "split",
+    "children": [
+      {
+        "id": "479b2a54ae5ea72b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e73bcc6418cf0c48",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Файловый менеджер"
+            }
+          },
+          {
+            "id": "3bc89c3d4aaaa11c",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Поиск"
+            }
+          },
+          {
+            "id": "00667dd399ed9717",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Закладки"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "519f708e74914afb",
+    "type": "split",
+    "children": [
+      {
+        "id": "69642de68c58c100",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d7a58a751bc0f2b5",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "superpowers/plans/2026-08-21-submission-deadline-lockout.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Обратные ссылки"
+            }
+          },
+          {
+            "id": "d95e13cdf8ba6037",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "superpowers/plans/2026-08-21-submission-deadline-lockout.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Исходящие ссылки"
+            }
+          },
+          {
+            "id": "045fed4d5589b4e8",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Теги"
+            }
+          },
+          {
+            "id": "76c3f35c58e07475",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Все свойства"
+            }
+          },
+          {
+            "id": "2c76caa19f804950",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "superpowers/plans/2026-08-21-submission-deadline-lockout.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Структура"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Меню быстрого перехода": false,
+      "graph:Граф": false,
+      "canvas:Создать новый холст": false,
+      "daily-notes:Сегодняшняя заметка": false,
+      "templates:Вставить шаблон": false,
+      "command-palette:Открыть палитру команд": false,
+      "bases:Создать новую базу": false
+    }
+  },
+  "active": "728db8f05a44926e",
+  "lastOpenFiles": [
+    "WIKI/ops-runbook-production-readiness.md.tmp.279523.81b3afbb515c",
+    "LOG.md.tmp.279523.7c5836d874b6",
+    "LOG.md.tmp.279523.d10a4fbaf3d5",
+    "superpowers/specs/2026-08-22-event-delete-protection-design.md",
+    "superpowers/specs/2026-08-22-event-delete-protection-design.md.tmp.279523.5e29da2b5026",
+    "LOG.md.tmp.279523.86d3906b4ada",
+    "superpowers/specs/2026-08-22-operator-soft-delete-design.md",
+    "superpowers/specs/2026-08-22-operator-soft-delete-design.md.tmp.279523.c9c7fe8dbb1e",
+    "LOG.md.tmp.279523.f528d2369339",
+    "superpowers/specs/2026-08-22-leaf-only-enforcement-design.md",
+    "superpowers/specs/2026-08-22-leaf-only-enforcement-design.md.tmp.279523.5a3e94db6948",
+    "LOG.md.tmp.279523.eb7ef672089d",
+    "LOG.md.tmp.279523.26247791be82",
+    "superpowers/specs/2026-08-22-review-queue-operator-filter-design.md",
+    "superpowers/specs/2026-08-22-review-queue-operator-filter-design.md.tmp.279523.9ac8c31e4f3d",
+    "superpowers/specs/2026-08-22-cron-import-lock-design.md",
+    "superpowers/specs/2026-08-22-importlog-design.md",
+    "superpowers/specs/2026-08-22-export-integrity-manifest-design.md",
+    "superpowers/specs/2026-08-22-session-invalidation-on-password-change-design.md",
+    "OUTPUT/overnight-2026-08-21.md",
+    "superpowers/plans/2026-08-21-submission-deadline-lockout.md",
+    "superpowers/plans/2026-08-21-pdn-consent-gate.md",
+    "superpowers/plans/2026-08-21-face-id-csv-export.md",
+    "WIKI/source-tree-analysis.md",
+    "WIKI/rbac-matrix.md",
+    "WIKI/project-overview.md",
+    "WIKI/performance-backlog.md",
+    "WIKI/ops-runbook-production-readiness.md",
+    "WIKI/integration-spec-v1.md",
+    "WIKI/development-guide.md",
+    "WIKI/deployment-guide.md",
+    "WIKI/data-models.md",
+    "WIKI/business-processes.md",
+    "WIKI/architecture.md",
+    "WIKI/api-contracts.md",
+    "WIKI/accreditation-gap-analysis.md"
+  ]
+}

@@ -1,0 +1,464 @@
+[
+  {
+    "file": "01-author-registry.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 414644,
+    "sha256": "d43168a55146e0d7a93db6f7664a3112832ab4f6cdbe7475c71bc7840af62b83"
+  },
+  {
+    "file": "02-author-create-form.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 479556,
+    "sha256": "a2498b2e5ad1736446c04bb656987cb1e3c95d41315330b035aa0b34069e61b3"
+  },
+  {
+    "file": "03-internal-filled.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 424709,
+    "sha256": "77455e5d7f3b6c94dee8b303ecba79722d21c88fe66c59932add9128e805d2ad"
+  },
+  {
+    "file": "04-internal-created.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 413782,
+    "sha256": "0bc4c14a3b3e2fb71fa94a3f5427f11c1cf9b8c2f8a60c0c67c62bf8f811c22d"
+  },
+  {
+    "file": "05-chief-expanded.png",
+    "width": 1600,
+    "height": 2204,
+    "bytes": 429601,
+    "sha256": "a088f52b166146b019c0e4998a38be213d5d67fb10fd9bb72eebbb893ef5c3ad"
+  },
+  {
+    "file": "06-two-objects.png",
+    "width": 1600,
+    "height": 2548,
+    "bytes": 471697,
+    "sha256": "b60535fe9e93390b2f697440478f2a86c5708498d26031d98346564e6aa90b9c"
+  },
+  {
+    "file": "07-object-chiefs.png",
+    "width": 1600,
+    "height": 2550,
+    "bytes": 467413,
+    "sha256": "5998bdea2da8a7dcb2fb984a2489dc84e537681f779f34e2de4ae34b74ae149d"
+  },
+  {
+    "file": "08-object-chief-recon.png",
+    "width": 1600,
+    "height": 1205,
+    "bytes": 203291,
+    "sha256": "4c8ab048c1b22182fa68cdba2b065254ae271a413245d2d6ea51f3a4f02ce610"
+  },
+  {
+    "file": "09-recon-no-demand-kind.png",
+    "width": 1600,
+    "height": 1419,
+    "bytes": 238730,
+    "sha256": "90da4ddbd2fa69a6308ba6bc25c39d2245d6678aa6bc1ad2c982e4220135fbcf"
+  },
+  {
+    "file": "10-recon-completed.png",
+    "width": 1600,
+    "height": 1419,
+    "bytes": 243794,
+    "sha256": "73053bdb584c5276a99375b2a619bf152d71e317195afc7a6cb25d8229273dba"
+  },
+  {
+    "file": "11-placement-empty.png",
+    "width": 1600,
+    "height": 1459,
+    "bytes": 242605,
+    "sha256": "bbc7358e0d0632ac31229490570a6341ecf11d367acd229d99d48672918d8389"
+  },
+  {
+    "file": "12-recon-permission-denied.png",
+    "width": 1600,
+    "height": 1459,
+    "bytes": 243070,
+    "sha256": "b704b6e6837545e60c7bf908c88e45b2b8af329a69d4ab5df93cf8da6706821d"
+  },
+  {
+    "file": "13-staff-forces.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 498949,
+    "sha256": "1f85c0491d7c49e3007c370fb2108de6f04375514b2cc9a13e42e4e68008d588"
+  },
+  {
+    "file": "14-staff-login-result.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 74689,
+    "sha256": "a95ac2f8340234e3dab2df5b843272a708f86ea91d9d4c6e41e8dc9cb61d631a"
+  },
+  {
+    "file": "15-staff-board.png",
+    "width": 1600,
+    "height": 3809,
+    "bytes": 759973,
+    "sha256": "ad8bcac781cfc417a96dbb06435b48a938e148dc9b402515570c9e7071b35ba6"
+  },
+  {
+    "file": "16-staff-collections.png",
+    "width": 1600,
+    "height": 1430,
+    "bytes": 235004,
+    "sha256": "be15a085dc5b9b80f122b83e2a87bd5d218c47e85acf8b2a28eb55ef7b7df0af"
+  },
+  {
+    "file": "17-demand-kind-expanded.png",
+    "width": 1600,
+    "height": 1487,
+    "bytes": 254350,
+    "sha256": "d4fbcb541f1d1d305fafde9f8b41c3f40560fb4ab5ca47d807a59d49b66a4afd"
+  },
+  {
+    "file": "19-first-object-demand.png",
+    "width": 1600,
+    "height": 1214,
+    "bytes": 204766,
+    "sha256": "31ae469e1cdbd21340ab5fa1f3c11aa1692339d8675f165b784cddf00497c7ba"
+  },
+  {
+    "file": "20-dept-head-login.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 512420,
+    "sha256": "d47c45308c25fe62c38c41e764e24f130bcb83cca2df089777b8cf5c0ed30ec5"
+  },
+  {
+    "file": "21-second-chief-special-kind.png",
+    "width": 1600,
+    "height": 1382,
+    "bytes": 241693,
+    "sha256": "b78a55bce999a8c2deb91bfdd16b4ffc7931c7e2f36335416b6b79beba470fb4"
+  },
+  {
+    "file": "22-second-recon-result.png",
+    "width": 1600,
+    "height": 1129,
+    "bytes": 196689,
+    "sha256": "6de6221fdaaa0fe7a5a8268b7aab22e0f22a5885e69266c2bf1ac5fb00ce43b0"
+  },
+  {
+    "file": "23-staff-new-demand.png",
+    "width": 1600,
+    "height": 1519,
+    "bytes": 247164,
+    "sha256": "b5b53b86ca78f8b082c110fc61fa1ad908678a9e282507c2990ecd8ee873685c"
+  },
+  {
+    "file": "24-staff-send-request.png",
+    "width": 1600,
+    "height": 1138,
+    "bytes": 210434,
+    "sha256": "af18f2e6378bf6d4c96859b94d8d6fd63b3aea1da7dd1f87de50653a0bf7ef4f"
+  },
+  {
+    "file": "25-staff-request-sent.png",
+    "width": 1600,
+    "height": 1201,
+    "bytes": 187801,
+    "sha256": "9a721fbd2e089be7794f0cf6e71b3914a578e471f488a5c03223df5b5793b377"
+  },
+  {
+    "file": "26-officer-incoming.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 136892,
+    "sha256": "f64593fd0782b1b3fa4f3441d053815e9926d463198a9017bdb6386f0e440748"
+  },
+  {
+    "file": "27-officer-requests.png",
+    "width": 1600,
+    "height": 1513,
+    "bytes": 255654,
+    "sha256": "b8d05c2287f2085afa9a762c99ee75055ab677e71646de6bf32954ab97633497"
+  },
+  {
+    "file": "28-officer-answer-three.png",
+    "width": 1600,
+    "height": 1813,
+    "bytes": 233413,
+    "sha256": "9bdb809a53a55e881b43da96a8f7a6c5d1df2b05d5402cf43dcaecc69adfa5dc"
+  },
+  {
+    "file": "29-directorate-request-sent.png",
+    "width": 1600,
+    "height": 1813,
+    "bytes": 236734,
+    "sha256": "965ae84ab5df79a565e1ba17a6f703d01914478fb5a2852169d3d992326db89a"
+  },
+  {
+    "file": "30-director-statuses.png",
+    "width": 1600,
+    "height": 2198,
+    "bytes": 361697,
+    "sha256": "bd46d643e677766610dfb863574cd7706ff7f2af42a89c0f2f9f309bccce611e"
+  },
+  {
+    "file": "31-status-modal.png",
+    "width": 1600,
+    "height": 2384,
+    "bytes": 379961,
+    "sha256": "aefbb64815f96fc3c94afa0e27311c84fcebe58e638e4e4f0ed27a5d3e1e5c6c"
+  },
+  {
+    "file": "32-director-empty-participation.png",
+    "width": 1600,
+    "height": 2384,
+    "bytes": 397229,
+    "sha256": "837ac26af5dd7bbb5f5e7e3985313aa0e8ba9524deb6940d88fddf64b8276e2c"
+  },
+  {
+    "file": "33-foreign-filled.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 423238,
+    "sha256": "323b5d4432c3dbd8dfbe0395dd42aab332fb9197123558851b83e9d7779da67c"
+  },
+  {
+    "file": "34-foreign-registry.png",
+    "width": 1600,
+    "height": 2147,
+    "bytes": 415574,
+    "sha256": "36b0f9eb20c6e44905f9d709f3c3b56f966c4102272df1a771d0aa9d5c31b1fe"
+  },
+  {
+    "file": "35-foreign-visits.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 216781,
+    "sha256": "17cc0d58c287f9830bab4231d700a036a9374e4e7f2ef81cbd354252a32e4006"
+  },
+  {
+    "file": "36-gvo-chief.png",
+    "width": 1600,
+    "height": 1993,
+    "bytes": 190085,
+    "sha256": "94aa8e8ac1c8e9278cdc43bfea4c627dd82e028926e4c2d3bb15547d8036e24c"
+  },
+  {
+    "file": "37-gvo-saved.png",
+    "width": 1600,
+    "height": 1948,
+    "bytes": 181908,
+    "sha256": "ccfb46cb9eae311caed2985646634d97a55cedd65e8187be647aec282b74541b"
+  },
+  {
+    "file": "38-gvo-leadership-approval.png",
+    "width": 1600,
+    "height": 1963,
+    "bytes": 185159,
+    "sha256": "9f4bd8d1cbaf9cbc9c4ddf5bcf1506a3fdf450d37b9666a83b4a906f98902c76"
+  },
+  {
+    "file": "39-dept-d2-forces-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 90503,
+    "sha256": "2b2ecc64ce927493de7fe86f7ce01c9a58f2c2bce81a2f786c239363c4954e14"
+  },
+  {
+    "file": "40-dir-d2-forces-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 90643,
+    "sha256": "c04f7ea9ba7b9e032db7a8c72aa2d6e3bac97b9b6d833a525401e92013002b88"
+  },
+  {
+    "file": "41-dept-line-registry-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 86276,
+    "sha256": "43755c278b15021528446d594e01e1e5961c8e1165f957b19260761bdf8cfcbc"
+  },
+  {
+    "file": "42-dept-line-own-statuses.png",
+    "width": 1600,
+    "height": 3558,
+    "bytes": 586309,
+    "sha256": "1cfe120c2e12e59ce5c2c588e3f48455d013c13a4e14682d1c9e591985849693"
+  },
+  {
+    "file": "43-physical-reserve-selection.png",
+    "width": 1600,
+    "height": 2384,
+    "bytes": 398432,
+    "sha256": "e81d631d7f53d6ab8e31f78022988c4f364390e76a5a1e4183877169538697a1"
+  },
+  {
+    "file": "44-physical-reserve-result.png",
+    "width": 1600,
+    "height": 2412,
+    "bytes": 408806,
+    "sha256": "2be06b0b0f58951fc8b53fcc61fda0e6a80691b4438c942f2086a2d8c213d223"
+  },
+  {
+    "file": "45-campaign-created.png",
+    "width": 1600,
+    "height": 1141,
+    "bytes": 130383,
+    "sha256": "7f43a0cc5bcdbaff056eccdb5a13163b93ab60401b715f9e342be026c93b76a6"
+  },
+  {
+    "file": "46-physical-reserve-three.png",
+    "width": 1600,
+    "height": 2412,
+    "bytes": 411224,
+    "sha256": "87308043c0e781e7602ee89fb1105db0df77897997f139b549b1f9a29af06781"
+  },
+  {
+    "file": "47-officer-three-reserves.png",
+    "width": 1600,
+    "height": 1894,
+    "bytes": 233500,
+    "sha256": "48358e566a2f6bd8b34d7675cc615cf653253033062c1b45a11102466c2d05bc"
+  },
+  {
+    "file": "48-officer-sent.png",
+    "width": 1600,
+    "height": 1890,
+    "bytes": 240566,
+    "sha256": "8b9427f2b75b6b2695510fcebcf8e3d4ca2c18848f2b4a8934a7bec3ceaf5285"
+  },
+  {
+    "file": "49-staff-pool-three.png",
+    "width": 1600,
+    "height": 1141,
+    "bytes": 148287,
+    "sha256": "d730d428b59d4d0ec6f771164d65d3d97b80e96a972c79b5189920ea624fc219"
+  },
+  {
+    "file": "50-staff-three-assignments.png",
+    "width": 1600,
+    "height": 1403,
+    "bytes": 177048,
+    "sha256": "f25957dbd96bbf74b62a7f392de42c4a6f27cf8c8a14583685639ae43782bbf9"
+  },
+  {
+    "file": "51-handover-shortage.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 174875,
+    "sha256": "8191c570f3908a0ac238603d8a855f7fab1417c22e8a9cc683d3cd8803aaef80"
+  },
+  {
+    "file": "52-current-page.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 38138,
+    "sha256": "f238e7a7e99c08644cfd75183531e88aa9dc3618ae970efc4be3955d555c67a4"
+  },
+  {
+    "file": "53-placement-render-error.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 42848,
+    "sha256": "07705f1b80027b173e38d39c40b2dcc9dba2664e4d861435e1be94fcb61e9ac6"
+  },
+  {
+    "file": "54-placement-error-reload.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 42848,
+    "sha256": "07705f1b80027b173e38d39c40b2dcc9dba2664e4d861435e1be94fcb61e9ac6"
+  },
+  {
+    "file": "55-second-chief-render.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 38138,
+    "sha256": "f238e7a7e99c08644cfd75183531e88aa9dc3618ae970efc4be3955d555c67a4"
+  },
+  {
+    "file": "56-employee-registry-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 76504,
+    "sha256": "542dd27fe81230706c830429f402f1c65c38d49a746694f6bd635a42611fccd3"
+  },
+  {
+    "file": "57-employee-forces-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 73355,
+    "sha256": "f19fd238562399d8b990d416d46eb8c3c1c40ebd77adddde242e0db13225a886"
+  },
+  {
+    "file": "58-employee-profile.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 169025,
+    "sha256": "9057d7ad63018b7f1f88fe59465b2709f9114831cd2ffc51053cbc6206061910"
+  },
+  {
+    "file": "59-employee-history-before-closure.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 188979,
+    "sha256": "40de16ba8195a052714a925c171419462912c76e2682755378c90c4c402d7aab"
+  },
+  {
+    "file": "60-second-approver-state.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 38138,
+    "sha256": "f238e7a7e99c08644cfd75183531e88aa9dc3618ae970efc4be3955d555c67a4"
+  },
+  {
+    "file": "61-observer-registry.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 58642,
+    "sha256": "175231e7699a8a5835eafe616240365441869007bff76c963899ba990a4bf095"
+  },
+  {
+    "file": "62-admin-registry.png",
+    "width": 1600,
+    "height": 2279,
+    "bytes": 434167,
+    "sha256": "86840b88f73a72ed177040f6fede05d024a2008ac6a0bb62bb4b13dd6997cd8f"
+  },
+  {
+    "file": "63-admin-placement-error.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 38138,
+    "sha256": "f238e7a7e99c08644cfd75183531e88aa9dc3618ae970efc4be3955d555c67a4"
+  },
+  {
+    "file": "64-admin-ratings.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 299107,
+    "sha256": "5105a0606ec5985d8248a3a0ba6ba03fdc86e5fdd15981446447cab5d458c15e"
+  },
+  {
+    "file": "65-om-analytics.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 299302,
+    "sha256": "73bd5ef58fedcc2e48149b231de3c7bd0542d9afeb4ff9c0fa3d2a08f8993b7a"
+  },
+  {
+    "file": "66-om-analytics-loaded.png",
+    "width": 1600,
+    "height": 3173,
+    "bytes": 556975,
+    "sha256": "78ef1ce2cecc404e62edb57df3b57e7c28d30109f0a3683a899362015c222e8c"
+  },
+  {
+    "file": "67-dir-line-registry-denied.png",
+    "width": 1600,
+    "height": 1100,
+    "bytes": 82189,
+    "sha256": "01685019b43a6aabc0d59b2f91bac7288640506415f677aee49045954d961e2a"
+  }
+]

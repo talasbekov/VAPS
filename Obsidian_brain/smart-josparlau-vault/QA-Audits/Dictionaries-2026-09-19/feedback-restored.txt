@@ -1,0 +1,778 @@
+- link "Skip to main content":
+  - /url: "#content-start"
+- banner:
+  - link "Smart Josparlau — администрирование":
+    - /url: /admin/
+  - text: Welcome,
+  - strong: Админ
+  - text: .
+  - link "View site":
+    - /url: /
+  - text: /
+  - link "Change password":
+    - /url: /admin/password_change/
+  - text: /
+  - button "Log out"
+  - 'button "Toggle theme (current theme: auto)"':
+    - generic: "Toggle theme (current theme: auto)"
+- navigation "Breadcrumbs":
+  - link "Home":
+    - /url: /admin/
+  - text: ›
+  - link "Охранные мероприятия":
+    - /url: /admin/operations/
+  - text: ›
+  - link "Справочник обратной связи":
+    - /url: /admin/operations/opsfeedbackregistry/
+  - text: › feedback-registry-2026.07.2
+- button "Toggle navigation": «
+- navigation "Sidebar":
+  - searchbox "Filter navigation items"
+  - table "Доступ":
+    - caption:
+      - link "Доступ":
+        - /url: ""
+    - rowgroup:
+      - row "Users Add":
+        - rowheader "Users":
+          - link "Users":
+            - /url: /admin/auth/user/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/auth/user/add/
+      - row "Роли пользователей (ОМ) Add":
+        - rowheader "Роли пользователей (ОМ)":
+          - link "Роли пользователей (ОМ)":
+            - /url: /admin/operations/userrole/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/userrole/add/
+      - row "Роли раздела ОМ Add":
+        - rowheader "Роли раздела ОМ":
+          - link "Роли раздела ОМ":
+            - /url: /admin/operations/role/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/role/add/
+      - row "Права раздела ОМ Add":
+        - rowheader "Права раздела ОМ":
+          - link "Права раздела ОМ":
+            - /url: /admin/operations/permission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/permission/add/
+      - row "Права ролей (ОМ) Add":
+        - rowheader "Права ролей (ОМ)":
+          - link "Права ролей (ОМ)":
+            - /url: /admin/operations/rolepermission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/rolepermission/add/
+      - row "Groups Add":
+        - rowheader "Groups":
+          - link "Groups":
+            - /url: /admin/auth/group/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/auth/group/add/
+      - row "Временные права наряда Add":
+        - rowheader "Временные права наряда":
+          - link "Временные права наряда":
+            - /url: /admin/operations/temporarydutypermission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/temporarydutypermission/add/
+  - table "Структура и штат":
+    - caption:
+      - link "Структура и штат":
+        - /url: ""
+    - rowgroup:
+      - row "Подразделения Add":
+        - rowheader "Подразделения":
+          - link "Подразделения":
+            - /url: /admin/divisions/division/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/divisions/division/add/
+      - row "Штатные единицы Add":
+        - rowheader "Штатные единицы":
+          - link "Штатные единицы":
+            - /url: /admin/staff_unit/staffunit/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/staff_unit/staffunit/add/
+      - row "Вакансии Add":
+        - rowheader "Вакансии":
+          - link "Вакансии":
+            - /url: /admin/staff_unit/vacancy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/staff_unit/vacancy/add/
+  - table "Сотрудники и статусы":
+    - caption:
+      - link "Сотрудники и статусы":
+        - /url: ""
+    - rowgroup:
+      - row "Сотрудники Add":
+        - rowheader "Сотрудники":
+          - link "Сотрудники":
+            - /url: /admin/employees/employee/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/employees/employee/add/
+      - row "Статусы сотрудников Add":
+        - rowheader "Статусы сотрудников":
+          - link "Статусы сотрудников":
+            - /url: /admin/statuses/employeestatus/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/statuses/employeestatus/add/
+      - row "Статусы сотрудников (ОМ) Add":
+        - rowheader "Статусы сотрудников (ОМ)":
+          - link "Статусы сотрудников (ОМ)":
+            - /url: /admin/operations/opsemployeestatus/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsemployeestatus/add/
+      - row "Прикомандирования (ОМ) Add":
+        - rowheader "Прикомандирования (ОМ)":
+          - link "Прикомандирования (ОМ)":
+            - /url: /admin/operations/secondment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/secondment/add/
+      - row "История переводов сотрудников Add":
+        - rowheader "История переводов сотрудников":
+          - link "История переводов сотрудников":
+            - /url: /admin/employees/employeetransferhistory/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/employees/employeetransferhistory/add/
+      - row "Обходы статусов Add":
+        - rowheader "Обходы статусов":
+          - link "Обходы статусов":
+            - /url: /admin/operations/statusoverride/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/statusoverride/add/
+      - row "Документы статусов Add":
+        - rowheader "Документы статусов":
+          - link "Документы статусов":
+            - /url: /admin/statuses/statusdocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/statuses/statusdocument/add/
+      - row "История изменений статусов":
+        - rowheader "История изменений статусов":
+          - link "История изменений статусов":
+            - /url: /admin/statuses/statuschangehistory/
+        - cell
+  - table "Справочники":
+    - caption:
+      - link "Справочники":
+        - /url: ""
+    - rowgroup:
+      - row "Должности Add":
+        - rowheader "Должности":
+          - link "Должности":
+            - /url: /admin/dictionaries/position/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/dictionaries/position/add/
+      - row "Звания Add":
+        - rowheader "Звания":
+          - link "Звания":
+            - /url: /admin/dictionaries/rank/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/dictionaries/rank/add/
+      - row "Типы статусов (ОМ) Add":
+        - rowheader "Типы статусов (ОМ)":
+          - link "Типы статусов (ОМ)":
+            - /url: /admin/operations/statustype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/statustype/add/
+      - row "Значения справочников ОМ Add":
+        - rowheader "Значения справочников ОМ":
+          - link "Значения справочников ОМ":
+            - /url: /admin/operations/opsdictionaryentry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdictionaryentry/add/
+      - row "Виды дежурств Add":
+        - rowheader "Виды дежурств":
+          - link "Виды дежурств":
+            - /url: /admin/operations/opsdutytype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutytype/add/
+      - row "Виды дежурств боевых групп Add":
+        - rowheader "Виды дежурств боевых групп":
+          - link "Виды дежурств боевых групп":
+            - /url: /admin/operations/opscombatdutytype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatdutytype/add/
+      - row "Города Add":
+        - rowheader "Города":
+          - link "Города":
+            - /url: /admin/operations/opscity/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscity/add/
+      - row "Группы рейтинга Add":
+        - rowheader "Группы рейтинга":
+          - link "Группы рейтинга":
+            - /url: /admin/operations/opsratinggroup/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratinggroup/add/
+      - row "Детекторы внимания Add":
+        - rowheader "Детекторы внимания":
+          - link "Детекторы внимания":
+            - /url: /admin/operations/opsattentiondetector/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsattentiondetector/add/
+      - row "Законы об ОМ Add":
+        - rowheader "Законы об ОМ":
+          - link "Законы об ОМ":
+            - /url: /admin/operations/opslegaldocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opslegaldocument/add/
+      - row "Охраняемые лица Add":
+        - rowheader "Охраняемые лица":
+          - link "Охраняемые лица":
+            - /url: /admin/operations/opsprotectedperson/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsprotectedperson/add/
+      - row "Показатели аналитики службы Add":
+        - rowheader "Показатели аналитики службы":
+          - link "Показатели аналитики службы":
+            - /url: /admin/operations/opsanalyticsmetricdefinition/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsanalyticsmetricdefinition/add/
+      - row "Пресеты периодов аналитики Add":
+        - rowheader "Пресеты периодов аналитики":
+          - link "Пресеты периодов аналитики":
+            - /url: /admin/operations/opsanalyticsperiodpreset/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsanalyticsperiodpreset/add/
+      - row "Страны Add":
+        - rowheader "Страны":
+          - link "Страны":
+            - /url: /admin/operations/opscountry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscountry/add/
+      - row "Типы служебных отчётов Add":
+        - rowheader "Типы служебных отчётов":
+          - link "Типы служебных отчётов":
+            - /url: /admin/operations/opsservicereporttype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereporttype/add/
+      - row "Транспорт ГОН Add":
+        - rowheader "Транспорт ГОН":
+          - link "Транспорт ГОН":
+            - /url: /admin/operations/opsvehicle/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsvehicle/add/
+      - row "Трассы Add":
+        - rowheader "Трассы":
+          - link "Трассы":
+            - /url: /admin/operations/opscombatroute/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatroute/add/
+  - table "Охранные мероприятия":
+    - caption:
+      - link "Охранные мероприятия":
+        - /url: ""
+    - rowgroup:
+      - row "Охранные мероприятия Add":
+        - rowheader "Охранные мероприятия":
+          - link "Охранные мероприятия":
+            - /url: /admin/operations/opssecurityevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityevent/add/
+      - row "Объекты посещения ОМ Add":
+        - rowheader "Объекты посещения ОМ":
+          - link "Объекты посещения ОМ":
+            - /url: /admin/operations/opssecurityeventvisitobject/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventvisitobject/add/
+      - row "Охраняемые объекты Add":
+        - rowheader "Охраняемые объекты":
+          - link "Охраняемые объекты":
+            - /url: /admin/operations/opssecurityobject/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityobject/add/
+      - row "Посты паспорта объекта Add":
+        - rowheader "Посты паспорта объекта":
+          - link "Посты паспорта объекта":
+            - /url: /admin/operations/opssecuritypost/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecuritypost/add/
+      - row "Секторы паспорта объекта Add":
+        - rowheader "Секторы паспорта объекта":
+          - link "Секторы паспорта объекта":
+            - /url: /admin/operations/opsobjectsector/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsobjectsector/add/
+      - row "Оценки мероприятий Add":
+        - rowheader "Оценки мероприятий":
+          - link "Оценки мероприятий":
+            - /url: /admin/operations/opseventevaluation/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opseventevaluation/add/
+      - row "Версии документа «Расстановка сил»":
+        - rowheader "Версии документа «Расстановка сил»":
+          - link "Версии документа «Расстановка сил»":
+            - /url: /admin/operations/opsplacementdocumentversion/
+        - cell
+      - row "Версии паспорта объекта":
+        - rowheader "Версии паспорта объекта":
+          - link "Версии паспорта объекта":
+            - /url: /admin/operations/opspassportversion/
+        - cell
+      - row "Визиты иностранных ОЛ Add":
+        - rowheader "Визиты иностранных ОЛ":
+          - link "Визиты иностранных ОЛ":
+            - /url: /admin/operations/opsforeignvisit/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforeignvisit/add/
+      - row "Выделенный транспорт Add":
+        - rowheader "Выделенный транспорт":
+          - link "Выделенный транспорт":
+            - /url: /admin/operations/opseventvehicle/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opseventvehicle/add/
+      - row "Выпуски бюллетеня Add":
+        - rowheader "Выпуски бюллетеня":
+          - link "Выпуски бюллетеня":
+            - /url: /admin/operations/opsbulletinissue/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsbulletinissue/add/
+      - row "Задания на оценивание Add":
+        - rowheader "Задания на оценивание":
+          - link "Задания на оценивание":
+            - /url: /admin/operations/opsevaluationworkitem/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationworkitem/add/
+      - row "Замещающие на объектах посещения Add":
+        - rowheader "Замещающие на объектах посещения":
+          - link "Замещающие на объектах посещения":
+            - /url: /admin/operations/opsvisitobjectdeputy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsvisitobjectdeputy/add/
+      - row "Исправления оценок Add":
+        - rowheader "Исправления оценок":
+          - link "Исправления оценок":
+            - /url: /admin/operations/opsevaluationcorrection/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationcorrection/add/
+      - row "Лица на мероприятии Add":
+        - rowheader "Лица на мероприятии":
+          - link "Лица на мероприятии":
+            - /url: /admin/operations/opssecurityeventperson/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventperson/add/
+      - row "Маршрут согласования Add":
+        - rowheader "Маршрут согласования":
+          - link "Маршрут согласования":
+            - /url: /admin/operations/opsapprovalroutestep/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsapprovalroutestep/add/
+      - row "Мероприятия оценивания Add":
+        - rowheader "Мероприятия оценивания":
+          - link "Мероприятия оценивания":
+            - /url: /admin/operations/opsevaluationevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationevent/add/
+      - row "Месячные планы дежурств Add":
+        - rowheader "Месячные планы дежурств":
+          - link "Месячные планы дежурств":
+            - /url: /admin/operations/opsdutymonthlyplan/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutymonthlyplan/add/
+      - row "Обходы блокировки на завтра Add":
+        - rowheader "Обходы блокировки на завтра":
+          - link "Обходы блокировки на завтра":
+            - /url: /admin/operations/opstomorrowblockoverride/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opstomorrowblockoverride/add/
+      - row "Переходы стадий ОМ Add":
+        - rowheader "Переходы стадий ОМ":
+          - link "Переходы стадий ОМ":
+            - /url: /admin/operations/opssecurityeventtransition/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventtransition/add/
+      - row "Правки сводок ГВО Add":
+        - rowheader "Правки сводок ГВО":
+          - link "Правки сводок ГВО":
+            - /url: /admin/operations/opsgvosummarypatch/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsgvosummarypatch/add/
+      - row "Смены боевых групп Add":
+        - rowheader "Смены боевых групп":
+          - link "Смены боевых групп":
+            - /url: /admin/operations/opscombatdutyshift/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatdutyshift/add/
+      - row "Смены дежурств Add":
+        - rowheader "Смены дежурств":
+          - link "Смены дежурств":
+            - /url: /admin/operations/opsdutyshift/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutyshift/add/
+      - row "Участия в мероприятиях Add":
+        - rowheader "Участия в мероприятиях":
+          - link "Участия в мероприятиях":
+            - /url: /admin/operations/opsstatusparticipation/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsstatusparticipation/add/
+      - row "Участники рейтинга Add":
+        - rowheader "Участники рейтинга":
+          - link "Участники рейтинга":
+            - /url: /admin/operations/opsratedparticipant/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratedparticipant/add/
+  - table "Сбор сил и расход":
+    - caption:
+      - link "Сбор сил и расход":
+        - /url: ""
+    - rowgroup:
+      - row "Сдачи дня Add":
+        - rowheader "Сдачи дня":
+          - link "Сдачи дня":
+            - /url: /admin/operations/opsdailysubmission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdailysubmission/add/
+      - row "Заявки на сбор сил":
+        - rowheader "Заявки на сбор сил":
+          - link "Заявки на сбор сил":
+            - /url: /admin/operations/opsforcerequest/
+        - cell
+      - row "Запросы департаментам":
+        - rowheader "Запросы департаментам":
+          - link "Запросы департаментам":
+            - /url: /admin/operations/opsdepartmentrequest/
+        - cell
+      - row "Запросы управлениям":
+        - rowheader "Запросы управлениям":
+          - link "Запросы управлениям":
+            - /url: /admin/operations/opsunitrequest/
+        - cell
+      - row "Мероприятия распределения сил Add":
+        - rowheader "Мероприятия распределения сил":
+          - link "Мероприятия распределения сил":
+            - /url: /admin/operations/opsforcecampaignevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforcecampaignevent/add/
+      - row "Назначения сотрудников из общего пула":
+        - rowheader "Назначения сотрудников из общего пула":
+          - link "Назначения сотрудников из общего пула":
+            - /url: /admin/operations/opsforcecampaignassignment/
+        - cell
+      - row "Передачи общего пула в расстановку":
+        - rowheader "Передачи общего пула в расстановку":
+          - link "Передачи общего пула в расстановку":
+            - /url: /admin/operations/opsforcecampaignhandover/
+        - cell
+      - row "Распределения сил по мероприятиям Add":
+        - rowheader "Распределения сил по мероприятиям":
+          - link "Распределения сил по мероприятиям":
+            - /url: /admin/operations/opsforcecampaign/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforcecampaign/add/
+      - row "Состав по запросам":
+        - rowheader "Состав по запросам":
+          - link "Состав по запросам":
+            - /url: /admin/operations/opsforcerequestmember/
+        - cell
+      - row "Сотрудники общего пула мероприятий":
+        - rowheader "Сотрудники общего пула мероприятий":
+          - link "Сотрудники общего пула мероприятий":
+            - /url: /admin/operations/opsforcecampaignpoolmember/
+        - cell
+  - table "Обратная связь":
+    - caption:
+      - link "Обратная связь":
+        - /url: ""
+    - rowgroup:
+      - row "Обращения обратной связи Add":
+        - rowheader "Обращения обратной связи":
+          - link "Обращения обратной связи":
+            - /url: /admin/operations/opsfeedbackrequest/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackrequest/add/
+      - row "Комментарии обращений Add":
+        - rowheader "Комментарии обращений":
+          - link "Комментарии обращений":
+            - /url: /admin/operations/opsfeedbackcomment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackcomment/add/
+      - row "События обращений Add":
+        - rowheader "События обращений":
+          - link "События обращений":
+            - /url: /admin/operations/opsfeedbackevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackevent/add/
+      - row "Справочник обратной связи Add":
+        - rowheader "Справочник обратной связи":
+          - link "Справочник обратной связи":
+            - /url: /admin/operations/opsfeedbackregistry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackregistry/add/
+  - table "Документы и отчёты":
+    - caption:
+      - link "Документы и отчёты":
+        - /url: ""
+    - rowgroup:
+      - row "Выпуски документов Add":
+        - rowheader "Выпуски документов":
+          - link "Выпуски документов":
+            - /url: /admin/operations/opsissueddocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsissueddocument/add/
+      - row "Отчёты Add":
+        - rowheader "Отчёты":
+          - link "Отчёты":
+            - /url: /admin/reports/report/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/reports/report/add/
+      - row "Артефакты служебных отчётов Add":
+        - rowheader "Артефакты служебных отчётов":
+          - link "Артефакты служебных отчётов":
+            - /url: /admin/operations/opsservicereportartifact/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereportartifact/add/
+      - row "Вложения раздела Add":
+        - rowheader "Вложения раздела":
+          - link "Вложения раздела":
+            - /url: /admin/operations/opsattachment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsattachment/add/
+      - row "Водяные знаки материализации":
+        - rowheader "Водяные знаки материализации":
+          - link "Водяные знаки материализации":
+            - /url: /admin/operations/opswatermark/
+        - cell
+      - row "Выгрузки рейтинга Add":
+        - rowheader "Выгрузки рейтинга":
+          - link "Выгрузки рейтинга":
+            - /url: /admin/operations/opsratingexportjob/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingexportjob/add/
+      - row "Работы служебных отчётов Add":
+        - rowheader "Работы служебных отчётов":
+          - link "Работы служебных отчётов":
+            - /url: /admin/operations/opsservicereportjob/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereportjob/add/
+      - row "Файлы выгрузок рейтинга Add":
+        - rowheader "Файлы выгрузок рейтинга":
+          - link "Файлы выгрузок рейтинга":
+            - /url: /admin/operations/opsratingexportartifact/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingexportartifact/add/
+  - table "Служебное":
+    - caption:
+      - link "Служебное":
+        - /url: ""
+    - rowgroup:
+      - row "Журналы раздела ОМ Add":
+        - rowheader "Журналы раздела ОМ":
+          - link "Журналы раздела ОМ":
+            - /url: /admin/operations/opsauditlog/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsauditlog/add/
+      - row "Записи аудита Add":
+        - rowheader "Записи аудита":
+          - link "Записи аудита":
+            - /url: /admin/audit/auditlog/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/audit/auditlog/add/
+      - row "Уведомления Add":
+        - rowheader "Уведомления":
+          - link "Уведомления":
+            - /url: /admin/notifications/notification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/notifications/notification/add/
+      - row "Уведомления раздела Add":
+        - rowheader "Уведомления раздела":
+          - link "Уведомления раздела":
+            - /url: /admin/operations/opsnotification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsnotification/add/
+      - row "Версии разделов настроек":
+        - rowheader "Версии разделов настроек":
+          - link "Версии разделов настроек":
+            - /url: /admin/operations/opspolicysectionversion/
+        - cell
+      - row "Журнал оценивания Add":
+        - rowheader "Журнал оценивания":
+          - link "Журнал оценивания":
+            - /url: /admin/operations/opsratingauditentry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingauditentry/add/
+      - row "Идемпотентность рейтинга":
+        - rowheader "Идемпотентность рейтинга":
+          - link "Идемпотентность рейтинга":
+            - /url: /admin/operations/opsratingidempotencyrecord/
+        - cell
+      - row "Изменения настроек Add":
+        - rowheader "Изменения настроек":
+          - link "Изменения настроек":
+            - /url: /admin/operations/opssettingchangeevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssettingchangeevent/add/
+      - row "Курсоры дат e2e-фикстур":
+        - rowheader "Курсоры дат e2e-фикстур":
+          - link "Курсоры дат e2e-фикстур":
+            - /url: /admin/operations/opse2efixturedatecursor/
+        - cell
+      - row "Настройки контроля сдачи":
+        - rowheader "Настройки контроля сдачи":
+          - link "Настройки контроля сдачи":
+            - /url: /admin/operations/opssubmissioncontrolsettings/
+        - cell
+      - row "Настройки раздела ОМ Add":
+        - rowheader "Настройки раздела ОМ":
+          - link "Настройки раздела ОМ":
+            - /url: /admin/operations/opspolicysetting/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opspolicysetting/add/
+      - row "Политика актуальности паспорта Add":
+        - rowheader "Политика актуальности паспорта":
+          - link "Политика актуальности паспорта":
+            - /url: /admin/operations/opspassportfreshnesspolicy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opspassportfreshnesspolicy/add/
+      - row "Политика конфликтов дежурств Add":
+        - rowheader "Политика конфликтов дежурств":
+          - link "Политика конфликтов дежурств":
+            - /url: /admin/operations/opsdutyconflictpolicy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutyconflictpolicy/add/
+      - row "Получатели уведомлений подразделений Add":
+        - rowheader "Получатели уведомлений подразделений":
+          - link "Получатели уведомлений подразделений":
+            - /url: /admin/operations/opsdivisionnotifyrecipient/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdivisionnotifyrecipient/add/
+      - row "Счётчики номеров документов Add":
+        - rowheader "Счётчики номеров документов":
+          - link "Счётчики номеров документов":
+            - /url: /admin/operations/opsdocumentsequence/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdocumentsequence/add/
+      - row "Точки динамики рейтинга":
+        - rowheader "Точки динамики рейтинга":
+          - link "Точки динамики рейтинга":
+            - /url: /admin/operations/opsratingdynamicspoint/
+        - cell
+      - row "Уведомления рейтинга Add":
+        - rowheader "Уведомления рейтинга":
+          - link "Уведомления рейтинга":
+            - /url: /admin/operations/opsratingnotification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingnotification/add/
+      - row "Флаги рейтинга Add":
+        - rowheader "Флаги рейтинга":
+          - link "Флаги рейтинга":
+            - /url: /admin/operations/opsratingfeatureflags/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingfeatureflags/add/
+- main:
+  - heading "Change Справочник обратной связи" [level=1]
+  - heading "feedback-registry-2026.07.2" [level=2]
+  - list:
+    - link "History":
+      - /url: /admin/operations/opsfeedbackregistry/1/history/
+  - button "Save"
+  - button "Save and add another"
+  - button "Save and continue editing"
+  - link "Delete":
+    - /url: /admin/operations/opsfeedbackregistry/1/delete/
+  - generic: "Created by:"
+  - textbox "Created by:"
+  - generic: "Singleton key:"
+  - spinbutton "Singleton key:": "1"
+  - generic: "Version:"
+  - textbox "Version:": feedback-registry-2026.07.2
+  - generic: "Types:"
+  - textbox "Types:": "[{\"code\": \"BUG\", \"label\": \"Ошибка\"}, {\"code\": \"WRONG_DATA\", \"label\": \"Неверные данные\"}, {\"code\": \"UX\", \"label\": \"UX\"}, {\"code\": \"IDEA\", \"label\": \"Идея\"}, {\"code\": \"ACCESS\", \"label\": \"Доступ\"}, {\"code\": \"HELP\", \"label\": \"Помощь\"}]"
+  - generic: "Priorities:"
+  - textbox "Priorities:": "[{\"code\": \"LOW\", \"label\": \"Низкий\"}, {\"code\": \"NORMAL\", \"label\": \"Обычный\"}, {\"code\": \"HIGH\", \"label\": \"Высокий\"}, {\"code\": \"CRITICAL\", \"label\": \"Критический\"}]"
+  - generic: "Statuses:"
+  - textbox "Statuses:": "[{\"code\": \"DRAFT\", \"label\": \"Черновик\"}, {\"code\": \"NEW\", \"label\": \"Новое\"}, {\"code\": \"IN_REVIEW\", \"label\": \"На рассмотрении\"}, {\"code\": \"NEED_INFO\", \"label\": \"Нужна информация\"}, {\"code\": \"ACCEPTED\", \"label\": \"Принято в работу\"}, {\"code\": \"PLANNED\", \"label\": \"Запланировано\"}, {\"code\": \"FIXED\", \"label\": \"Исправлено\"}, {\"code\": \"RELEASED\", \"label\": \"Реализовано\"}, {\"code\": \"REJECTED\", \"label\": \"Отклонено\"}, {\"code\": \"CLOSED\", \"label\": \"Закрыто\"}, {\"code\": \"DUPLICATE\", \"label\": \"Дубликат\"}]"
+  - generic: "Modules:"
+  - textbox "Modules:": "[{\"label\": \"Реестр ОМ\", \"moduleCode\": \"SECURITY_EVENTS\"}, {\"label\": \"План дежурств\", \"moduleCode\": \"DUTIES\"}, {\"label\": \"Объекты и паспорта\", \"moduleCode\": \"OBJECTS\"}, {\"label\": \"Оперативный рейтинг\", \"moduleCode\": \"RATINGS\"}, {\"label\": \"Аналитика службы\", \"moduleCode\": \"ANALYTICS\"}, {\"label\": \"Отчёты службы\", \"moduleCode\": \"REPORTS\"}, {\"label\": \"Другое\", \"moduleCode\": \"OTHER\"}]"
+  - generic: "Status transitions:"
+  - textbox "Status transitions:": "[{\"to\": [\"NEW\"], \"from\": \"DRAFT\"}, {\"to\": [\"IN_REVIEW\", \"NEED_INFO\", \"REJECTED\", \"DUPLICATE\"], \"from\": \"NEW\"}, {\"to\": [\"NEED_INFO\", \"ACCEPTED\", \"REJECTED\", \"DUPLICATE\"], \"from\": \"IN_REVIEW\"}, {\"to\": [\"IN_REVIEW\", \"REJECTED\"], \"from\": \"NEED_INFO\"}, {\"to\": [\"PLANNED\", \"REJECTED\"], \"from\": \"ACCEPTED\"}, {\"to\": [\"FIXED\", \"REJECTED\"], \"from\": \"PLANNED\"}, {\"to\": [\"RELEASED\"], \"from\": \"FIXED\"}, {\"to\": [\"CLOSED\"], \"from\": \"RELEASED\"}, {\"to\": [], \"from\": \"REJECTED\"}, {\"to\": [], \"from\": \"CLOSED\"}, {\"to\": [], \"from\": \"DUPLICATE\"}]"
+  - generic: "Terminal statuses:"
+  - textbox "Terminal statuses:": "[\"CLOSED\", \"REJECTED\", \"DUPLICATE\"]"
+  - button "Save"
+  - button "Save and add another"
+  - button "Save and continue editing"
+  - link "Delete":
+    - /url: /admin/operations/opsfeedbackregistry/1/delete/
+- contentinfo

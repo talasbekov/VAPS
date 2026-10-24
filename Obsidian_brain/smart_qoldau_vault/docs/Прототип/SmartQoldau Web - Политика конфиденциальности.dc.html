@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:900px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;text-decoration:none"><img src="uploads/logo_smartqoldau.png" style="width:30px;height:30px;border-radius:8px"><div style="font-size:15px;font-weight:800;color:#0f3f3a">SmartQoldau</div></a>
+      <a href="./SmartQoldau.kz.dc.html" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none">← На главную</a>
+    </div>
+  </div>
+  <div style="max-width:720px;margin:0 auto;padding:56px 32px 90px">
+    <div style="font-size:28px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Политика конфиденциальности</div>
+    <div style="font-size:12.5px;font-weight:600;color:#a9bdb9;margin-bottom:36px">Действует с 1 августа 2026 года</div>
+    <div style="display:flex;flex-direction:column;gap:28px">
+      <sc-for list="{{ sections }}" as="s" hint-placeholder-count="6">
+        <div><div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:8px">{{ s.title }}</div><div style="font-size:14px;font-weight:500;color:#5b7a75;line-height:1.7">{{ s.text }}</div></div>
+      </sc-for>
+    </div>
+  </div>
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      sections: [
+        { title: '1. Какие данные мы собираем', text: 'Номер телефона для авторизации, выбранную тему обращения и техническую информацию об устройстве. При анонимном обращении имя и фото не запрашиваются.' },
+        { title: '2. Как данные используются', text: 'Данные используются для подбора специалиста, проведения консультации и обеспечения безопасности платформы. Мы не передаём данные третьим лицам без вашего согласия.' },
+        { title: '3. Доступ специалиста к вашим данным', text: 'Психолог видит только тему обращения и содержание консультации. Личные данные (имя, контакты) специалисту не передаются, если вы не указали их сами.' },
+        { title: '4. Хранение истории консультаций', text: 'История консультаций сохраняется в вашем аккаунте и доступна только вам. Вы можете запросить удаление истории в любой момент.' },
+        { title: '5. Безопасность', text: 'Данные передаются по защищённому соединению. Доступ сотрудников платформы к содержанию консультаций ограничен и логируется.' },
+        { title: '6. Ваши права', text: 'Вы можете запросить удаление аккаунта и всех связанных данных через настройки профиля или обратившись в поддержку.' },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

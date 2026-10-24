@@ -1,0 +1,122 @@
+{
+  "generated": "2026-08-23",
+  "resolver": "manual (finding-resolution.md rules applied by orchestrator; NOT a validated deterministic resolver run against resolver_multilingual.jsonl)",
+  "merges": [
+    {
+      "id": "RES-000001",
+      "raw_ids": [
+        "RAW-00000017-0",
+        "RAW-00000023-0",
+        "RAW-00000059-0"
+      ],
+      "agents": [
+        "architecture-engineer"
+      ],
+      "domains": [
+        "architecture",
+        "audit",
+        "code_quality"
+      ],
+      "category": "layering-violation-admin-bypass",
+      "title": "Django Admin registers business/workflow models (EmployeeStatus, SecondmentRequest, StatusChangeHistory, StatusDocument, EmployeeTransferHistory, Employee), bypassing service-layer invariants and the audit trail",
+      "severity": "high",
+      "severity_disagreement": {
+        "raw_severities": {
+          "RAW-00000017-0": "low",
+          "RAW-00000023-0": "medium",
+          "RAW-00000059-0": "high"
+        },
+        "gated_at": "high",
+        "rule": "3 independent passes converge on the same root cause; gate at most severe (finding-resolution.md rule 2 corroboration, scoring-and-gates.md disagreement handling)"
+      },
+      "status": "confirmed",
+      "confidence": 0.6,
+      "locations": [
+        {
+          "file": "organization_management/apps/statuses/admin.py",
+          "line": 1,
+          "end_line": 15,
+          "symbol": "EmployeeStatusAdmin",
+          "source_sha256": "33641ea6a054b4015bb64fc2dde27f4db69588b8a70807ed963e601d2d34656d",
+          "related": [
+            {
+              "file": "organization_management/apps/employees/admin.py",
+              "symbol": "EmployeeAdmin"
+            },
+            {
+              "file": "organization_management/apps/staff_unit/admin.py",
+              "symbol": "StaffUnitAdmin"
+            },
+            {
+              "file": "organization_management/apps/divisions/admin.py",
+              "symbol": "DivisionAdmin"
+            },
+            {
+              "file": "organization_management/apps/secondments/admin.py",
+              "symbol": "SecondmentRequest admin.site.register"
+            },
+            {
+              "file": "organization_management/apps/operations/admin.py",
+              "symbol": "OpsSubmissionControlSettingsAdmin"
+            }
+          ]
+        },
+        {
+          "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/secondments/admin.py",
+          "line": 4,
+          "end_line": 4,
+          "symbol": "admin.site.register(SecondmentRequest)",
+          "source_sha256": "05fee94ec1008672f99bb92bb3013211468686206d8de456e4cb482dfb8bbc08",
+          "related": [
+            {
+              "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/admin.py",
+              "line_range": "32-72",
+              "symbol": "EmployeeStatusAdmin",
+              "sha256": "98c668fedc1cc1070a79daef210efd8c3236b456bbf340a2e9b36e415d0d8dfd",
+              "note": "no has_delete_permission override -> EmployeeStatus, the record protected by the 'exactly one active status per employee' invariant (obsidian-vault Personnel-Records/Decisions.md #Один-активный-статус-на-сотрудника), can be deleted directly from Admin"
+            },
+            {
+              "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/secondments/api/views.py",
+              "line_range": "81-207",
+              "symbol": "SecondmentRequestViewSet.approve/reject/cancel",
+              "note": "the governing service path this Admin registration bypasses: approve() creates a scoped EmployeeStatus, checks for existing ACTIVE conflicts, enforces division-of-decision-maker scoping (line ~76) before mutating .status"
+            },
+            {
+              "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/audit/middleware.py",
+              "line_range": "35",
+              "note": "AuditMiddleware only fires for request.path.startswith('/api/'); Django Admin requests never go through it, so any mutation made via these two admin registrations is entirely unaudited"
+            }
+          ]
+        },
+        {
+          "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/secondments/admin.py",
+          "line": 1,
+          "end_line": 4,
+          "symbol": "admin.site.register(SecondmentRequest)",
+          "source_sha256": "05fee94ec1008672f99bb92bb3013211468686206d8de456e4cb482dfb8bbc08",
+          "related": []
+        }
+      ],
+      "evidence_tier": "source_anchored",
+      "recommendation": {
+        "confidence_label": "supported",
+        "fix_example": {
+          "kind": "proposed_unverified",
+          "text": "Unregister transactional models from Admin or make them read-only; add a guard test enumerating admin.site._registry against an explicit catalog allowlist."
+        }
+      },
+      "merge_rule": "finding-resolution.md rule 2: same root_cause family, overlapping location (apps/statuses/admin.py + apps/secondments/admin.py cited across all 3), independently filed by 2 distinct agent identities across 3 passes -> corroboration merge, gated at most severe (high)"
+    }
+  ],
+  "superseded": [
+    {
+      "type": "superseded_not_merged",
+      "superseded_raw_id": "RAW-00000018-0",
+      "superseding_raw_id": "RAW-00000060-0",
+      "reason": "RAW-00000018-0 (source_anchored, 'no ruff config found, unverified within budget') is superseded by RAW-00000060-0 (artifact_backed -- ruff actually installed and run this session, 1518 violations measured). Per grounding-and-recommendations.md observation ladder, artifact_backed > source_anchored -- the stronger-evidence version is kept in the resolved/scored set, the weaker one is dropped to avoid double-counting the same info-level observation."
+    }
+  ],
+  "kept_separate_note": "7 raw-iso-date-leak findings kept separate (distinct, independently remediable locations, rule 4). The 7 ops/security_events.py unguarded-int findings kept separate (distinct call sites/actions, same category but independently remediable). Security-domain disagreement on NotificationViewSet permission_classes (RAW-00000058-0, one agent pass says missing, a deeper pass says explicit-and-present) kept as a single low-confidence proposed finding, NOT resolved as confirmed either way -- flagged for a third read.",
+  "resolved_count": 57,
+  "raw_count": 60
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "url": "http://127.0.0.1:8100/api/ops/gvo-summaries/%D0%9E%D0%9C-2026-44/",
+    "method": "PATCH",
+    "status": 200,
+    "body": "{\"omCode\":\"ОМ-2026-44\",\"patch\":{\"arrival\":{\"date\":\"17.09.2026\",\"time\":\"10:00\",\"route\":\"\",\"flight\":\"TEST-1081\",\"dur\":\"\"},\"meet\":[],\"departure\":{\"date\":\"18.09.2026\",\"time\":\"\",\"route\":\"\",\"flight\":\"\",\"dur\":\"\"},\"farewell\":[]},\"updatedAt\":\"2026-09-09T12:56:28.526399+00:00\"}"
+  },
+  {
+    "url": "http://127.0.0.1:8100/api/ops/gvo-summaries/%D0%9E%D0%9C-2026-44/approve/",
+    "method": "POST",
+    "status": 200,
+    "body": "{\"omCode\":\"ОМ-2026-44\",\"summary\":{\"country\":\"Оман\",\"persons\":[{\"personId\":\"5\",\"code\":\"OL-5\",\"name\":\"Hassan Al-Farsi\",\"role\":\"Заместитель Премьер-министра по экономическим вопросам\",\"facts\":[],\"photoUrl\":null}],\"arrival\":{\"date\":\"17.09.2026\",\"time\":\"10:00\",\"route\":\"\",\"flight\":\"TEST-1081\",\"dur\":\"\"},\"departure\":{\"date\":\"18.09.2026\",\"time\":\"\",\"route\":\"\",\"flight\":\"\",\"dur\":\"\"},\"meet\":[],\"farewell\":[],\"stay\":{\"place\":\"\",\"room\":\"\"},\"delegation\":[],\"sbChief\":\"\",\"weapons\":\"\",\"wishes\":\"\",\"obVariant\":\"\",\"radio\":\"\",\"responsible\":{\"name\":\"Мырзабеков Б.\",\"callsign\":\"\",\"role\":\"ответственный\"},\"senior\":{\"employeeId\":\"160\",\"name\":\"Калиев А.\",\"callsign\":\"\",\"role\":\"старший ГВО\"},\"groups\":[{\"name\":\"ГВО\",\"members\":[]}],\"transport\":[],\"allocatedTransport\":[],\"visits\":[]},\"filled\":true,\"updatedAt\":\"2026-09-09T12:56:52.079447+00:00\",\"visit\":{\"status\":\"APPROVED\",\"version\":2,\"protectedPersonId\":\"5\",\"unspecified\":[\"stay.place\"],\"approvedAt\":\"2026-09-09T12:56:52.079400+00:00\"},\"unspecified\":[\"stay.place\"],\"missingRequired\":[],\"requiredTotal\":6,\"requiredFilled\":6}"
+  },
+  {
+    "url": "http://127.0.0.1:8100/api/ops/security-events/forces/requests/force-allocation-631-2026-09-09T12%3A48%3A53.743695%2B00%3A00/directorate/select/",
+    "method": "POST",
+    "status": 200,
+    "body": "{\"selected\":[],\"refused\":[{\"employeeId\":\"18\",\"name\":\"Токтаров А.\",\"code\":\"VALIDATION_ERROR\",\"message\":\"Проверьте заполнение формы.\",\"overridable\":false},{\"employeeId\":\"20\",\"name\":\"Байжанов А.\",\"code\":\"VALIDATION_ERROR\",\"message\":\"Проверьте заполнение формы.\",\"overridable\":false},{\"employeeId\":\"22\",\"name\":\"Мукашев А.\",\"code\":\"VALIDATION_ERROR\",\"message\":\"Проверьте заполнение формы.\",\"overridable\":false}],\"request\":{\"eventId\":\"9550\",\"code\":\"ОМ-2026-43\",\"title\":\"Проходка ОМ №1081 — внутреннее\",\"businessDate\":\"2026-09-15\",\"allocationId\":\"force-allocation-631-2026-09-09T12:48:53.743695+00:00\",\"departmentName\":\"Первый департамент\",\"status\":\"NOTIFIED\",\"dueAt\":\"2026-09-14T00:00:00+05:00\",\"groupDemands\":[],\"directorates\":[{\"divisionId\":\"632\",\"name\":\"Первое управление\",\"need\":3,\"assigned\":0,\"notifiedAt\":\"2026-09-09T12:50:37.508425+00:00\"}]}}"
+  }
+]

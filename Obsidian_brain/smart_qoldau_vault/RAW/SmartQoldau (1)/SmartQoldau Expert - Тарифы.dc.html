@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 32px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button onClick="{{ onBack }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+          <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a">Тарифы</div>
+      </div>
+      <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5;margin-bottom:20px">Чем выше пакет — тем ниже комиссия с сессий и выше видимость в поиске</div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ plans }}" as="p" hint-placeholder-count="4">
+          <div style="border-radius:18px;border:2px solid {{ p.border }};background:{{ p.bg }};padding:18px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:15px;font-weight:800;color:#0f3f3a">{{ p.name }}</div>
+              <sc-if value="{{ p.current }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;font-weight:800;color:#fff;background:#0f766e;padding:3px 9px;border-radius:9px">ВАШ ТАРИФ</div></sc-if>
+            </div>
+            <div style="font-size:20px;font-weight:800;color:#0f3f3a;margin-bottom:4px">{{ p.price }}</div>
+            <div style="font-size:12.5px;font-weight:700;color:#159a7c;margin-bottom:10px">Комиссия {{ p.commission }}</div>
+            <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+              <sc-for list="{{ p.perks }}" as="perk" hint-placeholder-count="2">
+                <div style="font-size:12.5px;font-weight:600;color:#3f5450">✓ {{ perk }}</div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ !p.current }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ p.onSelect }}" style="width:100%;height:44px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Перейти на «{{ p.name }}»</button>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:20px;right:20px;bottom:28px;background:#0f3f3a;color:#fff;border-radius:14px;padding:13px 16px;font-size:12.5px;font-weight:600;text-align:center;z-index:55">{{ toast }}</div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static PLANS = [
+    { id: 'start', name: 'Старт', price: '0 ₸/мес', commission: '0%', perks: ['30 дней пробного периода', 'Пониженная видимость'] },
+    { id: 'basic', name: 'Базовый', price: '0 ₸/мес', commission: '15%', perks: ['Стандартная видимость по матчингу', 'Без ограничений по времени'] },
+    { id: 'pro', name: 'Про', price: '12 000 ₸/мес', commission: '13%', perks: ['Приоритет 2-го уровня в выдаче', 'Бейдж «Про» в профиле'] },
+    { id: 'top', name: 'Топ', price: '20 000 ₸/мес', commission: '10–11%', perks: ['Приоритет 1-го уровня в выдаче', 'Расширенная аналитика профиля'] },
+  ];
+  state = { current: localStorage.getItem('sq_expert_tier') || 'basic', toast: '' };
+  renderVals() {
+    const s = this.state;
+    const plans = Component.PLANS.map(p => ({
+      ...p, current: p.id === s.current,
+      border: p.id === s.current ? '#0f766e' : '#edf2f0', bg: p.id === s.current ? '#f2fbf8' : '#fff',
+      onSelect: () => { localStorage.setItem('sq_expert_tier', p.id); this.setState({ current: p.id, toast: `Тариф изменён на «${p.name}»` }); setTimeout(() => this.setState({ toast: '' }), 2200); },
+    }));
+    return { plans, toast: s.toast, onBack: () => window.history.back() };
+  }
+}
+</script>
+</body>
+</html>

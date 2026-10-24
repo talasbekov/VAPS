@@ -1,0 +1,6 @@
+exit=0
+smart-josparlau-contour-final-proxy-1 14.98MiB / 14.74GiB 0.07%
+smart-josparlau-contour-final-frontend-1 91.76MiB / 1GiB 0.00%
+smart-josparlau-contour-final-backend-1 140.2MiB / 14.74GiB 1.00%
+smart-josparlau-contour-final-db-1 37.15MiB / 14.74GiB 3.67%
+smart-josparlau-contour-final-redis-1 5.039MiB / 14.74GiB 0.35%

@@ -1,0 +1,106 @@
+diff --git a/deploy/contour/Dockerfile.proxy b/deploy/contour/Dockerfile.proxy
+index 39a45a47..567ee8c0 100644
+--- a/deploy/contour/Dockerfile.proxy
++++ b/deploy/contour/Dockerfile.proxy
+@@ -1,2 +1,7 @@
+ FROM nginx:1.28-alpine
+ COPY deploy/contour/nginx.conf /etc/nginx/conf.d/default.conf
++COPY deploy/contour/nginx-error-filter.awk /usr/local/lib/nginx-error-filter.awk
++COPY deploy/contour/proxy-entrypoint.sh /usr/local/bin/contour-proxy-entrypoint
++RUN chmod 755 /usr/local/bin/contour-proxy-entrypoint
++ENTRYPOINT ["/usr/local/bin/contour-proxy-entrypoint"]
++CMD ["nginx", "-g", "daemon off;"]
+diff --git a/deploy/contour/nginx-error-filter.awk b/deploy/contour/nginx-error-filter.awk
+new file mode 100644
+index 00000000..50de90fa
+--- /dev/null
++++ b/deploy/contour/nginx-error-filter.awk
+@@ -0,0 +1,7 @@
++# nginx error messages can repeat the URI in request, upstream and referrer.
++# Strip query segments everywhere while preserving the diagnostic and paths.
++{
++    gsub(/\?[^[:space:]"]*/, "?[redacted]")
++    print
++    fflush()
++}
+diff --git a/deploy/contour/nginx.conf b/deploy/contour/nginx.conf
+index a4a63462..ab537dda 100644
+--- a/deploy/contour/nginx.conf
++++ b/deploy/contour/nginx.conf
+@@ -15,6 +15,8 @@ server {
+     # Preserve the browser's external LAN port when nginx returns /admin/ etc.
+     absolute_redirect off;
+     access_log /var/log/nginx/access.log contour_path;
++    # The contour entrypoint sanitizes stderr before it reaches Docker logs.
++    error_log stderr notice;
+     client_max_body_size 30m;
+     proxy_http_version 1.1;
+     proxy_set_header Host $http_host;
+diff --git a/deploy/contour/proxy-entrypoint.sh b/deploy/contour/proxy-entrypoint.sh
+new file mode 100755
+index 00000000..a12d879c
+--- /dev/null
++++ b/deploy/contour/proxy-entrypoint.sh
+@@ -0,0 +1,50 @@
++#!/bin/sh
++# Drain sanitized nginx stderr before PID1 exits, including boot failures.
++set -eu
++log_dir=$(mktemp -d /tmp/contour-nginx-log.XXXXXX)
++log_fifo=$log_dir/stderr
++trap 'rm -f "$log_fifo"; rmdir "$log_dir"' EXIT
++mkfifo -m 600 "$log_fifo"
++
++nginx_pid=
++signal_count=0
++forward_signal() {
++    signal_count=$((signal_count + 1))
++    if [ -n "$nginx_pid" ]; then
++        kill -s "$1" "$nginx_pid" 2>/dev/null || true
++    fi
++}
++trap 'forward_signal TERM' TERM
++trap 'forward_signal INT' INT
++trap 'forward_signal QUIT' QUIT
++trap 'forward_signal HUP' HUP
++trap 'forward_signal USR1' USR1
++
++# The reader inherits the original stderr. nginx alone writes to the FIFO;
++# the supervisor holds no write descriptor, so nginx exit produces EOF.
++awk -f /usr/local/lib/nginx-error-filter.awk < "$log_fifo" >&2 &
++filter_pid=$!
++/docker-entrypoint.sh "$@" 2> "$log_fifo" &
++nginx_pid=$!
++
++wait_child() {
++    while :; do
++        previous_signal_count=$signal_count
++        if wait "$1"; then child_status=0; else child_status=$?; fi
++        # A caught signal interrupts shell wait, not the child's lifecycle.
++        # Wait again for the actual child status after forwarding the signal.
++        if [ "$signal_count" -ne "$previous_signal_count" ] && [ "$child_status" -gt 128 ]; then
++            continue
++        fi
++        return "$child_status"
++    done
++}
++
++if wait_child "$nginx_pid"; then nginx_status=0; else nginx_status=$?; fi
++nginx_pid=
++if wait_child "$filter_pid"; then filter_status=0; else filter_status=$?; fi
++if [ "$nginx_status" -eq 0 ] && [ "$filter_status" -ne 0 ]; then
++    echo 'nginx stderr redactor failed' >&2
++    exit "$filter_status"
++fi
++exit "$nginx_status"
+diff --git a/deploy/contour/snapshot.py b/deploy/contour/snapshot.py
+index 476e1c01..cad04ff4 100755
+--- a/deploy/contour/snapshot.py
++++ b/deploy/contour/snapshot.py
+@@ -43,6 +43,7 @@ for name in (
+     'build-bundle.sh', 'install.sh', 'snapshot.py', 'docker-compose.yml', '.env.example',
+     'Dockerfile.python-deps', 'Dockerfile.node-deps', 'Dockerfile.backend',
+     'Dockerfile.frontend', 'Dockerfile.proxy', 'entrypoint.sh', 'nginx.conf', 'README.md',
++    'proxy-entrypoint.sh', 'nginx-error-filter.awk',
+ ):
+     shutil.copy2(root / 'deploy/contour' / name, deploy / name)
+ print(f'Snapshot: {count} tracked application/deployment files; no local environment')

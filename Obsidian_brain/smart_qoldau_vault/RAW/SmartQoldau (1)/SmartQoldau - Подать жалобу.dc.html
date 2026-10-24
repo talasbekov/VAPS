@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none} textarea{font-family:inherit;outline:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 32px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button onClick="{{ onBack }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+          <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a">Подать жалобу</div>
+      </div>
+
+      <sc-if value="{{ !submitted }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5;margin-bottom:20px">На консультацию {{ sessionLabel }}</div>
+
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Причина</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+          <sc-for list="{{ reasons }}" as="r" hint-placeholder-count="4">
+            <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:14px;border:1.5px solid {{ r.border }};background:{{ r.bg }};cursor:pointer">
+              <div style="width:18px;height:18px;border-radius:50%;border:2px solid {{ r.dotBorder }};background:{{ r.dotBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center">
+                <sc-if value="{{ r.selected }}" hint-placeholder-val="{{ false }}"><div style="width:8px;height:8px;border-radius:50%;background:#fff"></div></sc-if>
+              </div>
+              <div style="font-size:13.5px;font-weight:600;color:#0f3f3a">{{ r.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Описание</div>
+        <textarea value="{{ description }}" onInput="{{ onDescription }}" placeholder="Опишите, что произошло" style="width:100%;height:110px;border:1.5px solid #edf2f0;border-radius:14px;padding:14px;font-size:13.5px;color:#0f3f3a;box-sizing:border-box;resize:none;margin-bottom:18px"></textarea>
+
+        <sc-if value="{{ isChat }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ onAttach }}" style="display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:14px;border:1.5px dashed #d8e4e0;margin-bottom:18px;cursor:pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h7 M17 3h4v4 M21 3l-9 9" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13px;font-weight:600;color:#0f766e">{{ attachLabel }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ error }}" hint-placeholder-val="{{ false }}"><div style="font-size:12.5px;font-weight:600;color:#c0392b;margin-bottom:14px">{{ error }}</div></sc-if>
+
+        <button onClick="{{ onSubmit }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:15.5px;font-weight:700;font-family:inherit;cursor:pointer">Отправить жалобу</button>
+      </sc-if>
+
+      <sc-if value="{{ submitted }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:50px 10px">
+          <div style="width:60px;height:60px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:18px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#159a7c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a;margin-bottom:8px">Жалоба отправлена</div>
+          <div style="font-size:13.5px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Рассмотрим в течение 48 часов. Статус можно отслеживать в разделе «Мои жалобы»</div>
+          <button onClick="{{ onGoToMyComplaints }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:22px">Мои жалобы</button>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static REASONS = ['Специалист вёл себя неэтично', 'Специалист не вышел на связь', 'Техническая проблема на стороне сессии', 'Другое'];
+  state = { reason: '', description: '', attached: false, error: '', submitted: false };
+  renderVals() {
+    const s = this.state;
+    const format = new URLSearchParams(window.location.search).get('format') || 'video';
+    return {
+      sessionLabel: '2 сент, тема «Тревога и стресс»',
+      isChat: format === 'chat',
+      reasons: Component.REASONS.map(label => ({
+        label, selected: s.reason === label,
+        border: s.reason === label ? '#0f766e' : '#edf2f0', bg: s.reason === label ? '#f2fbf8' : '#fff',
+        dotBorder: s.reason === label ? '#0f766e' : '#d8e4e0', dotBg: s.reason === label ? '#0f766e' : '#fff',
+        onClick: () => this.setState({ reason: label, error: '' }),
+      })),
+      description: s.description,
+      onDescription: (e) => this.setState({ description: e.target.value, error: '' }),
+      attachLabel: s.attached ? '✓ Скриншот прикреплён' : 'Прикрепить скриншот переписки',
+      onAttach: () => this.setState({ attached: true }),
+      error: s.error,
+      submitted: s.submitted,
+      onBack: () => window.history.back(),
+      onSubmit: () => {
+        if (!s.reason) { this.setState({ error: 'Выберите причину жалобы' }); return; }
+        if (!s.description.trim()) { this.setState({ error: 'Опишите, что произошло' }); return; }
+        this.setState({ submitted: true });
+      },
+      onGoToMyComplaints: () => { window.location.href = './SmartQoldau - Мои жалобы.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

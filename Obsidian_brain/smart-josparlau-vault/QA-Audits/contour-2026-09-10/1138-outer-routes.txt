@@ -1,0 +1,8 @@
+exit=0
+10.115.70.68 via 172.25.0.1 dev eth1 
+172.17.0.0/16 dev docker0 scope link  src 172.17.0.1 
+172.18.0.0/16 dev eth0 scope link  src 172.18.0.2 
+172.19.0.0/16 dev br-33dd54665332 scope link  src 172.19.0.1 
+172.20.0.0/16 dev br-e138ce6bb62a scope link  src 172.20.0.1 
+172.21.0.0/16 dev br-80e95684486f scope link  src 172.21.0.1 
+172.25.0.0/16 dev eth1 scope link  src 172.25.0.2 

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951}</style>
+</helmet>
+
+<div style="width:100%;background:#fff;overflow-x:hidden">
+
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:16px">
+      <div style="display:flex;align-items:center;gap:9px;flex-shrink:0">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;flex:1;justify-content:center;min-width:0;overflow-x:auto;scrollbar-width:none">
+        <sc-for list="{{ navLinks }}" as="l" hint-placeholder-count="5"><a href="{{ l.href }}" style="font-size:12.5px;font-weight:600;color:#3f5450;text-decoration:none;white-space:nowrap;flex-shrink:0">{{ l.label }}</a></sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;flex-shrink:0">
+        <a href="{{ loginHref }}" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none;white-space:nowrap">Войти</a>
+        <a href="{{ helpHref }}" style="height:40px;padding:0 18px;border-radius:20px;background:#0f766e;color:#fff;font-size:13px;font-weight:700;text-decoration:none;display:flex;align-items:center;white-space:nowrap">Помощь</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1240px;margin:0 auto;padding:72px 32px 90px;display:flex;align-items:center;gap:56px;flex-wrap:wrap">
+    <div style="flex:1;min-width:340px">
+      <div style="font-size:44px;font-weight:800;color:#0f3f3a;line-height:1.15;letter-spacing:-0.5px;margin-bottom:18px">Психологическая поддержка, когда она нужна</div>
+      <div style="font-size:17px;font-weight:500;color:#5b7a75;line-height:1.6;margin-bottom:30px;max-width:480px">Получите помощь квалифицированного специалиста онлайн — в чате, по аудио или видеосвязи.</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <a href="{{ helpHref }}" style="height:52px;padding:0 26px;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;text-decoration:none;display:flex;align-items:center">Мне нужна помощь</a>
+        <a href="{{ catalogHref }}" style="height:52px;padding:0 26px;border-radius:26px;border:1.5px solid #d9e3e0;background:#fff;color:#0f3f3a;font-size:15px;font-weight:700;text-decoration:none;display:flex;align-items:center">Найти специалиста</a>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" stroke="#8fa6a1" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div style="font-size:13px;font-weight:600;color:#8fa6a1">Можно обратиться анонимно</div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:320px;max-width:520px">
+      <image-slot id="hero-photo" style="width:100%;height:400px" shape="rounded" radius="28" placeholder="Фото человека на спокойной онлайн-консультации"></image-slot>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:70px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:36px">Как вы хотите получить помощь?</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:30px">
+        <sc-for list="{{ formats }}" as="f" hint-placeholder-count="3">
+          <div style="background:#fff;border-radius:20px;border:1px solid #eef2f0;padding:28px;text-align:center">
+            <div style="width:54px;height:54px;border-radius:16px;background:{{ f.bg }};display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="{{ f.icon }}" stroke="{{ f.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:8px">{{ f.title }}</div>
+            <div style="font-size:13.5px;font-weight:500;color:#6b8580;line-height:1.5">{{ f.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="text-align:center"><a href="{{ catalogHref }}" style="display:inline-flex;height:48px;padding:0 24px;border-radius:24px;background:#0f766e;color:#fff;font-size:14px;font-weight:700;text-decoration:none;align-items:center">Найти специалиста</a></div>
+    </div>
+  </div>
+
+  <div style="padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:8px">Что вас сейчас беспокоит?</div>
+      <div style="font-size:14.5px;font-weight:500;color:#6b8580;text-align:center;margin-bottom:36px">Выберите тему — мы поможем найти подходящего специалиста</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:32px">
+        <sc-for list="{{ topics }}" as="t" hint-placeholder-count="11">
+          <a href="{{ t.href }}" style="display:block;border:1.5px solid #eef2f0;background:#fff;border-radius:16px;padding:18px;text-decoration:none;font-size:14px;font-weight:700;color:#0f3f3a;text-align:center">{{ t.label }}</a>
+        </sc-for>
+      </div>
+      <div style="text-align:center"><a href="{{ helpHref }}" style="display:inline-flex;height:48px;padding:0 24px;border-radius:24px;background:#0f766e;color:#fff;font-size:14px;font-weight:700;text-decoration:none;align-items:center">Подобрать специалиста</a></div>
+    </div>
+  </div>
+
+  <div style="padding:0 32px 80px">
+    <div style="max-width:1240px;margin:0 auto;background:#e3f3ee;border-radius:28px;padding:48px 44px;display:flex;align-items:center;justify-content:space-between;gap:32px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="font-size:24px;font-weight:800;color:#0f3f3a;margin-bottom:10px">Нужна помощь прямо сейчас?</div>
+        <div style="font-size:14.5px;font-weight:500;color:#3f6b62;line-height:1.6;max-width:520px;margin-bottom:6px">Не обязательно ждать подходящего момента. SmartQoldau поможет найти доступного специалиста.</div>
+        <div style="font-size:12px;font-weight:500;color:#5f857c">Если существует непосредственная угроза вашей жизни или безопасности, обратитесь в экстренные службы.</div>
+      </div>
+      <a href="{{ helpHref }}" style="height:52px;padding:0 28px;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;text-decoration:none;display:flex;align-items:center;white-space:nowrap;flex-shrink:0">Получить помощь сейчас</a>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:8px">Найдите своего специалиста</div>
+      <div style="font-size:14.5px;font-weight:500;color:#6b8580;text-align:center;margin-bottom:36px">Выбирайте специалиста по специализации, опыту, языку и формату консультации</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:30px">
+        <sc-for list="{{ specialists }}" as="p" hint-placeholder-count="4">
+          <div style="background:#fff;border-radius:20px;border:1px solid #eef2f0;padding:22px">
+            <image-slot id="{{ p.slotId }}" style="width:64px;height:64px;margin-bottom:14px" shape="circle" placeholder="Фото"></image-slot>
+            <div style="font-size:15.5px;font-weight:800;color:#0f3f3a">{{ p.name }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#8fa6a1;margin-bottom:10px">Психолог · {{ p.years }} опыта</div>
+            <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">⭐ {{ p.rating }}</div>
+            <div style="font-size:12px;font-weight:600;color:#5b7a75;margin-bottom:6px">{{ p.specs }}</div>
+            <div style="font-size:11.5px;font-weight:600;color:#8fa6a1;margin-bottom:14px">{{ p.langs }}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:14px;font-weight:800;color:#0f3f3a">{{ p.price }}</div>
+              <a href="{{ p.href }}" style="font-size:12.5px;font-weight:700;color:#0f766e;text-decoration:none">Смотреть профиль</a>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="text-align:center"><a href="{{ catalogHref }}" style="font-size:14px;font-weight:700;color:#0f766e;text-decoration:none">Все специалисты →</a></div>
+    </div>
+  </div>
+
+  <div style="padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:44px">Получить поддержку — просто</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+          <div>
+            <div style="font-size:13px;font-weight:800;color:#0f766e;margin-bottom:10px">{{ s.num }}</div>
+            <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:6px">{{ s.title }}</div>
+            <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">{{ s.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:70px 32px">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:48px;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px">
+        <image-slot id="anon-photo" style="width:100%;height:280px" shape="rounded" radius="24" placeholder="Спокойная композиция об анонимности"></image-slot>
+      </div>
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:26px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Можно обратиться анонимно</div>
+        <div style="font-size:14.5px;font-weight:500;color:#5b7a75;line-height:1.6;margin-bottom:22px">Если вы не хотите раскрывать свою личность, вы можете воспользоваться анонимным режимом обращения.</div>
+        <a href="{{ anonHref }}" style="display:inline-flex;height:46px;padding:0 22px;border-radius:23px;border:1.5px solid #0f766e;color:#0f766e;font-size:13.5px;font-weight:700;text-decoration:none;align-items:center">Узнать об анонимном режиме</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:48px;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:26px;font-weight:800;color:#0f3f3a;margin-bottom:14px">SmartQoldau всегда под рукой</div>
+        <div style="font-size:14.5px;font-weight:500;color:#5b7a75;line-height:1.6;margin-bottom:24px">Получайте психологическую поддержку в удобное время прямо со смартфона.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div style="height:48px;padding:0 18px;border-radius:12px;background:#0f3f3a;color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M17.5 12.5c0-2 1.5-3 1.5-3s-1-1.5-2.5-1.7c-1.2-.2-2.3.7-3 .7s-1.8-.7-2.9-.7c-1.5 0-2.9.9-3.6 2.2-1.6 2.8-.4 6.9 1.1 9.2.7 1.1 1.6 2.4 2.8 2.3 1.1 0 1.5-.7 2.9-.7s1.7.7 2.9.7 2-1.2 2.7-2.3c.9-1.2 1.2-2.4 1.2-2.5-2.3-1-2.1-3.9-2.1-3.9zM15.3 5.5c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 2-.5 2.5-1.2z"/></svg>App Store</div>
+          <div style="height:48px;padding:0 18px;border-radius:12px;background:#0f3f3a;color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M3 3l11 9-11 9V3z M14 12l4-3 3 1.7c1 .6 1 1.9 0 2.6L18 15l-4-3z"/></svg>Google Play</div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:300px;display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0">
+        <sc-for list="{{ appMockups }}" as="m" hint-placeholder-count="4">
+          <div style="position:relative;width:100%;height:180px;min-width:0">
+            <image-slot id="{{ m.id }}" style="position:absolute;inset:0" shape="rounded" radius="20" placeholder="{{ m.label }}"></image-slot>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:26px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:36px">Поддержка доступна не только во время консультации</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:30px">
+        <sc-for list="{{ materials }}" as="m" hint-placeholder-count="4">
+          <div style="background:#fff;border-radius:18px;border:1px solid #eef2f0;padding:24px;text-align:center">
+            <div style="width:46px;height:46px;border-radius:14px;background:{{ m.bg }};display:flex;align-items:center;justify-content:center;margin:0 auto 12px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="{{ m.icon }}" stroke="{{ m.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ m.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="text-align:center"><a href="{{ materialsHref }}" style="font-size:14px;font-weight:700;color:#0f766e;text-decoration:none">Смотреть все материалы</a></div>
+    </div>
+  </div>
+
+  <div style="padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto;background:linear-gradient(135deg,#0f3f3a,#155e56);border-radius:28px;padding:48px 44px;display:flex;align-items:center;justify-content:space-between;gap:32px;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:12px;font-weight:800;color:#7fd6c2;letter-spacing:1px;margin-bottom:10px">PREMIUM</div>
+        <div style="font-size:24px;font-weight:800;color:#fff;margin-bottom:14px">Больше возможностей с SmartQoldau Premium</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+          <sc-for list="{{ premiumPerks }}" as="perk" hint-placeholder-count="5">
+            <div style="font-size:13.5px;font-weight:500;color:rgba(255,255,255,0.8)">✓ {{ perk }}</div>
+          </sc-for>
+        </div>
+        <a href="{{ premiumHref }}" style="display:inline-flex;height:46px;padding:0 22px;border-radius:23px;background:#fff;color:#0f3f3a;font-size:13.5px;font-weight:700;text-decoration:none;align-items:center">Подробнее о Premium</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:48px;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:26px;font-weight:800;color:#0f3f3a;margin-bottom:10px">Вы психолог? Работайте с клиентами через SmartQoldau</div>
+        <div style="font-size:14.5px;font-weight:500;color:#5b7a75;line-height:1.6;margin-bottom:20px">Получайте обращения, проводите онлайн-консультации и управляйте своей практикой в одном месте.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:24px">
+          <sc-for list="{{ expertPerks }}" as="perk" hint-placeholder-count="7">
+            <div style="font-size:13px;font-weight:600;color:#3f5450">✓ {{ perk }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <a href="{{ expertHref }}" style="height:48px;padding:0 24px;border-radius:24px;background:#0f766e;color:#fff;font-size:14px;font-weight:700;text-decoration:none;display:flex;align-items:center">Стать специалистом</a>
+          <a href="{{ expertHref }}" style="height:48px;padding:0 24px;border-radius:24px;border:1.5px solid #d9e3e0;background:#fff;color:#0f3f3a;font-size:14px;font-weight:700;text-decoration:none;display:flex;align-items:center">Узнать больше</a>
+        </div>
+      </div>
+      <div style="flex:1;min-width:300px">
+        <image-slot id="expert-preview" style="width:100%;height:320px" shape="rounded" radius="20" placeholder="Desktop-интерфейс SmartQoldau Expert"></image-slot>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:80px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:36px">Почему SmartQoldau?</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+        <sc-for list="{{ trust }}" as="t" hint-placeholder-count="4">
+          <div style="padding:8px 4px">
+            <div style="width:42px;height:42px;border-radius:12px;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:14px">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="{{ t.icon }}" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:6px">{{ t.title }}</div>
+            <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">{{ t.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:80px 32px">
+    <div style="max-width:800px;margin:0 auto">
+      <div style="font-size:28px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:32px">Частые вопросы</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ faqs }}" as="q" hint-placeholder-count="9">
+          <div style="background:#fff;border-radius:16px;border:1px solid #eef2f0;overflow:hidden">
+            <div onClick="{{ q.onToggle }}" style="padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer">
+              <div style="font-size:14.5px;font-weight:700;color:#0f3f3a;flex:1">{{ q.question }}</div>
+              <div style="width:22px;height:22px;border-radius:50%;background:#f2f2f0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#5b7a75;flex-shrink:0">{{ q.symbol }}</div>
+            </div>
+            <sc-if value="{{ q.open }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:0 20px 18px;font-size:13.5px;font-weight:500;color:#5b7a75;line-height:1.6">{{ q.answer }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:90px 32px;text-align:center">
+    <div style="max-width:640px;margin:0 auto">
+      <div style="font-size:30px;font-weight:800;color:#0f3f3a;margin-bottom:14px;line-height:1.2">Не обязательно справляться со всем самостоятельно</div>
+      <div style="font-size:15px;font-weight:500;color:#5b7a75;margin-bottom:28px">Найдите специалиста, с которым вам будет комфортно говорить.</div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <a href="{{ helpHref }}" style="height:52px;padding:0 28px;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;text-decoration:none;display:flex;align-items:center">Получить помощь</a>
+        <a href="{{ catalogHref }}" style="height:52px;padding:0 28px;border-radius:26px;border:1.5px solid #d9e3e0;color:#0f3f3a;font-size:15px;font-weight:700;text-decoration:none;display:flex;align-items:center">Найти специалиста</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#0f3f3a;padding:56px 32px 30px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:24px;margin-bottom:40px">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:26px;height:26px;border-radius:7px">
+            <div style="font-size:14px;font-weight:800;color:#fff">SmartQoldau</div>
+          </div>
+          <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.5)">Психологическая поддержка онлайн</div>
+        </div>
+        <sc-for list="{{ footerCols }}" as="c" hint-placeholder-count="4">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.9);margin-bottom:12px">{{ c.title }}</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ c.links }}" as="l" hint-placeholder-count="3"><a href="{{ l.href }}" style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.55);text-decoration:none">{{ l.label }}</a></sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4);text-align:center">© SmartQoldau</div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { topic: null, openFaq: 0 };
+  renderVals() {
+    const s = this.state;
+    return {
+      navLinks: [
+        { label: 'Главная', href: '#' },
+        { label: 'Специалисты', href: '#specialists' },
+        { label: 'Как это работает', href: '#how' },
+        { label: 'Материалы', href: '#materials' },
+        { label: 'О нас', href: '#trust' },
+      ],
+      loginHref: './SmartQoldau - Регистрация.dc.html',
+      helpHref: './SmartQoldau Web - Выбор темы.dc.html',
+      catalogHref: './SmartQoldau Web - Каталог.dc.html',
+      anonHref: './SmartQoldau Web - Выбор темы.dc.html',
+      materialsHref: './SmartQoldau Web - Материалы.dc.html',
+      premiumHref: './SmartQoldau Web - Premium.dc.html',
+      expertHref: './SmartQoldau Web - Стать психологом.dc.html',
+      formats: [
+        { title: 'Чат', text: 'Поговорите со специалистом в удобном формате.', bg: '#e3f3ee', color: '#159a7c', icon: 'M4 5h16v11H8l-4 4V5z' },
+        { title: 'Аудио', text: 'Если вам комфортнее разговаривать без камеры.', bg: '#e6f0fb', color: '#3b82c4', icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3' },
+        { title: 'Видео', text: 'Полноценная онлайн-консультация со специалистом.', bg: '#fdece3', color: '#e08a4d', icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z' },
+      ],
+      topics: ['Тревога и стресс', 'Отношения', 'Семья', 'Эмоциональное выгорание', 'Самооценка', 'Панические состояния', 'Зависимости', 'Жизненные кризисы', 'Одиночество', 'Проблемы со сном', 'Другое'].map(label => ({ label, href: `./SmartQoldau Web - Выбор темы.dc.html?topic=${encodeURIComponent(label)}` })),
+      specialists: [
+        { slotId: 'spec-1', name: 'Айгуль Сатпаева', years: '6 лет', rating: '4.9', specs: 'Тревога · стресс · выгорание', langs: 'Русский · Қазақша', price: '3 990 ₸', href: './SmartQoldau Web - Профиль психолога.dc.html?id=cat-1' },
+        { slotId: 'spec-2', name: 'Марат Ержанов', years: '4 года', rating: '4.8', specs: 'Отношения · семья', langs: 'Русский · English', price: '3 500 ₸', href: './SmartQoldau Web - Профиль психолога.dc.html?id=cat-2' },
+        { slotId: 'spec-3', name: 'Дана Қалиева', years: '8 лет', rating: '5.0', specs: 'Панические атаки · сон', langs: 'Қазақша · Русский', price: '4 200 ₸', href: './SmartQoldau Web - Профиль психолога.dc.html?id=cat-3' },
+        { slotId: 'spec-4', name: 'Тимур Абенов', years: '5 лет', rating: '4.9', specs: 'Зависимости · кризисы', langs: 'Русский', price: '3 800 ₸', href: './SmartQoldau Web - Профиль психолога.dc.html?id=cat-4' },
+      ],
+      steps: [
+        { num: '01', title: 'Выберите тему', text: 'Расскажите, с чем вам нужна помощь.' },
+        { num: '02', title: 'Выберите специалиста', text: 'Или воспользуйтесь автоматическим подбором.' },
+        { num: '03', title: 'Выберите формат', text: 'Чат, аудио или видео.' },
+        { num: '04', title: 'Начните консультацию', text: 'Получите поддержку онлайн.' },
+      ],
+      appMockups: [
+        { id: 'app-1', label: 'Главный экран' }, { id: 'app-2', label: 'Поиск специалиста' },
+        { id: 'app-3', label: 'Чат' }, { id: 'app-4', label: 'Видеоконсультация' },
+      ],
+      materials: [
+        { label: 'Дыхательные упражнения', bg: '#e3f3ee', color: '#159a7c', icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M8 12a4 4 0 108 0 4 4 0 00-8 0z' },
+        { label: 'Расслабляющая музыка', bg: '#e6f0fb', color: '#3b82c4', icon: 'M9 18V5l12-2v13 M9 9l12-2 M6 21a3 3 0 100-6 3 3 0 000 6z M18 19a3 3 0 100-6 3 3 0 000 6z' },
+        { label: 'Полезные статьи', bg: '#fdece3', color: '#e08a4d', icon: 'M4 19.5A2.5 2.5 0 016.5 17H20 M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z' },
+        { label: 'Медитации', bg: '#f1eafb', color: '#8b5fc9', icon: 'M12 3v2M12 19v2M5 12H3M21 12h-2 M7 7a5 5 0 0110 0c0 3-2 4-2 6H9c0-2-2-3-2-6z' },
+      ],
+      premiumPerks: ['Скидки на консультации', 'Расширенная библиотека медитаций', 'Дыхательные практики', 'Полезные материалы', 'Дополнительные возможности платформы'],
+      expertPerks: ['Новые обращения', 'Онлайн-консультации', 'Чат, аудио и видео', 'Собственное расписание', 'Профессиональный профиль', 'Рейтинг и отзывы', 'Выплаты'],
+      trust: [
+        { title: 'Конфиденциальность', text: 'Ваши обращения защищены.', icon: 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z' },
+        { title: 'Профессиональные специалисты', text: 'Психологи проходят проверку перед подключением.', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z' },
+        { title: 'Удобный формат', text: 'Чат, аудио или видео — выбираете вы.', icon: 'M4 5h16v11H8l-4 4V5z' },
+        { title: 'Доступность', text: 'Получайте поддержку онлайн без поездок и ожидания.', icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M12 7v5l3.5 2' },
+      ],
+      faqs: [
+        { question: 'Как работает SmartQoldau?', answer: 'Вы выбираете тему обращения и формат консультации, а платформа соединяет вас со свободным специалистом.' },
+        { question: 'Можно ли обратиться анонимно?', answer: 'Да, вы можете воспользоваться анонимным режимом и не раскрывать личные данные специалисту.' },
+        { question: 'Как выбрать психолога?', answer: 'Вы можете выбрать специалиста самостоятельно в каталоге или воспользоваться автоматическим подбором.' },
+        { question: 'Сколько стоит консультация?', answer: 'Стоимость зависит от специалиста и указывается в его профиле перед началом консультации.' },
+        { question: 'Можно ли провести консультацию по видео?', answer: 'Да, доступны чат, аудио и видеоконсультации — вы выбираете удобный формат.' },
+        { question: 'Как работает Premium?', answer: 'Premium даёт доступ к расширенной библиотеке материалов и дополнительным возможностям платформы.' },
+        { question: 'Как стать психологом SmartQoldau?', answer: 'Оставьте заявку через SmartQoldau Expert — после верификации вы сможете принимать обращения.' },
+        { question: 'Как защищаются мои данные?', answer: 'Обращения обрабатываются с учётом конфиденциальности, доступ к личным данным ограничен.' },
+        { question: 'Что делать при экстренной ситуации?', answer: 'Если существует угроза жизни или здоровью, в первую очередь обратитесь в экстренные службы.' },
+      ].map((q, i) => ({ ...q, open: s.openFaq === i, symbol: s.openFaq === i ? '−' : '+', onToggle: () => this.setState({ openFaq: s.openFaq === i ? -1 : i }) })),
+      footerCols: [
+        { title: 'Клиентам', links: [{ label: 'Найти специалиста', href: './SmartQoldau Web - Каталог.dc.html' }, { label: 'Консультации', href: './SmartQoldau Web - Выбор темы.dc.html' }, { label: 'Premium', href: './SmartQoldau Web - Premium.dc.html' }, { label: 'Материалы', href: './SmartQoldau Web - Материалы.dc.html' }] },
+        { title: 'Специалистам', links: [{ label: 'Стать психологом', href: './SmartQoldau Web - Стать психологом.dc.html' }, { label: 'SmartQoldau Expert', href: './SmartQoldau Expert Web - Главная.dc.html' }] },
+        { title: 'Компания', links: [{ label: 'О SmartQoldau', href: './SmartQoldau Web - О нас.dc.html' }, { label: 'Поддержка', href: './SmartQoldau Web - Поддержка.dc.html' }] },
+        { title: 'Документы', links: [{ label: 'Политика конфиденциальности', href: './SmartQoldau Web - Политика конфиденциальности.dc.html' }, { label: 'Пользовательское соглашение', href: './SmartQoldau Web - Пользовательское соглашение.dc.html' }] },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

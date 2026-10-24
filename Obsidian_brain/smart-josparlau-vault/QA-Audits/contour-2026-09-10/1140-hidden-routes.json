@@ -1,0 +1,26 @@
+[
+  {
+    "url": "/admin/token_blacklist/outstandingtoken/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/token_blacklist/outstandingtoken/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/token_blacklist/outstandingtoken/\"\n      - 'row \"Raised by: django.cont"
+  },
+  {
+    "url": "/admin/django_celery_results/taskresult/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/django_celery_results/taskresult/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/django_celery_results/taskresult/\"\n      - 'row \"Raised by: django.cont"
+  },
+  {
+    "url": "/admin/django_celery_beat/periodictask/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/django_celery_beat/periodictask/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/django_celery_beat/periodictask/\"\n      - 'row \"Raised by: django.contri"
+  },
+  {
+    "url": "/admin/operations/opssecurityeventperson/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/operations/opssecurityeventperson/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/operations/opssecurityeventperson/\"\n      - 'row \"Raised by: django.co"
+  },
+  {
+    "url": "/admin/operations/opseventvehicle/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/operations/opseventvehicle/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/operations/opseventvehicle/\"\n      - 'row \"Raised by: django.contrib.admin.si"
+  },
+  {
+    "url": "/admin/operations/opsstatusparticipation/",
+    "text": "- banner:\n  - heading \"Page not found (404)\" [level=1]\n  - table:\n    - rowgroup:\n      - 'row \"Request Method: GET\"':\n        - rowheader \"Request Method:\"\n        - cell \"GET\"\n      - 'row \"Request URL: http://localhost:8100/admin/operations/opsstatusparticipation/\"':\n        - rowheader \"Request URL:\"\n        - cell \"http://localhost:8100/admin/operations/opsstatusparticipation/\"\n      - 'row \"Raised by: django.co"
+  }
+]

@@ -1,0 +1,5 @@
+- generic [active] [ref=e1]:
+  - paragraph [ref=e3]: Проверяем сессию…
+  - region "Notifications (F8)":
+    - list
+  - alert [ref=e4]

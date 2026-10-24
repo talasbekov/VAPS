@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <sc-if value="{{ !approved }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 30px;box-sizing:border-box">
+        <div style="width:96px;height:96px;border-radius:50%;background:#f2fbf8;display:flex;align-items:center;justify-content:center;margin-bottom:26px">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none"><path d="M12 8v4l3 2 M12 21a9 9 0 100-18 9 9 0 000 18z" stroke="#0f766e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:21px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:10px">Ваш профиль находится на проверке</div>
+        <div style="font-size:13.5px;font-weight:500;color:#6b8580;text-align:center;line-height:1.6;margin-bottom:32px;max-width:280px">После завершения проверки вы сможете принимать клиентов. Мы уведомим вас</div>
+
+        <div style="width:100%;display:flex;flex-direction:column;gap:0">
+          <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+            <div style="display:flex;align-items:flex-start;gap:14px">
+              <div style="display:flex;flex-direction:column;align-items:center">
+                <div style="width:22px;height:22px;border-radius:50%;background:{{ st.dotBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <sc-if value="{{ st.done }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+                </div>
+                <div style="width:2px;height:{{ st.isLast ? '0px' : '38px' }};background:{{ st.lineColor }}"></div>
+              </div>
+              <div style="padding-bottom:32px">
+                <div style="font-size:14px;font-weight:700;color:{{ st.textColor }}">{{ st.label }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <button onClick="{{ simulateApprove }}" style="width:100%;height:50px;border:1.5px solid #e3f3ee;border-radius:25px;background:#fff;color:#0f766e;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px">Демо: имитировать одобрение</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ approved }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 30px;box-sizing:border-box">
+        <div style="width:96px;height:96px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:26px">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:21px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:12px">Профиль подтверждён</div>
+        <div style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:16px;background:#0f766e;margin-bottom:28px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:12.5px;font-weight:700;color:#fff">Верифицированный специалист</div>
+        </div>
+        <button onClick="{{ enterApp }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer">Перейти в приложение</button>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { approved: false };
+  renderVals() {
+    const approved = this.state.approved;
+    const steps = [
+      { label: 'Документы получены', done: true },
+      { label: 'Проверка специалистом', done: false },
+      { label: 'Профиль подтверждён', done: false },
+    ].map((st, i, arr) => ({
+      ...st,
+      isLast: i === arr.length - 1,
+      dotBg: st.done ? '#0f766e' : '#e3e9e7',
+      lineColor: st.done ? '#0f766e' : '#e3e9e7',
+      textColor: st.done ? '#0f3f3a' : '#a9bdb9',
+    }));
+    return {
+      approved,
+      steps,
+      simulateApprove: () => this.setState({ approved: true }),
+      enterApp: () => { window.location.href = './SmartQoldau Expert - Главная.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

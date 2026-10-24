@@ -1,0 +1,4 @@
+http://127.0.0.1:3300/ HTTP200
+http://127.0.0.1:8300/admin/login/ HTTP200
+http://127.0.0.1:8300/docs HTTP200
+http://127.0.0.1:8300/redoc HTTP200

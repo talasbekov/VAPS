@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body{margin:0;background:#fff}
+    @keyframes sq-beat{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+    @keyframes sq-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    @keyframes sq-tip{0%{opacity:0;transform:translateY(4px)}10%{opacity:1;transform:translateY(0)}90%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  </style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:linear-gradient(180deg,#ffffff 0%,#f6fbfa 55%,#e6f3ee 100%);overflow-y:auto;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif">
+
+    <sc-if value="{{ isOffline }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:64px;left:16px;right:16px;z-index:60;background:#3a3230;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 12px 24px -8px rgba(0,0,0,0.3)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 8.5a15 15 0 0120 0M5.5 12a10.5 10.5 0 0113 0M9 15.5a6 6 0 016 0M12 19v.1" stroke="#f0918a" stroke-width="1.8" stroke-linecap="round"/><path d="M3 3l18 18" stroke="#f0918a" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <div style="font-size:12.5px;font-weight:600;color:#fff">Нет подключения к интернету. Поиск приостановлен.</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNotFound }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 30px;box-sizing:border-box;z-index:55;text-align:center">
+        <div style="width:64px;height:64px;border-radius:50%;background:#fdedec;display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+          <svg width="27" height="27" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#c0392b" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="#c0392b" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a;margin-bottom:8px">Свободных специалистов пока нет</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5;margin-bottom:28px">Все психологи сейчас заняты. Попробуйте ещё раз через пару минут или вернитесь позже.</div>
+        <button onClick="{{ onRetry }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:10px">Попробовать снова</button>
+        <button onClick="{{ onBackHome }}" style="width:100%;height:48px;border:1.5px solid #e6efec;border-radius:24px;background:#fff;color:#0f3f3a;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">На главную</button>
+      </div>
+    </sc-if>
+
+    <div style="min-height:100%;display:flex;flex-direction:column;align-items:center;padding:80px 26px 28px;box-sizing:border-box">
+
+      <sc-if value="{{ isPriority }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:14px;background:rgba(192,57,43,0.09);margin-bottom:14px">
+          <span style="width:6px;height:6px;border-radius:50%;background:#c0392b"></span>
+          <span style="font-size:12px;font-weight:700;color:#c0392b">Приоритетный поиск</span>
+        </div>
+      </sc-if>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;margin-bottom:6px">
+        <div style="font-size:22px;font-weight:800;color:#0f3f3a;line-height:1.3">Подбираем для вас<br>подходящего психолога</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580">Это займёт не более 2 минут</div>
+      </div>
+      <div style="font-size:11.5px;font-weight:500;color:#9fb3ae;text-align:center;max-width:260px;line-height:1.4;margin-bottom:22px">Мы учитываем специализацию, язык и текущую доступность специалиста</div>
+
+      <div style="position:relative;width:132px;height:132px;display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+        <div style="position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(15,118,110,0) 0%,rgba(15,118,110,0.5) 50%,rgba(15,118,110,0) 100%);animation:sq-spin 3s linear infinite"></div>
+        <div style="position:absolute;inset:8px;border-radius:50%;background:#f6fbfa"></div>
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="position:relative;width:96px;height:96px;border-radius:50%;object-fit:cover;animation:sq-beat 2s ease-in-out infinite">
+      </div>
+
+      <div style="font-size:12.5px;font-weight:600;color:#8fa6a1;margin-bottom:2px">Осталось примерно</div>
+      <div style="font-size:34px;font-weight:800;color:#0f766e;letter-spacing:0.01em;margin-bottom:4px">{{ timerText }}</div>
+      <div style="font-size:11.5px;font-weight:500;color:#9fb3ae;margin-bottom:22px">Время может измениться, если специалист ответит раньше</div>
+
+      <div style="width:100%;display:flex;flex-direction:column;margin-bottom:22px">
+        <sc-for list="{{ stages }}" as="st" hint-placeholder-count="4">
+          <div style="display:flex;gap:12px">
+            <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px">{{ st.dot }}</div>
+              <sc-if value="{{ st.showConnector }}" hint-placeholder-val="{{ true }}">
+                <div style="width:2px;flex:1;min-height:18px;background:{{ st.connectorColor }};margin:2px 0"></div>
+              </sc-if>
+            </div>
+            <div style="font-size:13px;font-weight:{{ st.weight }};color:{{ st.color }};padding-top:1px;padding-bottom:14px">{{ st.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="width:100%;background:#fff;border-radius:18px;padding:16px;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:18px;box-shadow:0 8px 20px -10px rgba(15,63,58,0.15)">
+        <span style="width:7px;height:7px;border-radius:50%;background:#2ecc71"></span>
+        <span style="font-size:13px;font-weight:700;color:#0f3f3a">Сейчас онлайн: 18 специалистов</span>
+      </div>
+
+      <div style="height:20px;margin-bottom:22px">
+        <div key="{{ tipIndex }}" style="font-size:12.5px;font-weight:600;color:#3a5450;text-align:center;animation:sq-tip 6s ease-in-out infinite">{{ tipText }}</div>
+      </div>
+
+      <button onClick="{{ onCancel }}" style="width:100%;height:58px;border:none;border-radius:29px;background:rgba(192,57,43,0.09);color:#c0392b;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:auto">Отменить поиск</button>
+    </div>
+  </div>
+
+  <sc-if value="{{ showCancelModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+      <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+        <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Отменить поиск?</div>
+        <button onClick="{{ onConfirmCancel }}" style="width:100%;height:54px;border:none;border-radius:27px;background:rgba(192,57,43,0.09);color:#c0392b;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px">Да, отменить</button>
+        <button onClick="{{ onKeepWaiting }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer">Продолжить ожидание</button>
+      </div>
+    </div>
+  </sc-if>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static TIPS = [
+    '💙 Вы уже сделали важный шаг, обратившись за помощью',
+    '🌿 Сделайте медленный вдох и плавный выдох',
+    '🤍 Мы рядом. Скоро специалист подключится',
+    '☕ Если можете, сделайте несколько глотков воды',
+    '✨ Вам не обязательно проходить через это в одиночку',
+  ];
+  state = { seconds: new URLSearchParams(window.location.search).get('priority') ? 30 : 120, tipIndex: 0, showCancelModal: false, isOffline: !navigator.onLine, notFound: new URLSearchParams(window.location.search).get('demo') === 'notfound' };
+  componentDidMount() {
+    this._online = () => this.setState({ isOffline: false });
+    this._offline = () => this.setState({ isOffline: true });
+    window.addEventListener('online', this._online);
+    window.addEventListener('offline', this._offline);
+    this._t = setInterval(() => {
+      if (this.state.isOffline || this.state.notFound) return;
+      this.setState(s => {
+        const threshold = new URLSearchParams(window.location.search).get('priority') ? 15 : 106;
+        if (s.seconds <= threshold) {
+          clearInterval(this._t);
+          clearInterval(this._tipT);
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('demo') === 'notfound') { return { notFound: true }; }
+          const format = params.get('format') || 'chat';
+          window.location.href = './SmartQoldau - Специалист найден.dc.html?format=' + format;
+          return { seconds: 105 };
+        }
+        return { seconds: s.seconds - 1 };
+      });
+    }, 1000);
+    this._tipT = setInterval(() => {
+      this.setState(s => ({ tipIndex: (s.tipIndex + 1) % Component.TIPS.length }));
+    }, 6000);
+  }
+  componentWillUnmount() {
+    clearInterval(this._t);
+    clearInterval(this._tipT);
+    window.removeEventListener('online', this._online);
+    window.removeEventListener('offline', this._offline);
+  }
+  renderVals() {
+    const elapsed = 120 - this.state.seconds;
+    const stepIndex = elapsed < 6 ? 1 : elapsed < 11 ? 2 : 3;
+    const labels = ['Запрос получен', 'Найден свободный специалист', 'Подбираем наиболее подходящего психолога', 'Подключаем консультацию'];
+    const stages = labels.map((label, i) => ({
+      label,
+      dot: i < stepIndex ? '🟢' : i === stepIndex ? '🟡' : '⚪',
+      color: i <= stepIndex ? '#0f3f3a' : '#a9bdb9',
+      weight: i === stepIndex ? 700 : 600,
+      showConnector: i < labels.length - 1,
+      connectorColor: i < stepIndex ? '#0f766e' : '#e6efec',
+    }));
+    const m = Math.floor(this.state.seconds / 60);
+    const s = this.state.seconds % 60;
+    return {
+      timerText: `${m}:${String(s).padStart(2, '0')}`,
+      isPriority: !!new URLSearchParams(window.location.search).get('priority'),
+      stages,
+      tipIndex: this.state.tipIndex,
+      tipText: Component.TIPS[this.state.tipIndex],
+      showCancelModal: this.state.showCancelModal,
+      isOffline: this.state.isOffline,
+      isNotFound: this.state.notFound,
+      onRetry: () => { this.setState({ notFound: false, seconds: 120 }); this.componentDidMount(); },
+      onBackHome: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+      onCancel: () => this.setState({ showCancelModal: true }),
+      onConfirmCancel: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+      onKeepWaiting: () => this.setState({ showCancelModal: false }),
+    };
+  }
+}
+</script>
+</body>
+</html>

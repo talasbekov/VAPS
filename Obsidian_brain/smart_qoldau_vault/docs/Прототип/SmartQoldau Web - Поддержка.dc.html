@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951} textarea,input{outline:none;font-family:inherit}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:24px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;text-decoration:none">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </a>
+      <a href="./SmartQoldau.kz.dc.html" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none">← На главную</a>
+    </div>
+  </div>
+
+  <div style="max-width:900px;margin:0 auto;padding:56px 32px 90px">
+    <div style="font-size:30px;font-weight:800;color:#0f3f3a;margin-bottom:10px">Поддержка</div>
+    <div style="font-size:14.5px;font-weight:500;color:#6b8580;margin-bottom:20px">Если у вас произошёл технический сбой во время консультации или есть вопрос по работе платформы — напишите нам.</div>
+
+    <div style="border-radius:16px;background:#fdece3;padding:16px 18px;margin-bottom:36px;font-size:12.5px;font-weight:600;color:#8a3a2e;line-height:1.6">Эта форма не предназначена для экстренной психологической помощи. Если вам нужна поддержка прямо сейчас, вернитесь на главную и нажмите «Мне нужна помощь». При угрозе жизни или здоровью звоните 102 (полиция) или 103 (скорая).</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:36px">
+      <div style="border-radius:18px;border:1px solid #eef2f0;padding:20px"><div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Email</div><div style="font-size:14px;font-weight:700;color:#0f3f3a">support@smartqoldau.kz</div></div>
+      <div style="border-radius:18px;border:1px solid #eef2f0;padding:20px"><div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Телефон</div><div style="font-size:14px;font-weight:700;color:#0f3f3a">+7 700 000 00 00</div></div>
+    </div>
+
+    <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:16px">Написать в поддержку</div>
+    <div style="display:flex;flex-direction:column;gap:12px;max-width:500px;margin-bottom:8px">
+      <input placeholder="Ваше имя" style="height:48px;border:1.5px solid #eef2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a"/>
+      <input placeholder="Email или телефон" style="height:48px;border:1.5px solid #eef2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a"/>
+      <textarea placeholder="Опишите вопрос" rows="4" style="border:1.5px solid #eef2f0;border-radius:14px;padding:12px 16px;font-size:14px;color:#0f3f3a;resize:none"></textarea>
+      <button onClick="{{ onSubmit }}" style="height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer">{{ submitLabel }}</button>
+    </div>
+  </div>
+
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { sent: false };
+  renderVals() {
+    return { submitLabel: this.state.sent ? 'Отправлено ✓' : 'Отправить', onSubmit: () => this.setState({ sent: true }) };
+  }
+}
+
+</script>
+</body>
+</html>

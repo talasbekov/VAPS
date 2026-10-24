@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:100px 26px 40px;box-sizing:border-box">
+      <div style="width:72px;height:72px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="font-size:20px;font-weight:800;color:#0f3f3a;margin-bottom:28px">Консультация завершена</div>
+
+      <div style="width:100%;border-radius:20px;background:#f8faf9;padding:18px;display:flex;flex-direction:column;gap:14px;margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Длительность</div>
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ duration }}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Формат</div>
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ formatLabel }}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Начислено</div>
+          <div style="font-size:16px;font-weight:800;color:#159a7c">{{ amount }}</div>
+        </div>
+      </div>
+
+      <div style="width:100%;margin-bottom:24px">
+        <div style="font-size:12.5px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Как прошла консультация?</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ outcomes }}" as="o" hint-placeholder-count="4">
+            <div onClick="{{ o.onClick }}" style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:14px;background:{{ o.selected ? '#f2fbf8' : '#f8faf9' }};border:1.5px solid {{ o.selected ? '#0f766e' : 'transparent' }};cursor:pointer">
+              <div style="width:8px;height:8px;border-radius:50%;background:{{ o.color }};flex-shrink:0"></div>
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ o.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <button onClick="{{ goNotes }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;margin-bottom:10px">Добавить заметку</button>
+      <button onClick="{{ goHome }}" style="width:100%;height:50px;border:none;background:transparent;color:#8fa6a1;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Готово</button>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static OUTCOMES = {
+    happened: { label: 'Консультация состоялась', color: '#159a7c', duration: '48 минут', amount: '3 990 ₸' },
+    no_show: { label: 'Клиент не явился', color: '#c98a2e', duration: '—', amount: '0 ₸' },
+    client_cancelled: { label: 'Клиент отменил', color: '#8fa6a1', duration: '—', amount: '0 ₸' },
+    tech_issue: { label: 'Техническая проблема', color: '#c0392b', duration: '6 минут', amount: '0 ₸' },
+  };
+  state = { outcome: 'happened' };
+  renderVals() {
+    const format = new URLSearchParams(window.location.search).get('format') || 'video';
+    const labels = { chat: 'Чат', audio: 'Аудиоконсультация', video: 'Видеоконсультация' };
+    const s = this.state;
+    const o = Component.OUTCOMES[s.outcome];
+    return {
+      duration: o.duration,
+      amount: o.amount,
+      formatLabel: labels[format] || 'Видеоконсультация',
+      outcomes: Object.keys(Component.OUTCOMES).map(id => ({ ...Component.OUTCOMES[id], selected: s.outcome === id, onClick: () => this.setState({ outcome: id }) })),
+      goNotes: () => { window.location.href = './SmartQoldau Expert - Заметки.dc.html'; },
+      goHome: () => { window.location.href = './SmartQoldau Expert - Главная.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

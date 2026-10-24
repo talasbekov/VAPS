@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body{margin:0;background:#fff}
+    @keyframes sq-in{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+  </style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#ffffff;display:flex;flex-direction:column;align-items:center;padding:64px 26px 28px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div onClick="{{ onSkip }}" style="position:absolute;top:64px;right:24px;font-size:13px;font-weight:700;color:#3a5450;cursor:pointer">Пропустить</div>
+
+    <sc-if value="{{ isSlide0 }}" hint-placeholder-val="{{ true }}">
+      <div style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;animation:sq-in 0.6s ease-out both">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding-top:56px;margin-bottom:28px">
+          <img src="uploads/logo_smartqoldau.png" alt="" style="width:42px;height:42px;border-radius:11px;flex-shrink:0">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a;white-space:nowrap">SmartQoldau</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 160px;width:100%">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+            <div style="font-size:26px;font-weight:800;color:#0f3f3a;line-height:1.25;white-space:nowrap">Добро пожаловать</div>
+            <div style="font-size:13.5px;font-weight:500;color:#6b8580;line-height:1.5;max-width:260px">Поддержка рядом, когда она нужна</div>
+          </div>
+        </div>
+        <div style="flex:1;width:100%;display:flex;flex-direction:column;align-items:center;min-height:0">
+          <div style="height:24px;flex-shrink:0"></div>
+          <img src="assets/onboarding-illustration.png" alt="Иллюстрация консультации" style="width:100%;max-width:300px;object-fit:contain;margin:auto 0">
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSlide1 }}" hint-placeholder-val="{{ false }}">
+      <div style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:36px;animation:sq-in 0.6s ease-out both">
+        <div style="display:flex;align-items:center;gap:18px">
+          <div style="width:76px;height:76px;border-radius:24px;background:#e6f0fb;display:flex;align-items:center;justify-content:center;font-size:30px">💬</div>
+          <div style="width:76px;height:76px;border-radius:24px;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:30px">🎧</div>
+          <div style="width:76px;height:76px;border-radius:24px;background:#f1eafb;display:flex;align-items:center;justify-content:center;font-size:30px">📹</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a">Чат, аудио или видео</div>
+          <div style="font-size:13.5px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Общайтесь так, как вам удобно</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSlide2 }}" hint-placeholder-val="{{ false }}">
+      <div style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;animation:sq-in 0.6s ease-out both">
+        <div style="width:88px;height:88px;border-radius:50%;background:rgba(15,118,110,0.1);display:flex;align-items:center;justify-content:center;font-size:38px">🛡️</div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a">Полная конфиденциальность</div>
+          <div style="font-size:13.5px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Ваши данные защищены. Можно обратиться анонимно</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSlide3 }}" hint-placeholder-val="{{ false }}">
+      <div style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;animation:sq-in 0.6s ease-out both">
+        <div style="width:88px;height:88px;border-radius:50%;background:rgba(15,118,110,0.1);display:flex;align-items:center;justify-content:center;font-size:38px">⚡</div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <div style="font-size:23px;font-weight:800;color:#0f3f3a">Ответ психолога<br>за 1–2 минуты</div>
+          <div style="font-size:13.5px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Получите помощь без долгого ожидания</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <div style="display:flex;gap:6px;margin-bottom:20px">
+      <sc-for list="{{ dots }}" as="d" hint-placeholder-count="4">
+        <div style="width:{{ d.width }};height:6px;border-radius:3px;background:{{ d.color }};transition:all 0.3s"></div>
+      </sc-for>
+    </div>
+
+    <button onClick="{{ onNext }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4)">{{ nextLabel }}</button>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { slide: 0 };
+  renderVals() {
+    const total = 4;
+    const s = this.state.slide;
+    const dots = [0, 1, 2, 3].map(i => ({
+      width: i === s ? '22px' : '6px',
+      color: i === s ? '#0f766e' : '#e6efec',
+    }));
+    return {
+      isSlide0: s === 0,
+      isSlide1: s === 1,
+      isSlide2: s === 2,
+      isSlide3: s === 3,
+      dots,
+      nextLabel: s === total - 1 ? 'Начать' : 'Далее',
+      onNext: () => {
+        if (s === total - 1) { window.location.href = './SmartQoldau - Добро пожаловать.dc.html'; return; }
+        this.setState({ slide: s + 1 });
+      },
+      onSkip: () => { window.location.href = './SmartQoldau - Добро пожаловать.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

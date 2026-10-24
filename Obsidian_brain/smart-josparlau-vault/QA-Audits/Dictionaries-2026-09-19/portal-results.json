@@ -1,0 +1,76 @@
+[
+  {
+    "name": "JOURNAL_ENTRY_TYPESТипы записей журнала штаба",
+    "url": "http://localhost:3110/security-ops/dictionaries/JOURNAL_ENTRY_TYPES/",
+    "editButtons": 5,
+    "heading": "JOURNAL_ENTRY_TYPES"
+  },
+  {
+    "name": "RETURN_REASONSПричины возврата",
+    "url": "http://localhost:3110/security-ops/dictionaries/RETURN_REASONS/",
+    "editButtons": 7,
+    "heading": "RETURN_REASONS"
+  },
+  {
+    "name": "POST_REQUIREMENTSТребования к постам",
+    "url": "http://localhost:3110/security-ops/dictionaries/POST_REQUIREMENTS/",
+    "editButtons": 3,
+    "heading": "POST_REQUIREMENTS"
+  },
+  {
+    "name": "POST_REQUIREMENT_GROUPSГруппы требований",
+    "url": "http://localhost:3110/security-ops/dictionaries/POST_REQUIREMENT_GROUPS/",
+    "editButtons": 3,
+    "heading": "POST_REQUIREMENT_GROUPS"
+  },
+  {
+    "name": "PLACEMENT_ROLESРоли наряда в расстановке",
+    "url": "http://localhost:3110/security-ops/dictionaries/PLACEMENT_ROLES/",
+    "editButtons": 14,
+    "heading": "PLACEMENT_ROLES"
+  },
+  {
+    "name": "PLACEMENT_SECTIONSСекции бланка расстановки",
+    "url": "http://localhost:3110/security-ops/dictionaries/PLACEMENT_SECTIONS/",
+    "editButtons": 24,
+    "heading": "PLACEMENT_SECTIONS"
+  },
+  {
+    "name": "SEASONAL_CORRECTIONSСезонные поправки",
+    "url": "http://localhost:3110/security-ops/dictionaries/SEASONAL_CORRECTIONS/",
+    "editButtons": 2,
+    "heading": "SEASONAL_CORRECTIONS"
+  },
+  {
+    "name": "EVENT_PARTICIPATION_KINDSВиды участия в ОМ",
+    "url": "http://localhost:3110/security-ops/dictionaries/EVENT_PARTICIPATION_KINDS/",
+    "editButtons": 5,
+    "heading": "EVENT_PARTICIPATION_KINDS"
+  },
+  {
+    "name": "EVENT_GROUP_ROLESРоли внутри группы",
+    "url": "http://localhost:3110/security-ops/dictionaries/EVENT_GROUP_ROLES/",
+    "editButtons": 7,
+    "heading": "EVENT_GROUP_ROLES"
+  },
+  {
+    "name": "STATUS_TYPESТипы статусов сотрудников",
+    "url": "http://localhost:3110/security-ops/dictionaries/status-types/",
+    "heading": "Типы статусов сотрудников",
+    "rows": 21
+  },
+  {
+    "name": "Должности",
+    "url": "http://localhost:3110/security-ops/dictionaries/personnel/positions/",
+    "editButtons": 18,
+    "heading": "Должности",
+    "adminValueVisible": true
+  },
+  {
+    "name": "Звания",
+    "url": "http://localhost:3110/security-ops/dictionaries/personnel/ranks/",
+    "editButtons": 15,
+    "heading": "Звания",
+    "adminValueVisible": true
+  }
+]

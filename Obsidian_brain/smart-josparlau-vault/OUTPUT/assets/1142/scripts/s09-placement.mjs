@@ -1,0 +1,88 @@
+import fs from 'node:fs'
+import { open, shot, sleep, api } from './walk.mjs'
+const run = JSON.parse(fs.readFileSync('run.json', 'utf8'))
+let e = (await api('y_meiram', 'GET', `/api/ops/security-events/${run.eventId}/`)).body
+console.log('forceRoster:', JSON.stringify(e.forceRoster?.map(m => [m.employeeId, m.employeeName, m.kindCode, m.visitObjectId])), '| handover:', JSON.stringify(e.forceHandover ?? e.force_handover ?? null)?.slice(0, 160))
+console.log('посты:', JSON.stringify(e.reconSectorPosts?.map(p => [p.id?.slice(-6), p.visitObjectId, p.name, p.need, p.demandKindCode])))
+// ---- объект 1: u_musakhan
+{
+  const { page, close } = await open('u_musakhan')
+  await page.goto(`http://localhost:3106/security-ops/events/${run.eventId}?visit=${run.visits[0].id}`)
+  await page.waitForLoadState('networkidle'); await sleep(1200)
+  const main = page.getByRole('main')
+  const t = (await main.innerText()).replace(/\n+/g, ' | ')
+  const k = t.indexOf('Выделено на объект штабом'); console.log('выделено штабом:', t.slice(k, k + 300))
+  console.log('KPI:', t.slice(t.indexOf('требуется') - 20, t.indexOf('требуется') + 120))
+  await shot(page, 'musakhan-placement-start', true)
+  await page.getByRole('button', { name: 'Распределить автоматически', exact: true }).click(); await sleep(600)
+  const d = page.getByRole('dialog')
+  console.log('предпросмотр:', (await d.innerText()).replace(/\n+/g, ' | ').slice(0, 500))
+  await shot(page, 'musakhan-autofill-preview')
+  const rp = page.waitForResponse(x => /placement\/assign/.test(x.url()) && x.request().method() === 'POST')
+  await d.getByRole('button', { name: 'Подтвердить распределение', exact: true }).click()
+  console.log('POST placement/assign', (await rp).status()); await sleep(1200)
+  await shot(page, 'musakhan-autofill-applied', true)
+  e = (await api('u_musakhan', 'GET', `/api/ops/security-events/${run.eventId}/`)).body
+  console.log('назначения:', JSON.stringify(e.placementAssignments?.map(a => [a.employeeId, a.postId?.slice(-6)])))
+  // снять пустой пост (Пост 2), попытка снять занятый (Пост 1)
+  const removeBtns = page.getByRole('button', { name: /Снять пост/ })
+  console.log('кнопок «Снять пост»:', await removeBtns.count(), (await Promise.all((await removeBtns.all()).map(async b => `${await b.getAttribute('aria-label')}:${await b.isEnabled()}`))).join(' | '))
+  const rmEmpty = page.getByRole('button', { name: /Снять пост.*Пост 2/ })
+  if (await rmEmpty.count()) {
+    await rmEmpty.first().click(); await sleep(400)
+    console.log('диалог снятия:', (await page.getByRole('dialog').innerText()).replace(/\n+/g, ' | ').slice(0, 300))
+    await shot(page, 'musakhan-remove-post-dialog')
+    const rp2 = page.waitForResponse(x => /post/.test(x.url()) && ['POST','DELETE'].includes(x.request().method()))
+    await page.getByRole('dialog').getByRole('button', { name: /Снять/ }).last().click()
+    const r2 = await rp2; console.log('снятие поста:', r2.request().method(), r2.url().replace(/^.*\/api/, '/api'), r2.status(), (await r2.text()).slice(0, 120))
+    await sleep(800)
+  }
+  await shot(page, 'musakhan-post-removed', true)
+  await page.getByRole('button', { name: 'Завершить расстановку', exact: true }).click(); await sleep(600)
+  const sh = page.getByRole('dialog')
+  console.log('диалог завершения:', (await sh.innerText()).replace(/\n+/g, ' | ').slice(0, 400))
+  await shot(page, 'musakhan-shortage-dialog')
+  const ov = sh.getByRole('button', { name: 'Подтвердить оверрайд', exact: true })
+  if (await ov.count()) {
+    console.log('оверрайд до причины активен:', await ov.isEnabled())
+    await sh.getByRole('textbox').fill('Проходка №1142: недобор досмотра — пост КПП откроется после усиления от Штаба')
+    const rp3 = page.waitForResponse(x => /placement\/complete/.test(x.url()) && x.request().method() === 'POST')
+    await ov.click(); const r3 = await rp3; console.log('POST placement/complete', r3.status(), (await r3.text()).slice(0, 100))
+  }
+  await sleep(1200)
+  e = (await api('u_musakhan', 'GET', `/api/ops/security-events/${run.eventId}/`)).body
+  console.log('объект 1:', e.visitObjects[0].stage, e.visitObjects[0].documentStatus, 'v', e.visitObjects[0].documentVersion, '| маршрут:', JSON.stringify(e.visitObjects[0].approvalRoute?.map(r => [r.position ?? r.order, r.name, r.position, r.username, r.status])))
+  await shot(page, 'musakhan-placement-completed', true)
+  await close()
+}
+// ---- объект 2: m_turmagambetov — ручное назначение
+{
+  const { page, close } = await open('m_turmagambetov')
+  await page.goto(`http://localhost:3106/security-ops/events/${run.eventId}?visit=${run.visits[1].id}`)
+  await page.waitForLoadState('networkidle'); await sleep(1200)
+  const t = (await page.getByRole('main').innerText()).replace(/\n+/g, ' | ')
+  const k = t.indexOf('Выделено на объект штабом'); console.log('объект 2, выделено штабом:', t.slice(k, k + 200))
+  await shot(page, 'turmagambetov-placement-start', true)
+  const slot = page.getByRole('button', { name: /\+ Назначить/ })
+  console.log('слотов «+ Назначить»:', await slot.count())
+  await slot.first().click(); await sleep(500)
+  await shot(page, 'turmagambetov-assign-dialog')
+  const d = page.getByRole('dialog')
+  console.log('окно назначения:', (await d.innerText().catch(() => 'нет диалога')).replace(/\n+/g, ' | ').slice(0, 300))
+  const cand = d.getByRole('button', { name: /Есимов/ }).or(page.getByRole('button', { name: /Есимов/ }))
+  console.log('кандидат Есимов:', await cand.count())
+  const rp = page.waitForResponse(x => /placement\/assign/.test(x.url()) && x.request().method() === 'POST')
+  await cand.first().click()
+  const ok = d.getByRole('button', { name: /Назначить/ }).last()
+  if (await ok.count() && await ok.isVisible().catch(() => false)) await ok.click()
+  const r = await rp; console.log('POST placement/assign', r.status(), (await r.text()).slice(0, 100)); await sleep(1000)
+  await shot(page, 'turmagambetov-assigned', true)
+  await page.getByRole('button', { name: 'Завершить расстановку', exact: true }).click(); await sleep(800)
+  const dlg = page.getByRole('dialog')
+  if (await dlg.count()) console.log('диалог:', (await dlg.innerText()).replace(/\n+/g, ' | ').slice(0, 200))
+  await sleep(800)
+  e = (await api('m_turmagambetov', 'GET', `/api/ops/security-events/${run.eventId}/`)).body
+  console.log('объект 2:', e.visitObjects[1].stage, e.visitObjects[1].documentStatus, '| ОМ:', e.stage, '| назначения:', JSON.stringify(e.placementAssignments?.map(a => [a.employeeId, a.postId?.slice(-6)])))
+  await shot(page, 'turmagambetov-placement-completed', true)
+  await close()
+}

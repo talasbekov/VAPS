@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;display:flex;flex-direction:column;padding:72px 24px 28px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <button onClick="{{ goBack }}" style="position:absolute;top:64px;left:24px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+      <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div style="margin-top:36px;margin-bottom:22px">
+      <div style="font-size:23px;font-weight:800;color:#0f3f3a;line-height:1.3;margin-bottom:8px">Расскажите, что<br>вас тревожит</div>
+      <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Выберите тему, чтобы мы подобрали подходящего специалиста</div>
+    </div>
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto">
+      <sc-for list="{{ topics }}" as="t" hint-placeholder-count="9">
+        <div onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:16px;border:1.5px solid {{ t.borderColor }};background:{{ t.cardBg }};cursor:pointer;box-sizing:border-box">
+          <div style="width:34px;height:34px;border-radius:50%;background:{{ t.iconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ t.icon }}</div>
+          <div style="font-size:14.5px;font-weight:700;color:#0f3f3a">{{ t.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin:14px 0 8px">Формат общения</div>
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+      <sc-for list="{{ formats }}" as="f" hint-placeholder-count="3">
+        <div onClick="{{ f.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 6px;border-radius:14px;border:1.5px solid {{ f.borderColor }};background:{{ f.cardBg }};cursor:pointer">
+          <div style="font-size:16px">{{ f.icon }}</div>
+          <div style="font-size:11.5px;font-weight:700;color:#0f3f3a">{{ f.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <button onClick="{{ onContinue }}" style="width:100%;height:56px;border:none;border-radius:28px;background:{{ continueBg }};color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:16px;box-shadow:0 12px 24px -8px rgba(15,118,110,0.35)">Продолжить</button>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    selected: new URLSearchParams(window.location.search).get('topic') || null,
+    format: new URLSearchParams(window.location.search).get('format') || 'audio',
+  };
+  renderVals() {
+    const select = (id) => () => this.setState({ selected: id });
+    const item = (id, icon, iconBg, label) => ({
+      id, icon, iconBg, label,
+      onClick: select(id),
+      borderColor: this.state.selected === id ? '#0f766e' : '#edf2f0',
+      cardBg: this.state.selected === id ? '#f2fbf8' : '#fff',
+    });
+    const selectFormat = (id) => () => this.setState({ format: id });
+    const fmt = (id, icon, label) => ({
+      id, icon, label,
+      onClick: selectFormat(id),
+      borderColor: this.state.format === id ? '#0f766e' : '#edf2f0',
+      cardBg: this.state.format === id ? '#f2fbf8' : '#fff',
+    });
+    const ready = this.state.selected && this.state.format;
+    return {
+      topics: [
+        item('anxiety', '🍃', '#e3f3ee', 'Тревога и стресс'),
+        item('depression', '☁️', '#e6f0fb', 'Депрессия и апатия'),
+        item('panic', '📈', '#e3f3ee', 'Панические атаки'),
+        item('addiction', '🚫', '#f1eafb', 'Зависимости и срывы'),
+        item('relationships', '👥', '#fdece3', 'Отношения и семья'),
+        item('loss', '💔', '#fbe7ec', 'Потеря и горе'),
+        item('selfesteem', '⭐', '#f1eafb', 'Самооценка и уверенность'),
+        item('burnout', '🔋', '#e3f3ee', 'Выгорание и усталость'),
+        item('other', '⋯', '#eef1f0', 'Другое'),
+      ],
+      formats: [
+        fmt('chat', '💬', 'Чат'),
+        fmt('audio', '🎧', 'Аудио'),
+        fmt('video', '📹', 'Видео'),
+      ],
+      continueBg: ready ? '#0f766e' : '#a9cec7',
+      onContinue: () => { if (ready) window.location.href = './SmartQoldau - Поиск специалиста.dc.html?format=' + this.state.format; },
+      goBack: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

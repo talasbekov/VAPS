@@ -1,0 +1,181 @@
+- link "Перейти к содержимому":
+  - /url: "#main-content"
+- complementary:
+  - generic: SЖ
+  - generic: Smart Жоспарлау
+  - generic: Силы и мероприятия
+  - navigation "Основная навигация":
+    - heading "Личный кабинет" [level=2]
+    - list "Личный кабинет":
+      - link "Мой профиль":
+        - /url: /security-ops/profile/
+        - generic: Мой профиль
+        - text: В разработке
+      - generic: "В разработке: Карточки назначений «Ознакомлен, заступлю» / «Не могу заступить» (№405); Шапка: должность и подразделение словами, рейтинг; история закрытых ОМ (№434); Три вкладки, календарь с полосками постов, без заглушек (№449)"
+      - link "Сотрудники Службы":
+        - /url: /service-employees/
+        - generic: Сотрудники Службы
+    - heading "Ежедневный расход" [level=2]
+    - list "Ежедневный расход":
+      - link "Командный центр":
+        - /url: /security-ops/command-center/
+        - generic: Командный центр
+      - link "Обзор":
+        - /url: /dashboard/
+        - generic: Обзор
+      - link "Статусы сотрудников":
+        - /url: /statuses/
+        - generic: Статусы сотрудников
+        - text: В разработке
+      - generic: "В разработке: «Участие в ОМ» только из запроса, колонка «По разделу ОМ», «ознакомлен» (№427)"
+      - link "Сбор сил на ОМ":
+        - /url: /employees/
+        - generic: Сбор сил на ОМ
+        - text: В разработке
+      - generic: "В разработке: Заявки и запросы таблицами, довыделение новой строкой (№425); Потребность по объектам, колонки «Выделяют / Прислано», «Срочно» вверх (№426); Входящие запросы департамента: колонки «выделяем / собрано» (№444)"
+      - link "Аналитика службы":
+        - /url: /security-ops/analytics/
+        - generic: Аналитика службы
+      - link "Ежедневный отчет":
+        - /url: /reports/
+        - generic: Ежедневный отчет
+      - link "Отчёты по Службе":
+        - /url: /security-ops/service-reports/
+        - generic: Отчёты по Службе
+        - text: В разработке
+      - generic: "В разработке: Печать: интервал без года, «Фамилия / позывной», заголовок среза (№438); «Скачать дело» одним PDF (№437)"
+      - link "Свод по Службе":
+        - /url: /security-ops/service-summary/
+        - generic: Свод по Службе
+    - heading "Объекты" [level=2]
+    - list "Объекты":
+      - link "Объекты и паспорта":
+        - /url: /security-ops/objects/
+        - generic: Объекты и паспорта
+    - heading "Охранные мероприятия" [level=2]
+    - list "Охранные мероприятия":
+      - 'link "Реестр ОМ Мероприятий в реестре: 26"':
+        - /url: /security-ops/events/
+        - generic: Реестр ОМ
+        - 'generic "Мероприятий в реестре: 26"': "26"
+        - text: В разработке
+      - generic: "В разработке: Бейджи «Возвращено», «Срочно», «потребность/назначено» в реестре (№423); Форма создания ОМ по спецификации: ОЛ-чипы, страна/город, превью (№419, №439); Визит иностранного ОЛ отдельной страницей со статусом (№435, №436, №441)"
+      - link "Охраняемые лица":
+        - /url: /security-ops/persons/
+        - generic: Охраняемые лица
+        - text: В разработке
+      - generic: "В разработке: Код охраняемого лица OL-N (№417)"
+      - link "Законы об ОМ":
+        - /url: /security-ops/laws/
+        - generic: Законы об ОМ
+      - link "Транспорт ГОН":
+        - /url: /security-ops/vehicles/
+        - generic: Транспорт ГОН
+      - link "Аналитика ОМ":
+        - /url: /security-ops/analytics/operations/
+        - generic: Аналитика ОМ
+    - heading "Система" [level=2]
+    - list "Система":
+      - link "Справочники":
+        - /url: /security-ops/dictionaries/
+        - generic: Справочники
+        - text: В разработке
+      - generic: "В разработке: Справочник стран и городов (№417)"
+      - link "Администрирование":
+        - /url: /security-ops/settings/
+        - generic: Администрирование
+      - link "Права":
+        - /url: /settings/permissions/
+        - generic: Права
+      - link "Роли":
+        - /url: /settings/roles/
+        - generic: Роли
+      - link "Пользователи":
+        - /url: /settings/users/
+        - generic: Пользователи
+      - link "Аудит":
+        - /url: /security-ops/audit/
+        - generic: Аудит
+      - link "Журнал изменений":
+        - /url: /security-ops/changelog/
+        - generic: Журнал изменений
+    - heading "Обратная связь" [level=2]
+    - list "Обратная связь":
+      - link "Обратная связь":
+        - /url: /feedback/
+        - generic: Обратная связь
+  - paragraph: Закрытый контур · связь есть
+  - link "A acc_admin Администратор системы":
+    - /url: /security-ops/profile/
+    - generic: A
+    - generic: acc_admin
+    - generic: Администратор системы
+- banner:
+  - button "Скрыть боковое меню" [expanded]:
+  - navigation "Хлебные крошки":
+    - list:
+      - link "Smart Жоспарлау":
+        - /url: /security-ops/command-center/
+      - generic: Охранные мероприятия
+      - generic: Справочники
+  - generic: "Раздел ОМ:"
+  - generic: Администратор системы
+  - button "Переключить на тёмную тему":
+  - button "Уведомления":
+    - generic: "50"
+  - button "Меню пользователя":
+    - img "Пользователь"
+- main:
+  - link "← Назад к справочникам":
+    - /url: /security-ops/dictionaries/
+  - paragraph: Система
+  - heading "JOURNAL_ENTRY_TYPES" [level=1]
+  - 'generic "В разработке: Справочник стран и городов (№417)"':
+    - text: В разработке
+  - paragraph: Значения и их связи; удаление возможно только при доказанном отсутствии связей.
+  - generic: CONTOUR1141
+  - generic: Контур1141 — журнал с сайта
+  - generic: Активна
+  - button "Деактивировать"
+  - button "Редактировать"
+  - button "Удалить"
+  - paragraph: Связей нет — значение можно удалить.
+  - generic: INCIDENT
+  - generic: Инцидент
+  - generic: Активна
+  - button "Деактивировать"
+  - button "Редактировать"
+  - button "Удалить"
+  - paragraph: "Используется (2): Журналы ОМ (Инцидент) — ОМ-2026-43: Нарушение периметра на учебной проходке, ОМ-2026-12: Попытка прохода без пропуска на Посту 2"
+  - generic: INSTRUCTION
+  - generic: Инструктаж
+  - generic: Активна
+  - button "Деактивировать"
+  - button "Редактировать"
+  - button "Удалить"
+  - paragraph: Связей нет — значение можно удалить.
+  - generic: ORDER
+  - generic: Распоряжение
+  - generic: Активна
+  - button "Деактивировать"
+  - button "Редактировать"
+  - button "Удалить"
+  - paragraph: Связей нет — значение можно удалить.
+  - generic: REPLACEMENT
+  - generic: Замена
+  - generic: Активна
+  - button "Деактивировать"
+  - button "Редактировать"
+  - button "Удалить"
+  - paragraph: Связей нет — значение можно удалить.
+  - generic: Добавить значение
+  - generic: Код *
+  - textbox "Код *"
+  - generic: Название *
+  - textbox "Название *"
+  - button "Добавить"
+- button "Уведомления ОМ (онлайн)":
+- generic: Новых уведомлений нет
+- region "Notifications (F8)":
+  - list
+- alert

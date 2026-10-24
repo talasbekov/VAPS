@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-07",
+  "executor": "Кодекс Астра 6",
+  "authoritative_source": {
+    "path": "RAW/README.md",
+    "effective_lines": "673-1209",
+    "updated": "2026-09-03",
+    "rule": "Unmarked requirements are resolved; warning and open-question marks are not owner-approved requirements."
+  },
+  "precedence": [
+    "RAW/README.md:673-1209 for security-operations",
+    "later direct owner decisions in Plane",
+    "other canonical requirements",
+    "code as as-is evidence",
+    "prototype as visual reference"
+  ],
+  "open_owner_arbitrations": [
+    "Whether the separate Registry GVO module required by [ГВО-01] must be restored or the requirement changed",
+    "Whether the four GVO tabs in [ГВО-02] remain mandatory after Plane #951",
+    "Whether section menu entries remain visible under [РЕЕ-09] or are hidden by the newer access implementation",
+    "The five explicit open questions in canon section 15",
+    "Acceptance scenario A says two employees are selected but three are received"
+  ],
+  "security_note": "Credential values were excluded. The canon currently mixes requirements with credentials and is mode 664."
+}

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:linear-gradient(180deg,#ffffff 0%,#fafcfb 60%,#eef7f4 100%);display:flex;flex-direction:column;align-items:center;padding:120px 26px 22px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:80px;height:80px;border-radius:20px;box-shadow:0 16px 32px -10px rgba(15,118,110,0.3);margin-bottom:16px">
+
+    <div style="font-size:22px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:6px">Добро пожаловать</div>
+    <div style="font-size:13px;font-weight:500;color:#6b8580;text-align:center;max-width:250px;line-height:1.45;margin-bottom:24px">Здесь вас выслушают без осуждения</div>
+
+    <div style="font-size:14px;font-weight:500;color:#3a5450;line-height:1.55;width:100%;margin-bottom:30px">SmartQoldau — это платформа психологической поддержки нового поколения. Мы соединяем вас с квалифицированными психологами в любой момент, когда вам это нужно.</div>
+
+    <div style="width:100%;display:flex;flex-direction:column;gap:18px;flex:1;min-height:0">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid #d8e4e0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="#0f766e" stroke-width="1.8"/><path d="M8 11V7a4 4 0 018 0v4" stroke="#0f766e" stroke-width="1.8"/></svg>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a">Конфиденциально и анонимно</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid #d8e4e0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#0f766e" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a">Быстрый отклик — от 1 минуты</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid #d8e4e0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H8l-4 4V5z" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a">Чат, аудио или видеозвонок</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid #d8e4e0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 12l2.5 2.5L16 9" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-3z" stroke="#0f766e" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a">Проверенные специалисты</div>
+      </div>
+    </div>
+
+    <div style="width:100%;display:flex;flex-direction:column;gap:10px;margin-top:auto">
+      <button onClick="{{ goToRegister }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4)">Продолжить с номером телефона</button>
+      <button onClick="{{ goToPermissions }}" style="width:100%;height:46px;border:1.5px solid #0f766e;border-radius:23px;background:#fff;color:#0f766e;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="#0f766e" stroke-width="1.8"/><path d="M8 11V7a4 4 0 018 0v4" stroke="#0f766e" stroke-width="1.8"/></svg>
+        Продолжить анонимно
+      </button>
+    </div>
+
+    <div style="font-size:11.5px;font-weight:500;color:#9fb3ae;text-align:center;line-height:1.4;max-width:280px;margin-top:14px">Продолжая, вы принимаете <span style="color:#0f766e;text-decoration:underline;cursor:pointer;font-weight:600">Пользовательское соглашение</span> и <span style="color:#0f766e;text-decoration:underline;cursor:pointer;font-weight:600">Политику конфиденциальности</span></div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      goToRegister: () => { window.location.href = './SmartQoldau - Регистрация.dc.html'; },
+      goToPermissions: () => { localStorage.setItem('sq_anonymous', '1'); window.location.href = './SmartQoldau - Главная.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

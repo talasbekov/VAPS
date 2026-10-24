@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}
+    @keyframes sq-breathe{0%,100%{transform:scale(0.86)}50%{transform:scale(1)}}
+    @keyframes sq-ring{0%{transform:scale(1);opacity:0.35}80%{opacity:0.05}100%{transform:scale(4.2);opacity:0}}
+  </style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:linear-gradient(180deg,#ffffff 0%,#f6fbfa 55%,#e6f3ee 100%);font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <button onClick="{{ goBack }}" style="position:absolute;top:64px;left:24px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:10">
+      <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px {{ bottomPad }}px;box-sizing:border-box">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin-top:16px;margin-bottom:20px">
+        <div style="font-size:21px;font-weight:800;color:#0f3f3a">Медитации</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Направленные практики для спокойствия и концентрации</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto">
+        <sc-for list="{{ categories }}" as="c" hint-placeholder-count="5">
+          <div onClick="{{ c.onClick }}" style="flex-shrink:0;padding:8px 15px;border-radius:16px;background:{{ c.bg }};color:{{ c.color }};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">{{ c.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ hasSessions }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ sessions }}" as="s" hint-placeholder-count="6">
+            <div onClick="{{ s.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:16px;background:{{ s.rowBg }};cursor:pointer">
+              <div style="width:52px;height:52px;border-radius:12px;flex-shrink:0;background:{{ s.coverBg }};display:flex;align-items:center;justify-content:center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="{{ s.icon }}" stroke="{{ s.iconColor }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ s.name }}</div>
+                <div style="font-size:11.5px;font-weight:500;color:#8fa6a1">{{ s.levelLabel }} · {{ s.duration }}</div>
+              </div>
+              <button onClick="{{ s.onToggleFav }}" style="width:30px;height:30px;border:none;background:transparent;cursor:pointer;flex-shrink:0;padding:0;display:flex;align-items:center;justify-content:center">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="{{ s.favFill }}"><path d="M12 20s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z" stroke="#d9698a" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              </button>
+              <div style="width:36px;height:36px;border-radius:50%;background:rgba(15,118,110,0.08);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 4l14 8-14 8V4z" fill="#0f766e"/></svg>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noSessions }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:40px 20px;color:#8fa6a1;font-size:13px;font-weight:500">Пока нет медитаций в избранном</div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ miniBarVisible }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:14px;right:14px;bottom:28px;background:#0f3f3a;border-radius:18px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 12px 28px -8px rgba(15,63,58,0.45);z-index:15;cursor:pointer" onClick="{{ reopenPlayer }}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,0.15);flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ activeName }}</div>
+            <div style="font-size:10.5px;font-weight:500;color:rgba(255,255,255,0.6)">{{ elapsedText }} / {{ activeDuration }}</div>
+          </div>
+          <button onClick="{{ togglePlayStop }}" style="width:30px;height:30px;border-radius:50%;border:none;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+            <sc-if value="{{ playing }}" hint-placeholder-val="{{ false }}">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="5" height="16" rx="1.5" fill="#fff"/><rect x="14" y="4" width="5" height="16" rx="1.5" fill="#fff"/></svg>
+            </sc-if>
+            <sc-if value="{{ notPlaying }}" hint-placeholder-val="{{ true }}">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 4l14 8-14 8V4z" fill="#fff"/></svg>
+            </sc-if>
+          </button>
+          <button onClick="{{ stopFully }}" style="width:30px;height:30px;border-radius:50%;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+            <svg width="11" height="11" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.2);overflow:hidden">
+          <div style="height:100%;border-radius:2px;background:#fff;width:{{ progressPct }}%"></div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ playerOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,#0f3f3a 0%,#0f766e 55%,#159a7c 100%);display:flex;flex-direction:column;padding:64px 24px 28px;box-sizing:border-box;z-index:20">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <button onClick="{{ minimizePlayer }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+            <svg width="10" height="16" viewBox="0 0 10 16" fill="none"><path d="M9 1L2 8l7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button onClick="{{ toggleFavActive }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="{{ favActiveFill }}"><path d="M12 20s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding-top:8px">
+          <div style="position:relative;width:260px;height:260px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;overflow:visible;flex-shrink:0">
+            <div style="position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,0.10);animation:sq-ring 9s ease-out infinite;animation-play-state:{{ playState }};animation-delay:0s"></div>
+            <div style="position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,0.10);animation:sq-ring 9s ease-out infinite;animation-play-state:{{ playState }};animation-delay:-3s"></div>
+            <div style="position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,0.10);animation:sq-ring 9s ease-out infinite;animation-play-state:{{ playState }};animation-delay:-6s"></div>
+            <div style="position:relative;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.35),rgba(255,255,255,0.06));display:flex;align-items:center;justify-content:center">
+              <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:100px;height:100px;border-radius:50%;object-fit:cover;box-shadow:0 12px 32px -8px rgba(0,0,0,0.25)">
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:14px">{{ breathLabel }}</div>
+
+          <div style="font-size:18px;font-weight:800;color:#fff;text-align:center">{{ activeName }}</div>
+          <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.7);margin-top:4px;margin-bottom:18px">{{ activeLevelLabel }}</div>
+
+          <div style="width:100%;display:flex;align-items:center;gap:8px;margin-bottom:18px">
+            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.75);width:34px">{{ elapsedText }}</div>
+            <div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.2);overflow:hidden">
+              <div style="height:100%;border-radius:2px;background:#fff;width:{{ progressPct }}%"></div>
+            </div>
+            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.75);width:34px;text-align:right">{{ activeDuration }}</div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:center;gap:22px;margin-bottom:20px">
+            <button onClick="{{ rewind15 }}" style="width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center">−15</button>
+            <button onClick="{{ togglePlay }}" style="width:68px;height:68px;border-radius:50%;border:none;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+              <sc-if value="{{ playing }}" hint-placeholder-val="{{ false }}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="5" height="16" rx="1.5" fill="#0f766e"/><rect x="14" y="4" width="5" height="16" rx="1.5" fill="#0f766e"/></svg>
+              </sc-if>
+              <sc-if value="{{ notPlaying }}" hint-placeholder-val="{{ true }}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 4l14 8-14 8V4z" fill="#0f766e"/></svg>
+              </sc-if>
+            </button>
+            <button onClick="{{ forward15 }}" style="width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,0.12);color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center">+15</button>
+          </div>
+
+          <sc-if value="{{ completed }}" hint-placeholder-val="{{ false }}">
+            <div style="width:100%;background:rgba(255,255,255,0.12);border-radius:18px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-bottom:20px">
+              <div style="font-size:14px;font-weight:800;color:#fff">Практика завершена</div>
+              <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.75)">Хорошая работа. Как вы себя чувствуете?</div>
+              <div style="display:flex;gap:8px;margin-top:4px">
+                <button onClick="{{ restartActive }}" style="padding:9px 16px;border-radius:14px;border:none;background:rgba(255,255,255,0.18);color:#fff;font-size:12px;font-weight:700;cursor:pointer">Заново</button>
+                <sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ playNext }}" style="padding:9px 16px;border-radius:14px;border:none;background:#fff;color:#0f766e;font-size:12px;font-weight:700;cursor:pointer">Следующая</button>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="width:100%;margin-bottom:16px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:rgba(255,255,255,0.55);margin-bottom:8px">ТАЙМЕР СНА</div>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ sleepOptions }}" as="o" hint-placeholder-count="3">
+                <div onClick="{{ o.onClick }}" style="flex:1;text-align:center;padding:8px 0;border-radius:12px;background:{{ o.bg }};color:{{ o.color }};font-size:12px;font-weight:700;cursor:pointer">{{ o.label }}</div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="width:100%;margin-bottom:16px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:rgba(255,255,255,0.55);margin-bottom:8px">ФОНОВЫЙ ЗВУК</div>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ soundOptions }}" as="o" hint-placeholder-count="3">
+                <div onClick="{{ o.onClick }}" style="flex:1;text-align:center;padding:8px 0;border-radius:12px;background:{{ o.bg }};color:{{ o.color }};font-size:12px;font-weight:700;cursor:pointer">{{ o.label }}</div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="width:100%;display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 9v6h4l5 5V4L8 9H4z" fill="rgba(255,255,255,0.8)"/></svg>
+            <input type="range" min="0" max="100" value="{{ volume }}" onChange="{{ setVolume }}" style="flex:1;accent-color:#ffffff">
+          </div>
+
+          <sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}">
+            <div onClick="{{ playNext }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.10);cursor:pointer;box-sizing:border-box">
+              <div style="min-width:0">
+                <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:0.5px">ДАЛЕЕ</div>
+                <div style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nextName }}</div>
+              </div>
+              <svg width="9" height="14" viewBox="0 0 9 14" fill="none" style="flex-shrink:0"><path d="M1 1l6 6-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+</helmet>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static SESSIONS = [
+    { id: 'bodyscan', name: 'Сканирование тела', category: 'stress', level: 'beginner', durationSec: 600, bg: '#e3f3ee', iconColor: '#159a7c', icon: 'M9 5a3 3 0 016 0v6a3 3 0 01-6 0V5z M5 11a7 7 0 0014 0M12 18v3' },
+    { id: 'sleep15', name: 'Перед сном', category: 'sleep', level: 'beginner', durationSec: 900, bg: '#e6f0fb', iconColor: '#3b82c4', icon: 'M20 12.5A8.5 8.5 0 1111.5 4a6.5 6.5 0 008.5 8.5z' },
+    { id: 'morning', name: 'Утренний настрой', category: 'morning', level: 'beginner', durationSec: 480, bg: '#fdece3', iconColor: '#e08a4d', icon: 'M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1 M12 8a4 4 0 100 8 4 4 0 000-8z' },
+    { id: 'focus', name: 'Концентрация внимания', category: 'focus', level: 'intermediate', durationSec: 720, bg: '#f1eafb', iconColor: '#8b5fc9', icon: 'M12 2a10 10 0 100 20 10 10 0 000-20z M12 6a6 6 0 100 12 6 6 0 000-12z M12 10a2 2 0 100 4 2 2 0 000-4z' },
+    { id: 'anxiety10', name: 'Снятие тревоги', category: 'stress', level: 'beginner', durationSec: 600, bg: '#e3f3ee', iconColor: '#159a7c', icon: 'M12 21c0-6-4-9-8-9 0 6 4 9 8 9z M12 21c0-9 4-14 8-15 1 8-3 14-8 15z' },
+    { id: 'deepsleep', name: 'Глубокий сон', category: 'sleep', level: 'intermediate', durationSec: 1200, bg: '#e6f0fb', iconColor: '#3b82c4', icon: 'M20 12.5A8.5 8.5 0 1111.5 4a6.5 6.5 0 008.5 8.5z' },
+  ];
+  static LEVEL_LABELS = { beginner: 'Начальный', intermediate: 'Средний' };
+  static CATEGORIES = [
+    { id: 'all', label: 'Все' },
+    { id: 'stress', label: 'От стресса' },
+    { id: 'sleep', label: 'Для сна' },
+    { id: 'morning', label: 'Утро' },
+    { id: 'focus', label: 'Фокус' },
+    { id: 'favorites', label: '♡ Избранное' },
+  ];
+  static STORAGE_KEY = 'sq-meditation-state-v1';
+
+  state = { activeId: null, playing: false, category: 'all', elapsed: 0, favorites: {}, playerOpen: false, completed: false, sleepMin: 0, sleepBaseElapsed: null, bgSound: 'silence', volume: 70 };
+
+  componentDidMount() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(Component.STORAGE_KEY) || 'null');
+      if (saved) this.setState({ favorites: saved.favorites ?? {}, category: saved.category ?? 'all' });
+    } catch (e) {}
+    this._t = setInterval(() => this.tick(), 1000);
+  }
+  componentWillUnmount() { clearInterval(this._t); }
+
+  persist() {
+    const s = this.state;
+    localStorage.setItem(Component.STORAGE_KEY, JSON.stringify({ favorites: s.favorites, category: s.category }));
+  }
+
+  tick() {
+    const s = this.state;
+    if (!s.playing || !s.activeId) return;
+    const session = Component.SESSIONS.find(t => t.id === s.activeId);
+    if (!session) return;
+    const next = s.elapsed + 1;
+    if (next >= session.durationSec) {
+      this.setState({ elapsed: session.durationSec, playing: false, completed: true });
+      return;
+    }
+    if (s.sleepMin > 0 && s.sleepBaseElapsed !== null && (next - s.sleepBaseElapsed) >= s.sleepMin * 60) {
+      this.setState({ elapsed: next, playing: false, sleepMin: 0, sleepBaseElapsed: null });
+      return;
+    }
+    this.setState({ elapsed: next });
+  }
+
+  fmt(sec) { return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`; }
+
+  getVisible(s) {
+    let visible = Component.SESSIONS;
+    if (s.category === 'favorites') visible = Component.SESSIONS.filter(t => s.favorites[t.id]);
+    else if (s.category !== 'all') visible = Component.SESSIONS.filter(t => t.category === s.category);
+    return visible;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const select = (id) => () => this.setState({ activeId: id, playing: true, elapsed: 0, playerOpen: true, completed: false, sleepMin: 0, sleepBaseElapsed: null });
+    const selectCategory = (id) => () => this.setState({ category: id }, () => this.persist());
+    const toggleFav = (id) => (e) => { if (e) e.stopPropagation(); this.setState(s2 => ({ favorites: { ...s2.favorites, [id]: !s2.favorites[id] } }), () => this.persist()); };
+    const categories = Component.CATEGORIES.map(c => ({
+      label: c.label,
+      onClick: selectCategory(c.id),
+      bg: s.category === c.id ? '#0f766e' : 'rgba(15,118,110,0.07)',
+      color: s.category === c.id ? '#fff' : '#0f3f3a',
+    }));
+    const visible = this.getVisible(s);
+
+    const sessions = visible.map(t => ({
+      name: t.name,
+      levelLabel: Component.LEVEL_LABELS[t.level],
+      duration: this.fmt(t.durationSec),
+      coverBg: t.bg,
+      icon: t.icon,
+      iconColor: t.iconColor,
+      onClick: select(t.id),
+      onToggleFav: toggleFav(t.id),
+      favFill: s.favorites[t.id] ? '#d9698a' : 'none',
+      rowBg: 'transparent',
+    }));
+    const active = Component.SESSIONS.find(t => t.id === s.activeId);
+    const progressPct = active ? Math.min(100, (s.elapsed / active.durationSec) * 100) : 0;
+
+    let nextSession = null;
+    if (active) {
+      const idx = visible.findIndex(t => t.id === active.id);
+      if (visible.length > 1 && idx !== -1) nextSession = visible[(idx + 1) % visible.length];
+    }
+
+    const breathCycle = s.elapsed % 5;
+    const breathLabel = breathCycle < 2.5 ? 'Вдох' : 'Выдох';
+
+    const setSleep = (min) => () => this.setState({ sleepMin: min, sleepBaseElapsed: min > 0 ? this.state.elapsed : null });
+    const sleepOptions = [0, 10, 20].map(min => ({
+      label: min === 0 ? 'Выкл' : `${min} мин`,
+      onClick: setSleep(min),
+      bg: s.sleepMin === min ? '#fff' : 'rgba(255,255,255,0.12)',
+      color: s.sleepMin === min ? '#0f766e' : '#fff',
+    }));
+    const setSound = (id) => () => this.setState({ bgSound: id });
+    const soundLabels = { silence: 'Тишина', rain: 'Дождь', ocean: 'Океан' };
+    const soundOptions = ['silence', 'rain', 'ocean'].map(id => ({
+      label: soundLabels[id],
+      onClick: setSound(id),
+      bg: s.bgSound === id ? '#fff' : 'rgba(255,255,255,0.12)',
+      color: s.bgSound === id ? '#0f766e' : '#fff',
+    }));
+
+    return {
+      categories,
+      sessions,
+      hasSessions: sessions.length > 0,
+      noSessions: sessions.length === 0,
+      playerOpen: s.playerOpen && !!active,
+      miniBarVisible: !s.playerOpen && !!active && !s.completed,
+      activeName: active ? active.name : '',
+      activeLevelLabel: active ? Component.LEVEL_LABELS[active.level] : '',
+      activeDuration: active ? this.fmt(active.durationSec) : '0:00',
+      elapsedText: this.fmt(s.elapsed),
+      progressPct,
+      breatheSpeed: 5,
+      breathLabel,
+      playState: s.playing ? 'running' : 'paused',
+      playing: s.playing,
+      notPlaying: !s.playing,
+      completed: s.completed,
+      togglePlay: () => this.setState(s2 => ({ playing: !s2.playing })),
+      togglePlayStop: (e) => { e.stopPropagation(); this.setState(s2 => ({ playing: !s2.playing })); },
+      minimizePlayer: () => this.setState({ playerOpen: false }),
+      reopenPlayer: () => this.setState({ playerOpen: true }),
+      stopFully: (e) => { e.stopPropagation(); this.setState({ activeId: null, playing: false, playerOpen: false, completed: false, elapsed: 0 }); },
+      closePlayer: () => this.setState({ playerOpen: false, playing: false }),
+      bottomPad: (!s.playerOpen && !!active && !s.completed) ? 108 : 32,
+      goBack: () => { window.history.back(); },
+      rewind15: () => this.setState(s2 => ({ elapsed: Math.max(0, s2.elapsed - 15) })),
+      forward15: () => this.setState(s2 => {
+        const a = Component.SESSIONS.find(t => t.id === s2.activeId);
+        const max = a ? a.durationSec : s2.elapsed;
+        return { elapsed: Math.min(max, s2.elapsed + 15) };
+      }),
+      toggleFavActive: active ? toggleFav(active.id) : () => {},
+      favActiveFill: active && s.favorites[active.id] ? '#d9698a' : 'none',
+      sleepOptions,
+      soundOptions,
+      volume: s.volume,
+      setVolume: (e) => this.setState({ volume: parseInt(e.target.value, 10) }),
+      hasNext: !!nextSession,
+      nextName: nextSession ? nextSession.name : '',
+      playNext: nextSession ? select(nextSession.id) : () => {},
+      restartActive: active ? () => this.setState({ elapsed: 0, playing: true, completed: false }) : () => {},
+    };
+  }
+}
+
+</script>
+</body>
+</html>

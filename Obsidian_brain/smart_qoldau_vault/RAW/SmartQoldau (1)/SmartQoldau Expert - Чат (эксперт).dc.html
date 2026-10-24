@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} input{outline:none} @keyframes sq-dot-b{0%,80%,100%{opacity:.25}40%{opacity:1}}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#f7fbfa;display:flex;flex-direction:column;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="padding:62px 14px 14px;background:#fff;border-bottom:1px solid #edf2f0;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <button onClick="{{ goBack }}" style="width:34px;height:34px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+        <svg width="9" height="15" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div style="width:38px;height:38px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a">Анонимный клиент #2214</div>
+        <div style="font-size:11px;font-weight:600;color:#8fa6a1">Консультация · {{ timerText }}</div>
+      </div>
+      <button onClick="{{ toggleMenu }}" style="width:32px;height:32px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+        <svg width="15" height="4" viewBox="0 0 24 6"><circle cx="3" cy="3" r="2.6" fill="#0f766e"/><circle cx="12" cy="3" r="2.6" fill="#0f766e"/><circle cx="21" cy="3" r="2.6" fill="#0f766e"/></svg>
+      </button>
+    </div>
+
+    <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ toggleMenu }}" style="position:absolute;inset:0;z-index:40"></div>
+      <div style="position:absolute;top:104px;right:14px;width:220px;background:#fff;border-radius:16px;padding:6px;box-shadow:0 16px 32px -10px rgba(15,63,58,0.25);z-index:41;display:flex;flex-direction:column">
+        <div onClick="{{ onFinish }}" style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#c0392b;cursor:pointer;border-radius:10px">Завершить консультацию</div>
+        <div style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#0f3f3a;cursor:pointer;border-radius:10px">Открыть профиль клиента</div>
+        <div style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#0f3f3a;cursor:pointer;border-radius:10px">Сообщить о проблеме</div>
+      </div>
+    </sc-if>
+
+    <div style="flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:4px">
+      <div style="align-self:center;font-size:11px;font-weight:600;color:#9fb3ae;text-align:center;max-width:260px;line-height:1.5;margin-bottom:10px">🔒 Сообщения конфиденциальны и защищены</div>
+
+      <div style="align-self:flex-start;max-width:78%;background:#fff;border-radius:16px 16px 16px 4px;padding:11px 14px;font-size:14px;font-weight:500;color:#0f3f3a;line-height:1.45;box-shadow:0 2px 8px -4px rgba(15,63,58,0.1);margin-bottom:2px">Здравствуйте. Меня беспокоит тревога, особенно по вечерам</div>
+      <div style="align-self:flex-start;font-size:10.5px;font-weight:500;color:#a9bdb9;margin:0 4px 12px">19:00</div>
+
+      <sc-for list="{{ messages }}" as="m" hint-placeholder-count="0">
+        <div style="align-self:{{ m.align }};max-width:78%;background:{{ m.bg }};border-radius:{{ m.radius }};padding:11px 14px;font-size:14px;font-weight:500;color:{{ m.color }};line-height:1.45;box-shadow:{{ m.shadow }};margin-bottom:2px">{{ m.text }}</div>
+        <div style="align-self:{{ m.align }};font-size:10.5px;font-weight:500;color:#a9bdb9;margin:0 4px 12px">{{ m.time }}</div>
+      </sc-for>
+
+      <sc-if value="{{ showTyping }}" hint-placeholder-val="{{ false }}">
+        <div style="align-self:flex-start;font-size:12px;font-weight:600;color:#8fa6a1;display:flex;align-items:center;gap:6px;margin:2px 4px 10px">
+          <span>Клиент печатает</span>
+          <span style="display:flex;gap:2px">
+            <span style="width:4px;height:4px;border-radius:50%;background:#8fa6a1;animation:sq-dot-b 1.2s ease-in-out infinite"></span>
+            <span style="width:4px;height:4px;border-radius:50%;background:#8fa6a1;animation:sq-dot-b 1.2s ease-in-out infinite;animation-delay:.2s"></span>
+            <span style="width:4px;height:4px;border-radius:50%;background:#8fa6a1;animation:sq-dot-b 1.2s ease-in-out infinite;animation-delay:.4s"></span>
+          </span>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="flex-shrink:0;background:#fff;border-top:1px solid #edf2f0;padding:10px 12px 24px;display:flex;align-items:center;gap:8px;box-sizing:border-box">
+      <input type="text" value="{{ draft }}" onChange="{{ onDraftChange }}" onKeyDown="{{ onKeyDown }}" placeholder="Напишите ответ..." style="flex:1;height:42px;border-radius:21px;border:1.5px solid #e6efec;background:#fafcfb;padding:0 15px;font-size:14px;font-family:inherit;color:#0f3f3a;box-sizing:border-box;min-width:0"/>
+      <button onClick="{{ onSend }}" style="width:40px;height:40px;border-radius:50%;border:none;background:#0f766e;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;padding:0">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 12l16-8-6 16-3-6-7-2z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { draft: '', messages: [], menuOpen: false, showTyping: false, seconds: 30 };
+  componentDidMount() { this._t = setInterval(() => this.setState(s => ({ seconds: s.seconds + 1 })), 1000); }
+  componentWillUnmount() { clearInterval(this._t); }
+  fmtTime() { const d = new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+  send() {
+    const text = this.state.draft.trim();
+    if (!text) return;
+    const id = Date.now();
+    this.setState(s => ({ draft: '', messages: [...s.messages, { id, text, mine: true, time: this.fmtTime() }] }));
+    setTimeout(() => this.setState({ showTyping: true }), 900);
+    setTimeout(() => {
+      this.setState(s => ({ showTyping: false, messages: [...s.messages, { id: Date.now(), text: 'Спасибо, что делитесь. Это происходит каждый день?', mine: false, time: this.fmtTime() }] }));
+    }, 2400);
+  }
+  renderVals() {
+    const s = this.state;
+    const m = Math.floor(s.seconds / 60), sec = s.seconds % 60;
+    return {
+      timerText: `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`,
+      draft: s.draft,
+      messages: s.messages.map(m => ({ text: m.text, time: m.time, align: m.mine ? 'flex-end' : 'flex-start', bg: m.mine ? '#0f766e' : '#fff', color: m.mine ? '#fff' : '#0f3f3a', radius: m.mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', shadow: m.mine ? 'none' : '0 2px 8px -4px rgba(15,63,58,0.1)' })),
+      showTyping: s.showTyping,
+      menuOpen: s.menuOpen,
+      onDraftChange: (e) => this.setState({ draft: e.target.value }),
+      onKeyDown: (e) => { if (e.key === 'Enter') this.send(); },
+      onSend: () => this.send(),
+      toggleMenu: () => this.setState(s2 => ({ menuOpen: !s2.menuOpen })),
+      goBack: () => { window.location.href = './SmartQoldau Expert - Главная.dc.html'; },
+      onFinish: () => { window.location.href = './SmartQoldau Expert - Завершение.dc.html?format=chat'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

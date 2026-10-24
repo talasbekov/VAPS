@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body{margin:0;background:#fff}
+    @keyframes sq-beat-fast{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+    @keyframes sq-ring-urgent{0%,100%{transform:scale(1);opacity:0.55}50%{transform:scale(1.14);opacity:0.2}}
+    @keyframes sq-tip{0%{opacity:0;transform:translateY(4px)}10%{opacity:1;transform:translateY(0)}90%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  </style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:linear-gradient(180deg,#fff8f7 0%,#fdeeec 55%,#fce3e0 100%);overflow-y:auto;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif">
+    <div style="min-height:100%;display:flex;flex-direction:column;align-items:center;padding:64px 26px 28px;box-sizing:border-box">
+
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:14px;background:rgba(192,57,43,0.1);margin-bottom:16px">
+        <span style="width:6px;height:6px;border-radius:50%;background:#c0392b"></span>
+        <span style="font-size:12px;font-weight:700;color:#c0392b">Приоритетный поиск</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;margin-bottom:20px">
+        <div style="font-size:21px;font-weight:800;color:#5c2420;line-height:1.3">Ищем свободного<br>специалиста для вас</div>
+        <div style="font-size:12.5px;font-weight:500;color:#a8564d;line-height:1.5;max-width:270px">Мы соединим вас первым в очереди. Если станет тяжело — можно позвонить на 103</div>
+      </div>
+
+      <div style="position:relative;width:128px;height:128px;display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+        <div style="position:absolute;inset:0;border-radius:50%;background:rgba(192,57,43,0.16);animation:sq-ring-urgent 1.8s ease-in-out infinite"></div>
+        <div style="position:absolute;inset:14px;border-radius:50%;background:rgba(192,57,43,0.22);animation:sq-ring-urgent 1.8s ease-in-out infinite;animation-delay:0.3s"></div>
+        <div style="position:relative;width:76px;height:76px;border-radius:50%;background:#c0392b;display:flex;align-items:center;justify-content:center;animation:sq-beat-fast 1.1s ease-in-out infinite;box-shadow:0 14px 28px -8px rgba(192,57,43,0.5)">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M12 21C12 21 3.5 15.7 3.5 9.5A5 5 0 0112 6a5 5 0 018.5 3.5C20.5 15.7 12 21 12 21z" fill="#fff"/></svg>
+        </div>
+      </div>
+
+      <div style="font-size:12.5px;font-weight:600;color:#a8564d;margin-bottom:2px">Осталось примерно</div>
+      <div style="font-size:32px;font-weight:800;color:#c0392b;letter-spacing:0.01em;margin-bottom:22px">{{ timerText }}</div>
+
+      <div style="width:100%;display:flex;flex-direction:column;margin-bottom:20px">
+        <sc-for list="{{ stages }}" as="st" hint-placeholder-count="4">
+          <div style="display:flex;gap:12px">
+            <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px">{{ st.dot }}</div>
+              <sc-if value="{{ st.showConnector }}" hint-placeholder-val="{{ true }}">
+                <div style="width:2px;flex:1;min-height:16px;background:{{ st.connectorColor }};margin:2px 0"></div>
+              </sc-if>
+            </div>
+            <div style="font-size:13px;font-weight:{{ st.weight }};color:{{ st.color }};padding-top:1px;padding-bottom:12px">{{ st.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <button onClick="{{ callEmergency }}" style="width:100%;height:56px;border:none;border-radius:28px;background:#c0392b;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(192,57,43,0.4);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" fill="#fff"/></svg>
+        Позвонить 103 / 112
+      </button>
+
+      <div style="height:20px;margin-bottom:16px">
+        <div key="{{ tipIndex }}" style="font-size:12.5px;font-weight:600;color:#8a4540;text-align:center;animation:sq-tip 6s ease-in-out infinite">{{ tipText }}</div>
+      </div>
+
+      <button onClick="{{ onCancel }}" style="width:100%;height:50px;border:none;border-radius:25px;background:rgba(15,63,58,0.06);color:#6b8580;font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer;margin-top:auto">Отменить поиск</button>
+    </div>
+  </div>
+
+  <sc-if value="{{ showCancelModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+      <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+        <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Отменить поиск?</div>
+        <button onClick="{{ onConfirmCancel }}" style="width:100%;height:54px;border:none;border-radius:27px;background:rgba(192,57,43,0.09);color:#c0392b;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px">Да, отменить</button>
+        <button onClick="{{ onKeepWaiting }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer">Продолжить ожидание</button>
+      </div>
+    </div>
+  </sc-if>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static TIPS = [
+    '💙 Вы не одни — мы уже подключаем специалиста',
+    '🌿 Сделайте медленный вдох и плавный выдох',
+    '🤍 Помощь рядом, продержитесь ещё немного',
+  ];
+  state = { seconds: 30, tipIndex: 0, showCancelModal: false };
+  componentDidMount() {
+    this._t = setInterval(() => {
+      this.setState(s => {
+        if (s.seconds <= 15) {
+          clearInterval(this._t);
+          clearInterval(this._tipT);
+          const params = new URLSearchParams(window.location.search);
+          const format = params.get('format') || 'audio';
+          window.location.href = './SmartQoldau - Специалист найден.dc.html?format=' + format;
+          return { seconds: 14 };
+        }
+        return { seconds: s.seconds - 1 };
+      });
+    }, 1000);
+    this._tipT = setInterval(() => {
+      this.setState(s => ({ tipIndex: (s.tipIndex + 1) % Component.TIPS.length }));
+    }, 5000);
+  }
+  componentWillUnmount() {
+    clearInterval(this._t);
+    clearInterval(this._tipT);
+  }
+  renderVals() {
+    const elapsed = 30 - this.state.seconds;
+    const stepIndex = elapsed < 4 ? 1 : elapsed < 9 ? 2 : 3;
+    const labels = ['Запрос получен', 'Найден свободный специалист', 'Подключаем приоритетно', 'Подключаем консультацию'];
+    const stages = labels.map((label, i) => ({
+      label,
+      dot: i < stepIndex ? '🟢' : i === stepIndex ? '🟡' : '⚪',
+      color: i <= stepIndex ? '#5c2420' : '#c9a8a4',
+      weight: i === stepIndex ? 700 : 600,
+      showConnector: i < labels.length - 1,
+      connectorColor: i < stepIndex ? '#c0392b' : '#f3d9d6',
+    }));
+    const m = Math.floor(this.state.seconds / 60);
+    const s = this.state.seconds % 60;
+    return {
+      timerText: `${m}:${String(s).padStart(2, '0')}`,
+      stages,
+      tipIndex: this.state.tipIndex,
+      tipText: Component.TIPS[this.state.tipIndex],
+      showCancelModal: this.state.showCancelModal,
+      onCancel: () => this.setState({ showCancelModal: true }),
+      onConfirmCancel: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+      onKeepWaiting: () => this.setState({ showCancelModal: false }),
+      callEmergency: () => { window.location.href = 'tel:103'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#1a2b28;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0">
+      <img src="assets/psychologist-aigerim.jpg" alt="Динара С." style="width:100%;height:100%;object-fit:cover">
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,30,28,0.35) 0%,rgba(10,30,28,0) 22%,rgba(10,30,28,0) 65%,rgba(10,30,28,0.55) 100%)"></div>
+    </div>
+
+    <div style="position:absolute;top:64px;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;padding:0 20px">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:#2ecc71"></span><span style="font-size:16px;font-weight:800;color:#fff">Динара С.</span></div>
+        <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,0.55)">Психолог · Онлайн</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.12);border-radius:16px;height:32px;padding:0 12px;box-sizing:border-box">
+          <span style="font-size:11px">🕒</span>
+          <span style="font-size:12px;font-weight:700;color:#fff">{{ timerText }}</span>
+        </div>
+        <button onClick="{{ toggleMenu }}" style="width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+          <svg width="14" height="4" viewBox="0 0 24 6"><circle cx="3" cy="3" r="2.6" fill="#fff"/><circle cx="12" cy="3" r="2.6" fill="#fff"/><circle cx="21" cy="3" r="2.6" fill="#fff"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <sc-if value="{{ showError }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(10,20,18,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;box-sizing:border-box;z-index:60;text-align:center">
+        <div style="width:60px;height:60px;border-radius:50%;background:rgba(240,145,138,0.15);display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M2 8.5a15 15 0 0120 0M5.5 12a10.5 10.5 0 0113 0M9 15.5a6 6 0 016 0M12 19v.1" stroke="#f0918a" stroke-width="1.8" stroke-linecap="round"/><path d="M3 3l18 18" stroke="#f0918a" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div style="font-size:17px;font-weight:800;color:#fff;margin-bottom:8px">Соединение потеряно</div>
+        <div style="font-size:13px;font-weight:500;color:rgba(255,255,255,0.6);line-height:1.5;margin-bottom:26px">Проверьте подключение к интернету. Собеседник останется на линии ещё немного.</div>
+        <button onClick="{{ onReconnect }}" style="width:100%;height:52px;border:none;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:10px">Переподключиться</button>
+        <button onClick="{{ endCall }}" style="width:100%;height:46px;border:1.5px solid rgba(255,255,255,0.25);border-radius:23px;background:transparent;color:#fff;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Завершить звонок</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showMenu }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ toggleMenu }}" style="position:absolute;inset:0;z-index:40"></div>
+      <div style="position:absolute;top:104px;right:20px;width:210px;background:#233a36;border-radius:16px;padding:6px;box-shadow:0 16px 32px -10px rgba(0,0,0,0.4);z-index:41;display:flex;flex-direction:column">
+        <div style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;border-radius:10px">Сообщить о проблеме</div>
+        <div style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;border-radius:10px">Сменить устройство</div>
+        <div onClick="{{ endCall }}" style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#f0918a;cursor:pointer;border-radius:10px">Завершить консультацию</div>
+        <div style="padding:11px 12px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;border-radius:10px">Справка</div>
+      </div>
+    </sc-if>
+
+    <div style="position:absolute;top:122px;right:20px;width:100px;height:136px;border-radius:20px;background:#2b3d3a;border:1.5px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;overflow:hidden">
+      <sc-if value="{{ cameraOn }}" hint-placeholder-val="{{ true }}">
+        <div style="width:100%;height:100%;background:linear-gradient(160deg,#2f4744,#233a36);display:flex;align-items:center;justify-content:center">
+          <div style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:rgba(255,255,255,0.7)">Вы</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ cameraOff }}" hint-placeholder-val="{{ false }}">
+        <div style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:rgba(255,255,255,0.7)">Вы</div>
+      </sc-if>
+      <div style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,0.6)">Вы</div>
+    </div>
+
+    <div style="position:absolute;bottom:0;left:0;right:0;padding:0 26px 40px;display:flex;flex-direction:column;align-items:center;gap:18px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <svg width="12" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.5)" stroke-width="1.8"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.5)" stroke-width="1.8"/></svg>
+        <div style="font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.5);text-align:center">Разговор защищён шифрованием и не записывается</div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:18px">
+        <button onClick="{{ toggleMute }}" style="width:56px;height:56px;border-radius:50%;border:none;background:{{ muteBg }};display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 5a3 3 0 016 0v6a3 3 0 01-6 0V5z" stroke="{{ muteColor }}" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="{{ muteColor }}" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <button onClick="{{ toggleCamera }}" style="width:56px;height:56px;border-radius:50%;border:none;background:{{ cameraBg }};display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="12" height="10" rx="2.5" stroke="{{ cameraColor }}" stroke-width="1.8"/><path d="M15 10l6-3v10l-6-3" stroke="{{ cameraColor }}" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </button>
+        <button onClick="{{ endCall }}" style="width:68px;height:68px;border-radius:50%;border:none;background:#e14b3f;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 14px 28px -8px rgba(225,75,63,0.5);padding:0">
+          <svg width="24" height="24" viewBox="0 0 24 24" style="display:block;transform:rotate(135deg)">
+            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" fill="#fff"/>
+          </svg>
+        </button>
+        <button onClick="{{ toggleSpeaker }}" style="width:56px;height:56px;border-radius:50%;border:none;background:{{ speakerBg }};display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 9v6h4l5 4V5L8 9H4z" stroke="{{ speakerColor }}" stroke-width="1.8" stroke-linejoin="round"/><path d="M17 9a4 4 0 010 6" stroke="{{ speakerColor }}" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { muted: false, speaker: false, camera: true, seconds: 4, showMenu: false, showError: !navigator.onLine };
+  componentDidMount() {
+    this._t = setInterval(() => { if (!this.state.showError) this.setState(s => ({ seconds: s.seconds + 1 })); }, 1000);
+    this._offline = () => this.setState({ showError: true });
+    window.addEventListener('offline', this._offline);
+  }
+  componentWillUnmount() {
+    clearInterval(this._t);
+    window.removeEventListener('offline', this._offline);
+  }
+  renderVals() {
+    const m = Math.floor(this.state.seconds / 60);
+    const s = this.state.seconds % 60;
+    return {
+      timerText: `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+      cameraOn: this.state.camera,
+      cameraOff: !this.state.camera,
+      showMenu: this.state.showMenu,
+      showError: this.state.showError,
+      onReconnect: () => this.setState({ showError: false }),
+      muteBg: this.state.muted ? '#fff' : 'rgba(255,255,255,0.15)',
+      muteColor: this.state.muted ? '#0f3f3a' : '#fff',
+      cameraBg: this.state.camera ? 'rgba(255,255,255,0.15)' : '#fff',
+      cameraColor: this.state.camera ? '#fff' : '#0f3f3a',
+      speakerBg: this.state.speaker ? '#fff' : 'rgba(255,255,255,0.15)',
+      speakerColor: this.state.speaker ? '#0f3f3a' : '#fff',
+      toggleMute: () => this.setState(s => ({ muted: !s.muted })),
+      toggleCamera: () => this.setState(s => ({ camera: !s.camera })),
+      toggleSpeaker: () => this.setState(s => ({ speaker: !s.speaker })),
+      toggleMenu: () => this.setState(s => ({ showMenu: !s.showMenu })),
+      endCall: () => { window.location.href = './SmartQoldau - Оценка.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "audit": "Smart Josparlau full documentation/code audit",
+  "date": "2026-09-07",
+  "executor": "Кодекс Астра 6",
+  "plane_issue": 770,
+  "repository_head": "f28e9e54978c1c855740d4141020df5320d4e879",
+  "vault": {
+    "files_at_inventory_snapshot": 432,
+    "text_documents": 425,
+    "markdown": 401,
+    "active_layer_documents": 116,
+    "existing_archive_documents": 309,
+    "semantic_wikilinks": 1377,
+    "resolved_wikilinks": 1229,
+    "unresolved_wikilinks": 148,
+    "unresolved_active": 3
+  },
+  "plane": {
+    "issues": 959,
+    "Done": 318,
+    "Review": 548,
+    "On test": 42,
+    "In Progress": 2,
+    "Backlog": 1,
+    "Предложено Claude": 30,
+    "Cancelled": 18,
+    "review_plus_on_test": 590,
+    "review_plus_on_test_percent": 61.5,
+    "note": "Initial inventory contained 943 issues. Final snapshot includes 13 findings created by this audit, issues from concurrent sessions, and concurrent state transitions."
+  },
+  "frontend": {
+    "routes": 46,
+    "tsx_files": 145,
+    "ts_files": 154,
+    "e2e_spec_files": 114,
+    "smoke_explicit_specs": 112,
+    "button_occurrences": 463,
+    "mock_domains": 14,
+    "mock_handlers": 140,
+    "any_token_occurrences": 60
+  },
+  "backend": {
+    "app_or_support_packages": 14,
+    "router_registrations_discovered": 91,
+    "router_registrations_reachable": 89,
+    "test_files": 334,
+    "static_test_functions": 3629,
+    "migrations": 132,
+    "operations_migrations": 107,
+    "celery_tasks": 15,
+    "empty_celery_task_stubs": 5
+  },
+  "canon_traceability": {
+    "formal_requirement_codes": 120,
+    "mentioned_in_code_or_tests": 110,
+    "not_mentioned": ["[БЛН-02]", "[БЛН-03]", "[ВОЗ-09]", "[РЕЕ-05]", "[РЕК-06]", "[РЕК-10]", "[СБС-33]", "[СТА-01]", "[СТА-02]", "[СТА-03]"],
+    "note": "Absence of an identifier is a traceability gap, not proof that behavior is absent."
+  },
+  "classification": {
+    "repository_code": "tested_by_static_review_and_limited_safe_commands",
+    "database_and_live_role_matrix": "blocked_by_read_only_scope_and_shared_environment",
+    "load_performance": "not_tested",
+    "vault_documents": "classified",
+    "plane_issues": "classified_by_state"
+  }
+}

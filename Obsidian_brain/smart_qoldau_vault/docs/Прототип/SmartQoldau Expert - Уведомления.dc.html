@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 40px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div onClick="{{ goBack }}" style="width:36px;height:36px;border-radius:50%;background:#f2f2f0;display:flex;align-items:center;justify-content:center;cursor:pointer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#0f3f3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:21px;font-weight:800;color:#0f3f3a">Уведомления</div>
+        </div>
+        <div onClick="{{ readAll }}" style="font-size:12.5px;font-weight:700;color:#0f766e;cursor:pointer">Прочитать все</div>
+      </div>
+
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+        <div style="font-size:12px;font-weight:700;color:#8fa6a1;letter-spacing:0.3px;margin-bottom:8px;margin-top:6px">{{ g.label }}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
+          <sc-for list="{{ g.items }}" as="n" hint-placeholder-count="3">
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:13px;border-radius:16px;background:{{ n.bg }}">
+              <div style="width:38px;height:38px;border-radius:12px;background:{{ n.iconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ n.title }}</div>
+                <div style="font-size:12px;font-weight:500;color:#8fa6a1;margin-top:2px;line-height:1.4">{{ n.text }}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+                <div style="font-size:10.5px;font-weight:600;color:#a9bdb9">{{ n.time }}</div>
+                <sc-if value="{{ n.unread }}" hint-placeholder-val="{{ false }}"><div style="width:7px;height:7px;border-radius:50%;background:#0f766e"></div></sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = {
+    items: [
+      { group: 'Сегодня', unread: true, title: 'Новая заявка', text: 'Клиент ожидает подключения — тема «Тревожность»', time: '10:42', iconBg: '#e3f3ee', iconColor: '#159a7c', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z' },
+      { group: 'Сегодня', unread: true, title: 'Напоминание о консультации', text: 'Видеоконсультация начнётся через 30 минут', time: '18:30', iconBg: '#e6f0fb', iconColor: '#3b82c4', icon: 'M8 2v4M16 2v4M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z' },
+      { group: 'Сегодня', unread: false, title: 'Сообщение от клиента', text: 'Вам написал клиент из чата «Отношения и семья»', time: '13:05', iconBg: '#f1eafb', iconColor: '#8b5fc9', icon: 'M4 5h16v11H8l-4 4V5z' },
+      { group: 'Вчера', unread: false, title: 'Выплата', text: 'Выплата 48 500 ₸ отправлена на карту **** 4521', time: '16:20', iconBg: '#fdece3', iconColor: '#e08a4d', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20' },
+      { group: 'Вчера', unread: false, title: 'Изменение расписания', text: 'Клиент перенёс консультацию на другое время', time: '11:47', iconBg: '#f2f2f0', iconColor: '#0f3f3a', icon: 'M8 2v4M16 2v4M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z' },
+    ],
+  };
+  renderVals() {
+    const items = this.state.items.map(n => ({ ...n, bg: n.unread ? '#f2fbf8' : '#f8faf9' }));
+    const groups = ['Сегодня', 'Вчера'].map(label => ({ label, items: items.filter(n => n.group === label) })).filter(g => g.items.length > 0);
+    return {
+      groups,
+      goBack: () => { window.history.back(); },
+      readAll: () => this.setState({ items: this.state.items.map(n => ({ ...n, unread: false })) }),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

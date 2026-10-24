@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none}</style>
+  <script src="./image-slot.js"></script>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <button onClick="{{ goBack }}" style="position:absolute;top:64px;left:20px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,0.85);box-shadow:0 4px 12px -4px rgba(15,63,58,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:10">
+      <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button onClick="{{ toggleFavorite }}" style="position:absolute;top:64px;right:20px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,0.85);box-shadow:0 4px 12px -4px rgba(15,63,58,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:10">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="{{ favFill }}"><path d="M12 20s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding-bottom:118px;box-sizing:border-box">
+      <div style="width:100%;height:210px;position:relative">
+        <image-slot id="psych-cover" shape="rect" placeholder="Обложка психолога" src="assets/psych-cover-flowers.jpg"></image-slot>
+      </div>
+
+      <div style="padding:0 22px">
+        <div style="display:flex;align-items:center;gap:12px;margin-top:16px;margin-bottom:16px">
+          <div style="position:relative;flex-shrink:0">
+            <img src="assets/psychologist-aigerim.jpg" alt="Динара С." style="width:68px;height:68px;border-radius:50%;object-fit:cover;display:block;box-shadow:0 4px 12px -4px rgba(15,63,58,0.25)">
+            <span style="position:absolute;top:-1px;right:-1px;width:14px;height:14px;border-radius:50%;background:#2ecc71;border:2.5px solid #fff"></span>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
+              <div style="font-size:19px;font-weight:800;color:#0f3f3a;white-space:nowrap">Динара С.</div>
+              <span style="font-size:11.5px;font-weight:700;color:#0f766e;white-space:nowrap">RU • KZ</span>
+              <div style="display:flex;align-items:center;gap:5px;margin-left:2px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H8l-4 4V5z" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 5a3 3 0 016 0v6a3 3 0 01-6 0V5z" stroke="#0f766e" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="13" height="12" rx="2.5" stroke="#0f766e" stroke-width="1.8"/><path d="M16 10l5-3v10l-5-3" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <div style="font-size:12.5px;font-weight:600;color:#6b8580;white-space:nowrap">Клинический психолог</div>
+              <span style="width:3px;height:3px;border-radius:50%;background:#c9d6d2;flex-shrink:0"></span>
+              <div style="font-size:12px;font-weight:700;color:#2ecc71;white-space:nowrap">Свободен сейчас</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
+              <sc-for list="{{ ratingStars }}" as="i" hint-placeholder-count="5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#f5a623"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17l-6.2 3.5 1.6-6.8-5.2-4.7 6.9-.7L12 2z"/></svg>
+              </sc-for>
+              <span style="font-size:13px;font-weight:700;color:#0f3f3a;margin-left:2px">4.9</span>
+              <span style="font-size:12px;font-weight:500;color:#8fa6a1">(312 отзывов)</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <div style="padding:7px 13px;border-radius:14px;background:rgba(15,118,110,0.07);color:#0f766e;font-size:12px;font-weight:600">Тревога и стресс</div>
+          <div style="padding:7px 13px;border-radius:14px;background:rgba(15,118,110,0.07);color:#0f766e;font-size:12px;font-weight:600">Панические атаки</div>
+                  </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:#f7fbfa;margin-bottom:22px">
+          <div style="width:36px;height:36px;border-radius:50%;background:#fff;box-shadow:0 2px 8px -2px rgba(15,63,58,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f766e"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:12.5px;font-weight:700;color:#0f3f3a">Аудио-приветствие</div>
+            <div style="font-size:11px;font-weight:500;color:#8fa6a1">Познакомьтесь с Динарой за 15 секунд</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 4px;border-top:1px solid #edf2f0;border-bottom:1px solid #edf2f0;margin-bottom:22px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1">
+            <div style="font-size:15px;font-weight:800;color:#0f3f3a">6 лет</div>
+            <div style="font-size:10.5px;font-weight:600;color:#8fa6a1">Опыт</div>
+          </div>
+          <div style="width:1px;height:28px;background:#edf2f0"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1">
+            <div style="font-size:15px;font-weight:800;color:#0f3f3a">1200+</div>
+            <div style="font-size:10.5px;font-weight:600;color:#8fa6a1">Консультаций</div>
+          </div>
+          <div style="width:1px;height:28px;background:#edf2f0"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1">
+            <div style="font-size:15px;font-weight:800;color:#0f3f3a">1–2 мин</div>
+            <div style="font-size:10.5px;font-weight:600;color:#8fa6a1">Ответ</div>
+          </div>
+          <div style="width:1px;height:28px;background:#edf2f0"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1">
+            <div style="font-size:15px;font-weight:800;color:#0f3f3a">5 000 ₸</div>
+            <div style="font-size:10.5px;font-weight:600;color:#8fa6a1">Консультация</div>
+          </div>
+        </div>
+
+        <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:10px">О психологе</div>
+        <div style="font-size:13.5px;font-weight:500;color:#4a5c58;line-height:1.6;margin-bottom:24px">Работаю с тревожными и паническими состояниями, эмоциональным выгоранием и стрессом. Использую когнитивно-поведенческую терапию. Считаю, что каждому человеку важно быть услышанным без осуждения.</div>
+
+        <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:12px">Образование</div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:26px">
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="width:34px;height:34px;border-radius:10px;background:#f7fbfa;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 5-9 5-9-5 9-5z" stroke="#0f766e" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 10.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-5.5" stroke="#0f766e" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">КазНУ им. аль-Фараби</div>
+              <div style="font-size:12px;font-weight:500;color:#8fa6a1">Клиническая психология, 2018</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="width:34px;height:34px;border-radius:10px;background:#f7fbfa;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 12l2.5 2.5L16 9" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-3z" stroke="#0f766e" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">Сертификат КПТ</div>
+              <div style="font-size:12px;font-weight:500;color:#8fa6a1">Международная ассоциация КПТ, 2021</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:15px;font-weight:800;color:#0f3f3a">Отзывы</div>
+          <div onClick="{{ onAllReviews }}" style="font-size:12.5px;font-weight:700;color:#0f766e;cursor:pointer">Показать все</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="border:1px solid #edf2f0;border-radius:16px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">Пользователь 4821</div>
+              <div style="display:flex;gap:2px">
+                <sc-for list="{{ ratingStars }}" as="i" hint-placeholder-count="5">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="#f5a623"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17l-6.2 3.5 1.6-6.8-5.2-4.7 6.9-.7L12 2z"/></svg>
+                </sc-for>
+              </div>
+            </div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580;line-height:1.5">Очень внимательная и помогла разобраться в ситуации спокойно, без осуждения</div>
+          </div>
+          <div style="border:1px solid #edf2f0;border-radius:16px;padding:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">Пользователь 2093</div>
+              <div style="display:flex;gap:2px">
+                <sc-for list="{{ ratingStars }}" as="i" hint-placeholder-count="5">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="#f5a623"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17l-6.2 3.5 1.6-6.8-5.2-4.7 6.9-.7L12 2z"/></svg>
+                </sc-for>
+              </div>
+            </div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580;line-height:1.5">Подключились быстро, разговор помог снять тревогу перед важным событием</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #edf2f0;padding:14px 22px 24px;box-sizing:border-box">
+      <button onClick="{{ onStart }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4)">Начать консультацию</button>
+    </div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { favorite: false };
+  renderVals() {
+    return {
+      ratingStars: [1, 2, 3, 4, 5],
+      favFill: this.state.favorite ? '#0f766e' : 'none',
+      toggleFavorite: () => this.setState(s => ({ favorite: !s.favorite })),
+      goBack: () => { window.history.back(); },
+      onStart: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html'; },
+      onAllReviews: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

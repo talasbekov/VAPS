@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#f4f7f6}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:flex-start;justify-content:flex-start;background:#f4f7f6;padding:32px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow-x:auto">
+  <div style="position:relative;width:1440px;height:1020px;flex-shrink:0">
+
+    <svg width="1440" height="1020" style="position:absolute;inset:0;pointer-events:none">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9fb2ae"/></marker>
+      </defs>
+      <!-- User -> Session -->
+      <path d="M300,220 C300,300 400,320 470,380" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- Specialist -> Session -->
+      <path d="M830,300 C830,340 720,350 660,380" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- Specialist -> Tariff -->
+      <path d="M1000,140 C1030,140 1040,140 1060,140" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- Session -> Payment -->
+      <path d="M660,470 C700,470 720,470 760,470" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- Session -> Complaint -->
+      <path d="M470,470 C420,470 400,470 360,470" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- Complaint -> Specialist -->
+      <path d="M230,420 C230,300 500,180 700,220" stroke="#c9a8a4" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+      <!-- User -> B2B -->
+      <path d="M180,280 C120,400 100,560 180,700" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- B2G -> Specialist (students) -->
+      <path d="M900,700 C950,500 950,300 950,300" stroke="#9fb2ae" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+      <!-- User -> Notification -->
+      <path d="M330,280 C700,500 1000,600 1120,700" stroke="#c4b6df" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+      <!-- Specialist -> Notification -->
+      <path d="M900,320 C1000,450 1100,550 1170,700" stroke="#c4b6df" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+
+      <text x="360" y="310" font-size="11" fill="#6b8580" font-family="Inter">1 : N</text>
+      <text x="740" y="345" font-size="11" fill="#6b8580" font-family="Inter">1 : N</text>
+      <text x="1015" y="130" font-size="11" fill="#6b8580" font-family="Inter">1 : 1</text>
+      <text x="700" y="460" font-size="11" fill="#6b8580" font-family="Inter">1 : 1</text>
+      <text x="400" y="460" font-size="11" fill="#6b8580" font-family="Inter">0 : 1</text>
+      <text x="470" y="200" font-size="11" fill="#a3807b" font-family="Inter">N : 1</text>
+      <text x="110" y="480" font-size="11" fill="#6b8580" font-family="Inter">N : 1</text>
+      <text x="960" y="480" font-size="11" fill="#6b8580" font-family="Inter">1 : N</text>
+      <text x="700" y="520" font-size="11" fill="#8f7ec9" font-family="Inter">N : 1</text>
+      <text x="1030" y="520" font-size="11" fill="#8f7ec9" font-family="Inter">N : 1</text>
+    </svg>
+
+    <!-- USER -->
+    <div style="position:absolute;left:40px;top:40px;width:280px;border-radius:16px;background:#fff;border:1.5px solid #0f766e;box-shadow:0 8px 20px -12px rgba(15,63,58,0.25)">
+      <div style="background:#0f766e;color:#fff;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">USER (Клиент)</div>
+      <div style="padding:12px 14px;font-size:11.5px;color:#3f5450;line-height:1.7">
+        id (PK)<br>anon_id — #XXXX<br>name, email, phone<br>city — enum<br>is_anonymous — bool<br>is_premium — bool<br>is_corporate — bool<br>b2b_contract_code → FK<br>created_at
+      </div>
+    </div>
+
+    <!-- SPECIALIST -->
+    <div style="position:absolute;left:660px;top:40px;width:320px;border-radius:16px;background:#fff;border:1.5px solid #0f3f3a;box-shadow:0 8px 20px -12px rgba(15,63,58,0.25)">
+      <div style="background:#0f3f3a;color:#fff;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">SPECIALIST</div>
+      <div style="padding:12px 14px;font-size:11.5px;color:#3f5450;line-height:1.7">
+        id (PK)<br>name, role, city, languages<br>rating, experience, bio<br>price (15 000–35 000 ₸)<br>formats — enum[]<br>is_intern — bool<br>university (if intern)<br>b2g_contract_code → FK<br>verification_status — enum<br>tariff_id → FK
+      </div>
+    </div>
+
+    <!-- TARIFF -->
+    <div style="position:absolute;left:1060px;top:60px;width:340px;border-radius:16px;background:#fff;border:1.5px solid #d9ede7">
+      <div style="background:#e3f3ee;color:#0f3f3a;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">TARIFF (Пакет специалиста)</div>
+      <div style="padding:12px 14px;font-size:11.5px;color:#3f5450;line-height:1.7">
+        tier — enum: start / basic / pro / top<br>price_per_month — 0/0/12000/20000<br>commission — 0/15/13/10–11 %<br>trial_days_left (if start)<br>visibility — enum
+      </div>
+    </div>
+
+    <!-- SESSION -->
+    <div style="position:absolute;left:470px;top:380px;width:200px;border-radius:16px;background:#fff;border:1.5px solid #159a7c;box-shadow:0 8px 20px -12px rgba(15,63,58,0.25)">
+      <div style="background:#159a7c;color:#fff;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">SESSION</div>
+      <div style="padding:12px 14px;font-size:11px;color:#3f5450;line-height:1.65">
+        id (PK)<br>client_id → FK<br>specialist_id → FK<br>topic — enum<br>format — enum<br>scheduled_at<br>price_fixed (снимок)<br>status — enum (см. ниже)<br>rating<br>can_complain_until
+      </div>
+      <div style="padding:0 14px 12px;font-size:10px;color:#8fa6a1;line-height:1.5">status: upcoming / active / completed / cancelled_free / cancelled_partial / noshow_client / noshow_specialist / tech_issue</div>
+    </div>
+
+    <!-- PAYMENT/PAYOUT -->
+    <div style="position:absolute;left:760px;top:390px;width:280px;border-radius:16px;background:#fff;border:1.5px solid #3b82c4">
+      <div style="background:#e6f0fb;color:#0f3f3a;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">PAYMENT / PAYOUT</div>
+      <div style="padding:12px 14px;font-size:11.5px;color:#3f5450;line-height:1.7">
+        session_id → FK<br>method — enum: card / kaspi / apple_pay / google_pay / corporate<br>amount, commission, net<br>payout_status — enum: processing/paid/rejected<br>available_balance
+      </div>
+    </div>
+
+    <!-- COMPLAINT -->
+    <div style="position:absolute;left:100px;top:390px;width:260px;border-radius:16px;background:#fff;border:1.5px solid #c0435f">
+      <div style="background:#fbe7ec;color:#7a2f3d;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">COMPLAINT</div>
+      <div style="padding:12px 14px;font-size:11px;color:#3f5450;line-height:1.65">
+        session_id → FK<br>type — enum<br>reason — enum<br>description, attachment?<br>status — new/in_progress/closed<br>specialist_response<br>resolution — enum<br>admin_comment
+      </div>
+    </div>
+
+    <!-- B2B CONTRACT -->
+    <div style="position:absolute;left:60px;top:700px;width:300px;border-radius:16px;background:#fff;border:1.5px solid #0f3f3a">
+      <div style="background:#0f3f3a;color:#fff;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">B2B CONTRACT</div>
+      <div style="padding:12px 14px;font-size:11px;color:#3f5450;line-height:1.6">
+        code — SQ-XXXX-YYYY<br>company_name, contact<br>start/end_date<br>session_pool_total/used<br>discount_percent<br>status — active/expiring/ended<br>employees[]: email, activated_at
+      </div>
+    </div>
+
+    <!-- B2G CONTRACT -->
+    <div style="position:absolute;left:720px;top:700px;width:300px;border-radius:16px;background:#fff;border:1.5px solid #159a7c">
+      <div style="background:#e3f3ee;color:#0f3f3a;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">B2G CONTRACT</div>
+      <div style="padding:12px 14px;font-size:11px;color:#3f5450;line-height:1.6">
+        code — SG-XXXX-YYYY<br>org_name (вуз), contact, position<br>contract_number?<br>start/end_date<br>students_count, work_model<br>status<br>students[]: name, status, supervisor
+      </div>
+    </div>
+
+    <!-- NOTIFICATION -->
+    <div style="position:absolute;left:1080px;top:700px;width:300px;border-radius:16px;background:#fff;border:1.5px solid #8b5fc9">
+      <div style="background:#f1eafb;color:#3f2f5c;font-size:13px;font-weight:800;padding:10px 14px;border-radius:14px 14px 0 0">NOTIFICATION</div>
+      <div style="padding:12px 14px;font-size:11px;color:#3f5450;line-height:1.6">
+        recipient_type — enum: client/specialist<br>recipient_id → FK (polymorphic)<br>event — enum (no_show, complaint_result, trial_expiring, reminder, ...)<br>title, body, channel — push<br>read — bool, created_at
+      </div>
+    </div>
+
+    <div style="position:absolute;left:40px;top:960px;font-size:11px;color:#8fa6a1;font-family:'Inter'">Сплошная линия — прямая связь (FK) · Пунктир — связь через админ-логику / получателя</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

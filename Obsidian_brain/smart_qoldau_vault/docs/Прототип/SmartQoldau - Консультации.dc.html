@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+
+      <div style="margin-bottom:20px">
+        <div style="font-size:21px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Консультации</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Ваши записи и история общения со специалистами</div>
+      </div>
+
+      <button onClick="{{ goNewConsultation }}" style="width:100%;border:none;border-radius:20px;background:#0f766e;color:#fff;font-family:inherit;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 14px 28px -10px rgba(15,118,110,0.4);margin-bottom:22px;box-sizing:border-box">
+        <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div style="text-align:left">
+          <div style="font-size:14.5px;font-weight:800">Новая консультация</div>
+          <div style="font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.75)">Выберите тему и формат общения</div>
+        </div>
+      </button>
+
+      <div style="display:flex;gap:6px;background:#f2f2f0;border-radius:14px;padding:4px;margin-bottom:20px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+          <div onClick="{{ t.onClick }}" style="flex:1;text-align:center;padding:9px 4px;border-radius:11px;background:{{ t.selected ? '#fff' : 'transparent' }};box-shadow:{{ t.selected ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }};font-size:12.5px;font-weight:700;color:{{ t.selected ? '#0f3f3a' : '#8fa6a1' }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ showUpcomingTab }}" hint-placeholder-val="{{ true }}">
+      <sc-if value="{{ hasUpcoming }}" hint-placeholder-val="{{ true }}">
+        <div style="border-radius:20px;border:1.5px solid #e3f3ee;background:#f2fbf8;padding:16px;margin-bottom:24px;box-sizing:border-box">
+          <sc-if value="{{ upcoming.unavailable }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:#fdedec;margin-bottom:12px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 16v.1" stroke="#c0392b" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="#c0392b" stroke-width="1.6"/></svg>
+              <div style="font-size:11.5px;font-weight:700;color:#c0392b">Психолог временно недоступен — рекомендуем перенести</div>
+            </div>
+          </sc-if>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <div style="width:46px;height:46px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px;font-weight:800;color:#159a7c">{{ upcoming.initial }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ upcoming.name }}</div>
+              <div style="font-size:11.5px;font-weight:500;color:#6b8580">{{ upcoming.role }}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:12px;background:#fff">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="{{ upcoming.formatIcon }}" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div style="font-size:11px;font-weight:700;color:#0f766e">{{ upcoming.formatLabel }}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 21a9 9 0 100-18 9 9 0 000 18z M12 7v5l3.5 2" stroke="#6b8580" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:12.5px;font-weight:600;color:#6b8580">{{ upcoming.datetime }}</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onClick="{{ upcoming.onJoin }}" style="flex:1;height:44px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Присоединиться</button>
+            <button onClick="{{ upcoming.onReschedule }}" style="height:44px;padding:0 14px;border:1.5px solid #e3f3ee;border-radius:14px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Перенести</button>
+            <button onClick="{{ upcoming.onCancel }}" style="height:44px;padding:0 14px;border:1.5px solid #f5d9df;border-radius:14px;background:#fff;color:#c0435f;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Отменить</button>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noUpcoming }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:20px;border:1.5px dashed #e3f3ee;padding:26px 20px;text-align:center;margin-bottom:24px">
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a;margin-bottom:4px">Нет предстоящих консультаций</div>
+          <div style="font-size:12px;font-weight:500;color:#8fa6a1;line-height:1.5">Запишитесь, когда почувствуете, что нужна поддержка</div>
+        </div>
+      </sc-if>
+      </sc-if>
+
+      <sc-if value="{{ showActiveTab }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:20px;border:1.5px dashed #e3f3ee;padding:26px 20px;text-align:center;margin-bottom:24px">
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a;margin-bottom:4px">Нет активных консультаций</div>
+          <div style="font-size:12px;font-weight:500;color:#8fa6a1;line-height:1.5">Здесь появится консультация, когда она начнётся</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showCompletedTab }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ hasHistory }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="4">
+            <div onClick="{{ h.onClick }}" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#f8faf9;cursor:pointer">
+              <div style="width:44px;height:44px;border-radius:50%;background:{{ h.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:800;color:{{ h.color }}">{{ h.initial }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ h.name }}</div>
+                <div style="font-size:11.5px;font-weight:500;color:#8fa6a1">{{ h.topic }} · {{ h.date }}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:2px;flex-shrink:0">
+                <sc-for list="{{ h.stars }}" as="st" hint-placeholder-count="5">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="{{ st.fill }}"><path d="M12 2l3 6.5 7 1-5 5 1.2 7-6.2-3.5-6.2 3.5 1.2-7-5-5 7-1z" stroke="{{ st.fill }}" stroke-width="1"/></svg>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noHistory }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:30px 20px;color:#8fa6a1;font-size:13px;font-weight:500">Пока нет завершённых консультаций</div>
+      </sc-if>
+      </sc-if>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ showCancelModal }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+        <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+          <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:2px">Отменить консультацию?</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Время освободится для другого пользователя</div>
+          <button onClick="{{ onConfirmCancel }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#fbe7ec;color:#c0435f;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px">Да, отменить</button>
+          <button onClick="{{ onKeepUpcoming }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer">Оставить запись</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showRescheduleSheet }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeReschedule }}" style="position:absolute;inset:0;background:rgba(15,40,37,0.45);z-index:50"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:26px 26px 0 0;padding:22px 22px 32px;box-sizing:border-box;z-index:51;box-shadow:0 -20px 40px -16px rgba(0,0,0,0.2)">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Выберите новое время</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ rescheduleSlots }}" as="slot" hint-placeholder-count="3">
+            <div onClick="{{ slot.onClick }}" style="padding:14px 16px;border-radius:14px;background:#f8faf9;font-size:14px;font-weight:700;color:#0f3f3a;cursor:pointer">{{ slot.label }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showToast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:20px;right:20px;bottom:108px;background:#0f3f3a;color:#fff;border-radius:14px;padding:13px 16px;font-size:12.5px;font-weight:600;text-align:center;z-index:55">{{ toastText }}</div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+</helmet>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { tab: 'upcoming', hasUpcoming: true, unavailable: new URLSearchParams(window.location.search).get('demo') === 'unavailable', datetime: 'Сегодня, 18:00', showCancelModal: false, showRescheduleSheet: false, showToast: false, toastText: '' };
+  toast(text) {
+    this.setState({ showToast: true, toastText: text });
+    setTimeout(() => this.setState({ showToast: false }), 2200);
+  }
+  renderVals() {
+    const stars = (n) => Array.from({ length: 5 }, (_, i) => ({ fill: i < n ? '#f2b134' : 'none' }));
+    const openHistory = () => {};
+    const tabDefs = [
+      { id: 'upcoming', label: 'Предстоящие' },
+      { id: 'active', label: 'Активные' },
+      { id: 'completed', label: 'Завершённые' },
+    ].map(t => ({ ...t, selected: this.state.tab === t.id, onClick: () => this.setState({ tab: t.id }) }));
+    return {
+      tabs: tabDefs,
+      showUpcomingTab: this.state.tab === 'upcoming',
+      showActiveTab: this.state.tab === 'active',
+      showCompletedTab: this.state.tab === 'completed',
+      goNewConsultation: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html'; },
+      hasUpcoming: this.state.hasUpcoming,
+      noUpcoming: !this.state.hasUpcoming,
+      showCancelModal: this.state.showCancelModal,
+      showRescheduleSheet: this.state.showRescheduleSheet,
+      showToast: this.state.showToast,
+      toastText: this.state.toastText,
+      onConfirmCancel: () => { this.setState({ showCancelModal: false, hasUpcoming: false }); this.toast('Консультация отменена'); },
+      onKeepUpcoming: () => this.setState({ showCancelModal: false }),
+      closeReschedule: () => this.setState({ showRescheduleSheet: false }),
+      rescheduleSlots: ['Сегодня, 20:00', 'Завтра, 10:00', 'Завтра, 18:00'].map(label => ({
+        label,
+        onClick: () => { this.setState({ showRescheduleSheet: false, datetime: label, unavailable: false }); this.toast('Консультация перенесена на ' + label); },
+      })),
+      upcoming: {
+        initial: 'А',
+        name: 'Айгуль Сатпаева',
+        role: 'Психолог, КПТ-терапия',
+        formatIcon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z',
+        formatLabel: 'Видео',
+        datetime: this.state.datetime,
+        unavailable: this.state.unavailable,
+        onJoin: () => { window.location.href = './SmartQoldau - Видеозвонок.dc.html'; },
+        onCancel: () => this.setState({ showCancelModal: true }),
+        onReschedule: () => this.setState({ showRescheduleSheet: true }),
+      },
+      hasHistory: true,
+      noHistory: false,
+      history: [
+        { initial: 'Д', name: 'Дана Ержанова', topic: 'Тревога и стресс', date: '2 авг', bg: '#e6f0fb', color: '#3b82c4', stars: stars(5), onClick: openHistory },
+        { initial: 'М', name: 'Марат Абенов', topic: 'Выгорание', date: '27 июл', bg: '#f1eafb', color: '#8b5fc9', stars: stars(4), onClick: openHistory },
+        { initial: 'А', name: 'Айгуль Сатпаева', topic: 'Панические атаки', date: '19 июл', bg: '#e3f3ee', color: '#159a7c', stars: stars(5), onClick: openHistory },
+        { initial: 'С', name: 'Салтанат Бекова', topic: 'Отношения и семья', date: '8 июл', bg: '#fdece3', color: '#e08a4d', stars: stars(4), onClick: openHistory },
+      ],
+      navItems: [
+        { label: 'Главная', color: '#a9bdb9', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', onClick: () => { window.location.href = './SmartQoldau - Главная.dc.html'; } },
+        { label: 'Консультации', color: '#0f766e', icon: 'M4 5h16v11H8l-4 4V5z', onClick: () => {} },
+        { label: 'Избранное', color: '#a9bdb9', icon: 'M12 21s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z', onClick: () => { window.location.href = './SmartQoldau - Избранное.dc.html'; } },
+        { label: 'Материалы', color: '#a9bdb9', icon: 'M12 21c0-6-4-9-8-9 0 6 4 9 8 9z M12 21c0-9 4-14 8-15 1 8-3 14-8 15z', onClick: () => { window.location.href = './SmartQoldau - Материалы.dc.html'; } },
+        { label: 'Профиль', color: '#a9bdb9', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', onClick: () => { window.location.href = './SmartQoldau - Профиль.dc.html'; } },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

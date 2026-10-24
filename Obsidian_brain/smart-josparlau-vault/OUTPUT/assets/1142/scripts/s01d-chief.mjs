@@ -1,0 +1,32 @@
+import fs from 'node:fs'
+import { open, shot, sleep, api } from './walk.mjs'
+const run = JSON.parse(fs.readFileSync('run.json', 'utf8'))
+const { page, close } = await open('u_musakhan')
+await page.goto(`http://localhost:3106/security-ops/events?search=${encodeURIComponent('Проходка №1142')}`)
+await page.waitForLoadState('networkidle')
+const row = page.getByRole('row').filter({ hasText: run.code })
+await row.getByRole('button', { name: `Заменить старшего наряда ${run.code}` }).click()
+const dialog = page.getByRole('dialog')
+await dialog.getByRole('textbox', { name: 'Поиск сотрудника' }).fill('Оралбаев Арман')
+await sleep(1000)
+const cands = dialog.getByRole('button', { name: /Оралбаев/ })
+const n = await cands.count(); console.log('кандидатов по «Оралбаев Арман»:', n)
+for (let i = 0; i < Math.min(n, 6); i++) console.log('  ', (await cands.nth(i).innerText()).replace(/\n/g, ' · '))
+await shot(page, 'musakhan-replace-chief-search')
+if (n === 0) { await dialog.getByRole('textbox', { name: 'Поиск сотрудника' }).fill('Оралбаев'); await sleep(1000); console.log('по фамилии:', await cands.count()) }
+// выбираем и проверяем по API, кто выбран
+await cands.first().click()
+const resp = page.waitForResponse(r => r.url().includes(`/security-events/${run.eventId}/chief/`) && r.request().method() === 'POST')
+await dialog.getByRole('button', { name: 'Назначить', exact: true }).click()
+const r = await resp; console.log('POST chief', r.status(), (await r.text()).slice(0, 160))
+await sleep(600)
+let ev = await api('u_musakhan', 'GET', `/api/ops/security-events/${run.eventId}/`)
+console.log('chief теперь:', ev.body.chiefEmployeeId, ev.body.chiefName)
+// карточка ОМ у создателя: есть ли вход в правку бюллетеня
+await page.goto(`http://localhost:3106/security-ops/events/${run.eventId}/`)
+await page.waitForLoadState('networkidle'); await sleep(800)
+await shot(page, 'musakhan-event-card')
+const btns = await page.getByRole('main').getByRole('button').allInnerTexts()
+console.log('кнопки карточки:', btns.map(s => s.replace(/\n/g,' ').trim()).filter(Boolean).join(' | ').slice(0, 600))
+console.log('есть «Редактировать бюллетень»:', await page.getByRole('button', { name: /Редактировать бюллетень/ }).count())
+await close()

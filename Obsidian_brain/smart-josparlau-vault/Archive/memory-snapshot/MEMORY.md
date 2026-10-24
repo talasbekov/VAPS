@@ -1,0 +1,109 @@
+- [Solo developer on VAPS](user_solo_developer.md) — sole dev on PS+VX; modular monolith, defer extra infra
+- [Challenges premises](feedback_challenge_premises.md) — «зачем нам X» от Bratan = сигнал перепроверить рамку, не отбиваться
+- [ВПС выведен — только локально](project_two_machines.md) — ssh на ВПС не тратить; ямы двух машин внутри
+- [docs/ и _bmad/ local-only](project_docs_local_only_remote_blindspot.md) — untracked → клоны несут устаревшее; свой файл только через git add -f
+- [BMAD worktree-дивергенция](feedback_bmad_worktree_divergence.md) — main НЕ актуальная база; проверяй ветки ДО кода
+- [UX-спайны + донор как визуальный эталон](project_vaps_ux_spines.md) — донор = card-based дашборд (spikes/Расход*.png), не только данные
+- [ruff format scoping](feedback_vaps_ruff_format_scoping.md) — format по файлу, не по папке; гейт = ruff check (E,F)
+- [DB-уровень для инвариантов](feedback_vaps_db_integrity_checks.md) — CheckConstraint для choice без дефолта и числовых floor
+- [Архитектурные гварды](feedback_vaps_arch_guards.md) — operations↛core.models, Admin=только справочники, audit-coverage
+- [BMAD стори-цикл](project_bmad_story_cycle_flow.md) — коммит после ревью, graphify отдельным chore, baseline-SHA в спеку
+- [Полный цикл без промежуточных вопросов](feedback_full_story_cycle_no_midway_questions.md) — спрашивать только на границе стори
+- [Безопасные правки стори-файлов](feedback_story_file_edit_safety.md) — чекбоксы точечными Edit/sed, не скриптами
+- [WS-тесты](project_vaps_ws_testing_no_daphne.md) — свой WsCommunicator; on_commit под django_db не выполняется → вакуум
+- [Нет factory_boy](reference_vaps_no_factory_boy.md) — тесты сеют напрямую (bulk_create), не тянуть factory_boy
+- [Дрейф чекбоксов dev-агента](project_dev_checkbox_drift.md) — [x] при неэскалированных отклонениях; сверять каждый с кодом
+- [Красная проба: бэкап до мутации](feedback_red_probe_backup.md) — git checkout после пробы стирает незакоммиченные правки
+- [Вакуумные фокус-ассерты](feedback_vaultx_vacuous_optional_chain_assert.md) — `activeElement?.closest()!==null` и «фокус не уходил»; красная проба обязательна
+- [Action item без триггера-гейта](project_action_item_trigger_gate.md) — 3 эпика подряд; чинит правка дефолта, не переформулировка
+- [Сверять с raise-сайтами, не словарём](feedback_vaps_verify_against_raise_sites.md) — error-codes.yaml несёт донор-фантомы
+- [Параллельная стори крадёт правку](feedback_parallel_story_commit_sweep.md) — общий конфиг уезжает в чужой коммит; сверяй HEAD до/после
+- [eslint no-unused-vars](feedback_vaps_eslint_unused_vars.md) — нет varsIgnorePattern: `_omit` красит гейт
+- [Где искать пробелы в тестах](project_qa_gap_heuristic_vaps.md) — цепочка не гоняется целиком, AC без теста, вакуумный снимок
+- [Дублирующие гарды → вакуумная проба](feedback_redundant_guards_vacuous_probe.md) — проба зелёная → ищи ВТОРОЙ гард
+- [Канон-строки: грепать e2e/](feedback_vaps_canon_text_pins_include_e2e.md) — Playwright вне гейта; сломанный ассерт остаётся зелёным
+- [Живой e2e зеленеет рефетчем](feedback_live_e2e_green_by_refetch.md) — WS ассертить принятыми кадрами, не счётчиком в UI
+- [Derived-close без reset = мёртвый замок](feedback_derived_close_needs_reset.md) — тестировать ПОВТОРНЫЙ вход
+- [notified_count ≠ created](feedback_notified_count_not_created.md) — ассертить новый pk, не счётчик
+- [Гвард даты требует минусовой зоны](feedback_vaps_date_guard_needs_negative_tz.md) — машины в +05 прячут UTC-полночь
+- [Метки-подстроки → вакуумный ассерт](feedback_vaps_label_substring_vacuous_assert.md) — статусные метки exact, не toContainText
+- [ARCH-SEC-030 сканирует докстринги](feedback_vaps_arch_sec_030_scans_docstrings.md) — литерал заголовка краснит гейт даже в прозе
+- [NULL-пробел conditional-CHECK](feedback_conditional_check_null_gap.md) — regex-ветка требует isnull=False; CHECK проходит на NULL
+- [Лок-ассерты по таблицам](feedback_lock_asserts_by_table.md) — any("FOR UPDATE") вакуумен; фильтровать по имени таблицы
+- [Персистентность update и ordering-пин](feedback_update_persistence_assert_from_db.md) — ассертить из БД; ordering пинить литерально
+- [Нативный порт /security-ops](project_native_port_security_ops.md) — переезд срезами; HEAD = срез 72; стенд Django :8100
+- [Smart Josparlau: история стройки](project_smart_josparlau_frontend_state.md) — SPA выведена 10.08; документ = история этапов 0-73+M1-M4
+- [Сохранять состояние после каждой задачи](feedback_save_state_after_each_task.md) — коммит+леджер+память ПОСЛЕ работы, без запроса
+- [Темп важнее церемонии](feedback_vaps_pace_over_ceremony.md) — меньше AskUserQuestion между шагами, доки одним проходом в конце
+- [target=_blank теряет credential](feedback_vaps_blank_tab_loses_credential.md) — sessionStorage не клонируется; e2e с context-сидом маскирует
+- [Точка врезки правил в BMAD](project_bmad_customization_surface.md) — только _bmad/custom/<skill>.toml, проверять резолвером
+- [worktree-изоляция ответвляется от main](feedback_worktree_isolation_branches_from_main.md) — сабагент не видит правок ветки; требовать цитату окружения
+- [spectacular и экшен list](feedback_spectacular_list_action_array.md) — many=False только на КЛАССЕ; ассертить форму в schema.yaml
+- [Чужой docker-порт](feedback_docker_port_foreign_container.md) — 5433 держит чужой стек; свой Postgres на 5434
+- [-p флаг не спасает на generic-имени](feedback_docker_compose_p_flag_still_collides_on_generic_name.md) — `-p vaps-*`, не голое имя папки
+- [Общее имя тестовой БД](feedback_shared_test_db_name_collides_across_checkouts.md) — гонка чекаутов; подпись «does not exist» + «accessed by other users»
+- [Переиспользуй протокол 409-обхода](feedback_vaps_reuse_conflict_override_protocol.md) — OVERRIDABLE_CODES + ConflictDialog уже есть; override в КОРЕНЬ переменных
+- [Коллизия MSW-путей молчалива](feedback_msw_path_collision_silent.md) — занятый путь отдаёт чужой handler без ошибки; грепать по src
+- [Смена persona в e2e](feedback_e2e_init_script_resets_persona.md) — seedCredential переустанавливается на каждой навигации; менять вторым addInitScript
+- [Вырезать и производные поля](feedback_redact_derived_fields_too.md) — ассертить по всему JSON, не по знакомым ключам
+- [Ассерт порядка требует трёх элементов](feedback_order_assert_needs_three_items.md) — на двух вакуумен; фикстура ≠ клиентская сортировка
+- [Право без persona-без-него](feedback_permission_needs_a_persona_lacking_it.md) — закрытое состояние недостижимо, если контролёр = автор записи
+- [Узкая проекция ломается молча](feedback_narrow_projection_silent_break.md) — переименование поля компилируется зелёным; грепать имя, тест проекции
+- [tail прячет падения Playwright](feedback_playwright_tail_hides_failures.md) — grep на failed/✘, не tail
+- [Пустышка вместо красной пробы](feedback_noop_red_probe.md) — сначала проверь, что правка изменила поведение
+- [Замороженные часы прячут время](feedback_frozen_clock_vacuous_time_assert.md) — единственность момента проверять ЖИВЫМИ часами
+- [Виновник — по адресу данных, не по ps](feedback_blame_by_data_destination_not_ps_path.md) — грепать имя ресурса по конфигам чекаутов; путь venv в ps врёт
+- [Коллизия тестовой БД параллельных сессий](project_test_db_collision_parallel_sessions.md) — ручка PR_TEST_DB_NAME; «падают разные тесты» = внешнее условие
+- [$ref совпал ≠ схема совпала](feedback_schema_ref_equal_component_differs.md) — сверять полный дамп; в components уезжают example/format/required
+- [Ямы подъёма стенда](project_stand_raise_gotchas.md) — привязку user↔employee не делает ни один сид; легаси-восьмёрка красных pre-existing
+- [Namespace-пакет ломает сборку pytest](feedback_namespace_pkg_breaks_pytest_collection.md) — нет __init__.py у РОДИТЕЛЯ; сверяй число собранных тестов
+- [Переезд core: где остановились](project_core_port_slices_progress.md) — переносится КОНТРАКТ, не модель; список оставшегося внутри
+- [/ops проводка](project_ops_frontback_wiring_gap.md) — историческая диагностика на случай воскрешения встройки
+- [Проба ограничения — мутировать миграцию](feedback_constraint_probe_must_mutate_migration.md) — снятие CheckConstraint в МОДЕЛИ оставляет тесты зелёными
+- [Раздел ОМ: ЗАКРЫТ ЦЕЛИКОМ](project_ops_backend_plan.md) — все 14 групп живые; читать ПЕРВЫМ при возобновлении
+- [Полное ревью 08.08 + бэклог](project_full_review_2026_08_08.md) — Critical закрыт; осталась РОТАЦИЯ NEXTAUTH_SECRET на проде, CI-гейт, Medium-хвост
+- [Playwright-обход стенда 11.08](project_stand_click_sweep_2026_08_11.md) — 4 дефекта + hydration mismatch закрыты; CLIENT_FETCH_ERROR не дефект
+- [Где docs-ledger и как обновлять граф](reference_vaps_docs_ledger_location.md) — леджер = docs/api-gaps.md § дефектов; skip graph.html штатно
+- [Где лежит каталог памяти](reference_memory_dir_location.md) — /home/erda/Музыка/VAPS/.claude/memory (свой git); в историю VAPS не входит
+- [Раздел ОМ живой по умолчанию](project_ops_live_mode_default.md) — права тоже живые; на моке только WS-колокольчик; учётки внутри
+- [Wildcard-мок прав глушит RBAC](feedback_wildcard_mock_masks_rbac.md) — снимая, брать три персоны (полные/ЧАСТИЧНЫЕ/без) + аноним
+- [Общий .next двух next dev](feedback_next_dev_shared_build_cache.md) — проба на соседнем порту травит сборку стенда; NEXT_PUBLIC_* инлайнятся
+- [Новый стек выведен 12.08.2026](project_new_stack_removed.md) — работаем ТОЛЬКО на Personnel-Records :8100 + PersonalRecordFront :3106
+- [Смоук-обход старого стека 12.08](project_smoke_sweep_old_stack.md) — 0×5xx; гвард прав отставал на 22 страницах; прогон только со своего порта
+- [«На дежурстве» → карточка объекта](project_duty_assignment_link.md) — наряд хранится КЛИЕНТСКИ; entities/duty-shift нужен календарю
+- [Сборка расхода (DataAggregator)](project_reports_expense_aggregator.md) — у Employee НЕТ division (только через staff_unit); MPTT+values() без order_by ломает счёт
+- [Один активный статус на сотрудника](project_one_active_status_invariant.md) — create_status закрывает предыдущий (lte); прикомандирование = ОДИН статус
+- [Пустой рефетч не воспроизводит перетирание](feedback_query_structural_sharing_hides_clobber.md) — красная проба обязана менять данные на сервере
+- [Три модуля прототипа без бэка](project_gvo_registry_module.md) — ГВО/лица/законы на моке; связь «лицо → ОМ» только через сводки ГВО
+- [MSW-паттерн требует «*»](feedback_msw_pattern_needs_wildcard_origin.md) — относительный путь резолвится от :3106 → bypass молча
+- [key с версией данных = перетирание](feedback_remount_key_on_data_version.md) — ключ монтирования это идентичность, не updatedAt
+- [Вкладки размонтируют черновик](feedback_tab_layout_unmounts_draft.md) — прятать (hidden), не снимать `&&`; проба на ВОЗВРАТ
+- [Экраны прототипа = этапы карточки ОМ](project_placement_stage_not_a_module.md) — отдельный маршрут = дубль; чего нет в бэке — внутри
+- [Исчерпание соединений Postgres](feedback_stand_postgres_conn_exhaustion.md) — «разные спеки, поодиночке зелёные» = too many clients; перезапуск Django
+- [Обход обвиняет себя, а не UI](feedback_sweep_blames_itself_not_ui.md) — «не кликается» = незакрытый слой; потолок мерить временем
+- [Отцепленный HEAD глотает коммит](feedback_detached_head_swallows_commit.md) — symbolic-ref ДО, branch --contains ПОСЛЕ
+- [Ретраи прячут первый кадр](feedback_retrying_assert_hides_first_frame.md) — ветка isLoading первой; проверка задержкой ответа
+- [page.route промахивается молча](feedback_playwright_route_misses_sw_and_trailing_slash.md) — serviceWorkers:block И предикат вместо глоба
+- [Фикстура с первой страницы](feedback_fixture_lookup_by_first_page_goes_silent.md) — растущий реестр даёт молчаливый skip; искать запросом, читать по id
+- [Обход прототипа: где мы](project_prototype_walkthrough_progress.md) — закрыты ОМ+«Сбор сил», командный центр, аналитика, профиль, паспорт, «Сотрудники и штат», «Подразделения»; далее «Расход и светофор»
+- [Фикстура стадии копит мусор](feedback_stage_fixture_accumulates_without_delete.md) — нет DELETE в API → искать своё и сбрасывать, а не создавать на каждый прогон
+- [Прототип живёт в Claude Design](project_prototype_source_of_truth.md) — локальные копии устарели на 701 строку, синхронизировать ЗАПРЕЩЕНО; читать окнами через MCP
+- [Мёртвый контрол — переезд к владельцу данных](feedback_dead_control_needs_owner_component.md) — input без onChange стоит не там, где данные; чинить переездом, не проводкой
+- [Недостижимая вкладка прячет фикстуру](feedback_unreachable_tab_hides_fixture.md) — Tabs без TabsList = мёртвые вкладки с выдуманными данными
+- [Фикстура должна разводить поля](feedback_vaps_fixture_must_separate_fields.md) — красная проба «взяли не то поле» вакуумна, пока поля совпадают
+- [npx skills find заблокирован](reference_skills_cli_find_blocked.md) — `find` виснет, `add` работает; искать через WebFetch по skills.sh
+- [Ямы установки personal-скиллов](reference_personal_skills_install_gotchas.md) — «not a recognized command» = перезапуск; путь к скриптам абсолютный
+- [Аудит фронтенда 17.08.2026](project_frontend_audit_2026_08_17.md) — две половины разного качества; shadcn под Tailwind v4 в сборке v3
+- [sr-only skip-link съедает угловой клик](feedback_sr_only_skiplink_swallows_corner_click.md) — Tab жать без клика
+- [Клик до гидратации = перезагрузка](feedback_click_before_hydration_is_browser_nav.md) — ждать клиентский признак (ThemeToggle mounted)
+- [next build травит кэш стенда](feedback_next_build_poisons_dev_cache.md) — NEXT_DIST_DIR=.next-build; index.ts→tsx требует перезапуска
+- [role=status в лэйауте ломает ассерты](feedback_global_role_status_breaks_page_asserts.md) — живой регион шапки объявлять aria-live без роли
+- [Раздувшийся next dev рвёт соединения](feedback_next_dev_memory_bloat_resets_connections.md) — падения на /api/auth/csrf/ = RSS, не дефект; перезапуск
+- [«Некрасиво» может быть пустотой в данных](feedback_ugly_ui_may_be_missing_data.md) — мерить долю ширины с одним значением; идти к API, не к CSS
+- [pkill -f убивает свой же шелл](feedback_pkill_pattern_kills_own_shell.md) — гасить по PID; Django только с settings.local_postgres
+- [Порядок ошибок RHF ≠ порядок схемы](feedback_rhf_error_order_is_not_schema_order.md) — фокус вести по compareDocumentPosition
+- [EmployeeStatus.save() зовёт full_clean()](project_pr_status_save_calls_full_clean.md) — два ДЕЙСТВУЮЩИХ статуса недостижимы → тест на них вакуумен
+- [Статус по умолчанию каждому работающему](project_employee_default_status_invariant.md) — сигнал on_commit; тест требует django_db(transaction=True)
+- [Зелёная красная проба ≠ дырявый тест](feedback_red_probe_on_unreachable_branch.md) — доказать, что мутированная ветка ИСПОЛНЯЕТСЯ
+- [Смоук-обход меняет данные стенда](feedback_smoke_sweep_mutates_stand_data.md) — фикстуру нести перехватом; serial снимает хвост персоны
+- **Архив (удалённый стек Backend/VAPS + BMAD-эпики):** [G1-архитектура](project_vaps_architecture.md), [teardown E3](project_test_full_concurrency_teardown.md), [tz-флейк vacancies](project_tz_flake_vacancies_test.md), [расположение гейта](project_vaps_gate_location.md), [блокеры E3](project_e3_retro_blockers.md), [флейк perfsmoke](project_frontend_perfsmoke_virtual_flake.md), [слепые пятна фронт-сюиты](project_vaps_frontend_e2e_blindspots.md), [day-submission-drift](project_day_submission_drift_flake.md), [Epic 20 ID-пространства](project_epic20_mock_backend_id_mismatch.md), [два бэка](project_two_backends_spa_targets_new.md), [/ops проводка](project_ops_frontback_wiring_gap.md), [прогон тестов VAPS](reference_vaps_test_run_recipe.md) — описывают код, которого больше нет; уроки внутри переносимы, факты о путях — нет

@@ -1,0 +1,34 @@
+{
+  "errors": [],
+  "warnings": [
+    "Строка 6: ИИН должен содержать 12 цифр (получено символов: 9). Оставлен пустым; исходное значение остаётся в XLSX.",
+    "Для «Служба охраны Президента Республики Казахстан» предложен технический код XLSX-6a4d1f6af24cf2e6."
+  ],
+  "divisions": [
+    {
+      "code": "6661",
+      "name": "4 отдел",
+      "division_type": "division",
+      "parent_code": "6984",
+      "inferred": true
+    },
+    {
+      "code": "6984",
+      "name": "2 управление",
+      "division_type": "directorate",
+      "parent_code": "XLSX-6a4d1f6af24cf2e6",
+      "inferred": true
+    },
+    {
+      "code": "XLSX-6a4d1f6af24cf2e6",
+      "name": "Служба охраны Президента Республики Казахстан",
+      "division_type": "organization",
+      "parent_code": null,
+      "inferred": true
+    }
+  ],
+  "counts": {},
+  "actions": [],
+  "applied": false,
+  "rows": 5
+}

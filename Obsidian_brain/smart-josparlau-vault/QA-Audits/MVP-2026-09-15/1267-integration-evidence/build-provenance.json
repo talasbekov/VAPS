@@ -1,0 +1,11 @@
+{
+  "sha": "1c3c8050bf124b25dfa1b67723aa5efa123d6314",
+  "branch": "codex/mvp-current-integration-1267",
+  "buildId": "EWYHGoZzODbHNp8II8cHY",
+  "dist": "/home/erda/.codex/worktrees/6190/Smart Josparlau/Backend/PersonnelStatus/PersonalRecordFront/.next-qa1267",
+  "frontendPort": 3110,
+  "backendPort": 8110,
+  "frontendPid": 780290,
+  "backendPid": 775703,
+  "rewritesVerified": 21
+}

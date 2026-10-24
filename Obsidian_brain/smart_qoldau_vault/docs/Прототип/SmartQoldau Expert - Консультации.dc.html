@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+      <div style="font-size:21px;font-weight:800;color:#0f3f3a;margin-bottom:18px">Консультации</div>
+
+      <div style="display:flex;gap:6px;background:#f2f2f0;border-radius:14px;padding:4px;margin-bottom:20px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+          <div onClick="{{ t.onClick }}" style="flex:1;text-align:center;padding:9px 4px;border-radius:11px;background:{{ t.selected ? '#fff' : 'transparent' }};box-shadow:{{ t.selected ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }};font-size:12.5px;font-weight:700;color:{{ t.selected ? '#0f3f3a' : '#8fa6a1' }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ hasItems }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ items }}" as="c" hint-placeholder-count="4">
+            <div onClick="{{ c.onClick }}" style="display:flex;align-items:center;gap:12px;padding:13px;border-radius:16px;border:1px solid #edf2f0;cursor:pointer">
+              <div style="width:46px;height:46px;border-radius:14px;background:{{ c.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="{{ c.icon }}" stroke="{{ c.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;font-weight:800;color:#0f3f3a">{{ c.time }} · {{ c.client }}</div>
+                <div style="font-size:11.5px;font-weight:500;color:#8fa6a1">{{ c.topic }} · {{ c.format }}</div>
+              </div>
+              <div style="font-size:11px;font-weight:700;color:{{ c.statusColor }};flex-shrink:0;text-align:right">{{ c.statusLabel }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noItems }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:60px 20px">
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a;margin-bottom:4px">{{ emptyTitle }}</div>
+          <div style="font-size:12.5px;font-weight:500;color:#8fa6a1">Здесь появятся ваши записи</div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static ICONS = {
+    'Чат': { icon: 'M4 5h16v11H8l-4 4V5z', color: '#159a7c', bg: '#e3f3ee' },
+    'Аудио': { icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3', color: '#3b82c4', bg: '#e6f0fb' },
+    'Видео': { icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z', color: '#e08a4d', bg: '#fdece3' },
+  };
+  static ALL = [
+    { id: 1, group: 'today', time: '19:00', client: 'Анонимный клиент #1048', topic: 'Тревожность', format: 'Видео', formatId: 'video', status: 'upcoming' },
+    { id: 2, group: 'upcoming', time: 'Завтра, 11:00', client: 'Марат Ж. · Клиент 1', topic: 'Отношения', format: 'Чат', formatId: 'chat', status: 'upcoming' },
+    { id: 3, group: 'upcoming', time: '9 авг, 15:00', client: 'Анонимный клиент #3067', topic: 'Выгорание', format: 'Аудио', formatId: 'audio', status: 'upcoming' },
+    { id: 4, group: 'completed', time: '2 авг', client: 'Анонимный клиент #1048', topic: 'Тревога и стресс', format: 'Видео', formatId: 'video', status: 'completed' },
+    { id: 5, group: 'completed', time: '27 июл', client: 'Анонимный клиент #3067', topic: 'Выгорание', format: 'Аудио', formatId: 'audio', status: 'completed' },
+  ];
+  state = { tab: 'today' };
+  renderVals() {
+    const s = this.state;
+    const tabDefs = [
+      { id: 'today', label: 'Сегодня' },
+      { id: 'upcoming', label: 'Предстоящие' },
+      { id: 'completed', label: 'Завершённые' },
+    ].map(t => ({ ...t, selected: s.tab === t.id, onClick: () => this.setState({ tab: t.id }) }));
+
+    const filtered = Component.ALL.filter(c => c.group === s.tab);
+    const items = filtered.map(c => {
+      const fmt = Component.ICONS[c.format];
+      return { ...c, ...fmt, statusLabel: c.status === 'completed' ? 'Завершена' : 'Запланирована', statusColor: c.status === 'completed' ? '#8fa6a1' : '#0f766e',
+        onClick: () => { window.location.href = './SmartQoldau Expert - Консультация.dc.html?id=' + c.id + '&format=' + c.formatId + (c.status === 'completed' ? '&status=completed' : ''); } };
+    });
+
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert - Консультации.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert - Доход.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert - Профиль.dc.html' },
+    ].map(n => ({ ...n, color: n.label === active ? '#0f766e' : '#a9bdb9', onClick: n.label === active ? () => {} : () => { window.location.href = n.href; } }));
+
+    return {
+      tabs: tabDefs,
+      hasItems: items.length > 0,
+      noItems: items.length === 0,
+      items,
+      emptyTitle: s.tab === 'completed' ? 'Пока нет завершённых консультаций' : 'Нет запланированных консультаций',
+      navItems: nav('Консультации'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

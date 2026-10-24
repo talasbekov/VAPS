@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:60px 22px 110px;box-sizing:border-box">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:46px;height:46px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#159a7c">А</div>
+          <div>
+            <div style="font-size:16px;font-weight:800;color:#0f3f3a">{{ greeting }}, Айгуль</div>
+            <div style="font-size:12px;font-weight:500;color:#8fa6a1">Клинический психолог</div>
+          </div>
+        </div>
+        <div onClick="{{ goNotifications }}" style="width:40px;height:40px;border-radius:50%;background:#f8faf9;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;flex-shrink:0">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 1112 0c0 3.5 1 5.5 2 7H4c1-1.5 2-3.5 2-7z M9.5 19a2.5 2.5 0 005 0" stroke="#0f3f3a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:#c0392b;border:1.5px solid #fff"></div></sc-if>
+        </div>
+      </div>
+
+      <div onClick="{{ openStatusSheet }}" style="display:flex;align-items:center;justify-content:space-between;border-radius:18px;background:{{ statusBg }};border:1px solid {{ statusBorder }};padding:14px 16px;margin-bottom:20px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:9px;height:9px;border-radius:50%;background:{{ statusDotColor }};flex-shrink:0"></div>
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ statusLabel }}</div>
+        </div>
+        <svg width="8" height="13" viewBox="0 0 9 14" fill="none" style="transform:rotate(90deg);flex-shrink:0"><path d="M1 1l6 6-6 6" stroke="#8fa6a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <div style="border-radius:20px;background:#0f3f3a;padding:20px;margin-bottom:18px">
+        <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:14px">Сегодня</div>
+        <div style="display:flex;gap:0">
+          <div style="flex:1">
+            <div style="font-size:22px;font-weight:800;color:#fff">4</div>
+            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);margin-top:2px">консультации</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:22px;font-weight:800;color:#7fd6c2">2</div>
+            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);margin-top:2px">новых обращения</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:22px;font-weight:800;color:#fff">29 500 ₸</div>
+            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);margin-top:2px">заработано</div>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{ showOfflineNotice }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:12px;border-radius:18px;background:#f8faf9;padding:16px;margin-bottom:20px">
+          <div style="width:36px;height:36px;border-radius:50%;background:#eef1f0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 1112 0c0 3.5 1 5.5 2 7H4c1-1.5 2-3.5 2-7z M9.5 19a2.5 2.5 0 005 0" stroke="#8fa6a1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ offlineNoticeTitle }}</div>
+            <div style="font-size:11.5px;font-weight:500;color:#8fa6a1;margin-top:1px">{{ offlineNoticeText }}</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ hasNewRequest }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Новая заявка</div>
+        <div style="border-radius:20px;border:1.5px solid #e3f3ee;background:#f2fbf8;padding:16px;margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:10px;background:#fff">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="{{ newRequest.formatIcon }}" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div style="font-size:11px;font-weight:700;color:#0f766e">{{ newRequest.format }}</div>
+            </div>
+            <div style="font-size:11px;font-weight:600;color:#8fa6a1">{{ newRequest.waitTime }}</div>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:2px">{{ newRequest.topic }}</div>
+          <div style="font-size:12px;font-weight:500;color:#6b8580;margin-bottom:14px">Клиент ожидает специалиста</div>
+          <div style="display:flex;gap:8px">
+            <button onClick="{{ newRequest.onAccept }}" style="flex:1;height:46px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Принять</button>
+            <button onClick="{{ newRequest.onDecline }}" style="flex:1;height:46px;border:1.5px solid #f5d9df;border-radius:14px;background:#fff;color:#c0435f;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Отклонить</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Ближайшая консультация</div>
+      <sc-if value="{{ showSoonBanner }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:12px;border-radius:18px;background:#fdf3e3;padding:14px 16px;margin-bottom:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:#f5e3c4;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 21a9 9 0 100-18 9 9 0 000 18z M12 7v5l3.5 2" stroke="#c98a2e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">Через 15 минут — видеосвязь</div>
+            <div style="font-size:11.5px;font-weight:500;color:#8a6a2e;margin-top:1px">Анонимный клиент #1048 · Тревога и стресс</div>
+          </div>
+          <button onClick="{{ openUpcoming }}" style="height:36px;padding:0 14px;border:none;border-radius:12px;background:#0f766e;color:#fff;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">Подготовиться</button>
+        </div>
+      </sc-if>
+      <div onClick="{{ openUpcoming }}" style="display:flex;align-items:center;gap:12px;border:1px solid #edf2f0;border-radius:18px;padding:14px;margin-bottom:22px;cursor:pointer">
+        <div style="width:46px;height:46px;border-radius:14px;background:#e6f0fb;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z" stroke="#3b82c4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:800;color:#0f3f3a">19:00 · Видеоконсультация</div>
+          <div style="font-size:12px;font-weight:500;color:#8fa6a1">Анонимный клиент #1048</div>
+        </div>
+        <div style="font-size:12.5px;font-weight:700;color:#0f766e;flex-shrink:0">Открыть</div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Статистика</div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;border-radius:16px;background:#f8faf9;padding:14px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">247</div>
+          <div style="font-size:10.5px;font-weight:600;color:#8fa6a1;margin-top:2px">консультации</div>
+        </div>
+        <div style="flex:1;border-radius:16px;background:#f8faf9;padding:14px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">4.9 ⭐</div>
+          <div style="font-size:10.5px;font-weight:600;color:#8fa6a1;margin-top:2px">рейтинг</div>
+        </div>
+        <div style="flex:1;border-radius:16px;background:#f8faf9;padding:14px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">582К ₸</div>
+          <div style="font-size:10.5px;font-weight:600;color:#8fa6a1;margin-top:2px">за месяц</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ showStatusSheet }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeStatusSheet }}" style="position:absolute;inset:0;background:rgba(15,40,37,0.45);z-index:50"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:26px 26px 0 0;padding:22px 22px 40px;box-sizing:border-box;z-index:51;box-shadow:0 -20px 40px -16px rgba(0,0,0,0.2)">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Рабочий статус</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ statusOptions }}" as="opt" hint-placeholder-count="4">
+            <div onClick="{{ opt.onClick }}" style="display:flex;align-items:center;gap:12px;padding:13px 12px;border-radius:14px;background:{{ opt.selected ? '#f2fbf8' : 'transparent' }};cursor:pointer">
+              <div style="width:10px;height:10px;border-radius:50%;background:{{ opt.color }};flex-shrink:0"></div>
+              <div style="flex:1">
+                <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ opt.label }}</div>
+                <div style="font-size:11.5px;font-weight:500;color:#8fa6a1;margin-top:1px">{{ opt.desc }}</div>
+              </div>
+              <sc-if value="{{ opt.selected }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static STATUSES = {
+    accepting: { label: 'Принимаю клиентов', desc: 'Новые заявки поступают в реальном времени', color: '#159a7c' },
+    busy: { label: 'Занят', desc: 'Сейчас на консультации — новые заявки подождут', color: '#e0a52e' },
+    not_accepting: { label: 'Не принимаю', desc: 'Временно не берёте новые обращения', color: '#c4d3cf' },
+    unavailable: { label: 'Временно недоступен', desc: 'Профиль скрыт из подбора специалистов', color: '#c0392b' },
+  };
+  state = { status: 'accepting', hasNewRequest: true, showStatusSheet: false };
+  componentDidMount() {
+    this._t = setTimeout(() => {
+      if (this.state.status === 'accepting') window.location.href = './SmartQoldau Expert - Входящий запрос.dc.html?emergency=1';
+    }, 10000);
+  }
+  componentWillUnmount() { clearTimeout(this._t); }
+  renderVals() {
+    const s = this.state;
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert - Консультации.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert - Доход.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert - Профиль.dc.html' },
+    ].map(n => ({ ...n, color: n.label === active ? '#0f766e' : '#a9bdb9', onClick: n.label === active ? () => {} : () => { window.location.href = n.href; } }));
+    return {
+      greeting,
+      hasUnread: true,
+      goNotifications: () => { window.location.href = './SmartQoldau Expert - Уведомления.dc.html'; },
+      statusLabel: Component.STATUSES[s.status].label,
+      statusDotColor: Component.STATUSES[s.status].color,
+      statusBg: s.status === 'accepting' ? '#f2fbf8' : '#f8faf9',
+      statusBorder: s.status === 'accepting' ? '#d9ede7' : '#edf2f0',
+      openStatusSheet: () => this.setState({ showStatusSheet: true }),
+      closeStatusSheet: () => this.setState({ showStatusSheet: false }),
+      showStatusSheet: s.showStatusSheet,
+      statusOptions: Object.keys(Component.STATUSES).map(id => ({ ...Component.STATUSES[id], selected: s.status === id, onClick: () => this.setState({ status: id, showStatusSheet: false }) })),
+      showOfflineNotice: s.status !== 'accepting',
+      offlineNoticeTitle: s.status === 'busy' ? 'Вы заняты' : s.status === 'unavailable' ? 'Вы временно недоступны' : 'Вы не принимаете клиентов',
+      offlineNoticeText: s.status === 'busy' ? 'Новые заявки поступают, но подбор снижен, пока вы на консультации' : 'Новые обращения не поступают. Измените статус, чтобы снова принимать заявки',
+      hasNewRequest: s.status === 'accepting' && s.hasNewRequest,
+      showSoonBanner: true,
+      newRequest: {
+        topic: 'Тревожность',
+        format: 'Видеоконсультация',
+        formatIcon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z',
+        waitTime: 'Только что',
+        onAccept: () => { window.location.href = './SmartQoldau Expert - Заявка.dc.html?format=video&status=accepted'; },
+        onDecline: () => this.setState({ hasNewRequest: false }),
+      },
+      openUpcoming: () => { window.location.href = './SmartQoldau Expert - Консультация.dc.html'; },
+      navItems: nav('Главная'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

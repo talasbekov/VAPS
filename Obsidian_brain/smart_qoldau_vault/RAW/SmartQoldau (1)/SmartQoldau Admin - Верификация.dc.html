@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} textarea{font-family:inherit}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1520px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18);position:relative">
+
+    <div style="width:250px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:26px 16px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:32px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">ADMIN</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="8">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="flex:1;font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+            <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><div style="min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center">{{ n.badge }}</div></sc-if>
+            <sc-if value="{{ n.restricted }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 11V7a7 7 0 0114 0v4 M5 11h14v9H5z" stroke="rgba(255,255,255,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div onClick="{{ openRoleSheet }}" style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08);cursor:pointer">
+        <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+        <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Админ Ержанова</div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">{{ roleLabel }}</div></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="rgba(255,255,255,0.4)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:34px 38px;box-sizing:border-box;overflow-y:auto">
+      <div style="margin-bottom:20px"><div style="font-size:24px;font-weight:800;color:#0f3f3a">Верификация специалистов</div><div style="font-size:14px;font-weight:500;color:#6b8580;margin-top:4px">SLA — 24 часа с момента подачи заявки</div></div>
+
+      <div style="display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid #eef2f0">
+        <div onClick="{{ showSpecialists }}" style="padding:10px 16px;font-size:13px;font-weight:700;color:{{ specTabColor }};border-bottom:2px solid {{ specTabBorder }};cursor:pointer">Специалисты</div>
+        <div onClick="{{ showInterns }}" style="padding:10px 16px;font-size:13px;font-weight:700;color:{{ internTabColor }};border-bottom:2px solid {{ internTabBorder }};cursor:pointer">Студенты-практиканты</div>
+      </div>
+
+      <sc-if value="{{ tab === 'specialists' }}" hint-placeholder-val="{{ true }}">
+      <div style="border-radius:16px;background:#fff;border:1px solid #eef2f0;overflow:hidden">
+        <div style="display:grid;grid-template-columns:2fr 1.4fr 1.4fr 1fr 1fr;padding:14px 20px;background:#f8faf9;border-bottom:1px solid #eef2f0">
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">ФИО</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">СПЕЦИАЛИЗАЦИЯ</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">ПОДАНО</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">SLA</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">СТАТУС</div>
+        </div>
+        <sc-for list="{{ applications }}" as="a" hint-placeholder-count="5">
+          <div onClick="{{ a.onClick }}" style="display:grid;grid-template-columns:2fr 1.4fr 1.4fr 1fr 1fr;padding:16px 20px;border-bottom:1px solid #f2f2f0;cursor:pointer;align-items:center" style-hover="background:#f8faf9">
+            <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ a.name }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580">{{ a.spec }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580">{{ a.submitted }}</div>
+            <div style="font-size:12.5px;font-weight:700;color:{{ a.slaColor }}">{{ a.slaText }}</div>
+            <div style="display:inline-flex;padding:4px 10px;border-radius:10px;background:{{ a.statusBg }};font-size:11.5px;font-weight:700;color:{{ a.statusColor }};width:fit-content">{{ a.statusLabel }}</div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ tab === 'interns' }}" hint-placeholder-val="{{ false }}">
+      <div style="border-radius:16px;background:#fff;border:1px solid #eef2f0;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1.6fr 1.6fr 1.2fr 1fr 1fr;padding:14px 20px;background:#f8faf9;border-bottom:1px solid #eef2f0">
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">ФИО</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">ВУЗ / КУРС</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">КОД B2G</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">ПОДАНО</div>
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1">СТАТУС</div>
+        </div>
+        <sc-for list="{{ internApplications }}" as="a" hint-placeholder-count="3">
+          <div onClick="{{ a.onClick }}" style="display:grid;grid-template-columns:1.6fr 1.6fr 1.2fr 1fr 1fr;padding:16px 20px;border-bottom:1px solid #f2f2f0;cursor:pointer;align-items:center" style-hover="background:#f8faf9">
+            <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ a.name }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580">{{ a.university }} · {{ a.course }}</div>
+            <div style="font-size:12.5px;font-weight:700;color:#0f766e">{{ a.b2gCode }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580">{{ a.submitted }}</div>
+            <div style="display:inline-flex;padding:4px 10px;border-radius:10px;background:{{ a.statusBg }};font-size:11.5px;font-weight:700;color:{{ a.statusColor }};width:fit-content">{{ a.statusLabel }}</div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ selected }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closePanel }}" style="position:fixed;inset:0;background:rgba(15,40,37,0.4);z-index:60"></div>
+      <div onClick="{{ stop }}" style="position:fixed;top:0;right:0;bottom:0;width:440px;background:#fff;padding:28px;box-sizing:border-box;overflow-y:auto;z-index:61;box-shadow:-24px 0 48px -20px rgba(0,0,0,0.2)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">{{ selected.name }}</div>
+          <button onClick="{{ closePanel }}" style="width:32px;height:32px;border-radius:50%;border:none;background:#f2f2f0;cursor:pointer">✕</button>
+        </div>
+        <sc-if value="{{ selected.dupIin }}" hint-placeholder-val="{{ false }}">
+          <div style="border-radius:14px;background:#fdedec;border:1px solid #f6d3cf;padding:14px;margin-bottom:16px">
+            <div style="font-size:12.5px;font-weight:800;color:#c0392b;margin-bottom:4px">⚠ Дубликат ИИН</div>
+            <div style="font-size:12px;font-weight:500;color:#8a4540;line-height:1.5">{{ selected.dupHistory }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ !selected.isIntern }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">ИИН</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.iin }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Специализация</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.spec }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Телефон</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.phone }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Подано</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.submitted }}</div></div>
+        </div>
+        <div style="font-size:12.5px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Документы</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+          <sc-for list="{{ docs }}" as="d" hint-placeholder-count="4">
+            <div style="border:1.5px solid #edf2f0;border-radius:14px;padding:14px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="#0f766e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div style="font-size:11.5px;font-weight:700;color:#0f3f3a">{{ d }}</div>
+              <div style="font-size:11px;font-weight:700;color:#0f766e;cursor:pointer">Просмотреть</div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ selected.isIntern }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Вуз</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.university }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Курс / специальность</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.course }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Код B2G-контракта (вуза, не B2B)</div><div style="font-size:13px;font-weight:700;color:#0f766e">{{ selected.b2gCode }}</div></div>
+          <div><div style="font-size:11px;font-weight:600;color:#8fa6a1">Подано</div><div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ selected.submitted }}</div></div>
+        </div>
+        <div style="font-size:12.5px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Документы</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+          <sc-for list="{{ internDocs }}" as="d" hint-placeholder-count="2">
+            <div style="border:1.5px solid #edf2f0;border-radius:14px;padding:14px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="#0f766e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div style="font-size:11.5px;font-weight:700;color:#0f3f3a">{{ d }}</div>
+              <div style="font-size:11px;font-weight:700;color:#0f766e;cursor:pointer">Просмотреть</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:7px">Назначенный супервайзер</div>
+          <input value="{{ supervisor }}" onInput="{{ onSupervisor }}" placeholder="ФИО супервайзера" style="width:100%;height:46px;border:1.5px solid #edf2f0;border-radius:12px;padding:0 14px;font-size:13.5px;color:#0f3f3a;box-sizing:border-box"/>
+        </div>
+        </sc-if>
+        <sc-if value="{{ !rejecting }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ onApprove }}" style="flex:1;height:48px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Одобрить</button>
+            <button onClick="{{ startReject }}" style="flex:1;height:48px;border:1.5px solid #f5d9df;border-radius:14px;background:#fff;color:#c0435f;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Отклонить</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ rejecting }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Причина отказа (видна специалисту)</div>
+          <textarea value="{{ rejectReason }}" onInput="{{ onRejectReason }}" placeholder="Например: документы нечитаемы, требуется повторная загрузка" style="width:100%;height:80px;border:1.5px solid #edf2f0;border-radius:12px;padding:10px;font-size:13px;color:#0f3f3a;box-sizing:border-box;resize:none;margin-bottom:12px"></textarea>
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ confirmReject }}" style="flex:1;height:48px;border:none;border-radius:14px;background:#c0435f;color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Подтвердить отказ</button>
+            <button onClick="{{ cancelReject }}" style="height:48px;padding:0 16px;border:1.5px solid #edf2f0;border-radius:14px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Назад</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0f3f3a;color:#fff;padding:14px 22px;border-radius:14px;font-size:13.5px;font-weight:700;z-index:70">{{ toast }}</div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ showRoleSheet }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeRoleSheet }}" style="position:fixed;inset:0;background:rgba(15,40,37,0.45);z-index:80;display:flex;align-items:center;justify-content:center">
+      <div onClick="{{ stop }}" style="width:360px;background:#fff;border-radius:20px;padding:20px;box-sizing:border-box">
+        <div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:12px">Роль доступа (демо)</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <sc-for list="{{ roleOptions }}" as="opt" hint-placeholder-count="2">
+            <div onClick="{{ opt.onClick }}" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:{{ opt.bg }};cursor:pointer">
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ opt.label }}</div><div style="font-size:11px;font-weight:500;color:#8fa6a1">{{ opt.desc }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static APPS = [
+    { id: 1, name: 'Нурлан Ахметов', iin: '950214300512', submitted: '2 сент, 09:14', slaHours: 26, spec: 'Тревога и стресс', phone: '+7 701 234 5612', dupIin: true, dupHistory: 'Ранее регистрировался как «Нурлан А.» — аккаунт заблокирован 14 июня 2026 за поддельный диплом.' },
+    { id: 2, name: 'Жанар Тулегенова', iin: '980722401234', submitted: '2 сент, 14:02', slaHours: 9, spec: 'Отношения и семья', phone: '+7 707 981 2201' },
+    { id: 3, name: 'Асхат Байжанов', iin: '921103300876', submitted: '1 сент, 18:40', slaHours: 27, spec: 'Зависимости и срывы', phone: '+7 700 512 8834' },
+    { id: 4, name: 'Гульмира Сериккызы', iin: '990512401009', submitted: '2 сент, 16:20', slaHours: 4, spec: 'Выгорание', phone: '+7 705 442 1190' },
+    { id: 5, name: 'Ерлан Смагулов', iin: '880130300145', submitted: '2 сент, 17:05', slaHours: 2, spec: 'Панические атаки', phone: '+7 702 336 5501' },
+  ];
+  // Код B2G-контракта (формат SG-XXXX-YYYY) — вводится студентом-практикантом при подаче на верификацию,
+  // подтверждает связь с вузом/контрактом. Не путать с B2B-кодом (SQ-XXXX-YYYY), который вводят клиенты при регистрации.
+  static INTERN_APPS = [
+    { id: 101, name: 'Ботагоз Ержанова', university: 'КазНУ им. Аль-Фараби', course: '3 курс, психология', b2gCode: 'SG-KAZNU-2026', submitted: '2 сент, 10:20', isIntern: true, supervisor: '' },
+    { id: 102, name: 'Диас Сарсенбаев', university: 'ЕНУ им. Гумилёва', course: '4 курс, клиническая психология', b2gCode: 'SG-ENU-2026', submitted: '1 сент, 16:45', isIntern: true, supervisor: '' },
+    { id: 103, name: 'Айнур Токтарова', university: 'КазНУ им. Аль-Фараби', course: '2 курс, психология', b2gCode: 'SG-KAZNU-2026', submitted: '2 сент, 08:05', isIntern: true, supervisor: '' },
+  ];
+  state = { removed: [], removedInterns: [], selectedId: null, rejecting: false, rejectReason: '', showRoleSheet: false, toast: '', tab: 'specialists', supervisors: {} };
+  renderVals() {
+    const role = localStorage.getItem('sq_admin_role') || 'super_admin';
+    const isModerator = role === 'moderator';
+    const nav = (active) => [
+      { label: 'Дашборд', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Admin - Дашборд.dc.html' },
+      { label: 'Верификация', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z', href: './SmartQoldau Admin - Верификация.dc.html', badge: 5 },
+      { label: 'Жалобы', icon: 'M12 2L2 20h20L12 2z M12 9v5M12 17v.1', href: './SmartQoldau Admin - Жалобы.dc.html', badge: 3 },
+      { label: 'Рассылки', icon: 'M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z', href: './SmartQoldau Admin - Рассылки.dc.html' },
+      { label: 'Финансы', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Admin - Финансы.dc.html', restricted: isModerator },
+      { label: 'Специалисты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Admin - Специалисты.dc.html' },
+      { label: 'Клиенты', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Admin - Клиенты.dc.html' },
+      { label: 'B2B-контракты', icon: 'M4 21V7l8-4 8 4v14 M9 21v-6h6v6 M9 9h.01M9 13h.01M15 9h.01M15 13h.01', href: './SmartQoldau Admin - B2B.dc.html', restricted: isModerator },
+      { label: 'B2G-контракты', icon: 'M3 21h18 M5 21V9l7-6 7 6v12 M9 21v-6h6v6', href: './SmartQoldau Admin - B2G.dc.html', restricted: isModerator },
+      { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', href: './SmartQoldau Admin - Настройки.dc.html', restricted: isModerator },
+    ].map(n => { const a = n.label === active; return { ...n, bg: a ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.55)'), textColor: a ? '#fff' : (n.restricted ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.6)'), onClick: a ? () => {} : () => { window.location.href = n.href; } }; });
+    const s = this.state;
+    const visible = Component.APPS.filter(a => !s.removed.includes(a.id));
+    const applications = visible.map(a => ({
+      ...a,
+      slaText: a.slaHours > 24 ? `+${a.slaHours - 24}ч просрочка` : `${24 - a.slaHours}ч осталось`,
+      slaColor: a.slaHours > 24 ? '#c0392b' : '#c98a2e',
+      statusLabel: a.slaHours > 24 ? 'Просрочено' : 'Ожидает',
+      statusBg: a.slaHours > 24 ? '#fdedec' : '#fdf3e3',
+      statusColor: a.slaHours > 24 ? '#c0392b' : '#c98a2e',
+      onClick: () => this.setState({ selectedId: a.id, rejecting: false, rejectReason: '' }),
+    }));
+    const visibleInterns = Component.INTERN_APPS.filter(a => !s.removedInterns.includes(a.id));
+    const internApplications = visibleInterns.map(a => ({
+      ...a,
+      statusLabel: 'Ожидает', statusBg: '#fdf3e3', statusColor: '#c98a2e',
+      onClick: () => this.setState({ selectedId: a.id, rejecting: false, rejectReason: '' }),
+    }));
+    const selectedRaw = Component.APPS.find(a => a.id === s.selectedId) || Component.INTERN_APPS.find(a => a.id === s.selectedId);
+    const selectedWithSupervisor = selectedRaw ? { ...selectedRaw, supervisor: s.supervisors[selectedRaw.id] || '' } : null;
+    return {
+      navItems: nav('Верификация'),
+      tab: s.tab,
+      showSpecialists: () => this.setState({ tab: 'specialists', selectedId: null }),
+      showInterns: () => this.setState({ tab: 'interns', selectedId: null }),
+      specTabColor: s.tab === 'specialists' ? '#0f766e' : '#8fa6a1',
+      specTabBorder: s.tab === 'specialists' ? '#0f766e' : 'transparent',
+      internTabColor: s.tab === 'interns' ? '#0f766e' : '#8fa6a1',
+      internTabBorder: s.tab === 'interns' ? '#0f766e' : 'transparent',
+      internApplications,
+      internDocs: ['Справка с места учёбы', 'Подтверждение специальности/курса'],
+      supervisor: selectedWithSupervisor ? selectedWithSupervisor.supervisor : '',
+      onSupervisor: (e) => { const id = s.selectedId; this.setState(st => ({ supervisors: { ...st.supervisors, [id]: e.target.value } })); },
+      roleLabel: isModerator ? 'Модератор' : 'Супер-админ',
+      showRoleSheet: s.showRoleSheet,
+      openRoleSheet: () => this.setState({ showRoleSheet: true }),
+      closeRoleSheet: () => this.setState({ showRoleSheet: false }),
+      stop: (e) => e.stopPropagation(),
+      roleOptions: [
+        { id: 'super_admin', label: 'Супер-админ', desc: 'Полный доступ ко всем разделам' },
+        { id: 'moderator', label: 'Модератор', desc: 'Верификация и жалобы, без финансов и настроек' },
+      ].map(o => ({ ...o, bg: role === o.id ? '#f2fbf8' : 'transparent', onClick: () => { localStorage.setItem('sq_admin_role', o.id); window.location.reload(); } })),
+      applications,
+      selected: selectedWithSupervisor,
+      docs: ['Удостоверение личности', 'Диплом об образовании', 'Сертификаты', 'Документы о квалификации'],
+      closePanel: () => this.setState({ selectedId: null, rejecting: false }),
+      rejecting: s.rejecting,
+      rejectReason: s.rejectReason,
+      onRejectReason: (e) => this.setState({ rejectReason: e.target.value }),
+      startReject: () => this.setState({ rejecting: true }),
+      cancelReject: () => this.setState({ rejecting: false }),
+      onApprove: () => {
+        const isIntern = s.tab === 'interns';
+        this.setState(st => ({
+          removed: isIntern ? st.removed : [...st.removed, s.selectedId],
+          removedInterns: isIntern ? [...st.removedInterns, s.selectedId] : st.removedInterns,
+          selectedId: null,
+          toast: isIntern ? 'Практикант одобрен — профилю присвоен флаг «Практикант»' : 'Специалист одобрен и допущен на платформу',
+        }));
+        setTimeout(() => this.setState({ toast: '' }), 2500);
+      },
+      confirmReject: () => {
+        const isIntern = s.tab === 'interns';
+        this.setState(st => ({
+          removed: isIntern ? st.removed : [...st.removed, s.selectedId],
+          removedInterns: isIntern ? [...st.removedInterns, s.selectedId] : st.removedInterns,
+          selectedId: null, rejecting: false, toast: 'Заявка отклонена, причина отправлена',
+        }));
+        setTimeout(() => this.setState({ toast: '' }), 2500);
+      },
+      toast: s.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>

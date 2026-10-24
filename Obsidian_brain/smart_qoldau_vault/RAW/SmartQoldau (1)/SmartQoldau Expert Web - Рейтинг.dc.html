@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1440px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18)">
+
+    <div style="width:260px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:28px 18px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:36px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">EXPERT</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="9">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
+        <sc-for list="{{ bottomLinks }}" as="b" hint-placeholder-count="3">
+          <div onClick="{{ b.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ b.icon }}" stroke="rgba(255,255,255,0.5)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.55)">{{ b.label }}</div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08)">
+          <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff">Айгуль Сатпаева</div><div style="display:flex;align-items:center;gap:5px;margin-top:1px"><div style="width:6px;height:6px;border-radius:50%;background:#159a7c"></div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">Принимаю клиентов</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:36px 40px;box-sizing:border-box;overflow-y:auto">
+      <div style="font-size:24px;font-weight:800;color:#0f3f3a;margin-bottom:24px">Рейтинг и отзывы</div>
+
+      <div style="display:grid;grid-template-columns:340px 1fr;gap:20px">
+        <div style="border-radius:20px;background:#fff;border:1px solid #eef2f0;padding:26px;text-align:center">
+          <div style="font-size:44px;font-weight:800;color:#0f3f3a">4.9 ★</div>
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1;margin:6px 0 22px">312 отзывов</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ breakdown }}" as="b" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="font-size:12px;font-weight:600;color:#8fa6a1;width:34px;text-align:left">{{ b.stars }} ★</div>
+                <div style="flex:1;height:8px;border-radius:4px;background:#f2f2f0;overflow:hidden"><div style="width:{{ b.pct }};height:100%;background:#0f766e;border-radius:4px"></div></div>
+                <div style="font-size:11.5px;font-weight:600;color:#a9bdb9;width:34px;text-align:right">{{ b.pct }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <sc-for list="{{ reviews }}" as="r" hint-placeholder-count="5">
+            <div style="border-radius:16px;background:#fff;border:1px solid #eef2f0;padding:18px">
+              <div style="display:flex;align-items:center;gap:1px;margin-bottom:6px">
+                <sc-for list="{{ r.stars }}" as="st" hint-placeholder-count="5">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="{{ st.fill }}"><path d="M12 2l3 6.5 7 1-5 5 1.2 7-6.2-3.5-6.2 3.5 1.2-7-5-5 7-1z" stroke="{{ st.stroke }}" stroke-width="1.3"/></svg>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px">
+                <div style="font-size:13px;font-weight:800;color:#0f3f3a">{{ r.clientLabel }}</div>
+                <div style="font-size:11.5px;font-weight:600;color:#a9bdb9;white-space:nowrap;flex-shrink:0">{{ r.date }}</div>
+              </div>
+              <div style="font-size:13.5px;font-weight:500;color:#3f5450;line-height:1.5;margin-bottom:12px">{{ r.text }}</div>
+
+              <sc-if value="{{ r.reply }}" hint-placeholder-val="{{ false }}">
+                <div style="border-radius:12px;background:#f7faf9;padding:12px 14px;margin-bottom:10px">
+                  <div style="font-size:11.5px;font-weight:800;color:#0f766e;margin-bottom:3px">Ваш ответ</div>
+                  <div style="font-size:12.5px;font-weight:500;color:#3f5450;line-height:1.5">{{ r.reply }}</div>
+                </div>
+              </sc-if>
+
+              <div style="display:flex;align-items:center;gap:16px">
+                <sc-if value="{{ !r.reply }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ r.onToggleReply }}" style="font-size:12px;font-weight:700;color:#0f766e;cursor:pointer">Ответить</div>
+                </sc-if>
+                <sc-if value="{{ r.reported }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:12px;font-weight:700;color:#a9bdb9">Жалоба отправлена</div>
+                </sc-if>
+                <sc-if value="{{ !r.reported }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ r.onReport }}" style="font-size:12px;font-weight:700;color:#8fa6a1;cursor:pointer">Пожаловаться</div>
+                </sc-if>
+              </div>
+
+              <sc-if value="{{ r.showReplyBox }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:12px">
+                  <textarea value="{{ r.draft }}" onChange="{{ r.onDraft }}" placeholder="Напишите публичный ответ клиенту..." style="width:100%;min-height:64px;border:1.5px solid #eef2f0;border-radius:12px;padding:10px 12px;font-size:12.5px;font-family:inherit;color:#0f3f3a;box-sizing:border-box;resize:vertical"></textarea>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <button onClick="{{ r.onSendReply }}" style="height:36px;padding:0 16px;border:none;border-radius:11px;background:#0f766e;color:#fff;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">Отправить ответ</button>
+                    <button onClick="{{ r.onToggleReply }}" style="height:36px;padding:0 16px;border:1.5px solid #eef2f0;border-radius:11px;background:#fff;color:#8fa6a1;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">Отмена</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { replyOpen: {}, drafts: {}, replies: {}, reported: {} };
+  renderVals() {
+    const s = this.state;
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert Web - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert Web - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert Web - Консультации.dc.html' },
+      { label: 'Клиенты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Expert Web - Клиенты.dc.html' },
+      { label: 'Чаты', icon: 'M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z', href: './SmartQoldau Expert Web - Чаты.dc.html' },
+      { label: 'Расписание', icon: 'M8 2v4M16 2v4M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', href: './SmartQoldau Expert Web - Расписание.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert Web - Доход.dc.html' },
+      { label: 'Рейтинг', icon: 'M12 2l3 6.5 7 1-5 5 1.2 7-6.2-3.5-6.2 3.5 1.2-7-5-5 7-1z', href: './SmartQoldau Expert Web - Рейтинг.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert Web - Профиль.dc.html' },
+    ].map(n => {
+      const isActive = n.label === active;
+      return { ...n, active: isActive, bg: isActive ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: isActive ? '#fff' : 'rgba(255,255,255,0.55)', textColor: isActive ? '#fff' : 'rgba(255,255,255,0.6)', onClick: isActive ? () => {} : () => { window.location.href = n.href; } };
+    });
+    const stars = (n) => Array.from({ length: 5 }, (_, i) => ({ fill: i < n ? '#f2b134' : 'none', stroke: i < n ? '#f2b134' : '#d8dde0' }));
+    return {
+      navItems: nav('Рейтинг'),
+      bottomLinks: [
+        { label: 'Уведомления', icon: 'M6 8a6 6 0 1112 0c0 3.5 1 5.5 2 7H4c1-1.5 2-3.5 2-7z M9.5 19a2.5 2.5 0 005 0', onClick: () => { window.location.href = './SmartQoldau Expert Web - Уведомления.dc.html'; } },
+        { label: 'Поддержка', icon: 'M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 17v.1 M12 21a9 9 0 100-18 9 9 0 000 18z', onClick: () => { window.location.href = './SmartQoldau Expert Web - Поддержка.dc.html'; } },
+        { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', onClick: () => {} },
+      ],
+      breakdown: [
+        { stars: 5, pct: '94%' }, { stars: 4, pct: '4%' }, { stars: 3, pct: '1%' }, { stars: 2, pct: '0%' }, { stars: 1, pct: '1%' },
+      ],
+      reviews: [
+        { id: 1, stars: stars(5), date: '3 авг', clientLabel: 'Анонимный клиент #1048', text: 'Очень внимательно выслушала и помогла разобраться в чувствах. Спасибо за поддержку' },
+        { id: 2, stars: stars(5), date: '29 июл', clientLabel: 'Марат Ж. · Клиент 1', text: 'Профессионально и с заботой. Стало легче после первой консультации' },
+        { id: 3, stars: stars(4), date: '22 июл', clientLabel: 'Анонимный клиент #2214', text: 'Хороший специалист, дал конкретные рекомендации' },
+        { id: 4, stars: stars(5), date: '15 июл', clientLabel: 'Анонимный клиент #3067', text: 'Чувствовала себя в безопасности во время разговора' },
+        { id: 5, stars: stars(5), date: '9 июл', clientLabel: 'Анонимный клиент #4590', text: 'Рекомендую — доступно объясняет и не спешит' },
+      ].map(r => ({
+        ...r,
+        reply: s.replies[r.id] || null,
+        reported: !!s.reported[r.id],
+        showReplyBox: !!s.replyOpen[r.id],
+        draft: s.drafts[r.id] || '',
+        onToggleReply: () => this.setState(prev => ({ replyOpen: { ...prev.replyOpen, [r.id]: !prev.replyOpen[r.id] } })),
+        onDraft: (e) => this.setState(prev => ({ drafts: { ...prev.drafts, [r.id]: e.target.value } })),
+        onSendReply: () => this.setState(prev => ({ replies: { ...prev.replies, [r.id]: prev.drafts[r.id] || '' }, replyOpen: { ...prev.replyOpen, [r.id]: false } })),
+        onReport: () => this.setState(prev => ({ reported: { ...prev.reported, [r.id]: true } })),
+      })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

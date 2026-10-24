@@ -1,0 +1,523 @@
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/operations/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/operations/page.tsx
+index a1d13dd6..ff829937 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/operations/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/operations/page.tsx
+@@ -8,21 +8,21 @@
+ // колонки строк ТОГО ЖЕ снимка и делит одно серверное число на другое
+ // (обеспеченность, конверсия, доли доната). Своего источника у неё нет.
+ //
+ // Перенесено из прототипа только то, чему источник нашёлся: показатели шапки,
+ // структура мероприятий, воронка этапов, обеспеченность личным составом,
+ // таблица объектов с детализацией и карточка ОМ. Остальные блоки прототипа
+ // (динамика по дням, участие департаментов, замены, план/факт, нагрузка,
+ // инциденты в разрезе тяжести, «требует внимания», экспорт) названы вслух
+ // внизу экрана — рисовать их пустыми ячейками значило бы выдать отсутствие
+ // данных за нули.
+-import { useEffect, useMemo, useState } from "react";
++import { Suspense, useEffect, useMemo, useState } from "react";
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import { Button } from "@/components/ui/button";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Input } from "@/components/ui/input";
+ import {
+   Table,
+   TableBody,
+@@ -94,20 +94,28 @@ const DONUT_COLORS: readonly string[] = [
+   "hsl(160 84% 39%)",
+   "hsl(142 71% 45%)",
+   "hsl(48 96% 53%)",
+   "hsl(38 92% 50%)",
+   "hsl(25 95% 53%)",
+   "hsl(0 84% 60%)",
+   "hsl(215 16% 47%)",
+ ];
+ 
+ export default function OperationsAnalyticsPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <OperationsAnalyticsScreen />
++    </Suspense>
++  );
++}
++
++function OperationsAnalyticsScreen() {
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+   // §22.6: уровень детализации живёт в URL и переживает перезагрузку.
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   const objectId = searchParams.get("object") ?? undefined;
+   const eventId = searchParams.get("event") ?? undefined;
+   const directionId = searchParams.get("direction") ?? undefined;
+   const postId = searchParams.get("post") ?? undefined;
+ 
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/page.tsx
+index fa9d599b..942f88fe 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/analytics/page.tsx
+@@ -11,21 +11,21 @@
+ // * численность, статусы, вакансии и укомплектованность приходят из ЖИВОГО
+ //   расхода (строевой записки) — владельца этих чисел. Аналитика раздела сама
+ //   объявляет кадровые показатели недоступными («кадрового источника у неё
+ //   нет»), и посчитать их из смен значило бы назвать личным составом тех,
+ //   кого поставили в наряд.
+ //
+ // Сдача дня по подразделениям берётся у светофора — тем же ответом, что
+ // питает его собственный экран: свой счёт «сдали / не сдали» разошёлся бы с
+ // ним, а сличают их как раз тогда, когда что-то пошло не так.
+ import { AccessHints, RightGate } from "@/shared/ui/right-gate";
+-import { useEffect, useMemo, useState } from "react";
++import { Suspense, useEffect, useMemo, useState } from "react";
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import {
+   useAnalyticsDrilldown,
+   useAnalyticsPresets,
+   useAttentionItems,
+   useLoadAnalytics,
+   useServiceAnalytics,
+@@ -147,20 +147,28 @@ const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
+   },
+ ];
+ 
+ function formatMoment(iso: string): string {
+   const at = new Date(iso);
+   const pad = (value: number) => String(value).padStart(2, "0");
+   return `${pad(at.getDate())}.${pad(at.getMonth() + 1)}.${at.getFullYear()}, ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+ }
+ 
+ export default function ServiceAnalyticsPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <ServiceAnalyticsScreen />
++    </Suspense>
++  );
++}
++
++function ServiceAnalyticsScreen() {
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+   // §22.6 «Фильтры синхронизируй с URL»: период — единственный фильтр среза.
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   const presetsQuery = useAnalyticsPresets();
+ 
+   const urlPreset = searchParams.get("period");
+   const urlFrom = searchParams.get("from") ?? "";
+   const urlTo = searchParams.get("to") ?? "";
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/events/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/events/page.tsx
+index 1197d034..2c764c6e 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/events/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/events/page.tsx
+@@ -1,15 +1,15 @@
+ "use client";
+ 
+ // Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
+ // (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
+-import { useId, useState } from "react";
++import { Suspense, useId, useState } from "react";
+ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import type { ReactNode } from "react";
+ import {
+   Building2,
+   ChevronDown,
+   ChevronRight,
+   MoreHorizontal,
+   Pencil,
+   Plus,
+   Trash2,
+@@ -116,20 +116,28 @@ function isStage(value: string | null): value is SecurityEventStage {
+  *
+  *  Правило переехало в `lib/ru-plural` и стало ОДНИМ на портал (Plane №585):
+  *  здесь оно было верным, а в уведомлении о ТОМ ЖЕ возврате — своим и
+  *  сломанным на втором десятке. Копия правила рядом с копией правила
+  *  расходится не «если», а «когда». */
+ function remarksLabel(n: number): string {
+   return ruCount(n, REMARKS);
+ }
+ 
+ export default function SecurityEventsPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <SecurityEventsScreen />
++    </Suspense>
++  );
++}
++
++function SecurityEventsScreen() {
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   // Текущий отбор едет с человеком в карточку: возврат «← Назад» без него
+   // приводил на голый корень реестра, и подобранный фильтр приходилось
+   // набирать заново.
+   const backSuffix = (() => {
+     const query = searchParams.toString();
+     return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
+   })();
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/laws/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/laws/page.tsx
+index 6d15d744..102d84a0 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/laws/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/laws/page.tsx
+@@ -1,12 +1,14 @@
+ "use client";
+ 
++import { Suspense } from "react";
++
+ // Законы об ОМ: нормативная база раздела — поиск, фильтр по виду, карточки.
+ // Справочник только для чтения; поиск и фильтр живут в URL, чтобы обновление
+ // страницы не сбрасывало выборку и ссылкой можно было поделиться — как в
+ // реестре ОМ.
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+@@ -35,20 +37,28 @@ function matches(document: LegalDocument, query: string): boolean {
+   if (query === "") return true;
+   const needle = query.toLowerCase();
+   return (
+     document.title.toLowerCase().includes(needle) ||
+     document.code.toLowerCase().includes(needle) ||
+     document.description.toLowerCase().includes(needle)
+   );
+ }
+ 
+ export default function LegalDocumentsPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <LegalDocumentsScreen />
++    </Suspense>
++  );
++}
++
++function LegalDocumentsScreen() {
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   // Права те же, что у соседних экранов раздела: нормативная база — часть
+   // контура ОМ, отдельного кода под неё в сиде RBAC нет, а выдумывать свой
+   // значило бы закрыть экран всем, кроме администратора с `*`.
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+ 
+   const kindParam = searchParams.get("kind");
+   const kind: LegalDocumentKind | "ALL" = isKind(kindParam) ? kindParam : "ALL";
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx
+index 630472fe..dc418cd8 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx
+@@ -12,21 +12,21 @@
+ // как «данные есть, просто их ноль». Вместо этого — макет по прототипу
+ // (`PassportPlannedTabs`): настоящая структура секций и заголовки, вместо
+ // значений — плейсхолдер-полосы и одна честная строка причины на вкладку.
+ // Раньше эти три были названы только внизу экрана, в списке «Чего нет»;
+ // теперь они названы в собственных вкладках, и список ниже сократился на
+ // эти три пункта.
+ //
+ // Экран НИЧЕГО не считает сам. Состояние паспорта, срок проверки, политику
+ // свежести и снимки версий присылает сервер; страница только раскладывает их
+ // по вкладкам и печатает его же словами.
+-import { useMemo, useState } from "react";
++import { Suspense, useMemo, useState } from "react";
+ import Link from "next/link";
+ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import { OpsAccessDenied } from "@/components/ops-access-denied";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { AlertTriangle, Building2 } from "lucide-react";
+ import { useToast } from "@/shared/hooks/use-toast";
+ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+ import {
+@@ -88,20 +88,28 @@ const MISSING_TABS: ReadonlyArray<{ title: string; reason: string }> = [
+       "История паспорта — это его опубликованные версии. Построчного журнала правок и ленты мероприятий по объекту сервер не отдаёт; лента ОМ живёт в реестре мероприятий.",
+   },
+   {
+     title: "«Старший объекта», тип поста и предельное время без смены",
+     reason:
+       "У объекта нет поля ответственного, а у поста — типа (наружный/внутренний) и предельного времени без смены: пост несёт имя, задачу и требования.",
+   },
+ ];
+ 
+ export default function SecurityObjectPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <SecurityObjectScreen />
++    </Suspense>
++  );
++}
++
++function SecurityObjectScreen() {
+   const params = useParams<{ id: string }>();
+   const id = params?.id ?? "";
+   const query = useSecurityObject(id);
+   // Свежесть и «чего нет» приезжают ТОЛЬКО с конвертом реестра — у карточки
+   // своей ручки под них нет. Ключ запроса тот же, что у реестра, поэтому
+   // переход из списка ничего не догружает, а прямой заход по адресу берёт
+   // конверт один раз. Своего срока карточка не считает: дни до проверки уже
+   // посчитала политика на сервере.
+   const registry = useSecurityObjects();
+ 
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx
+index ef02b8f7..b2993ff1 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/page.tsx
+@@ -20,21 +20,21 @@
+ //     на числа не влияют;
+ //   • срок и состояние актуальности приходят готовыми (freshness) — дни до
+ //     срока страница не считает, фиксированного frontend-периода нет.
+ //     Версию политики, по которой они посчитаны, экран БОЛЬШЕ НЕ ПЕЧАТАЕТ:
+ //     `freshnessPolicy` в ответе есть и остаётся единственным источником
+ //     интервала, но пользователю он не показан — если снова понадобится
+ //     объяснить, откуда взялась дата, брать значения оттуда, а не вводить
+ //     своё число дней.
+ // Все фильтры и поиск живут в URL — состояние экрана переживает перезагрузку
+ // и делится ссылкой.
+-import { useMemo, useState } from "react";
++import { Suspense, useMemo, useState } from "react";
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Input } from "@/components/ui/input";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+ import {
+   Select,
+@@ -265,20 +265,28 @@ function latestVersion(object: SecurityObject) {
+   return object.passportVersions.reduce((best, version) =>
+     version.versionNumber > best.versionNumber ? version : best
+   );
+ }
+ 
+ function countPosts(object: SecurityObject): number {
+   return object.sectors.reduce((total, sector) => total + sector.posts.length, 0);
+ }
+ 
+ export default function SecurityObjectsPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <SecurityObjectsScreen />
++    </Suspense>
++  );
++}
++
++function SecurityObjectsScreen() {
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   // Текущий отбор едет с человеком в карточку: возврат «← Назад» без него
+   // приводил на голый корень реестра, и подобранный фильтр приходилось
+   // набирать заново.
+   const backSuffix = (() => {
+     const query = searchParams.toString();
+     return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
+   })();
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/employees/[employeeId]/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/employees/[employeeId]/page.tsx
+index dbb8f2e3..2d08e94a 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/employees/[employeeId]/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/employees/[employeeId]/page.tsx
+@@ -1,12 +1,14 @@
+ "use client";
+ 
++import { Suspense } from "react";
++
+ // Карточка сотрудника при праве только на агрегат (§19.17): агрегат,
+ // количество учтённых, период, версия методики, дата расчёта и агрегированная
+ // динамика — без отдельных оценок и оценщиков. Возврат ведёт на СОХРАНЁННЫЙ
+ // запрос реестра — он приехал параметром `back`.
+ import Link from "next/link";
+ import { useParams, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import {
+   Table,
+@@ -17,20 +19,28 @@ import {
+   TableCell,
+ } from "@/components/ui/table";
+ import { OpsAccessDenied } from "@/components/ops-access-denied";
+ import { LoadFailure } from "@/components/load-failure";
+ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+ import { useRatingEmployeeDetail } from "@/hooks/use-ops-ratings";
+ import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
+ import { DATA_STATE_LABEL } from "@/entities/operational-rating";
+ 
+ export default function RatingEmployeeDetailPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <RatingEmployeeDetailScreen />
++    </Suspense>
++  );
++}
++
++function RatingEmployeeDetailScreen() {
+   const params = useParams<{ employeeId: string }>();
+   const searchParams = useSearchParams();
+   const employeeId = params.employeeId ?? null;
+   const query = useRatingEmployeeDetail(employeeId);
+   const data = query.data;
+   const back = searchParams.get("back") ?? "";
+   const backTo =
+     back === ""
+       ? "/security-ops/ratings/evaluations"
+       : `/security-ops/ratings/evaluations?${back}`;
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/evaluations/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/evaluations/page.tsx
+index eb842fc9..db73b880 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/evaluations/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/evaluations/page.tsx
+@@ -1,12 +1,14 @@
+ "use client";
+ 
++import { Suspense } from "react";
++
+ // Реестр «Итоговые оценки участников» (§19.15-19.16). Состояние живёт в URL —
+ // единственный источник, локальной копии фильтров нет. Закрытых величин на
+ // экране нет, потому что их нет в ответе: колонка «Детали оценки» печатает
+ // подпись, а не спрятанное значение.
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import {
+   Table,
+@@ -56,20 +58,28 @@ function readFilters(params: URLSearchParams): RegistryFilters {
+     search: params.get("search") ?? "",
+     page: Number.isFinite(page) && page > 0 ? page : 1,
+   };
+ }
+ 
+ function aggregateLabel(value: number | null): string {
+   return value === null ? "—" : String(value).replace(".", ",");
+ }
+ 
+ export default function EvaluationRegistryPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <EvaluationRegistryScreen />
++    </Suspense>
++  );
++}
++
++function EvaluationRegistryScreen() {
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   const filters = readFilters(searchParams);
+   const query = useEvaluationRegistry(filters);
+   const data = query.data;
+ 
+   /** Любая правка фильтра сбрасывает страницу: третья страница прежнего
+    * отбора показала бы пустоту как «ничего не найдено». */
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/workspace/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/workspace/page.tsx
+index 4f999c57..4dcef431 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/workspace/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/ratings/workspace/page.tsx
+@@ -1,18 +1,18 @@
+ "use client";
+ 
+ // Рабочее пространство оценивания (§19.14): очередь заданий, форма оценки и
+ // сводка мероприятия. Экран не создаёт заданий и не придумывает значений:
+ // начальная оценка, перечень оснований, состав очереди и счётчики приходят
+ // готовыми. Оценок, полученных смотрящим от других, здесь нет — их не отдаёт
+ // сервер.
+-import { useState } from "react";
++import { Suspense, useState } from "react";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import {
+   useEvaluationWorkspace,
+   useSubmitEvaluation,
+ } from "@/hooks/use-ops-ratings";
+ import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
+ import { RatingNotificationsSection } from "@/features/ops-ratings/rating-notifications-section";
+@@ -265,20 +265,28 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
+           onClick={onClose}
+         >
+           Отмена
+         </button>
+       </div>
+     </form>
+   );
+ }
+ 
+ export default function EvaluationWorkspacePage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <EvaluationWorkspaceScreen />
++    </Suspense>
++  );
++}
++
++function EvaluationWorkspaceScreen() {
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   const eventId = searchParams.get("event");
+   const [tab, setTab] = useState<TabKey>("pending");
+   const [openItemId, setOpenItemId] = useState<string | null>(null);
+   // Карточка отправленной оценки открывается ОТДЕЛЬНЫМ запросом (§19.18 шаг 3).
+   const [openSubmittedId, setOpenSubmittedId] = useState<string | null>(null);
+   const query = useEvaluationWorkspace(eventId);
+diff --git a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/service-reports/history/page.tsx b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/service-reports/history/page.tsx
+index 4496ca2b..7a75ef5a 100644
+--- a/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/service-reports/history/page.tsx
++++ b/Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/service-reports/history/page.tsx
+@@ -1,17 +1,17 @@
+ "use client";
+ 
+ // История отчётов (§22.25). Экран не решает, что можно делать со строкой:
+ // доступность каждого действия и причина отказа приходят с сервера — здесь
+ // нет ни одной ветки «если работа упала, выключить кнопку».
+ import { RightGate } from "@/shared/ui/right-gate";
+-import { useMemo, useState } from "react";
++import { Suspense, useMemo, useState } from "react";
+ import Link from "next/link";
+ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DashboardLayout } from "@/components/dashboard-layout";
+ import { PageHeader } from "@/components/page-header";
+ import {
+   useDownloadArtifact,
+   useReportJobs,
+   useRerunReportJob,
+ } from "@/hooks/use-ops-reports";
+ import {
+@@ -44,20 +44,28 @@ const STATE_FILTERS: readonly ReportJobState[] = [
+   "PROCESSING",
+   "COMPLETED",
+   "FAILED",
+ ];
+ 
+ function isState(value: string | null): value is ReportJobState {
+   return value !== null && STATE_FILTERS.includes(value as ReportJobState);
+ }
+ 
+ export default function ReportHistoryPage() {
++  return (
++    <Suspense fallback={<div className="min-h-screen bg-background" />}>
++      <ReportHistoryScreen />
++    </Suspense>
++  );
++}
++
++function ReportHistoryScreen() {
+   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+   // Фильтры — в URL: ссылка на отфильтрованную историю переживает
+   // перезагрузку и пересылается другому человеку.
+   const router = useRouter();
+   const pathname = usePathname();
+   const searchParams = useSearchParams();
+   const stateParam = searchParams.get("state");
+   const state = isState(stateParam) ? stateParam : undefined;
+   const mine = searchParams.get("mine") === "true";
+ 

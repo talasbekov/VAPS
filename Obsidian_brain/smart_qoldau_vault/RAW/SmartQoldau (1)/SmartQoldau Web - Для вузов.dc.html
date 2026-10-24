@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951} input,textarea{font-family:inherit;outline:none}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+<dc-import name="SmartQoldau Web - CookieBanner" hint-size="100%,0"></dc-import>
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:24px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;text-decoration:none">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </a>
+      <div style="display:flex;align-items:center;gap:14px">
+        <dc-import name="SmartQoldau Web - LangSwitch" hint-size="64,28"></dc-import>
+      <a href="./SmartQoldau.kz.dc.html" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none">← На главную</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1240px;margin:0 auto;padding:64px 32px 20px;display:flex;align-items:center;gap:56px;flex-wrap:wrap">
+    <div style="flex:1;min-width:340px">
+      <div style="font-size:36px;font-weight:800;color:#0f3f3a;line-height:1.2;margin-bottom:16px">Практика для студентов психологических факультетов</div>
+      <div style="font-size:15.5px;font-weight:500;color:#5b7a75;line-height:1.6;margin-bottom:28px;max-width:460px">Партнёрство с вузами — реальная практика под супервизией для ваших студентов.</div>
+      <div onClick="{{ scrollToForm }}" style="display:inline-flex;height:52px;padding:0 28px;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;align-items:center;cursor:pointer">Оставить заявку на партнёрство</div>
+    </div>
+    <div style="flex:1;min-width:300px;max-width:480px">
+      <image-slot id="b2g-hero" style="width:100%;height:320px" shape="rounded" radius="24" placeholder="Студент на консультации под супервизией"></image-slot>
+    </div>
+  </div>
+
+  <div style="background:#f7faf9;padding:70px 32px">
+    <div style="max-width:900px;margin:0 auto">
+      <div style="font-size:26px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:36px">Как это работает</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+          <div><div style="font-size:12.5px;font-weight:800;color:#0f766e;margin-bottom:8px">{{ s.num }}</div><div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:5px">{{ s.title }}</div><div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">{{ s.text }}</div></div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:70px 32px">
+    <div style="max-width:1240px;margin:0 auto">
+      <div style="font-size:26px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:40px">Преимущества для вуза</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+        <sc-for list="{{ benefits }}" as="b" hint-placeholder-count="3">
+          <div style="border:1px solid #eef2f0;border-radius:18px;padding:22px">
+            <div style="width:40px;height:40px;border-radius:12px;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:14px">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ b.icon }}" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="font-size:14.5px;font-weight:800;color:#0f3f3a;margin-bottom:6px">{{ b.title }}</div>
+            <div style="font-size:12.5px;font-weight:500;color:#6b8580;line-height:1.5">{{ b.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 32px 70px">
+    <div style="max-width:900px;margin:0 auto;background:#f2fbf8;border:1px solid #d9ede7;border-radius:22px;padding:32px">
+      <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:10px">Для студентов</div>
+      <div style="font-size:14px;font-weight:500;color:#3f6b62;line-height:1.6">Если вы студент психологического факультета и хотите пройти практику через SmartQoldau — узнайте у деканата или кафедры, участвует ли ваш вуз в программе. Подключение возможно только через официальное партнёрство с вузом — самостоятельная регистрация студента в обход вуза не предусмотрена.</div>
+    </div>
+  </div>
+
+  <div id="b2g-form" style="padding:20px 32px 90px">
+    <div style="max-width:640px;margin:0 auto">
+      <sc-if value="{{ !submitted }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:26px;font-weight:800;color:#0f3f3a;text-align:center;margin-bottom:8px">Заявка на партнёрство</div>
+        <div style="font-size:13.5px;font-weight:500;color:#6b8580;text-align:center;margin-bottom:32px">Для представителей вуза — деканата, кафедры или куратора практики</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input value="{{ org }}" onInput="{{ onOrg }}" placeholder="Название вуза" style="height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+          <div style="display:flex;gap:12px">
+            <input value="{{ contact }}" onInput="{{ onContact }}" placeholder="Контактное лицо" style="flex:1;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+            <input value="{{ position }}" onInput="{{ onPosition }}" placeholder="Должность (декан / зав. кафедрой / куратор)" style="flex:1;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+          </div>
+          <div style="display:flex;gap:12px">
+            <input value="{{ email }}" onInput="{{ onEmail }}" placeholder="Email" style="flex:1;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+            <input value="{{ phone }}" onInput="{{ onPhone }}" placeholder="Телефон" style="flex:1;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+          </div>
+          <input value="{{ students }}" onInput="{{ onStudents }}" inputmode="numeric" placeholder="Примерное количество студентов для программы" style="height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+          <textarea value="{{ comment }}" onInput="{{ onComment }}" placeholder="Комментарий (необязательно)" style="height:90px;border:1.5px solid #edf2f0;border-radius:14px;padding:14px 16px;font-size:14px;color:#0f3f3a;box-sizing:border-box;resize:none"></textarea>
+          <sc-if value="{{ error }}" hint-placeholder-val="{{ false }}"><div style="font-size:12.5px;font-weight:600;color:#c0392b">{{ error }}</div></sc-if>
+          <button onClick="{{ onSubmit }}" style="height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer">Оставить заявку на партнёрство</button>
+          <div style="font-size:11.5px;font-weight:500;color:#a9bdb9;text-align:center">Заявка обрабатывается менеджером вручную — без автоматического подключения</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ submitted }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:40px 20px">
+          <div style="width:56px;height:56px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#159a7c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div style="font-size:19px;font-weight:800;color:#0f3f3a;margin-bottom:8px">Заявка отправлена</div>
+          <div style="font-size:14px;font-weight:500;color:#6b8580">Наш менеджер свяжется с вами в течение 1 рабочего дня</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { org: '', contact: '', position: '', email: '', phone: '', students: '', comment: '', error: '', submitted: false };
+  renderVals() {
+    const s = this.state;
+    const set = (k) => (e) => this.setState({ [k]: e.target.value, error: '' });
+    return {
+      steps: [
+        { num: '01', title: 'Соглашение', text: 'Вуз заключает партнёрское соглашение с платформой.' },
+        { num: '02', title: 'Верификация', text: 'Студенты проходят верификацию: справка с места учёбы, подтверждение курса, назначенный супервайзер.' },
+        { num: '03', title: 'Практика', text: 'Студенты консультируют реальных клиентов под супервизией — бесплатно или со скидкой.' },
+        { num: '04', title: 'Учёт часов', text: 'Каждая консультация засчитывается студенту как часы практики по учебной программе.' },
+      ],
+      benefits: [
+        { title: 'Реальная клиентская практика', text: 'Студенты получают практику с реальными клиентами без необходимости искать площадку самостоятельно.', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7' },
+        { title: 'Контроль через супервизию', text: 'Куратор вуза видит нагрузку студентов и может разбирать случаи вместе с ними.', icon: 'M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z' },
+        { title: 'Партнёрство с платформой', text: 'Сотрудничество с современной платформой психологической поддержки, знакомой студентам и абитуриентам.', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z' },
+      ],
+      org: s.org, onOrg: set('org'),
+      contact: s.contact, onContact: set('contact'),
+      position: s.position, onPosition: set('position'),
+      email: s.email, onEmail: set('email'),
+      phone: s.phone, onPhone: set('phone'),
+      students: s.students, onStudents: set('students'),
+      comment: s.comment, onComment: set('comment'),
+      error: s.error,
+      submitted: s.submitted,
+      scrollToForm: () => { document.getElementById('b2g-form')?.scrollIntoView({ behavior: 'smooth' }); },
+      onSubmit: () => {
+        if (!s.org || !s.contact || !s.email || !s.phone) { this.setState({ error: 'Заполните название вуза, контактное лицо, email и телефон' }); return; }
+        this.setState({ submitted: true });
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

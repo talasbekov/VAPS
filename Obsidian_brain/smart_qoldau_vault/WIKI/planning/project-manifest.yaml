@@ -1,0 +1,69 @@
+# SmartQoldau — машиночитаемый индекс проекта (2026-09-13, HEAD 310dde3 = main)
+# Назначение: быстрый вход для следующих ИИ-сессий. Длинные тексты — в 00…18 *.md рядом.
+version: 1
+repo: https://github.com/talasbekov/smart_qoldau
+local_path: /home/erda/Музыка/smart_qoldau
+knowledge_base: /home/erda/Музыка/Obsidian_brain/smart_qoldau_vault   # WIKI/planning — этот пакет
+prototype_reference: RAW/SmartQoldau (1)     # v2 (113 файлов); v1 в docs/Прототип (92)
+status: PLANNING COMPLETE — IMPLEMENTATION NOT STARTED
+
+applications:
+  api:        {path: backend/,        stack: "NestJS 11, Prisma 6, PostgreSQL 16, Redis 7, socket.io, LiveKit SDK", entry: src/main.ts, port: 3000, prefix: /v1, deploy: [smartqoldau-backend, migrate], ci: .github/workflows/backend.yml}
+  web:        {path: web/,            stack: "Next.js 15, React 19, next-intl, Tailwind, livekit-client, socket.io-client", entry: app/[locale], groups: [public, client, expert], bff: app/api, deploy: smartqoldau-web, ci: web.yml}
+  admin:      {path: admin/,          stack: "Vite, React 19, react-router 7, Tailwind, Vitest", entry: src/App.tsx, deploy: smartqoldau-admin, ci: admin.yml}
+  app_client: {path: app_client/,     stack: "Flutter (iOS/Android), go_router, Riverpod", entry: lib/main.dart, router: lib/router.dart, ci: app_client.yml}
+  app_expert: {path: app_expert/,     stack: "Flutter (iOS/Android)", entry: lib/main.dart, router: lib/router.dart, ci: app_expert.yml}
+  shared:     {path: packages/shared/, stack: "Dart: SqApi (Dio), freezed, socket_io_client, livekit_client, firebase_messaging, design tokens", contract_test: test по docs/openapi.json}
+  infra:      {path: infra/,          files: [docker-compose.dev.yml, docker-compose.prod.yml, docker-compose.stand.yml, nginx.stand.conf, .env.prod.example, README.md]}
+  docs:       {path: docs/,           files: [openapi.json (108 paths / 123 ops), deeplinks.md, "Прототип/ (v1)"]}
+
+modules_backend:   # backend/src/<name>; действие по 03_AS_IS_ARCHITECTURE §3
+  keep:   [common, config, prisma, redis, auth, topics, devices, experts, verification, schedule, presence, matching, requests, favorites, booking, consultations, media, reviews, payments, ledger, payouts, premium, notifications, tickets, admin, content, maintenance, cli]
+  harden: [account, audit, chat, storage, ws, notifications, media]
+
+roles: [R-GUEST, R-CLIENT, R-CLIENT-PREMIUM, R-EXPERT-APPLICANT, R-EXPERT-VERIFIED, R-EXPERT-BLOCKED, R-ADM-VERIFICATION, R-ADM-SUPPORT, R-ADM-QUALITY, R-ADM-FINANCE, R-ADM-CONTENT, R-ADM-SUPER, R-SYSTEM]
+admin_roles_enum: [VERIFICATION_OPERATOR, CONTENT_EDITOR, SUPPORT_OPERATOR, QUALITY_TEAM, FINANCE_CONTROL, SUPERADMIN]
+
+capabilities:   # F-* в 04_FEATURE_INVENTORY; статусы: I&T / PART / MISSING / MOCKED / DOCUMENTED_ONLY
+  client:  {implemented: [F-CL-01..05, F-CL-07..12, F-CL-14..18, F-CL-20..23, F-CL-25, F-CL-26, F-CL-28, F-CL-30, F-CL-36], partial: [F-CL-13, F-CL-19, F-CL-27, F-CL-29, F-CL-31], mocked: [F-CL-24], missing: [F-CL-06, F-CL-32, F-CL-33, F-CL-34, F-CL-35]}
+  expert:  {implemented: [F-EX-01..08, F-EX-10, F-EX-12..18, F-EX-24], partial: [F-EX-09, F-EX-19, F-EX-20, F-EX-21], documented_only: [F-EX-11], missing: [F-EX-22, F-EX-23, F-EX-25]}
+  admin:   {implemented: [F-AD-01..07, F-AD-09, F-AD-10, F-AD-15, F-AD-19, F-AD-21, F-AD-23, F-AD-24], backend_only: [F-AD-14, F-AD-20], missing: [F-AD-08, F-AD-11, F-AD-12, F-AD-13, F-AD-16, F-AD-17, F-AD-18, F-AD-22, F-AD-25, F-AD-26, F-AD-27, F-AD-28]}
+
+screens:   # 11a_SCREEN_REGISTRY: ID → маршрут в коде (✓/◐/✗)
+  client_mobile: {ids: CL-01..CL-32, routes_file: app_client/lib/router.dart, missing: [CL-29, CL-30, CL-31]}
+  expert_mobile: {ids: EX-01..EX-23, routes_file: app_expert/lib/router.dart, missing: [EX-21, EX-22, EX-23]}
+  web_public:    {ids: WB-01..WB-16, routes_dir: "web/app/[locale]/(public)", missing: [WB-11, WB-12, WB-13]}
+  web_expert:    {ids: EW-01..EW-13, routes_dir: "web/app/[locale]/(expert)", missing: [EW-11, EW-12, EW-13]}
+  admin:         {ids: AD-01..AD-17, routes_file: admin/src/App.tsx, missing: [AD-01, AD-03, AD-04, AD-05, AD-07, AD-08, AD-09]}
+
+endpoints: {source: docs/openapi.json, table: 10a_ENDPOINT_TABLE.md, count: 123, public: [GET /v1/topics, GET /v1/experts, GET /v1/experts/{id}, GET /v1/experts/{id}/reviews, GET /v1/premium/plans, GET /v1/content, GET /v1/content/{id}, GET /v1/health, POST /v1/auth/*, POST /v1/admin/auth/login|refresh|totp/verify, POST /v1/webhooks/*]}
+
+events:
+  ws: {namespace: /ws, auth: handshake.auth.token, rooms: ["user:{userId}", "expert:{expertId}"], server_to_client: [ready, request.updated, offer.new, offer.revoked, consultation.updated, chat.message, chat.typing, chat.error, notification.new], client_to_server: [chat.send, chat.typing]}
+  notifications: [chat.message, consultation.booked, consultation.cancelled, consultation.no_show_hint, consultation.reminder, consultation.rescheduled, earning.credited, offer.incoming, payout.paid, payout.rejected, premium.downgraded, premium.renewed, premium.renew_failed, ticket.replied, verification.approved, verification.rejected]
+  jobs: {offer-timer: 1s, outbox-sweep: 1s, scheduled-sweep: 30s, settle-retry: 60s, premium-renewal: 60s, retention-sweep: 1h}
+
+entities: {schema: backend/prisma/schema.prisma, migrations: 30, models: [User, SmsCode, RefreshToken, Topic, AuditLog, Expert, ExpertTopic, ScheduleException, ExpertDocument, ExpertScheduleDay, Request, RequestCandidate, Favorite, Consultation, ChatMessage, ExpertNote, Review, PaymentMethod, Payment, LedgerTransaction, LedgerEntry, Payout, ProviderEvent, Device, AdminRefreshToken, AdminRecoveryCode, AdminUser, Notification, NotificationOutbox, Ticket, TicketMessage, Subscription, ContentItem, ContentProgress, ContentVote], raw_sql_partial_unique: [users_device_id_guest_uq, request_candidates_pending_per_expert_uq, consultations_expert_slot_uq, consultations_expert_active_uq, subscriptions_active_uq], missing_v2: [Complaint, B2BContract, B2GContract, Tariff, Mailing]}
+
+constants: {offer_deadline_s: {normal: 45, emergency: 20}, escalation_s: {broadcast: 120, callback: 300}, no_show_s: 180, session_min: 50, reminder_min: 15, commission_bp: {regular: 1500, premium: 500}, premium_discount_bp: 1000, premium_plans: {MONTH: 4990, YEAR: 39900}, payout_min_tiyn: 1000000, payout_auto_limit_tiyn_month: 30000000, price_corridor_tiyn: [200000, 1500000], sms: {resend_s: 45, ttl_min: 5, attempts: 5}, throttle: {smsRequest: "3/h", smsVerify: "10/15m", adminLogin: "5/15m", createRequest: "10/h", paymentAttempt: "10/h", createTicket: "5/h", global: "60/min"}}
+
+external_services: {postgres: required, redis: required, s3_minio: "required at startup (StorageService.onModuleInit)", livekit: "required for calls", sms: {providers: [dev, mobizon]}, push: {providers: [mock]}, payments: {providers: [mock]}, payouts: {providers: [mock]}, analytics: posthog (mobile)}
+
+tests: {backend_unit: "45 suites / 191 (need infra for 11 suites)", backend_e2e: "101 suites (100 run: 525/529 pass with MinIO; content-admin/content-list isolation defect)", web: "58/298 Jest + 7 Playwright (stand)", admin: "28/74 Vitest", flutter: {shared: 271, app_client: 363, app_expert: 110}, lint: {backend_prettier_drift: 66, web: ok, admin: ok, dart_analyze: ok}}
+
+known_gaps:
+  ci: [lint --fix in CI, no MinIO service, content e2e assume empty seed, Jest hangs on failed bootstrap]
+  product_v2_pending_decisions: [Q-01 premium price/discount, Q-02 tariffs, Q-03 cancellations, Q-04 price corridor, Q-05 complaints, Q-06 B2B, Q-07 interns, Q-08 web client cabinet, Q-09 admin roles, Q-10 kz, Q-11 reminder, Q-12 payment methods, Q-13 mailings, Q-14 city, Q-15 sensitive domain, Q-16 callback, Q-17 expert chats, Q-18 cleanup, Q-19 docs copy, Q-20 E0]
+  security_before_pilot: [T-02, T-05, T-06, T-07, T-09, T-12, T-13, T-14, T-15, T-17, T-23]
+  release: [real acquirer, FCM/APNs + VoIP, iOS build, stores, TLS, backups, monitoring, legal texts]
+
+target_ownership:
+  api: backend/            # правила, состояния, деньги, realtime, контракт
+  web: web/                # SSR публичное + кабинеты + BFF
+  mobile: [app_client/, app_expert/, packages/shared/]
+  admin: admin/
+  contracts: contracts/    # TO-BE: openapi.json (git mv из docs/), ws-events.md, errors.md, design-tokens.json
+  infra: infra/
+
+roadmap_epics: {E18: "гигиена и честный CI", E19: "решения по прототипу v2 → ТЗ v1.1", E20: "жалобы и споры", E21: "админка v2 (дашборд, специалисты, клиенты, финансы, callback, темы)", E22: "политика отмен v2", E23: "тарифы специалистов", E24: "B2B/B2G", E25: "Kaspi/Apple/Google Pay", E26: "рассылки", E27: "push/VoIP + сторы", E28: "realtime и контракты", E29: "безопасность до пилота", E30: "эксплуатация", E11: "пилот", E0: "оргблокеры"}
+tracking: {plane: {project: "Smart Qoldau", identifier: SQD, tool: ~/plane/migration/plane_task.py}, todoist: {project: "Smart Qoldau", id: 6hMhFvF72rhmF9pv}, obsidian: {log: LOG.md, journal: OUTPUT/2026-09-13-журнал-аудита-и-мастер-плана.md}}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} @keyframes sq-pulse{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.6);opacity:0}}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:{{ bgColor }};font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div onClick="{{ toggleDemo }}" style="position:absolute;top:64px;right:20px;padding:7px 13px;border-radius:12px;background:rgba(255,255,255,0.14);color:#fff;font-size:11px;font-weight:700;cursor:pointer;z-index:5">Демо: {{ demoLabel }}</div>
+
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 30px;box-sizing:border-box">
+      <div style="font-size:13px;font-weight:700;color:{{ accentColor }};letter-spacing:1px;text-transform:uppercase;margin-bottom:22px">{{ headerLabel }}</div>
+
+      <div style="position:relative;width:120px;height:120px;display:flex;align-items:center;justify-content:center;margin-bottom:24px">
+        <div style="position:absolute;inset:0;border-radius:50%;border:1.5px solid {{ ringColor }};animation:sq-pulse 2s ease-out infinite"></div>
+        <div style="position:absolute;inset:0;border-radius:50%;border:1.5px solid {{ ringColor }};animation:sq-pulse 2s ease-out infinite;animation-delay:0.5s"></div>
+        <div style="width:88px;height:88px;border-radius:50%;background:{{ iconBg }};display:flex;align-items:center;justify-content:center">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+
+      <div style="font-size:20px;font-weight:800;color:#fff;margin-bottom:6px">Анонимный клиент #7284</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="{{ formatIcon }}" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.7)">{{ topic }} · {{ formatLabel }}</div>
+      </div>
+      <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.45)">Клиент ищет специалиста — ответьте, чтобы принять</div>
+
+      <sc-if value="{{ isEmergency }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:16px;padding:10px 14px;border-radius:14px;background:rgba(225,75,63,0.16);max-width:280px">
+          <div style="font-size:11.5px;font-weight:600;color:#f0c4c0;line-height:1.5;text-align:center">⚠️ SmartQoldau не заменяет экстренные службы. При угрозе жизни клиенту нужно звонить 102/103</div>
+        </div>
+      </sc-if>
+
+      <div style="margin-top:26px;padding:8px 16px;border-radius:14px;background:{{ iconBg }}">
+        <div style="font-size:13px;font-weight:700;color:#fff">Автоотклонение через {{ countdown }}с</div>
+      </div>
+    </div>
+
+    <div style="position:absolute;bottom:0;left:0;right:0;padding:0 30px 44px;display:flex;gap:14px">
+      <button onClick="{{ onDecline }}" style="flex:1;height:58px;border:none;border-radius:29px;background:rgba(255,255,255,0.12);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">Отклонить</button>
+      <button onClick="{{ onAccept }}" style="flex:1;height:58px;border:none;border-radius:29px;background:{{ accentColor }};color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 14px 28px -10px {{ shadowColor }}">Принять</button>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { countdown: 20, forceEmergency: null };
+  componentDidMount() {
+    this._t = setInterval(() => {
+      if (this.state.countdown <= 1) { clearInterval(this._t); window.location.href = './SmartQoldau Expert - Заявки.dc.html'; return; }
+      this.setState(s => ({ countdown: s.countdown - 1 }));
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this._t); }
+  renderVals() {
+    const params = new URLSearchParams(window.location.search);
+    const formatId = params.get('format') || 'video';
+    const isEmergency = this.state.forceEmergency !== null ? this.state.forceEmergency : params.get('emergency') === '1';
+    const formatMap = {
+      chat: { label: 'Чат', icon: 'M4 5h16v11H8l-4 4V5z', route: './SmartQoldau Expert - Чат (эксперт).dc.html' },
+      audio: { label: 'Аудио', icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3', route: './SmartQoldau Expert - Аудиозвонок (эксперт).dc.html' },
+      video: { label: 'Видео', icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z', route: './SmartQoldau Expert - Видеозвонок (эксперт).dc.html' },
+    };
+    const f = formatMap[formatId] || formatMap.video;
+    return {
+      topic: isEmergency ? 'Экстренная ситуация' : 'Тревожность',
+      headerLabel: isEmergency ? 'Приоритетный запрос' : 'Новый запрос на консультацию',
+      accentColor: isEmergency ? '#e14b3f' : '#0f766e',
+      ringColor: isEmergency ? 'rgba(240,145,138,0.5)' : 'rgba(255,255,255,0.25)',
+      shadowColor: isEmergency ? 'rgba(225,75,63,0.6)' : 'rgba(15,118,110,0.6)',
+      bgColor: isEmergency ? '#4a1f1c' : '#0f3f3a',
+      iconBg: isEmergency ? 'rgba(225,75,63,0.28)' : 'rgba(255,255,255,0.1)',
+      isEmergency,
+      formatLabel: f.label,
+      formatIcon: f.icon,
+      countdown: this.state.countdown,
+      demoLabel: isEmergency ? 'экстренный' : 'обычный',
+      toggleDemo: () => this.setState({ forceEmergency: !isEmergency }),
+      onAccept: () => { window.location.href = f.route; },
+      onDecline: () => { window.location.href = './SmartQoldau Expert - Главная.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

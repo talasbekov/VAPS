@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1440px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18)">
+
+    <div style="width:260px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:28px 18px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:36px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">EXPERT</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="9">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
+        <sc-for list="{{ bottomLinks }}" as="b" hint-placeholder-count="3">
+          <div onClick="{{ b.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ b.icon }}" stroke="rgba(255,255,255,0.5)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.55)">{{ b.label }}</div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08)">
+          <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff">Айгуль Сатпаева</div><div style="display:flex;align-items:center;gap:5px;margin-top:1px"><div style="width:6px;height:6px;border-radius:50%;background:#159a7c"></div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">Принимаю клиентов</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:36px 40px;box-sizing:border-box;overflow-y:auto">
+      <div style="font-size:24px;font-weight:800;color:#0f3f3a;margin-bottom:20px">Мои консультации</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px">
+        <div style="display:flex;gap:6px;background:#eef2f0;border-radius:14px;padding:4px;width:fit-content">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+            <div onClick="{{ t.onClick }}" style="padding:9px 20px;border-radius:11px;background:{{ t.bg }};box-shadow:{{ t.shadow }};font-size:13px;font-weight:700;color:{{ t.color }};cursor:pointer;white-space:nowrap">{{ t.label }}</div>
+          </sc-for>
+        </div>
+        <div style="position:relative;width:280px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="position:absolute;left:14px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7" stroke="#a9bdb9" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="#a9bdb9" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Поиск по клиенту или теме" style="width:100%;height:40px;border:1.5px solid #eef2f0;border-radius:12px;padding:0 12px 0 38px;font-size:13px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasItems }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ items }}" as="c" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:16px;border:1px solid #eef2f0;background:#fff;transition:box-shadow 0.15s" style-hover="box-shadow:0 10px 24px -12px rgba(15,63,58,0.18)">
+              <div style="width:48px;height:48px;border-radius:14px;background:{{ c.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="{{ c.icon }}" stroke="{{ c.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div style="width:110px;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#0f3f3a">{{ c.time }}</div></div>
+              <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ c.label }}</div><div style="font-size:12px;font-weight:500;color:#8fa6a1">{{ c.topic }} · {{ c.format }}</div></div>
+              <sc-if value="{{ c.completed }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:right;flex-shrink:0"><div style="font-size:13.5px;font-weight:800;color:#0f3f3a">{{ c.duration }}</div><div style="font-size:11.5px;font-weight:700;color:#159a7c">{{ c.amount }}</div></div>
+              </sc-if>
+              <sc-if value="{{ !c.completed }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ c.onStart }}" style="height:42px;padding:0 20px;border:none;border-radius:13px;background:#0f766e;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Начать консультацию</button>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noItems }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:80px 20px">
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a">Здесь появятся ваши консультации</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static ICONS = {
+    'Чат': { icon: 'M4 5h16v11H8l-4 4V5z', color: '#159a7c', bg: '#e3f3ee' },
+    'Аудио': { icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3', color: '#3b82c4', bg: '#e6f0fb' },
+    'Видео': { icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z', color: '#e08a4d', bg: '#fdece3' },
+  };
+  static ALL = [
+    { id: 1, group: 'today', time: '18:30', topic: 'Тревога и стресс', format: 'Видео', completed: false, anon: true, code: '#1048' },
+    { id: 2, group: 'today', time: '20:00', topic: 'Панические атаки', format: 'Чат', completed: false, anon: true, code: '#2214' },
+    { id: 3, group: 'upcoming', time: 'Завтра, 11:00', topic: 'Отношения', format: 'Аудио', completed: false, anon: false, name: 'Марат Ж.', ordinal: 1 },
+    { id: 4, group: 'completed', time: '2 авг', topic: 'Тревога и стресс', format: 'Видео', completed: true, duration: '48 мин', amount: '3 990 ₸', anon: true, code: '#1048' },
+    { id: 5, group: 'completed', time: '27 июл', topic: 'Выгорание', format: 'Аудио', completed: true, duration: '40 мин', amount: '3 990 ₸', anon: true, code: '#3067' },
+  ];
+  state = { tab: 'today', query: '' };
+  renderVals() {
+    const s = this.state;
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert Web - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert Web - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert Web - Консультации.dc.html' },
+      { label: 'Клиенты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Expert Web - Клиенты.dc.html' },
+      { label: 'Чаты', icon: 'M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z', href: './SmartQoldau Expert Web - Чаты.dc.html' },
+      { label: 'Расписание', icon: 'M8 2v4M16 2v4M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', href: './SmartQoldau Expert Web - Расписание.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert Web - Доход.dc.html' },
+      { label: 'Рейтинг', icon: 'M12 2l3 6.5 7 1-5 5 1.2 7-6.2-3.5-6.2 3.5 1.2-7-5-5 7-1z', href: './SmartQoldau Expert Web - Рейтинг.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert Web - Профиль.dc.html' },
+    ].map(n => {
+      const isActive = n.label === active;
+      return { ...n, active: isActive, bg: isActive ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: isActive ? '#fff' : 'rgba(255,255,255,0.55)', textColor: isActive ? '#fff' : 'rgba(255,255,255,0.6)', onClick: isActive ? () => {} : () => { window.location.href = n.href; } };
+    });
+
+    const tabDefs = [
+      { id: 'today', label: 'Сегодня' },
+      { id: 'upcoming', label: 'Предстоящие' },
+      { id: 'completed', label: 'Завершённые' },
+    ].map(t => { const sel = s.tab === t.id; return { ...t, selected: sel, bg: sel ? '#fff' : 'transparent', shadow: sel ? '0 2px 6px rgba(0,0,0,0.08)' : 'none', color: sel ? '#0f3f3a' : '#8fa6a1', onClick: () => this.setState({ tab: t.id }) }; });
+
+    const q = s.query.trim().toLowerCase();
+    const filtered = Component.ALL.filter(c => c.group === s.tab).map(c => ({ ...c, label: c.anon ? ('Анонимный клиент ' + c.code) : (c.name + ' · Клиент ' + c.ordinal) })).filter(c => !q || c.topic.toLowerCase().includes(q) || c.label.toLowerCase().includes(q));
+    const items = filtered.map(c => ({ ...c, ...Component.ICONS[c.format], onStart: () => { window.location.href = './SmartQoldau Expert Web - Видеоконсультация.dc.html'; } }));
+
+    return {
+      navItems: nav('Консультации'),
+      bottomLinks: [
+        { label: 'Уведомления', icon: 'M6 8a6 6 0 1112 0c0 3.5 1 5.5 2 7H4c1-1.5 2-3.5 2-7z M9.5 19a2.5 2.5 0 005 0', onClick: () => { window.location.href = './SmartQoldau Expert Web - Уведомления.dc.html'; } },
+        { label: 'Поддержка', icon: 'M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 17v.1 M12 21a9 9 0 100-18 9 9 0 000 18z', onClick: () => { window.location.href = './SmartQoldau Expert Web - Поддержка.dc.html'; } },
+        { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', onClick: () => {} },
+      ],
+      tabs: tabDefs,
+      query: s.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      hasItems: items.length > 0,
+      noItems: items.length === 0,
+      items,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

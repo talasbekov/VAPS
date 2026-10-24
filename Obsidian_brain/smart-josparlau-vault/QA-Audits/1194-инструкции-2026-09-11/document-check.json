@@ -1,0 +1,23 @@
+[
+  {
+    "document": "01-Администратору",
+    "pages": 9,
+    "steps": 7,
+    "figures": 5,
+    "sha256_pdf": "a5ae4aed757f1c61270f053106e0a6a17f9ae4d925af14bef91dc8dda67f1c58"
+  },
+  {
+    "document": "02-Ежедневный-расход",
+    "pages": 10,
+    "steps": 8,
+    "figures": 5,
+    "sha256_pdf": "b4a3d1790912ec622693de697926711d57e06a674c186324d67d53f922e79a6a"
+  },
+  {
+    "document": "03-Охранные-мероприятия",
+    "pages": 15,
+    "steps": 13,
+    "figures": 12,
+    "sha256_pdf": "945f9fb3d8d95852364ecd7e27d27ca50006a36d3a5c9bfb1d60bf49e877f590"
+  }
+]

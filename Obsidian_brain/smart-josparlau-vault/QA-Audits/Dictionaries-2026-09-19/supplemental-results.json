@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Подразделения",
+    "list": "http://localhost:8112/admin/divisions/division/",
+    "add": "http://localhost:8112/admin/divisions/division/add/",
+    "detail": "http://localhost:8112/admin/divisions/division/1/change/",
+    "result": "list/detail/add opened; no data changed"
+  },
+  {
+    "name": "Штатные единицы",
+    "list": "http://localhost:8112/admin/staff_unit/staffunit/",
+    "add": "http://localhost:8112/admin/staff_unit/staffunit/add/",
+    "detail": "http://localhost:8112/admin/staff_unit/staffunit/1/change/",
+    "result": "list/detail/add opened; no data changed"
+  },
+  {
+    "name": "Роли раздела ОМ",
+    "list": "http://localhost:8112/admin/operations/role/",
+    "add": "http://localhost:8112/admin/operations/role/add/",
+    "detail": "http://localhost:8112/admin/operations/role/VIEWER/change/",
+    "result": "list/detail/add opened; no data changed"
+  },
+  {
+    "name": "Права раздела ОМ",
+    "list": "http://localhost:8112/admin/operations/permission/",
+    "add": "http://localhost:8112/admin/operations/permission/add/",
+    "detail": "http://localhost:8112/admin/operations/permission/status.view/change/",
+    "result": "list/detail/add opened; no data changed"
+  },
+  {
+    "name": "Права ролей (ОМ)",
+    "list": "http://localhost:8112/admin/operations/rolepermission/",
+    "add": "http://localhost:8112/admin/operations/rolepermission/add/",
+    "detail": "http://localhost:8112/admin/operations/rolepermission/427/change/",
+    "result": "list/detail/add opened; no data changed"
+  }
+]

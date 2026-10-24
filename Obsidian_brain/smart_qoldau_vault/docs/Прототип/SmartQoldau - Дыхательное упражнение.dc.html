@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body{margin:0;background:#fff}
+    @keyframes sq-glow-pulse{0%,100%{opacity:0.5}50%{opacity:0.9}}
+    @keyframes sq-in{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:translateY(0)}}
+  </style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:linear-gradient(180deg,#ffffff 0%,#f6fbfa 55%,#e6f3ee 100%);display:flex;flex-direction:column;align-items:center;padding:64px 26px 32px;box-sizing:border-box;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <button onClick="{{ goBack }}" style="position:absolute;top:64px;left:24px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:5">
+      <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <sc-if value="{{ isIntro }}" hint-placeholder-val="{{ true }}">
+      <div style="width:100%;flex:1;display:flex;flex-direction:column;overflow-y:auto;padding-top:56px;animation:sq-in 0.4s ease-out">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin-bottom:24px">
+          <div style="font-size:21px;font-weight:800;color:#0f3f3a">Подготовьтесь</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;max-width:260px;line-height:1.5">Это займёт всего несколько минут</div>
+        </div>
+
+        <div style="position:relative;margin-bottom:28px">
+          <div style="position:absolute;left:7px;top:6px;bottom:6px;width:2px;border-radius:1px;background:#a8d5c5"></div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;align-items:flex-start;gap:10px;animation:sq-in 0.5s ease-out both;animation-delay:0.1s">
+              <div style="width:16px;flex-shrink:0;display:flex;justify-content:center;padding-top:5px"><span style="width:8px;height:8px;border-radius:50%;background:#159a7c"></span></div>
+              <div style="font-size:13.5px;font-weight:600;color:#3a5450;line-height:1.4">Найдите тихое место</div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;animation:sq-in 0.5s ease-out both;animation-delay:0.5s">
+              <div style="width:16px;flex-shrink:0;display:flex;justify-content:center;padding-top:5px"><span style="width:8px;height:8px;border-radius:50%;background:#159a7c"></span></div>
+              <div style="font-size:13.5px;font-weight:600;color:#3a5450;line-height:1.4">Сядьте удобно, расслабьте плечи</div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;animation:sq-in 0.5s ease-out both;animation-delay:0.9s">
+              <div style="width:16px;flex-shrink:0;display:flex;justify-content:center;padding-top:5px"><span style="width:8px;height:8px;border-radius:50%;background:#159a7c"></span></div>
+              <div style="font-size:13.5px;font-weight:600;color:#3a5450;line-height:1.4">Уберите телефон подальше от глаз</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Выберите технику</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:22px">
+          <sc-for list="{{ techniques }}" as="tech" hint-placeholder-count="4">
+            <div onClick="{{ tech.onClick }}" style="border:1.5px solid {{ tech.borderColor }};background:{{ tech.bg }};border-radius:14px;padding:12px 14px;cursor:pointer">
+              <div style="font-size:13.5px;font-weight:700;color:#0f3f3a;margin-bottom:2px">{{ tech.name }}</div>
+              <div style="font-size:11.5px;font-weight:500;color:#8fa6a1;line-height:1.4;margin-bottom:4px">{{ tech.desc }}</div>
+              <div style="font-size:11px;font-weight:600;color:#0f766e">Помогает при: {{ tech.helps }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Длительность</div>
+        <div style="display:flex;gap:8px;margin-bottom:24px">
+          <sc-for list="{{ durations }}" as="d" hint-placeholder-count="3">
+            <div onClick="{{ d.onClick }}" style="flex:1;text-align:center;border:1.5px solid {{ d.borderColor }};background:{{ d.bg }};border-radius:14px;padding:10px 6px;cursor:pointer;font-size:13px;font-weight:700;color:#0f3f3a">{{ d.label }}</div>
+          </sc-for>
+        </div>
+
+        <button onClick="{{ startSession }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4);margin-bottom:8px">Начать</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSession }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;width:100%;animation:sq-in 0.4s ease-out">
+        <div onClick="{{ toggleTechniques }}" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer">
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ currentTechniqueName }}</div>
+          <svg width="9" height="6" viewBox="0 0 9 6" fill="none"><path d="M1 1l3.5 3.5L8 1" stroke="#8fa6a1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:#6b8580;margin-bottom:30px">{{ remainingText }} из {{ totalText }}</div>
+
+        <div style="position:relative;width:230px;height:230px;display:flex;align-items:center;justify-content:center;margin-bottom:30px">
+          <div style="position:absolute;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(15,118,110,0.25) 0%,rgba(15,118,110,0) 72%);animation:sq-glow-pulse 4s ease-in-out infinite"></div>
+          <div style="position:absolute;width:170px;height:170px;border-radius:50%;background:rgba(15,118,110,0.08)"></div>
+          <div style="width:120px;height:120px;border-radius:50%;background:linear-gradient(145deg,#159a7c,#0f766e);transform:scale({{ circleScale }});transition:transform {{ phaseDuration }}s cubic-bezier(0.45,0,0.55,1);display:flex;align-items:center;justify-content:center;box-shadow:0 24px 48px -14px rgba(15,118,110,0.45)">
+            <div style="font-size:17px;font-weight:800;color:#fff;transform:scale({{ textScale }});transition:transform {{ phaseDuration }}s cubic-bezier(0.45,0,0.55,1)">{{ phaseLabel }}</div>
+          </div>
+        </div>
+
+        <div style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:22px;background:#0f766e;color:#fff;font-size:18px;font-weight:800;box-shadow:0 10px 22px -8px rgba(15,118,110,0.45);margin-bottom:36px">Цикл {{ cycleCount }}</div>
+        <div style="font-size:12px;font-weight:500;color:#6b8580;text-align:center;max-width:260px;line-height:1.5;margin-bottom:6px">{{ currentTechniqueDesc }}</div>
+        <div style="font-size:11px;font-weight:500;color:#a9bdb9;text-align:center;max-width:260px;line-height:1.4;font-style:italic;margin-top:8px">{{ currentTechniqueOrigin }}</div>
+
+        <sc-if value="{{ showCountdown }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;background:rgba(15,63,58,0.92);z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+            <div style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.75)">Начинаем через</div>
+            <div style="font-size:64px;font-weight:800;color:#fff">{{ countdownValue }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showTechniques }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;background:rgba(255,255,255,0.94);backdrop-filter:blur(4px);z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:26px;box-sizing:border-box">
+            <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:16px">Сменить технику</div>
+            <div style="width:100%;display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+              <sc-for list="{{ techniques }}" as="tech" hint-placeholder-count="4">
+                <div onClick="{{ tech.onPick }}" style="border:1.5px solid {{ tech.pickBorderColor }};background:{{ tech.pickBg }};border-radius:14px;padding:12px 14px;cursor:pointer">
+                  <div style="font-size:13.5px;font-weight:700;color:#0f3f3a;margin-bottom:2px">{{ tech.name }}</div>
+                  <div style="font-size:11px;font-weight:500;color:#8fa6a1;line-height:1.4">{{ tech.desc }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size:12.5px;font-weight:700;color:#0f3f3a;margin-bottom:8px;align-self:flex-start">Длительность</div>
+            <div style="display:flex;gap:8px;width:100%;margin-bottom:20px">
+              <sc-for list="{{ pendingDurations }}" as="d" hint-placeholder-count="3">
+                <div onClick="{{ d.onClick }}" style="flex:1;text-align:center;border:1.5px solid {{ d.borderColor }};background:{{ d.bg }};border-radius:14px;padding:10px 6px;cursor:pointer;font-size:13px;font-weight:700;color:#0f3f3a">{{ d.label }}</div>
+              </sc-for>
+            </div>
+            <button onClick="{{ applyTechnique }}" style="width:100%;height:52px;border:none;border-radius:26px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:10px">Начать</button>
+            <button onClick="{{ toggleTechniques }}" style="width:100%;height:44px;border:none;background:transparent;color:#8fa6a1;font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer">Отмена</button>
+          </div>
+        </sc-if>
+      </div>
+
+      <button onClick="{{ onFinish }}" style="width:100%;height:54px;border:1.5px solid #0f766e;border-radius:27px;background:#fff;color:#0f766e;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0">Завершить</button>
+    </sc-if>
+
+    <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;width:100%;gap:10px;text-align:center;animation:sq-in 0.4s ease-out">
+        <div style="width:56px;height:56px;border-radius:50%;background:#0f766e;display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a">Сессия завершена</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580;max-width:250px;line-height:1.5">Надеемся, стало немного легче</div>
+        <div onClick="{{ goToChat }}" style="font-size:13px;font-weight:700;color:#0f766e;margin-top:18px;cursor:pointer">Всё ещё тяжело? Поговорить с психологом</div>
+      </div>
+      <button onClick="{{ backHome }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0">Готово</button>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static TECHNIQUES = [
+    { id: 'box', name: 'Квадратное дыхание', desc: 'Вдох 4с — задержка 4с — выдох 4с — задержка 4с', helps: 'тревоге и стрессе',
+      about: 'Равные по длительности вдох, задержка, выдох и задержка выравнивают ритм дыхания и переключают нервную систему из режима тревоги в спокойное состояние. Используется перед стрессовыми событиями, при повышенной тревожности и для быстрой концентрации внимания.',
+      origin: 'Популяризирована в подготовке спецназа (Navy SEALs) как способ контроля стресса в боевых условиях',
+      phases: [
+      { label: 'Вдох', dur: 4, scale: 1.35 }, { label: 'Задержите', dur: 4, scale: 1.35 },
+      { label: 'Выдох', dur: 4, scale: 0.85 }, { label: 'Задержите', dur: 4, scale: 0.85 },
+    ] },
+    { id: '478', name: '4-7-8', desc: 'Вдох 4с — задержка 7с — выдох 8с. Хорошо перед сном', helps: 'трудностях с засыпанием',
+      about: 'Короткий вдох, долгая задержка и медленный, растянутый выдох замедляют сердечный ритм и включают парасимпатическую нервную систему, отвечающую за отдых и восстановление. Хорошо помогает уснуть, справиться с внезапной тревогой и снизить возбуждение перед важным событием.',
+      origin: 'Разработана доктором Эндрю Вейлом на основе древних йогических техник пранаямы',
+      phases: [
+      { label: 'Вдох', dur: 4, scale: 1.35 }, { label: 'Задержите', dur: 7, scale: 1.35 },
+      { label: 'Выдох', dur: 8, scale: 0.85 },
+    ] },
+    { id: 'diaphragm', name: 'Диафрагмальное', desc: 'Медленные вдохи животом, выдох длиннее вдоха', helps: 'панических атаках',
+      about: 'Дыхание животом, а не грудью, с выдохом длиннее вдоха снижает уровень гормонов стресса и физическое напряжение в теле. Часто используется при панических атаках, хроническом стрессе и для восстановления после эмоционального перенапряжения.',
+      origin: 'Древняя техника из йоги и восточных дыхательных практик, широко применяется в клинической соматической терапии',
+      phases: [
+      { label: 'Вдох', dur: 5, scale: 1.35 }, { label: 'Выдох', dur: 7, scale: 0.85 },
+    ] },
+    { id: 'coherent', name: 'Когерентное', desc: 'Вдох и выдох по 5–6 секунд, без задержек', helps: 'хроническом стрессе',
+      about: 'Равномерные вдох и выдох без задержек синхронизируют дыхание с сердечным ритмом — около 6 циклов в минуту — и поддерживают устойчивое эмоциональное состояние. Подходит для ежедневной практики и снижения общего уровня стресса, а не только в момент кризиса.',
+      origin: 'Разработана Стивеном Эллиотом на основе исследований вариабельности сердечного ритма',
+      phases: [
+      { label: 'Вдох', dur: 5.5, scale: 1.35 }, { label: 'Выдох', dur: 5.5, scale: 0.85 },
+    ] },
+  ];
+  state = {
+    stage: 'intro', techniqueId: 'box', duration: 180,
+    phaseIndex: 0, cycleCount: 1, elapsed: 0, showTechniques: false, pendingTechniqueId: 'box',
+    pendingDuration: 180, countdown: 0,
+  };
+  technique() { return Component.TECHNIQUES.find(t => t.id === this.state.techniqueId); }
+  runCountdown(onDone) {
+    clearInterval(this._cd);
+    this.setState({ countdown: 3 });
+    this._cd = setInterval(() => {
+      const next = this.state.countdown - 1;
+      if (next <= 0) {
+        clearInterval(this._cd);
+        this.setState({ countdown: 0 });
+        onDone();
+      } else {
+        this.setState({ countdown: next });
+      }
+    }, 1000);
+  }
+  componentDidMount() {
+    this._t = setInterval(() => this.tick(), 1000);
+  }
+  componentWillUnmount() {
+    clearInterval(this._t);
+    clearTimeout(this._phaseT);
+  }
+  tick() {
+    if (this.state.stage !== 'session' || this.state.countdown > 0) return;
+    this.setState(s => {
+      const elapsed = s.elapsed + 1;
+      if (elapsed >= s.duration) {
+        return { elapsed: s.duration, stage: 'done' };
+      }
+      return { elapsed };
+    });
+  }
+  schedulePhase() {
+    clearTimeout(this._phaseT);
+    if (this.state.stage !== 'session') return;
+    const phases = this.technique().phases;
+    const dur = phases[this.state.phaseIndex].dur;
+    this._phaseT = setTimeout(() => {
+      this.setState(s => {
+        const phases2 = this.technique().phases;
+        const next = (s.phaseIndex + 1) % phases2.length;
+        return { phaseIndex: next, cycleCount: next === 0 ? s.cycleCount + 1 : s.cycleCount };
+      }, );
+      this.schedulePhase();
+    }, dur * 1000);
+  }
+  renderVals() {
+    const s = this.state;
+    const selectTechnique = (id) => () => this.setState({ techniqueId: id });
+    const pickTechnique = (id) => () => this.setState({ pendingTechniqueId: id });
+    const selectDuration = (secs) => () => this.setState({ duration: secs });
+    const techniques = Component.TECHNIQUES.map(t => ({
+      name: t.name, desc: t.desc, helps: t.helps, about: t.about, origin: t.origin,
+      onClick: selectTechnique(t.id),
+      onPick: pickTechnique(t.id),
+      borderColor: s.techniqueId === t.id ? '#0f766e' : '#edf2f0',
+      bg: s.techniqueId === t.id ? '#f2fbf8' : '#fff',
+      pickBorderColor: s.pendingTechniqueId === t.id ? '#0f766e' : '#edf2f0',
+      pickBg: s.pendingTechniqueId === t.id ? '#f2fbf8' : '#fff',
+    }));
+    const durations = [60, 180, 300].map(secs => ({
+      label: secs === 60 ? '1 мин' : secs === 180 ? '3 мин' : '5 мин',
+      onClick: selectDuration(secs),
+      borderColor: s.duration === secs ? '#0f766e' : '#edf2f0',
+      bg: s.duration === secs ? '#f2fbf8' : '#fff',
+    }));
+    const pickDuration = (secs) => () => this.setState({ pendingDuration: secs });
+    const pendingDurations = [60, 180, 300].map(secs => ({
+      label: secs === 60 ? '1 мин' : secs === 180 ? '3 мин' : '5 мин',
+      onClick: pickDuration(secs),
+      borderColor: s.pendingDuration === secs ? '#0f766e' : '#edf2f0',
+      bg: s.pendingDuration === secs ? '#f2fbf8' : '#fff',
+    }));
+    const phases = this.technique().phases;
+    const phase = phases[Math.min(s.phaseIndex, phases.length - 1)];
+    const remaining = Math.max(0, s.duration - s.elapsed);
+    const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+    return {
+      isIntro: s.stage === 'intro',
+      isSession: s.stage === 'session',
+      isDone: s.stage === 'done',
+      techniques,
+      durations,
+      pendingDurations,
+      startSession: () => {
+        this.setState({ stage: 'session', phaseIndex: 0, cycleCount: 1, elapsed: 0 });
+        this.runCountdown(() => this.schedulePhase());
+      },
+      currentTechniqueName: this.technique().name,
+      currentTechniqueDesc: this.technique().about,
+      currentTechniqueOrigin: this.technique().origin,
+      showTechniques: s.showTechniques,
+      toggleTechniques: () => this.setState(s2 => ({ showTechniques: !s2.showTechniques, pendingTechniqueId: s2.techniqueId, pendingDuration: s2.duration })),
+      applyTechnique: () => {
+        clearTimeout(this._phaseT);
+        this.state.techniqueId = this.state.pendingTechniqueId;
+        this.state.duration = this.state.pendingDuration;
+        this.state.phaseIndex = 0;
+        this.state.cycleCount = 1;
+        this.state.elapsed = 0;
+        this.setState({ showTechniques: false });
+        this.runCountdown(() => this.schedulePhase());
+      },
+      showCountdown: s.countdown > 0,
+      countdownValue: s.countdown,
+      showCircle: !s.showTechniques,
+      hideCircle: s.showTechniques,
+      phaseLabel: phase.label,
+      circleScale: phase.scale,
+      textScale: Math.round((1 / phase.scale) * 100) / 100,
+      phaseDuration: phase.dur,
+      cycleCount: s.cycleCount,
+      remainingText: fmt(remaining),
+      totalText: fmt(s.duration),
+      goBack: () => { window.history.back(); },
+      onFinish: () => this.setState({ stage: 'done' }),
+      goToChat: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html'; },
+      backHome: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1768 @@
+- link "Skip to main content":
+  - /url: "#content-start"
+- banner:
+  - link "Smart Josparlau — администрирование":
+    - /url: /admin/
+  - text: Welcome,
+  - strong: Админ
+  - text: .
+  - link "View site":
+    - /url: /
+  - text: /
+  - link "Change password":
+    - /url: /admin/password_change/
+  - text: /
+  - button "Log out"
+  - 'button "Toggle theme (current theme: auto)"':
+    - generic: "Toggle theme (current theme: auto)"
+- navigation "Breadcrumbs":
+  - link "Home":
+    - /url: /admin/
+  - text: ›
+  - link "Staff_Unit":
+    - /url: /admin/staff_unit/
+  - text: ›
+  - link "Штатные единицы":
+    - /url: /admin/staff_unit/staffunit/
+  - text: "› Отдел охраны объектов - 1 - Начальник отдела (Уровень: 5) - Абенов Санжар #1"
+- button "Toggle navigation": «
+- navigation "Sidebar":
+  - searchbox "Filter navigation items"
+  - table "Доступ":
+    - caption:
+      - link "Доступ":
+        - /url: ""
+    - rowgroup:
+      - row "Users Add":
+        - rowheader "Users":
+          - link "Users":
+            - /url: /admin/auth/user/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/auth/user/add/
+      - row "Роли пользователей (ОМ) Add":
+        - rowheader "Роли пользователей (ОМ)":
+          - link "Роли пользователей (ОМ)":
+            - /url: /admin/operations/userrole/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/userrole/add/
+      - row "Роли раздела ОМ Add":
+        - rowheader "Роли раздела ОМ":
+          - link "Роли раздела ОМ":
+            - /url: /admin/operations/role/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/role/add/
+      - row "Права раздела ОМ Add":
+        - rowheader "Права раздела ОМ":
+          - link "Права раздела ОМ":
+            - /url: /admin/operations/permission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/permission/add/
+      - row "Права ролей (ОМ) Add":
+        - rowheader "Права ролей (ОМ)":
+          - link "Права ролей (ОМ)":
+            - /url: /admin/operations/rolepermission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/rolepermission/add/
+      - row "Groups Add":
+        - rowheader "Groups":
+          - link "Groups":
+            - /url: /admin/auth/group/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/auth/group/add/
+      - row "Временные права наряда Add":
+        - rowheader "Временные права наряда":
+          - link "Временные права наряда":
+            - /url: /admin/operations/temporarydutypermission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/temporarydutypermission/add/
+  - table "Структура и штат":
+    - caption:
+      - link "Структура и штат":
+        - /url: ""
+    - rowgroup:
+      - row "Подразделения Add":
+        - rowheader "Подразделения":
+          - link "Подразделения":
+            - /url: /admin/divisions/division/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/divisions/division/add/
+      - row "Штатные единицы Add":
+        - rowheader "Штатные единицы":
+          - link "Штатные единицы":
+            - /url: /admin/staff_unit/staffunit/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/staff_unit/staffunit/add/
+      - row "Вакансии Add":
+        - rowheader "Вакансии":
+          - link "Вакансии":
+            - /url: /admin/staff_unit/vacancy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/staff_unit/vacancy/add/
+  - table "Сотрудники и статусы":
+    - caption:
+      - link "Сотрудники и статусы":
+        - /url: ""
+    - rowgroup:
+      - row "Сотрудники Add":
+        - rowheader "Сотрудники":
+          - link "Сотрудники":
+            - /url: /admin/employees/employee/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/employees/employee/add/
+      - row "Статусы сотрудников Add":
+        - rowheader "Статусы сотрудников":
+          - link "Статусы сотрудников":
+            - /url: /admin/statuses/employeestatus/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/statuses/employeestatus/add/
+      - row "Статусы сотрудников (ОМ) Add":
+        - rowheader "Статусы сотрудников (ОМ)":
+          - link "Статусы сотрудников (ОМ)":
+            - /url: /admin/operations/opsemployeestatus/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsemployeestatus/add/
+      - row "Прикомандирования (ОМ) Add":
+        - rowheader "Прикомандирования (ОМ)":
+          - link "Прикомандирования (ОМ)":
+            - /url: /admin/operations/secondment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/secondment/add/
+      - row "История переводов сотрудников Add":
+        - rowheader "История переводов сотрудников":
+          - link "История переводов сотрудников":
+            - /url: /admin/employees/employeetransferhistory/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/employees/employeetransferhistory/add/
+      - row "Обходы статусов Add":
+        - rowheader "Обходы статусов":
+          - link "Обходы статусов":
+            - /url: /admin/operations/statusoverride/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/statusoverride/add/
+      - row "Документы статусов Add":
+        - rowheader "Документы статусов":
+          - link "Документы статусов":
+            - /url: /admin/statuses/statusdocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/statuses/statusdocument/add/
+      - row "История изменений статусов":
+        - rowheader "История изменений статусов":
+          - link "История изменений статусов":
+            - /url: /admin/statuses/statuschangehistory/
+        - cell
+  - table "Справочники":
+    - caption:
+      - link "Справочники":
+        - /url: ""
+    - rowgroup:
+      - row "Должности Add":
+        - rowheader "Должности":
+          - link "Должности":
+            - /url: /admin/dictionaries/position/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/dictionaries/position/add/
+      - row "Звания Add":
+        - rowheader "Звания":
+          - link "Звания":
+            - /url: /admin/dictionaries/rank/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/dictionaries/rank/add/
+      - row "Типы статусов (ОМ) Add":
+        - rowheader "Типы статусов (ОМ)":
+          - link "Типы статусов (ОМ)":
+            - /url: /admin/operations/statustype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/statustype/add/
+      - row "Значения справочников ОМ Add":
+        - rowheader "Значения справочников ОМ":
+          - link "Значения справочников ОМ":
+            - /url: /admin/operations/opsdictionaryentry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdictionaryentry/add/
+      - row "Виды дежурств Add":
+        - rowheader "Виды дежурств":
+          - link "Виды дежурств":
+            - /url: /admin/operations/opsdutytype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutytype/add/
+      - row "Виды дежурств боевых групп Add":
+        - rowheader "Виды дежурств боевых групп":
+          - link "Виды дежурств боевых групп":
+            - /url: /admin/operations/opscombatdutytype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatdutytype/add/
+      - row "Города Add":
+        - rowheader "Города":
+          - link "Города":
+            - /url: /admin/operations/opscity/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscity/add/
+      - row "Группы рейтинга Add":
+        - rowheader "Группы рейтинга":
+          - link "Группы рейтинга":
+            - /url: /admin/operations/opsratinggroup/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratinggroup/add/
+      - row "Детекторы внимания Add":
+        - rowheader "Детекторы внимания":
+          - link "Детекторы внимания":
+            - /url: /admin/operations/opsattentiondetector/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsattentiondetector/add/
+      - row "Законы об ОМ Add":
+        - rowheader "Законы об ОМ":
+          - link "Законы об ОМ":
+            - /url: /admin/operations/opslegaldocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opslegaldocument/add/
+      - row "Охраняемые лица Add":
+        - rowheader "Охраняемые лица":
+          - link "Охраняемые лица":
+            - /url: /admin/operations/opsprotectedperson/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsprotectedperson/add/
+      - row "Показатели аналитики службы Add":
+        - rowheader "Показатели аналитики службы":
+          - link "Показатели аналитики службы":
+            - /url: /admin/operations/opsanalyticsmetricdefinition/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsanalyticsmetricdefinition/add/
+      - row "Пресеты периодов аналитики Add":
+        - rowheader "Пресеты периодов аналитики":
+          - link "Пресеты периодов аналитики":
+            - /url: /admin/operations/opsanalyticsperiodpreset/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsanalyticsperiodpreset/add/
+      - row "Страны Add":
+        - rowheader "Страны":
+          - link "Страны":
+            - /url: /admin/operations/opscountry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscountry/add/
+      - row "Типы служебных отчётов Add":
+        - rowheader "Типы служебных отчётов":
+          - link "Типы служебных отчётов":
+            - /url: /admin/operations/opsservicereporttype/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereporttype/add/
+      - row "Транспорт ГОН Add":
+        - rowheader "Транспорт ГОН":
+          - link "Транспорт ГОН":
+            - /url: /admin/operations/opsvehicle/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsvehicle/add/
+      - row "Трассы Add":
+        - rowheader "Трассы":
+          - link "Трассы":
+            - /url: /admin/operations/opscombatroute/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatroute/add/
+  - table "Охранные мероприятия":
+    - caption:
+      - link "Охранные мероприятия":
+        - /url: ""
+    - rowgroup:
+      - row "Охранные мероприятия Add":
+        - rowheader "Охранные мероприятия":
+          - link "Охранные мероприятия":
+            - /url: /admin/operations/opssecurityevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityevent/add/
+      - row "Объекты посещения ОМ Add":
+        - rowheader "Объекты посещения ОМ":
+          - link "Объекты посещения ОМ":
+            - /url: /admin/operations/opssecurityeventvisitobject/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventvisitobject/add/
+      - row "Охраняемые объекты Add":
+        - rowheader "Охраняемые объекты":
+          - link "Охраняемые объекты":
+            - /url: /admin/operations/opssecurityobject/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityobject/add/
+      - row "Посты паспорта объекта Add":
+        - rowheader "Посты паспорта объекта":
+          - link "Посты паспорта объекта":
+            - /url: /admin/operations/opssecuritypost/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecuritypost/add/
+      - row "Секторы паспорта объекта Add":
+        - rowheader "Секторы паспорта объекта":
+          - link "Секторы паспорта объекта":
+            - /url: /admin/operations/opsobjectsector/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsobjectsector/add/
+      - row "Оценки мероприятий Add":
+        - rowheader "Оценки мероприятий":
+          - link "Оценки мероприятий":
+            - /url: /admin/operations/opseventevaluation/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opseventevaluation/add/
+      - row "Версии документа «Расстановка сил»":
+        - rowheader "Версии документа «Расстановка сил»":
+          - link "Версии документа «Расстановка сил»":
+            - /url: /admin/operations/opsplacementdocumentversion/
+        - cell
+      - row "Версии паспорта объекта":
+        - rowheader "Версии паспорта объекта":
+          - link "Версии паспорта объекта":
+            - /url: /admin/operations/opspassportversion/
+        - cell
+      - row "Визиты иностранных ОЛ Add":
+        - rowheader "Визиты иностранных ОЛ":
+          - link "Визиты иностранных ОЛ":
+            - /url: /admin/operations/opsforeignvisit/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforeignvisit/add/
+      - row "Выделенный транспорт Add":
+        - rowheader "Выделенный транспорт":
+          - link "Выделенный транспорт":
+            - /url: /admin/operations/opseventvehicle/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opseventvehicle/add/
+      - row "Выпуски бюллетеня Add":
+        - rowheader "Выпуски бюллетеня":
+          - link "Выпуски бюллетеня":
+            - /url: /admin/operations/opsbulletinissue/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsbulletinissue/add/
+      - row "Задания на оценивание Add":
+        - rowheader "Задания на оценивание":
+          - link "Задания на оценивание":
+            - /url: /admin/operations/opsevaluationworkitem/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationworkitem/add/
+      - row "Замещающие на объектах посещения Add":
+        - rowheader "Замещающие на объектах посещения":
+          - link "Замещающие на объектах посещения":
+            - /url: /admin/operations/opsvisitobjectdeputy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsvisitobjectdeputy/add/
+      - row "Исправления оценок Add":
+        - rowheader "Исправления оценок":
+          - link "Исправления оценок":
+            - /url: /admin/operations/opsevaluationcorrection/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationcorrection/add/
+      - row "Лица на мероприятии Add":
+        - rowheader "Лица на мероприятии":
+          - link "Лица на мероприятии":
+            - /url: /admin/operations/opssecurityeventperson/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventperson/add/
+      - row "Маршрут согласования Add":
+        - rowheader "Маршрут согласования":
+          - link "Маршрут согласования":
+            - /url: /admin/operations/opsapprovalroutestep/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsapprovalroutestep/add/
+      - row "Мероприятия оценивания Add":
+        - rowheader "Мероприятия оценивания":
+          - link "Мероприятия оценивания":
+            - /url: /admin/operations/opsevaluationevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsevaluationevent/add/
+      - row "Месячные планы дежурств Add":
+        - rowheader "Месячные планы дежурств":
+          - link "Месячные планы дежурств":
+            - /url: /admin/operations/opsdutymonthlyplan/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutymonthlyplan/add/
+      - row "Обходы блокировки на завтра Add":
+        - rowheader "Обходы блокировки на завтра":
+          - link "Обходы блокировки на завтра":
+            - /url: /admin/operations/opstomorrowblockoverride/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opstomorrowblockoverride/add/
+      - row "Переходы стадий ОМ Add":
+        - rowheader "Переходы стадий ОМ":
+          - link "Переходы стадий ОМ":
+            - /url: /admin/operations/opssecurityeventtransition/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssecurityeventtransition/add/
+      - row "Правки сводок ГВО Add":
+        - rowheader "Правки сводок ГВО":
+          - link "Правки сводок ГВО":
+            - /url: /admin/operations/opsgvosummarypatch/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsgvosummarypatch/add/
+      - row "Смены боевых групп Add":
+        - rowheader "Смены боевых групп":
+          - link "Смены боевых групп":
+            - /url: /admin/operations/opscombatdutyshift/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opscombatdutyshift/add/
+      - row "Смены дежурств Add":
+        - rowheader "Смены дежурств":
+          - link "Смены дежурств":
+            - /url: /admin/operations/opsdutyshift/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutyshift/add/
+      - row "Участия в мероприятиях Add":
+        - rowheader "Участия в мероприятиях":
+          - link "Участия в мероприятиях":
+            - /url: /admin/operations/opsstatusparticipation/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsstatusparticipation/add/
+      - row "Участники рейтинга Add":
+        - rowheader "Участники рейтинга":
+          - link "Участники рейтинга":
+            - /url: /admin/operations/opsratedparticipant/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratedparticipant/add/
+  - table "Сбор сил и расход":
+    - caption:
+      - link "Сбор сил и расход":
+        - /url: ""
+    - rowgroup:
+      - row "Сдачи дня Add":
+        - rowheader "Сдачи дня":
+          - link "Сдачи дня":
+            - /url: /admin/operations/opsdailysubmission/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdailysubmission/add/
+      - row "Заявки на сбор сил":
+        - rowheader "Заявки на сбор сил":
+          - link "Заявки на сбор сил":
+            - /url: /admin/operations/opsforcerequest/
+        - cell
+      - row "Запросы департаментам":
+        - rowheader "Запросы департаментам":
+          - link "Запросы департаментам":
+            - /url: /admin/operations/opsdepartmentrequest/
+        - cell
+      - row "Запросы управлениям":
+        - rowheader "Запросы управлениям":
+          - link "Запросы управлениям":
+            - /url: /admin/operations/opsunitrequest/
+        - cell
+      - row "Мероприятия распределения сил Add":
+        - rowheader "Мероприятия распределения сил":
+          - link "Мероприятия распределения сил":
+            - /url: /admin/operations/opsforcecampaignevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforcecampaignevent/add/
+      - row "Назначения сотрудников из общего пула":
+        - rowheader "Назначения сотрудников из общего пула":
+          - link "Назначения сотрудников из общего пула":
+            - /url: /admin/operations/opsforcecampaignassignment/
+        - cell
+      - row "Передачи общего пула в расстановку":
+        - rowheader "Передачи общего пула в расстановку":
+          - link "Передачи общего пула в расстановку":
+            - /url: /admin/operations/opsforcecampaignhandover/
+        - cell
+      - row "Распределения сил по мероприятиям Add":
+        - rowheader "Распределения сил по мероприятиям":
+          - link "Распределения сил по мероприятиям":
+            - /url: /admin/operations/opsforcecampaign/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsforcecampaign/add/
+      - row "Состав по запросам":
+        - rowheader "Состав по запросам":
+          - link "Состав по запросам":
+            - /url: /admin/operations/opsforcerequestmember/
+        - cell
+      - row "Сотрудники общего пула мероприятий":
+        - rowheader "Сотрудники общего пула мероприятий":
+          - link "Сотрудники общего пула мероприятий":
+            - /url: /admin/operations/opsforcecampaignpoolmember/
+        - cell
+  - table "Обратная связь":
+    - caption:
+      - link "Обратная связь":
+        - /url: ""
+    - rowgroup:
+      - row "Обращения обратной связи Add":
+        - rowheader "Обращения обратной связи":
+          - link "Обращения обратной связи":
+            - /url: /admin/operations/opsfeedbackrequest/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackrequest/add/
+      - row "Комментарии обращений Add":
+        - rowheader "Комментарии обращений":
+          - link "Комментарии обращений":
+            - /url: /admin/operations/opsfeedbackcomment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackcomment/add/
+      - row "События обращений Add":
+        - rowheader "События обращений":
+          - link "События обращений":
+            - /url: /admin/operations/opsfeedbackevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackevent/add/
+      - row "Справочник обратной связи Add":
+        - rowheader "Справочник обратной связи":
+          - link "Справочник обратной связи":
+            - /url: /admin/operations/opsfeedbackregistry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsfeedbackregistry/add/
+  - table "Документы и отчёты":
+    - caption:
+      - link "Документы и отчёты":
+        - /url: ""
+    - rowgroup:
+      - row "Выпуски документов Add":
+        - rowheader "Выпуски документов":
+          - link "Выпуски документов":
+            - /url: /admin/operations/opsissueddocument/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsissueddocument/add/
+      - row "Отчёты Add":
+        - rowheader "Отчёты":
+          - link "Отчёты":
+            - /url: /admin/reports/report/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/reports/report/add/
+      - row "Артефакты служебных отчётов Add":
+        - rowheader "Артефакты служебных отчётов":
+          - link "Артефакты служебных отчётов":
+            - /url: /admin/operations/opsservicereportartifact/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereportartifact/add/
+      - row "Вложения раздела Add":
+        - rowheader "Вложения раздела":
+          - link "Вложения раздела":
+            - /url: /admin/operations/opsattachment/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsattachment/add/
+      - row "Водяные знаки материализации":
+        - rowheader "Водяные знаки материализации":
+          - link "Водяные знаки материализации":
+            - /url: /admin/operations/opswatermark/
+        - cell
+      - row "Выгрузки рейтинга Add":
+        - rowheader "Выгрузки рейтинга":
+          - link "Выгрузки рейтинга":
+            - /url: /admin/operations/opsratingexportjob/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingexportjob/add/
+      - row "Работы служебных отчётов Add":
+        - rowheader "Работы служебных отчётов":
+          - link "Работы служебных отчётов":
+            - /url: /admin/operations/opsservicereportjob/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsservicereportjob/add/
+      - row "Файлы выгрузок рейтинга Add":
+        - rowheader "Файлы выгрузок рейтинга":
+          - link "Файлы выгрузок рейтинга":
+            - /url: /admin/operations/opsratingexportartifact/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingexportartifact/add/
+  - table "Служебное":
+    - caption:
+      - link "Служебное":
+        - /url: ""
+    - rowgroup:
+      - row "Журналы раздела ОМ Add":
+        - rowheader "Журналы раздела ОМ":
+          - link "Журналы раздела ОМ":
+            - /url: /admin/operations/opsauditlog/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsauditlog/add/
+      - row "Записи аудита Add":
+        - rowheader "Записи аудита":
+          - link "Записи аудита":
+            - /url: /admin/audit/auditlog/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/audit/auditlog/add/
+      - row "Уведомления Add":
+        - rowheader "Уведомления":
+          - link "Уведомления":
+            - /url: /admin/notifications/notification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/notifications/notification/add/
+      - row "Уведомления раздела Add":
+        - rowheader "Уведомления раздела":
+          - link "Уведомления раздела":
+            - /url: /admin/operations/opsnotification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsnotification/add/
+      - row "Версии разделов настроек":
+        - rowheader "Версии разделов настроек":
+          - link "Версии разделов настроек":
+            - /url: /admin/operations/opspolicysectionversion/
+        - cell
+      - row "Журнал оценивания Add":
+        - rowheader "Журнал оценивания":
+          - link "Журнал оценивания":
+            - /url: /admin/operations/opsratingauditentry/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingauditentry/add/
+      - row "Идемпотентность рейтинга":
+        - rowheader "Идемпотентность рейтинга":
+          - link "Идемпотентность рейтинга":
+            - /url: /admin/operations/opsratingidempotencyrecord/
+        - cell
+      - row "Изменения настроек Add":
+        - rowheader "Изменения настроек":
+          - link "Изменения настроек":
+            - /url: /admin/operations/opssettingchangeevent/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opssettingchangeevent/add/
+      - row "Курсоры дат e2e-фикстур":
+        - rowheader "Курсоры дат e2e-фикстур":
+          - link "Курсоры дат e2e-фикстур":
+            - /url: /admin/operations/opse2efixturedatecursor/
+        - cell
+      - row "Настройки контроля сдачи":
+        - rowheader "Настройки контроля сдачи":
+          - link "Настройки контроля сдачи":
+            - /url: /admin/operations/opssubmissioncontrolsettings/
+        - cell
+      - row "Настройки раздела ОМ Add":
+        - rowheader "Настройки раздела ОМ":
+          - link "Настройки раздела ОМ":
+            - /url: /admin/operations/opspolicysetting/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opspolicysetting/add/
+      - row "Политика актуальности паспорта Add":
+        - rowheader "Политика актуальности паспорта":
+          - link "Политика актуальности паспорта":
+            - /url: /admin/operations/opspassportfreshnesspolicy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opspassportfreshnesspolicy/add/
+      - row "Политика конфликтов дежурств Add":
+        - rowheader "Политика конфликтов дежурств":
+          - link "Политика конфликтов дежурств":
+            - /url: /admin/operations/opsdutyconflictpolicy/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdutyconflictpolicy/add/
+      - row "Получатели уведомлений подразделений Add":
+        - rowheader "Получатели уведомлений подразделений":
+          - link "Получатели уведомлений подразделений":
+            - /url: /admin/operations/opsdivisionnotifyrecipient/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdivisionnotifyrecipient/add/
+      - row "Счётчики номеров документов Add":
+        - rowheader "Счётчики номеров документов":
+          - link "Счётчики номеров документов":
+            - /url: /admin/operations/opsdocumentsequence/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsdocumentsequence/add/
+      - row "Точки динамики рейтинга":
+        - rowheader "Точки динамики рейтинга":
+          - link "Точки динамики рейтинга":
+            - /url: /admin/operations/opsratingdynamicspoint/
+        - cell
+      - row "Уведомления рейтинга Add":
+        - rowheader "Уведомления рейтинга":
+          - link "Уведомления рейтинга":
+            - /url: /admin/operations/opsratingnotification/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingnotification/add/
+      - row "Флаги рейтинга Add":
+        - rowheader "Флаги рейтинга":
+          - link "Флаги рейтинга":
+            - /url: /admin/operations/opsratingfeatureflags/
+        - cell "Add":
+          - link "Add":
+            - /url: /admin/operations/opsratingfeatureflags/add/
+- main:
+  - heading "Change Штатная единица" [level=1]
+  - 'heading "Отдел охраны объектов - 1 - Начальник отдела (Уровень: 5) - Абенов Санжар #1" [level=2]'
+  - list:
+    - link "History":
+      - /url: /admin/staff_unit/staffunit/1/history/
+  - generic: "Подразделение:"
+  - combobox "Подразделение:":
+    - option "---------"
+    - option "Служба"
+    - option "--- Департамент охраны"
+    - option "------ Управление объектами"
+    - option "--------- Отдел охраны объектов" [selected]
+    - option "--------- Отдел пропускного режима"
+    - option "--- Контур1140 — подразделение после правки"
+    - option "--- Первый департамент"
+    - option "------ Первое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Второе управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Третье управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Четвёртое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "--------- Третий отдел"
+    - option "------ Первое сквозное управление"
+    - option "------ Второе сквозное управление"
+    - option "--- Второй департамент"
+    - option "------ Первое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Второе управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Третье управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Четвёртое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "--------- Третий отдел"
+    - option "------ Первое сквозное управление"
+    - option "------ Второе сквозное управление"
+    - option "--- Третий департамент"
+    - option "------ Первое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Второе управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Третье управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "------ Четвёртое управление"
+    - option "--------- Первый отдел"
+    - option "--------- Второй отдел"
+    - option "--------- Третий отдел"
+    - option "------ Первое сквозное управление"
+    - option "------ Второе сквозное управление"
+    - option "Управление (стенд)"
+  - link "Change selected Подразделение":
+    - /url: /admin/divisions/division/4/change/?_to_field=id&_popup=1
+  - link "Add another Подразделение":
+    - /url: /admin/divisions/division/add/?_to_field=id&_popup=1
+  - link "Delete selected Подразделение":
+    - /url: /admin/divisions/division/4/delete/?_to_field=id&_popup=1
+  - link "View selected Подразделение":
+    - /url: /admin/divisions/division/4/change/?_to_field=id
+  - generic: "Должность:"
+  - combobox "Должность:":
+    - option "---------"
+    - 'option "Начальник департамента (Уровень: 1)"'
+    - 'option "Заместитель начальника департамента (Уровень: 2)"'
+    - 'option "Начальник управления (Уровень: 3)"'
+    - 'option "Заместитель начальника управления (Уровень: 4)"'
+    - 'option "Начальник отдела (Уровень: 5)" [selected]'
+    - 'option "Заместитель начальника отдела (Уровень: 6)"'
+    - 'option "Старший инспектор (Уровень: 7)"'
+    - 'option "Инспектор (Уровень: 8)"'
+    - 'option "Дежурный (Уровень: 9)"'
+    - 'option "Director (Уровень: 90)"'
+    - 'option "Manager (Уровень: 91)"'
+    - 'option "Developer (Уровень: 92)"'
+    - 'option "Контур1140 — должность с сайта (Уровень: 99)"'
+    - 'option "Контур1141 — должность из Django (Уровень: 99)"'
+    - 'option "Учебная должность 1278 Django изменено (Уровень: 999)"'
+    - 'option "Учебная должность 1278 из Django (Уровень: 999)"'
+    - 'option "Учебная должность MVP1269 (Уровень: 999)"'
+    - 'option "Учебная должность QA1909 — изменено (Уровень: 999)"'
+  - link "Change selected Должность":
+    - /url: /admin/dictionaries/position/4/change/?_to_field=id&_popup=1
+  - link "Add another Должность":
+    - /url: /admin/dictionaries/position/add/?_to_field=id&_popup=1
+  - link "Delete selected Должность":
+    - /url: /admin/dictionaries/position/4/delete/?_to_field=id&_popup=1
+  - link "View selected Должность":
+    - /url: /admin/dictionaries/position/4/change/?_to_field=id
+  - generic: "Сотрудник:"
+  - combobox "Сотрудник:":
+    - option "---------"
+    - option "Абаев Абай"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Канат"
+    - option "Абенов Санжар" [selected]
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Абенова Айгерим"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолов Бекзат"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Аманжолова Динара"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметов Чингиз"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Мадина"
+    - option "Ахметова Салтанат"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Алишер"
+    - option "Байжанов Ерасыл"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Байжанов Самат"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Алишер"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Бекенов Самат"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанов Рустем"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Досжанова Шолпан"
+    - option "Дроздов Дмитрий"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Азамат"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Едилов Олжас"
+    - option "Ёлкин Егор"
+    - option "Есимов Бекзат"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Ержан"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Есимов Эльдар"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Даулет"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жаксылыков Мурат"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабеков Рустем"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Жумабекова Назым"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Азамат"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Искаков Олжас"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Алишер"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Калиев Самат"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Арман"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Каримов Улан"
+    - option "Контур1139 Контрольный"
+    - option "Контур1139Сайт Правка"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинов Бекзат"
+    - option "Кусаинова Динара"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Кусаинова Камила"
+    - option "Мукашев Алишер"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Арман"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мукашев Улан"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабеков Бекзат"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Мырзабекова Сауле"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланов Канат"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Нурланова Райхан"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Арман"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оралбаев Улан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанов Нурлан"
+    - option "Оспанова Айгерим"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Оспанова Салтанат"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимов Чингиз"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Рахимова Асель"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Даулет"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сагитов Мурат"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапаров Чингиз"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сапарова Улжан"
+    - option "Сериков Азамат"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Сериков Рустем"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Серикова Гульнара"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Ержан"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Смагулов Эльдар"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Ержан"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Тасмагамбетов Эльдар"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Азамат"
+    - option "Токтаров Нурлан"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Токтаров Олжас"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенов Нурлан"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Тулегенова Толкын"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенов Канат"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Утегенова Жанна"
+    - option "Учебный1269 Аудит"
+    - option "Учебный1270 Расход47808"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Даулет"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Шаяхметов Мурат"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраев Нурлан"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Ыбраева Лаура"
+    - option "Яковлев Яков"
+  - link "Change selected Сотрудник":
+    - /url: /admin/employees/employee/1/change/?_to_field=id&_popup=1
+  - link "Add another Сотрудник":
+    - /url: /admin/employees/employee/add/?_to_field=id&_popup=1
+  - link "Delete selected Сотрудник":
+    - /url: /admin/employees/employee/1/delete/?_to_field=id&_popup=1
+  - link "View selected Сотрудник":
+    - /url: /admin/employees/employee/1/change/?_to_field=id
+  - generic: "Вакансия:"
+  - combobox "Вакансия:":
+    - option "---------" [selected]
+  - generic "Change selected Вакансия"
+  - link "Add another Вакансия":
+    - /url: /admin/staff_unit/vacancy/add/?_to_field=id&_popup=1
+  - generic "Delete selected Вакансия"
+  - generic "View selected Вакансия"
+  - generic: "Parent:"
+  - combobox "Parent:":
+    - option "---------" [selected]
+    - 'option "Отдел охраны объектов - 1 - Начальник отдела (Уровень: 5) - Абенов Санжар #1"'
+    - 'option "Отдел охраны объектов - 2 - Старший инспектор (Уровень: 7) - Жаксылыков Даулет #2"'
+    - 'option "Отдел охраны объектов - 3 - Инспектор (Уровень: 8) - Оспанова Айгерим #3"'
+    - 'option "Отдел охраны объектов - 4 - Инспектор (Уровень: 8) - Токтаров Нурлан #4"'
+    - 'option "Отдел охраны объектов - 11 - Инспектор (Уровень: 8) - Вакансия #11"'
+    - 'option "Отдел охраны объектов - 5 - Дежурный (Уровень: 9) - Сериков Азамат #5"'
+    - 'option "Отдел пропускного режима - 6 - Начальник отдела (Уровень: 5) - Байжанов Ерасыл #6"'
+    - 'option "Отдел пропускного режима - 7 - Старший инспектор (Уровень: 7) - Кусаинова Динара #7"'
+    - 'option "Отдел пропускного режима - 9 - Инспектор (Уровень: 8) - Ахметова Салтанат #9"'
+    - 'option "Отдел пропускного режима - 8 - Инспектор (Уровень: 8) - Мукашев Алишер #8"'
+    - 'option "Отдел пропускного режима - 10 - Дежурный (Уровень: 9) - Есимов Бекзат #10"'
+    - 'option "Отдел пропускного режима - 12 - Дежурный (Уровень: 9) - Вакансия #12"'
+    - 'option "Управление (стенд) - 14 - None - Дроздов Дмитрий #2"'
+    - 'option "Управление (стенд) - 15 - None - Ёлкин Егор #3"'
+    - 'option "Управление (стенд) - 16 - None - Яковлев Яков #4"'
+    - 'option "Управление (стенд) - 17 - None - Абаев Абай #1"'
+    - 'option "Отдел пропускного режима - 5562 - Начальник департамента (Уровень: 1) - Учебный1270 Расход47808 #1"'
+    - 'option "Управление (стенд) - 5561 - Учебная должность MVP1269 (Уровень: 999) - Учебный1269 Аудит #1"'
+    - 'option "Первый департамент - 5130 - Начальник департамента (Уровень: 1) - Жаксылыков Даулет #1"'
+    - 'option "Первый департамент - 5131 - Заместитель начальника департамента (Уровень: 2) - Оспанов Нурлан #2"'
+    - 'option "Первое управление - 5132 - Начальник управления (Уровень: 3) - Токтаров Азамат #1"'
+    - 'option "Первое управление - 5133 - Заместитель начальника управления (Уровень: 4) - Серикова Гульнара #2"'
+    - 'option "Первый отдел - 5134 - Начальник отдела (Уровень: 5) - Байжанов Алишер #1"'
+    - 'option "Первый отдел - 5136 - Старший инспектор (Уровень: 7) - Мукашев Арман #3"'
+    - 'option "Первый отдел - 5137 - Старший инспектор (Уровень: 7) - Ахметова Мадина #4"'
+    - 'option "Первый отдел - 5138 - Инспектор (Уровень: 8) - Есимов Ержан #5"'
+    - 'option "Первый отдел - 5139 - Инспектор (Уровень: 8) - Нурланов Канат #6"'
+    - 'option "Первый отдел - 5140 - Инспектор (Уровень: 8) - Сагитов Мурат #7"'
+    - 'option "Первый отдел - 5141 - Инспектор (Уровень: 8) - Тулегенова Толкын #8"'
+    - 'option "Первый отдел - 5142 - Инспектор (Уровень: 8) - Искаков Олжас #9"'
+    - 'option "Первый отдел - 5143 - Инспектор (Уровень: 8) - Досжанов Рустем #10"'
+    - 'option "Первый отдел - 5144 - Дежурный (Уровень: 9) - Бекенов Самат #11"'
+    - 'option "Первый отдел - 5145 - Дежурный (Уровень: 9) - Аманжолова Динара #12"'
+    - 'option "Первый отдел - 5135 - Заместитель начальника отдела (Уровень: 6) - Кусаинов Бекзат #2"'
+    - 'option "Второй отдел - 5146 - Начальник отдела (Уровень: 5) - Каримов Улан #1"'
+    - 'option "Второй отдел - 5148 - Старший инспектор (Уровень: 7) - Смагулов Эльдар #3"'
+    - 'option "Второй отдел - 5149 - Старший инспектор (Уровень: 7) - Утегенова Жанна #4"'
+    - 'option "Второй отдел - 5150 - Инспектор (Уровень: 8) - Шаяхметов Даулет #5"'
+    - 'option "Второй отдел - 5151 - Инспектор (Уровень: 8) - Ыбраев Нурлан #6"'
+    - 'option "Второй отдел - 5152 - Инспектор (Уровень: 8) - Едилов Азамат #7"'
+    - 'option "Второй отдел - 5153 - Инспектор (Уровень: 8) - Жумабекова Назым #8"'
+    - 'option "Второй отдел - 5154 - Инспектор (Уровень: 8) - Калиев Алишер #9"'
+    - 'option "Второй отдел - 5155 - Инспектор (Уровень: 8) - Мырзабеков Бекзат #10"'
+    - 'option "Второй отдел - 5156 - Дежурный (Уровень: 9) - Оралбаев Арман #11"'
+    - 'option "Второй отдел - 5157 - Дежурный (Уровень: 9) - Сапарова Улжан #12"'
+    - 'option "Второй отдел - 5147 - Заместитель начальника отдела (Уровень: 6) - Рахимов Чингиз #2"'
+    - 'option "Второе управление - 5158 - Начальник управления (Уровень: 3) - Тасмагамбетов Ержан #1"'
+    - 'option "Второе управление - 5159 - Заместитель начальника управления (Уровень: 4) - Абенов Канат #2"'
+    - 'option "Первый отдел - 5160 - Начальник отдела (Уровень: 5) - Жаксылыков Мурат #1"'
+    - 'option "Первый отдел - 5162 - Старший инспектор (Уровень: 7) - Токтаров Олжас #3"'
+    - 'option "Первый отдел - 5163 - Старший инспектор (Уровень: 7) - Сериков Рустем #4"'
+    - 'option "Первый отдел - 5164 - Инспектор (Уровень: 8) - Байжанов Самат #5"'
+    - 'option "Первый отдел - 5165 - Инспектор (Уровень: 8) - Кусаинова Камила #6"'
+    - 'option "Первый отдел - 5166 - Инспектор (Уровень: 8) - Мукашев Улан #7"'
+    - 'option "Первый отдел - 5167 - Инспектор (Уровень: 8) - Ахметов Чингиз #8"'
+    - 'option "Первый отдел - 5168 - Инспектор (Уровень: 8) - Есимов Эльдар #9"'
+    - 'option "Первый отдел - 5169 - Инспектор (Уровень: 8) - Нурланова Райхан #10"'
+    - 'option "Первый отдел - 5170 - Дежурный (Уровень: 9) - Сагитов Даулет #11"'
+    - 'option "Первый отдел - 5171 - Дежурный (Уровень: 9) - Тулегенов Нурлан #12"'
+    - 'option "Первый отдел - 5161 - Заместитель начальника отдела (Уровень: 6) - Оспанова Салтанат #2"'
+    - 'option "Второй отдел - 5172 - Начальник отдела (Уровень: 5) - Искаков Азамат #1"'
+    - 'option "Второй отдел - 5174 - Старший инспектор (Уровень: 7) - Бекенов Алишер #3"'
+    - 'option "Второй отдел - 5175 - Старший инспектор (Уровень: 7) - Аманжолов Бекзат #4"'
+    - 'option "Второй отдел - 5176 - Инспектор (Уровень: 8) - Каримов Арман #5"'
+    - 'option "Второй отдел - 5177 - Инспектор (Уровень: 8) - Рахимова Асель #6"'
+    - 'option "Второй отдел - 5178 - Инспектор (Уровень: 8) - Смагулов Ержан #7"'
+    - 'option "Второй отдел - 5179 - Инспектор (Уровень: 8) - Утегенов Канат #8"'
+    - 'option "Второй отдел - 5180 - Инспектор (Уровень: 8) - Шаяхметов Мурат #9"'
+    - 'option "Второй отдел - 5181 - Инспектор (Уровень: 8) - Ыбраева Лаура #10"'
+    - 'option "Второй отдел - 5182 - Дежурный (Уровень: 9) - Едилов Олжас #11"'
+    - 'option "Второй отдел - 5183 - Дежурный (Уровень: 9) - Жумабеков Рустем #12"'
+    - 'option "Второй отдел - 5173 - Заместитель начальника отдела (Уровень: 6) - Досжанова Шолпан #2"'
+    - 'option "Третье управление - 5184 - Начальник управления (Уровень: 3) - Калиев Самат #1"'
+    - 'option "Третье управление - 5185 - Заместитель начальника управления (Уровень: 4) - Мырзабекова Сауле #2"'
+    - 'option "Первый отдел - 5186 - Начальник отдела (Уровень: 5) - Оралбаев Улан #1"'
+    - 'option "Первый отдел - 5188 - Старший инспектор (Уровень: 7) - Тасмагамбетов Эльдар #3"'
+    - 'option "Первый отдел - 5189 - Старший инспектор (Уровень: 7) - Абенова Айгерим #4"'
+    - 'option "Первый отдел - 5190 - Инспектор (Уровень: 8) - Жаксылыков Даулет #5"'
+    - 'option "Первый отдел - 5191 - Инспектор (Уровень: 8) - Оспанов Нурлан #6"'
+    - 'option "Первый отдел - 5192 - Инспектор (Уровень: 8) - Токтаров Азамат #7"'
+    - 'option "Первый отдел - 5193 - Инспектор (Уровень: 8) - Серикова Гульнара #8"'
+    - 'option "Первый отдел - 5194 - Инспектор (Уровень: 8) - Байжанов Алишер #9"'
+    - 'option "Первый отдел - 5195 - Инспектор (Уровень: 8) - Кусаинов Бекзат #10"'
+    - 'option "Первый отдел - 5196 - Дежурный (Уровень: 9) - Мукашев Арман #11"'
+    - 'option "Первый отдел - 5197 - Дежурный (Уровень: 9) - Ахметова Мадина #12"'
+    - 'option "Первый отдел - 5187 - Заместитель начальника отдела (Уровень: 6) - Сапаров Чингиз #2"'
+    - 'option "Второй отдел - 5198 - Начальник отдела (Уровень: 5) - Есимов Ержан #1"'
+    - 'option "Второй отдел - 5200 - Старший инспектор (Уровень: 7) - Сагитов Мурат #3"'
+    - 'option "Второй отдел - 5201 - Старший инспектор (Уровень: 7) - Тулегенова Толкын #4"'
+    - 'option "Второй отдел - 5202 - Инспектор (Уровень: 8) - Искаков Олжас #5"'
+    - 'option "Второй отдел - 5203 - Инспектор (Уровень: 8) - Досжанов Рустем #6"'
+    - 'option "Второй отдел - 5204 - Инспектор (Уровень: 8) - Бекенов Самат #7"'
+    - 'option "Второй отдел - 5205 - Инспектор (Уровень: 8) - Аманжолова Динара #8"'
+    - 'option "Второй отдел - 5206 - Инспектор (Уровень: 8) - Каримов Улан #9"'
+    - 'option "Второй отдел - 5207 - Инспектор (Уровень: 8) - Рахимов Чингиз #10"'
+    - 'option "Второй отдел - 5208 - Дежурный (Уровень: 9) - Смагулов Эльдар #11"'
+    - 'option "Второй отдел - 5209 - Дежурный (Уровень: 9) - Утегенова Жанна #12"'
+    - 'option "Второй отдел - 5199 - Заместитель начальника отдела (Уровень: 6) - Нурланов Канат #2"'
+    - 'option "Четвёртое управление - 5210 - Начальник управления (Уровень: 3) - Шаяхметов Даулет #1"'
+    - 'option "Четвёртое управление - 5211 - Заместитель начальника управления (Уровень: 4) - Ыбраев Нурлан #2"'
+    - 'option "Первый отдел - 5212 - Начальник отдела (Уровень: 5) - Едилов Азамат #1"'
+    - 'option "Первый отдел - 5214 - Старший инспектор (Уровень: 7) - Калиев Алишер #3"'
+    - 'option "Первый отдел - 5215 - Старший инспектор (Уровень: 7) - Мырзабеков Бекзат #4"'
+    - 'option "Первый отдел - 5216 - Инспектор (Уровень: 8) - Оралбаев Арман #5"'
+    - 'option "Первый отдел - 5217 - Инспектор (Уровень: 8) - Сапарова Улжан #6"'
+    - 'option "Первый отдел - 5218 - Инспектор (Уровень: 8) - Тасмагамбетов Ержан #7"'
+    - 'option "Первый отдел - 5219 - Инспектор (Уровень: 8) - Абенов Канат #8"'
+    - 'option "Первый отдел - 5220 - Инспектор (Уровень: 8) - Жаксылыков Мурат #9"'
+    - 'option "Первый отдел - 5221 - Инспектор (Уровень: 8) - Оспанова Салтанат #10"'
+    - 'option "Первый отдел - 5222 - Дежурный (Уровень: 9) - Токтаров Олжас #11"'
+    - 'option "Первый отдел - 5223 - Дежурный (Уровень: 9) - Сериков Рустем #12"'
+    - 'option "Первый отдел - 5213 - Заместитель начальника отдела (Уровень: 6) - Жумабекова Назым #2"'
+    - 'option "Второй отдел - 5224 - Начальник отдела (Уровень: 5) - Байжанов Самат #1"'
+    - 'option "Второй отдел - 5226 - Старший инспектор (Уровень: 7) - Мукашев Улан #3"'
+    - 'option "Второй отдел - 5227 - Старший инспектор (Уровень: 7) - Ахметов Чингиз #4"'
+    - 'option "Второй отдел - 5228 - Инспектор (Уровень: 8) - Есимов Эльдар #5"'
+    - 'option "Второй отдел - 5229 - Инспектор (Уровень: 8) - Нурланова Райхан #6"'
+    - 'option "Второй отдел - 5230 - Инспектор (Уровень: 8) - Сагитов Даулет #7"'
+    - 'option "Второй отдел - 5231 - Инспектор (Уровень: 8) - Тулегенов Нурлан #8"'
+    - 'option "Второй отдел - 5232 - Инспектор (Уровень: 8) - Искаков Азамат #9"'
+    - 'option "Второй отдел - 5233 - Инспектор (Уровень: 8) - Досжанова Шолпан #10"'
+    - 'option "Второй отдел - 5234 - Дежурный (Уровень: 9) - Бекенов Алишер #11"'
+    - 'option "Второй отдел - 5235 - Дежурный (Уровень: 9) - Аманжолов Бекзат #12"'
+    - 'option "Второй отдел - 5225 - Заместитель начальника отдела (Уровень: 6) - Кусаинова Камила #2"'
+    - 'option "Третий отдел - 5236 - Начальник отдела (Уровень: 5) - Каримов Арман #1"'
+    - 'option "Третий отдел - 5238 - Старший инспектор (Уровень: 7) - Смагулов Ержан #3"'
+    - 'option "Третий отдел - 5239 - Старший инспектор (Уровень: 7) - Утегенов Канат #4"'
+    - 'option "Третий отдел - 5240 - Инспектор (Уровень: 8) - Шаяхметов Мурат #5"'
+    - 'option "Третий отдел - 5241 - Инспектор (Уровень: 8) - Ыбраева Лаура #6"'
+    - 'option "Третий отдел - 5242 - Инспектор (Уровень: 8) - Едилов Олжас #7"'
+    - 'option "Третий отдел - 5243 - Инспектор (Уровень: 8) - Жумабеков Рустем #8"'
+    - 'option "Третий отдел - 5244 - Инспектор (Уровень: 8) - Калиев Самат #9"'
+    - 'option "Третий отдел - 5245 - Инспектор (Уровень: 8) - Мырзабекова Сауле #10"'
+    - 'option "Третий отдел - 5246 - Дежурный (Уровень: 9) - Оралбаев Улан #11"'
+    - 'option "Третий отдел - 5247 - Дежурный (Уровень: 9) - Сапаров Чингиз #12"'
+    - 'option "Третий отдел - 5237 - Заместитель начальника отдела (Уровень: 6) - Рахимова Асель #2"'
+    - 'option "Первое сквозное управление - 5250 - Старший инспектор (Уровень: 7) - Жаксылыков Даулет #3"'
+    - 'option "Первое сквозное управление - 5251 - Старший инспектор (Уровень: 7) - Оспанов Нурлан #4"'
+    - 'option "Первое сквозное управление - 5252 - Инспектор (Уровень: 8) - Токтаров Азамат #5"'
+    - 'option "Первое сквозное управление - 5253 - Инспектор (Уровень: 8) - Серикова Гульнара #6"'
+    - 'option "Первое сквозное управление - 5254 - Инспектор (Уровень: 8) - Байжанов Алишер #7"'
+    - 'option "Первое сквозное управление - 5255 - Инспектор (Уровень: 8) - Кусаинов Бекзат #8"'
+    - 'option "Первое сквозное управление - 5256 - Инспектор (Уровень: 8) - Мукашев Арман #9"'
+    - 'option "Первое сквозное управление - 5257 - Инспектор (Уровень: 8) - Ахметова Мадина #10"'
+    - 'option "Первое сквозное управление - 5258 - Дежурный (Уровень: 9) - Есимов Ержан #11"'
+    - 'option "Первое сквозное управление - 5259 - Дежурный (Уровень: 9) - Нурланов Канат #12"'
+    - 'option "Первое сквозное управление - 5248 - Начальник управления (Уровень: 3) - Тасмагамбетов Эльдар #1"'
+    - 'option "Первое сквозное управление - 5249 - Заместитель начальника управления (Уровень: 4) - Абенова Айгерим #2"'
+    - 'option "Второе сквозное управление - 5262 - Старший инспектор (Уровень: 7) - Искаков Олжас #3"'
+    - 'option "Второе сквозное управление - 5263 - Старший инспектор (Уровень: 7) - Досжанов Рустем #4"'
+    - 'option "Второе сквозное управление - 5264 - Инспектор (Уровень: 8) - Бекенов Самат #5"'
+    - 'option "Второе сквозное управление - 5265 - Инспектор (Уровень: 8) - Аманжолова Динара #6"'
+    - 'option "Второе сквозное управление - 5266 - Инспектор (Уровень: 8) - Каримов Улан #7"'
+    - 'option "Второе сквозное управление - 5267 - Инспектор (Уровень: 8) - Рахимов Чингиз #8"'
+    - 'option "Второе сквозное управление - 5268 - Инспектор (Уровень: 8) - Смагулов Эльдар #9"'
+    - 'option "Второе сквозное управление - 5269 - Инспектор (Уровень: 8) - Утегенова Жанна #10"'
+    - 'option "Второе сквозное управление - 5270 - Дежурный (Уровень: 9) - Шаяхметов Даулет #11"'
+    - 'option "Второе сквозное управление - 5271 - Дежурный (Уровень: 9) - Ыбраев Нурлан #12"'
+    - 'option "Второе сквозное управление - 5260 - Начальник управления (Уровень: 3) - Сагитов Мурат #1"'
+    - 'option "Второе сквозное управление - 5261 - Заместитель начальника управления (Уровень: 4) - Тулегенова Толкын #2"'
+    - 'option "Второй департамент - 5559 - Инспектор (Уровень: 8) - Контур1139 Контрольный #911390"'
+    - 'option "Второй департамент - 5272 - Начальник департамента (Уровень: 1) - Едилов Азамат #1"'
+    - 'option "--- Второй департамент - 5560 - Инспектор (Уровень: 8) - Контур1139Сайт Правка #911391"'
+    - 'option "Второй департамент - 5273 - Заместитель начальника департамента (Уровень: 2) - Жумабекова Назым #2"'
+    - 'option "Первое управление - 5274 - Начальник управления (Уровень: 3) - Калиев Алишер #1"'
+    - 'option "Первое управление - 5275 - Заместитель начальника управления (Уровень: 4) - Мырзабеков Бекзат #2"'
+    - 'option "Первый отдел - 5276 - Начальник отдела (Уровень: 5) - Оралбаев Арман #1"'
+    - 'option "Первый отдел - 5278 - Старший инспектор (Уровень: 7) - Тасмагамбетов Ержан #3"'
+    - 'option "Первый отдел - 5279 - Старший инспектор (Уровень: 7) - Абенов Канат #4"'
+    - 'option "Первый отдел - 5280 - Инспектор (Уровень: 8) - Жаксылыков Мурат #5"'
+    - 'option "Первый отдел - 5281 - Инспектор (Уровень: 8) - Оспанова Салтанат #6"'
+    - 'option "Первый отдел - 5282 - Инспектор (Уровень: 8) - Токтаров Олжас #7"'
+    - 'option "Первый отдел - 5283 - Инспектор (Уровень: 8) - Сериков Рустем #8"'
+    - 'option "Первый отдел - 5284 - Инспектор (Уровень: 8) - Байжанов Самат #9"'
+    - 'option "Первый отдел - 5285 - Инспектор (Уровень: 8) - Кусаинова Камила #10"'
+    - 'option "Первый отдел - 5286 - Дежурный (Уровень: 9) - Мукашев Улан #11"'
+    - 'option "Первый отдел - 5287 - Дежурный (Уровень: 9) - Ахметов Чингиз #12"'
+    - 'option "Первый отдел - 5277 - Заместитель начальника отдела (Уровень: 6) - Сапарова Улжан #2"'
+    - 'option "Второй отдел - 5288 - Начальник отдела (Уровень: 5) - Есимов Эльдар #1"'
+    - 'option "Второй отдел - 5290 - Старший инспектор (Уровень: 7) - Сагитов Даулет #3"'
+    - 'option "Второй отдел - 5291 - Старший инспектор (Уровень: 7) - Тулегенов Нурлан #4"'
+    - 'option "Второй отдел - 5292 - Инспектор (Уровень: 8) - Искаков Азамат #5"'
+    - 'option "Второй отдел - 5293 - Инспектор (Уровень: 8) - Досжанова Шолпан #6"'
+    - 'option "Второй отдел - 5294 - Инспектор (Уровень: 8) - Бекенов Алишер #7"'
+    - 'option "Второй отдел - 5295 - Инспектор (Уровень: 8) - Аманжолов Бекзат #8"'
+    - 'option "Второй отдел - 5296 - Инспектор (Уровень: 8) - Каримов Арман #9"'
+    - 'option "Второй отдел - 5297 - Инспектор (Уровень: 8) - Рахимова Асель #10"'
+    - 'option "Второй отдел - 5298 - Дежурный (Уровень: 9) - Смагулов Ержан #11"'
+    - 'option "Второй отдел - 5299 - Дежурный (Уровень: 9) - Утегенов Канат #12"'
+    - 'option "Второй отдел - 5289 - Заместитель начальника отдела (Уровень: 6) - Нурланова Райхан #2"'
+    - 'option "Второе управление - 5300 - Начальник управления (Уровень: 3) - Шаяхметов Мурат #1"'
+    - 'option "Второе управление - 5301 - Заместитель начальника управления (Уровень: 4) - Ыбраева Лаура #2"'
+    - 'option "Первый отдел - 5302 - Начальник отдела (Уровень: 5) - Едилов Олжас #1"'
+    - 'option "Первый отдел - 5304 - Старший инспектор (Уровень: 7) - Калиев Самат #3"'
+    - 'option "Первый отдел - 5305 - Старший инспектор (Уровень: 7) - Мырзабекова Сауле #4"'
+    - 'option "Первый отдел - 5306 - Инспектор (Уровень: 8) - Оралбаев Улан #5"'
+    - 'option "Первый отдел - 5307 - Инспектор (Уровень: 8) - Сапаров Чингиз #6"'
+    - 'option "Первый отдел - 5308 - Инспектор (Уровень: 8) - Тасмагамбетов Эльдар #7"'
+    - 'option "Первый отдел - 5309 - Инспектор (Уровень: 8) - Абенова Айгерим #8"'
+    - 'option "Первый отдел - 5310 - Инспектор (Уровень: 8) - Жаксылыков Даулет #9"'
+    - 'option "Первый отдел - 5311 - Инспектор (Уровень: 8) - Оспанов Нурлан #10"'
+    - 'option "Первый отдел - 5312 - Дежурный (Уровень: 9) - Токтаров Азамат #11"'
+    - 'option "Первый отдел - 5313 - Дежурный (Уровень: 9) - Серикова Гульнара #12"'
+    - 'option "Первый отдел - 5303 - Заместитель начальника отдела (Уровень: 6) - Жумабеков Рустем #2"'
+    - 'option "Второй отдел - 5314 - Начальник отдела (Уровень: 5) - Байжанов Алишер #1"'
+    - 'option "Второй отдел - 5316 - Старший инспектор (Уровень: 7) - Мукашев Арман #3"'
+    - 'option "Второй отдел - 5317 - Старший инспектор (Уровень: 7) - Ахметова Мадина #4"'
+    - 'option "Второй отдел - 5318 - Инспектор (Уровень: 8) - Есимов Ержан #5"'
+    - 'option "Второй отдел - 5319 - Инспектор (Уровень: 8) - Нурланов Канат #6"'
+    - 'option "Второй отдел - 5320 - Инспектор (Уровень: 8) - Сагитов Мурат #7"'
+    - 'option "Второй отдел - 5321 - Инспектор (Уровень: 8) - Тулегенова Толкын #8"'
+    - 'option "Второй отдел - 5322 - Инспектор (Уровень: 8) - Искаков Олжас #9"'
+    - 'option "Второй отдел - 5323 - Инспектор (Уровень: 8) - Досжанов Рустем #10"'
+    - 'option "Второй отдел - 5324 - Дежурный (Уровень: 9) - Бекенов Самат #11"'
+    - 'option "Второй отдел - 5325 - Дежурный (Уровень: 9) - Аманжолова Динара #12"'
+    - 'option "Второй отдел - 5315 - Заместитель начальника отдела (Уровень: 6) - Кусаинов Бекзат #2"'
+    - 'option "Третье управление - 5326 - Начальник управления (Уровень: 3) - Каримов Улан #1"'
+    - 'option "Третье управление - 5327 - Заместитель начальника управления (Уровень: 4) - Рахимов Чингиз #2"'
+    - 'option "Первый отдел - 5328 - Начальник отдела (Уровень: 5) - Смагулов Эльдар #1"'
+    - 'option "Первый отдел - 5330 - Старший инспектор (Уровень: 7) - Шаяхметов Даулет #3"'
+    - 'option "Первый отдел - 5331 - Старший инспектор (Уровень: 7) - Ыбраев Нурлан #4"'
+    - 'option "Первый отдел - 5332 - Инспектор (Уровень: 8) - Едилов Азамат #5"'
+    - 'option "Первый отдел - 5333 - Инспектор (Уровень: 8) - Жумабекова Назым #6"'
+    - 'option "Первый отдел - 5334 - Инспектор (Уровень: 8) - Калиев Алишер #7"'
+    - 'option "Первый отдел - 5335 - Инспектор (Уровень: 8) - Мырзабеков Бекзат #8"'
+    - 'option "Первый отдел - 5336 - Инспектор (Уровень: 8) - Оралбаев Арман #9"'
+    - 'option "Первый отдел - 5337 - Инспектор (Уровень: 8) - Сапарова Улжан #10"'
+    - 'option "Первый отдел - 5338 - Дежурный (Уровень: 9) - Тасмагамбетов Ержан #11"'
+    - 'option "Первый отдел - 5339 - Дежурный (Уровень: 9) - Абенов Канат #12"'
+    - 'option "Первый отдел - 5329 - Заместитель начальника отдела (Уровень: 6) - Утегенова Жанна #2"'
+    - 'option "Второй отдел - 5340 - Начальник отдела (Уровень: 5) - Жаксылыков Мурат #1"'
+    - 'option "Второй отдел - 5342 - Старший инспектор (Уровень: 7) - Токтаров Олжас #3"'
+    - 'option "Второй отдел - 5343 - Старший инспектор (Уровень: 7) - Сериков Рустем #4"'
+    - 'option "Второй отдел - 5344 - Инспектор (Уровень: 8) - Байжанов Самат #5"'
+    - 'option "Второй отдел - 5345 - Инспектор (Уровень: 8) - Кусаинова Камила #6"'
+    - 'option "Второй отдел - 5346 - Инспектор (Уровень: 8) - Мукашев Улан #7"'
+    - 'option "Второй отдел - 5347 - Инспектор (Уровень: 8) - Ахметов Чингиз #8"'
+    - 'option "Второй отдел - 5348 - Инспектор (Уровень: 8) - Есимов Эльдар #9"'
+    - 'option "Второй отдел - 5349 - Инспектор (Уровень: 8) - Нурланова Райхан #10"'
+    - 'option "Второй отдел - 5350 - Дежурный (Уровень: 9) - Сагитов Даулет #11"'
+    - 'option "Второй отдел - 5351 - Дежурный (Уровень: 9) - Тулегенов Нурлан #12"'
+    - 'option "Второй отдел - 5341 - Заместитель начальника отдела (Уровень: 6) - Оспанова Салтанат #2"'
+    - 'option "Четвёртое управление - 5352 - Начальник управления (Уровень: 3) - Искаков Азамат #1"'
+    - 'option "Четвёртое управление - 5353 - Заместитель начальника управления (Уровень: 4) - Досжанова Шолпан #2"'
+    - 'option "Первый отдел - 5354 - Начальник отдела (Уровень: 5) - Бекенов Алишер #1"'
+    - 'option "Первый отдел - 5356 - Старший инспектор (Уровень: 7) - Каримов Арман #3"'
+    - 'option "Первый отдел - 5357 - Старший инспектор (Уровень: 7) - Рахимова Асель #4"'
+    - 'option "Первый отдел - 5358 - Инспектор (Уровень: 8) - Смагулов Ержан #5"'
+    - 'option "Первый отдел - 5359 - Инспектор (Уровень: 8) - Утегенов Канат #6"'
+    - 'option "Первый отдел - 5360 - Инспектор (Уровень: 8) - Шаяхметов Мурат #7"'
+    - 'option "Первый отдел - 5361 - Инспектор (Уровень: 8) - Ыбраева Лаура #8"'
+    - 'option "Первый отдел - 5362 - Инспектор (Уровень: 8) - Едилов Олжас #9"'
+    - 'option "Первый отдел - 5363 - Инспектор (Уровень: 8) - Жумабеков Рустем #10"'
+    - 'option "Первый отдел - 5364 - Дежурный (Уровень: 9) - Калиев Самат #11"'
+    - 'option "Первый отдел - 5365 - Дежурный (Уровень: 9) - Мырзабекова Сауле #12"'
+    - 'option "Первый отдел - 5355 - Заместитель начальника отдела (Уровень: 6) - Аманжолов Бекзат #2"'
+    - 'option "Второй отдел - 5366 - Начальник отдела (Уровень: 5) - Оралбаев Улан #1"'
+    - 'option "Второй отдел - 5368 - Старший инспектор (Уровень: 7) - Тасмагамбетов Эльдар #3"'
+    - 'option "Второй отдел - 5369 - Старший инспектор (Уровень: 7) - Абенова Айгерим #4"'
+    - 'option "Второй отдел - 5370 - Инспектор (Уровень: 8) - Жаксылыков Даулет #5"'
+    - 'option "Второй отдел - 5371 - Инспектор (Уровень: 8) - Оспанов Нурлан #6"'
+    - 'option "Второй отдел - 5372 - Инспектор (Уровень: 8) - Токтаров Азамат #7"'
+    - 'option "Второй отдел - 5373 - Инспектор (Уровень: 8) - Серикова Гульнара #8"'
+    - 'option "Второй отдел - 5374 - Инспектор (Уровень: 8) - Байжанов Алишер #9"'
+    - 'option "Второй отдел - 5375 - Инспектор (Уровень: 8) - Кусаинов Бекзат #10"'
+    - 'option "Второй отдел - 5376 - Дежурный (Уровень: 9) - Мукашев Арман #11"'
+    - 'option "Второй отдел - 5377 - Дежурный (Уровень: 9) - Ахметова Мадина #12"'
+    - 'option "Второй отдел - 5367 - Заместитель начальника отдела (Уровень: 6) - Сапаров Чингиз #2"'
+    - 'option "Третий отдел - 5378 - Начальник отдела (Уровень: 5) - Есимов Ержан #1"'
+    - 'option "Третий отдел - 5380 - Старший инспектор (Уровень: 7) - Сагитов Мурат #3"'
+    - 'option "Третий отдел - 5381 - Старший инспектор (Уровень: 7) - Тулегенова Толкын #4"'
+    - 'option "Третий отдел - 5382 - Инспектор (Уровень: 8) - Искаков Олжас #5"'
+    - 'option "Третий отдел - 5383 - Инспектор (Уровень: 8) - Досжанов Рустем #6"'
+    - 'option "Третий отдел - 5384 - Инспектор (Уровень: 8) - Бекенов Самат #7"'
+    - 'option "Третий отдел - 5385 - Инспектор (Уровень: 8) - Аманжолова Динара #8"'
+    - 'option "Третий отдел - 5386 - Инспектор (Уровень: 8) - Каримов Улан #9"'
+    - 'option "Третий отдел - 5387 - Инспектор (Уровень: 8) - Рахимов Чингиз #10"'
+    - 'option "Третий отдел - 5388 - Дежурный (Уровень: 9) - Смагулов Эльдар #11"'
+    - 'option "Третий отдел - 5389 - Дежурный (Уровень: 9) - Утегенова Жанна #12"'
+    - 'option "Третий отдел - 5379 - Заместитель начальника отдела (Уровень: 6) - Нурланов Канат #2"'
+    - 'option "Первое сквозное управление - 5392 - Старший инспектор (Уровень: 7) - Едилов Азамат #3"'
+    - 'option "Первое сквозное управление - 5393 - Старший инспектор (Уровень: 7) - Жумабекова Назым #4"'
+    - 'option "Первое сквозное управление - 5394 - Инспектор (Уровень: 8) - Калиев Алишер #5"'
+    - 'option "Первое сквозное управление - 5395 - Инспектор (Уровень: 8) - Мырзабеков Бекзат #6"'
+    - 'option "Первое сквозное управление - 5396 - Инспектор (Уровень: 8) - Оралбаев Арман #7"'
+    - 'option "Первое сквозное управление - 5397 - Инспектор (Уровень: 8) - Сапарова Улжан #8"'
+    - 'option "Первое сквозное управление - 5398 - Инспектор (Уровень: 8) - Тасмагамбетов Ержан #9"'
+    - 'option "Первое сквозное управление - 5399 - Инспектор (Уровень: 8) - Абенов Канат #10"'
+    - 'option "Первое сквозное управление - 5400 - Дежурный (Уровень: 9) - Жаксылыков Мурат #11"'
+    - 'option "Первое сквозное управление - 5401 - Дежурный (Уровень: 9) - Оспанова Салтанат #12"'
+    - 'option "Первое сквозное управление - 5390 - Начальник управления (Уровень: 3) - Шаяхметов Даулет #1"'
+    - 'option "Первое сквозное управление - 5391 - Заместитель начальника управления (Уровень: 4) - Ыбраев Нурлан #2"'
+    - 'option "Второе сквозное управление - 5404 - Старший инспектор (Уровень: 7) - Байжанов Самат #3"'
+    - 'option "Второе сквозное управление - 5405 - Старший инспектор (Уровень: 7) - Кусаинова Камила #4"'
+    - 'option "Второе сквозное управление - 5406 - Инспектор (Уровень: 8) - Мукашев Улан #5"'
+    - 'option "Второе сквозное управление - 5407 - Инспектор (Уровень: 8) - Ахметов Чингиз #6"'
+    - 'option "Второе сквозное управление - 5408 - Инспектор (Уровень: 8) - Есимов Эльдар #7"'
+    - 'option "Второе сквозное управление - 5409 - Инспектор (Уровень: 8) - Нурланова Райхан #8"'
+    - 'option "Второе сквозное управление - 5410 - Инспектор (Уровень: 8) - Сагитов Даулет #9"'
+    - 'option "Второе сквозное управление - 5411 - Инспектор (Уровень: 8) - Тулегенов Нурлан #10"'
+    - 'option "Второе сквозное управление - 5412 - Дежурный (Уровень: 9) - Искаков Азамат #11"'
+    - 'option "Второе сквозное управление - 5413 - Дежурный (Уровень: 9) - Досжанова Шолпан #12"'
+    - 'option "Второе сквозное управление - 5402 - Начальник управления (Уровень: 3) - Токтаров Олжас #1"'
+    - 'option "Второе сквозное управление - 5403 - Заместитель начальника управления (Уровень: 4) - Сериков Рустем #2"'
+    - 'option "Третий департамент - 5414 - Начальник департамента (Уровень: 1) - Бекенов Алишер #1"'
+    - 'option "Третий департамент - 5415 - Заместитель начальника департамента (Уровень: 2) - Аманжолов Бекзат #2"'
+    - 'option "Первое управление - 5416 - Начальник управления (Уровень: 3) - Каримов Арман #1"'
+    - 'option "Первое управление - 5417 - Заместитель начальника управления (Уровень: 4) - Рахимова Асель #2"'
+    - 'option "Первый отдел - 5418 - Начальник отдела (Уровень: 5) - Смагулов Ержан #1"'
+    - 'option "Первый отдел - 5420 - Старший инспектор (Уровень: 7) - Шаяхметов Мурат #3"'
+    - 'option "Первый отдел - 5421 - Старший инспектор (Уровень: 7) - Ыбраева Лаура #4"'
+    - 'option "Первый отдел - 5422 - Инспектор (Уровень: 8) - Едилов Олжас #5"'
+    - 'option "Первый отдел - 5423 - Инспектор (Уровень: 8) - Жумабеков Рустем #6"'
+    - 'option "Первый отдел - 5424 - Инспектор (Уровень: 8) - Калиев Самат #7"'
+    - 'option "Первый отдел - 5425 - Инспектор (Уровень: 8) - Мырзабекова Сауле #8"'
+    - 'option "Первый отдел - 5426 - Инспектор (Уровень: 8) - Оралбаев Улан #9"'
+    - 'option "Первый отдел - 5427 - Инспектор (Уровень: 8) - Сапаров Чингиз #10"'
+    - 'option "Первый отдел - 5428 - Дежурный (Уровень: 9) - Тасмагамбетов Эльдар #11"'
+    - 'option "Первый отдел - 5429 - Дежурный (Уровень: 9) - Абенова Айгерим #12"'
+    - 'option "Первый отдел - 5419 - Заместитель начальника отдела (Уровень: 6) - Утегенов Канат #2"'
+    - 'option "Второй отдел - 5430 - Начальник отдела (Уровень: 5) - Жаксылыков Даулет #1"'
+    - 'option "Второй отдел - 5432 - Старший инспектор (Уровень: 7) - Токтаров Азамат #3"'
+    - 'option "Второй отдел - 5433 - Старший инспектор (Уровень: 7) - Серикова Гульнара #4"'
+    - 'option "Второй отдел - 5434 - Инспектор (Уровень: 8) - Байжанов Алишер #5"'
+    - 'option "Второй отдел - 5435 - Инспектор (Уровень: 8) - Кусаинов Бекзат #6"'
+    - 'option "Второй отдел - 5436 - Инспектор (Уровень: 8) - Мукашев Арман #7"'
+    - 'option "Второй отдел - 5437 - Инспектор (Уровень: 8) - Ахметова Мадина #8"'
+    - 'option "Второй отдел - 5438 - Инспектор (Уровень: 8) - Есимов Ержан #9"'
+    - 'option "Второй отдел - 5439 - Инспектор (Уровень: 8) - Нурланов Канат #10"'
+    - 'option "Второй отдел - 5440 - Дежурный (Уровень: 9) - Сагитов Мурат #11"'
+    - 'option "Второй отдел - 5441 - Дежурный (Уровень: 9) - Тулегенова Толкын #12"'
+    - 'option "Второй отдел - 5431 - Заместитель начальника отдела (Уровень: 6) - Оспанов Нурлан #2"'
+    - 'option "Второе управление - 5442 - Начальник управления (Уровень: 3) - Искаков Олжас #1"'
+    - 'option "Второе управление - 5443 - Заместитель начальника управления (Уровень: 4) - Досжанов Рустем #2"'
+    - 'option "Первый отдел - 5444 - Начальник отдела (Уровень: 5) - Бекенов Самат #1"'
+    - 'option "Первый отдел - 5446 - Старший инспектор (Уровень: 7) - Каримов Улан #3"'
+    - 'option "Первый отдел - 5447 - Старший инспектор (Уровень: 7) - Рахимов Чингиз #4"'
+    - 'option "Первый отдел - 5448 - Инспектор (Уровень: 8) - Смагулов Эльдар #5"'
+    - 'option "Первый отдел - 5449 - Инспектор (Уровень: 8) - Утегенова Жанна #6"'
+    - 'option "Первый отдел - 5450 - Инспектор (Уровень: 8) - Шаяхметов Даулет #7"'
+    - 'option "Первый отдел - 5451 - Инспектор (Уровень: 8) - Ыбраев Нурлан #8"'
+    - 'option "Первый отдел - 5452 - Инспектор (Уровень: 8) - Едилов Азамат #9"'
+    - 'option "Первый отдел - 5453 - Инспектор (Уровень: 8) - Жумабекова Назым #10"'
+    - 'option "Первый отдел - 5454 - Дежурный (Уровень: 9) - Калиев Алишер #11"'
+    - 'option "Первый отдел - 5455 - Дежурный (Уровень: 9) - Мырзабеков Бекзат #12"'
+    - 'option "Первый отдел - 5445 - Заместитель начальника отдела (Уровень: 6) - Аманжолова Динара #2"'
+    - 'option "Второй отдел - 5456 - Начальник отдела (Уровень: 5) - Оралбаев Арман #1"'
+    - 'option "Второй отдел - 5458 - Старший инспектор (Уровень: 7) - Тасмагамбетов Ержан #3"'
+    - 'option "Второй отдел - 5459 - Старший инспектор (Уровень: 7) - Абенов Канат #4"'
+    - 'option "Второй отдел - 5460 - Инспектор (Уровень: 8) - Жаксылыков Мурат #5"'
+    - 'option "Второй отдел - 5461 - Инспектор (Уровень: 8) - Оспанова Салтанат #6"'
+    - 'option "Второй отдел - 5462 - Инспектор (Уровень: 8) - Токтаров Олжас #7"'
+    - 'option "Второй отдел - 5463 - Инспектор (Уровень: 8) - Сериков Рустем #8"'
+    - 'option "Второй отдел - 5464 - Инспектор (Уровень: 8) - Байжанов Самат #9"'
+    - 'option "Второй отдел - 5465 - Инспектор (Уровень: 8) - Кусаинова Камила #10"'
+    - 'option "Второй отдел - 5466 - Дежурный (Уровень: 9) - Мукашев Улан #11"'
+    - 'option "Второй отдел - 5467 - Дежурный (Уровень: 9) - Ахметов Чингиз #12"'
+    - 'option "Второй отдел - 5457 - Заместитель начальника отдела (Уровень: 6) - Сапарова Улжан #2"'
+    - 'option "Третье управление - 5468 - Начальник управления (Уровень: 3) - Есимов Эльдар #1"'
+    - 'option "Третье управление - 5469 - Заместитель начальника управления (Уровень: 4) - Нурланова Райхан #2"'
+    - 'option "Первый отдел - 5470 - Начальник отдела (Уровень: 5) - Сагитов Даулет #1"'
+    - 'option "Первый отдел - 5472 - Старший инспектор (Уровень: 7) - Искаков Азамат #3"'
+    - 'option "Первый отдел - 5473 - Старший инспектор (Уровень: 7) - Досжанова Шолпан #4"'
+    - 'option "Первый отдел - 5474 - Инспектор (Уровень: 8) - Бекенов Алишер #5"'
+    - 'option "Первый отдел - 5475 - Инспектор (Уровень: 8) - Аманжолов Бекзат #6"'
+    - 'option "Первый отдел - 5476 - Инспектор (Уровень: 8) - Каримов Арман #7"'
+    - 'option "Первый отдел - 5477 - Инспектор (Уровень: 8) - Рахимова Асель #8"'
+    - 'option "Первый отдел - 5478 - Инспектор (Уровень: 8) - Смагулов Ержан #9"'
+    - 'option "Первый отдел - 5479 - Инспектор (Уровень: 8) - Утегенов Канат #10"'
+    - 'option "Первый отдел - 5480 - Дежурный (Уровень: 9) - Шаяхметов Мурат #11"'
+    - 'option "Первый отдел - 5481 - Дежурный (Уровень: 9) - Ыбраева Лаура #12"'
+    - 'option "Первый отдел - 5471 - Заместитель начальника отдела (Уровень: 6) - Тулегенов Нурлан #2"'
+    - 'option "Второй отдел - 5482 - Начальник отдела (Уровень: 5) - Едилов Олжас #1"'
+    - 'option "Второй отдел - 5484 - Старший инспектор (Уровень: 7) - Калиев Самат #3"'
+    - 'option "Второй отдел - 5485 - Старший инспектор (Уровень: 7) - Мырзабекова Сауле #4"'
+    - 'option "Второй отдел - 5486 - Инспектор (Уровень: 8) - Оралбаев Улан #5"'
+    - 'option "Второй отдел - 5487 - Инспектор (Уровень: 8) - Сапаров Чингиз #6"'
+    - 'option "Второй отдел - 5488 - Инспектор (Уровень: 8) - Тасмагамбетов Эльдар #7"'
+    - 'option "Второй отдел - 5489 - Инспектор (Уровень: 8) - Абенова Айгерим #8"'
+    - 'option "Второй отдел - 5490 - Инспектор (Уровень: 8) - Жаксылыков Даулет #9"'
+    - 'option "Второй отдел - 5491 - Инспектор (Уровень: 8) - Оспанов Нурлан #10"'
+    - 'option "Второй отдел - 5492 - Дежурный (Уровень: 9) - Токтаров Азамат #11"'
+    - 'option "Второй отдел - 5493 - Дежурный (Уровень: 9) - Серикова Гульнара #12"'
+    - 'option "Второй отдел - 5483 - Заместитель начальника отдела (Уровень: 6) - Жумабеков Рустем #2"'
+    - 'option "Четвёртое управление - 5494 - Начальник управления (Уровень: 3) - Байжанов Алишер #1"'
+    - 'option "Четвёртое управление - 5495 - Заместитель начальника управления (Уровень: 4) - Кусаинов Бекзат #2"'
+    - 'option "Первый отдел - 5496 - Начальник отдела (Уровень: 5) - Мукашев Арман #1"'
+    - 'option "Первый отдел - 5498 - Старший инспектор (Уровень: 7) - Есимов Ержан #3"'
+    - 'option "Первый отдел - 5499 - Старший инспектор (Уровень: 7) - Нурланов Канат #4"'
+    - 'option "Первый отдел - 5500 - Инспектор (Уровень: 8) - Сагитов Мурат #5"'
+    - 'option "Первый отдел - 5501 - Инспектор (Уровень: 8) - Тулегенова Толкын #6"'
+    - 'option "Первый отдел - 5502 - Инспектор (Уровень: 8) - Искаков Олжас #7"'
+    - 'option "Первый отдел - 5503 - Инспектор (Уровень: 8) - Досжанов Рустем #8"'
+    - 'option "Первый отдел - 5504 - Инспектор (Уровень: 8) - Бекенов Самат #9"'
+    - 'option "Первый отдел - 5505 - Инспектор (Уровень: 8) - Аманжолова Динара #10"'
+    - 'option "Первый отдел - 5506 - Дежурный (Уровень: 9) - Каримов Улан #11"'
+    - 'option "Первый отдел - 5507 - Дежурный (Уровень: 9) - Рахимов Чингиз #12"'
+    - 'option "Первый отдел - 5497 - Заместитель начальника отдела (Уровень: 6) - Ахметова Мадина #2"'
+    - 'option "Второй отдел - 5508 - Начальник отдела (Уровень: 5) - Смагулов Эльдар #1"'
+    - 'option "Второй отдел - 5510 - Старший инспектор (Уровень: 7) - Шаяхметов Даулет #3"'
+    - 'option "Второй отдел - 5511 - Старший инспектор (Уровень: 7) - Ыбраев Нурлан #4"'
+    - 'option "Второй отдел - 5512 - Инспектор (Уровень: 8) - Едилов Азамат #5"'
+    - 'option "Второй отдел - 5513 - Инспектор (Уровень: 8) - Жумабекова Назым #6"'
+    - 'option "Второй отдел - 5514 - Инспектор (Уровень: 8) - Калиев Алишер #7"'
+    - 'option "Второй отдел - 5515 - Инспектор (Уровень: 8) - Мырзабеков Бекзат #8"'
+    - 'option "Второй отдел - 5516 - Инспектор (Уровень: 8) - Оралбаев Арман #9"'
+    - 'option "Второй отдел - 5517 - Инспектор (Уровень: 8) - Сапарова Улжан #10"'
+    - 'option "Второй отдел - 5518 - Дежурный (Уровень: 9) - Тасмагамбетов Ержан #11"'
+    - 'option "Второй отдел - 5519 - Дежурный (Уровень: 9) - Абенов Канат #12"'
+    - 'option "Второй отдел - 5509 - Заместитель начальника отдела (Уровень: 6) - Утегенова Жанна #2"'
+    - 'option "Третий отдел - 5520 - Начальник отдела (Уровень: 5) - Жаксылыков Мурат #1"'
+    - 'option "Третий отдел - 5522 - Старший инспектор (Уровень: 7) - Токтаров Олжас #3"'
+    - 'option "Третий отдел - 5523 - Старший инспектор (Уровень: 7) - Сериков Рустем #4"'
+    - 'option "Третий отдел - 5524 - Инспектор (Уровень: 8) - Байжанов Самат #5"'
+    - 'option "Третий отдел - 5525 - Инспектор (Уровень: 8) - Кусаинова Камила #6"'
+    - 'option "Третий отдел - 5526 - Инспектор (Уровень: 8) - Мукашев Улан #7"'
+    - 'option "Третий отдел - 5527 - Инспектор (Уровень: 8) - Ахметов Чингиз #8"'
+    - 'option "Третий отдел - 5528 - Инспектор (Уровень: 8) - Есимов Эльдар #9"'
+    - 'option "Третий отдел - 5529 - Инспектор (Уровень: 8) - Нурланова Райхан #10"'
+    - 'option "Третий отдел - 5530 - Дежурный (Уровень: 9) - Сагитов Даулет #11"'
+    - 'option "Третий отдел - 5531 - Дежурный (Уровень: 9) - Тулегенов Нурлан #12"'
+    - 'option "Третий отдел - 5521 - Заместитель начальника отдела (Уровень: 6) - Оспанова Салтанат #2"'
+    - 'option "Первое сквозное управление - 5534 - Старший инспектор (Уровень: 7) - Бекенов Алишер #3"'
+    - 'option "Первое сквозное управление - 5535 - Старший инспектор (Уровень: 7) - Аманжолов Бекзат #4"'
+    - 'option "Первое сквозное управление - 5536 - Инспектор (Уровень: 8) - Каримов Арман #5"'
+    - 'option "Первое сквозное управление - 5537 - Инспектор (Уровень: 8) - Рахимова Асель #6"'
+    - 'option "Первое сквозное управление - 5538 - Инспектор (Уровень: 8) - Смагулов Ержан #7"'
+    - 'option "Первое сквозное управление - 5539 - Инспектор (Уровень: 8) - Утегенов Канат #8"'
+    - 'option "Первое сквозное управление - 5540 - Инспектор (Уровень: 8) - Шаяхметов Мурат #9"'
+    - 'option "Первое сквозное управление - 5541 - Инспектор (Уровень: 8) - Ыбраева Лаура #10"'
+    - 'option "Первое сквозное управление - 5542 - Дежурный (Уровень: 9) - Едилов Олжас #11"'
+    - 'option "Первое сквозное управление - 5543 - Дежурный (Уровень: 9) - Жумабеков Рустем #12"'
+    - 'option "Первое сквозное управление - 5532 - Начальник управления (Уровень: 3) - Искаков Азамат #1"'
+    - 'option "Первое сквозное управление - 5533 - Заместитель начальника управления (Уровень: 4) - Досжанова Шолпан #2"'
+    - 'option "Второе сквозное управление - 5546 - Старший инспектор (Уровень: 7) - Оралбаев Улан #3"'
+    - 'option "Второе сквозное управление - 5547 - Старший инспектор (Уровень: 7) - Сапаров Чингиз #4"'
+    - 'option "Второе сквозное управление - 5548 - Инспектор (Уровень: 8) - Тасмагамбетов Эльдар #5"'
+    - 'option "Второе сквозное управление - 5549 - Инспектор (Уровень: 8) - Абенова Айгерим #6"'
+    - 'option "Второе сквозное управление - 5550 - Инспектор (Уровень: 8) - Жаксылыков Даулет #7"'
+    - 'option "Второе сквозное управление - 5551 - Инспектор (Уровень: 8) - Оспанов Нурлан #8"'
+    - 'option "Второе сквозное управление - 5552 - Инспектор (Уровень: 8) - Токтаров Азамат #9"'
+    - 'option "Второе сквозное управление - 5553 - Инспектор (Уровень: 8) - Серикова Гульнара #10"'
+    - 'option "Второе сквозное управление - 5554 - Дежурный (Уровень: 9) - Байжанов Алишер #11"'
+    - 'option "Второе сквозное управление - 5555 - Дежурный (Уровень: 9) - Кусаинов Бекзат #12"'
+    - 'option "Второе сквозное управление - 5544 - Начальник управления (Уровень: 3) - Калиев Самат #1"'
+    - 'option "Второе сквозное управление - 5545 - Заместитель начальника управления (Уровень: 4) - Мырзабекова Сауле #2"'
+  - generic "Change selected Штатная единица"
+  - link "Add another Штатная единица":
+    - /url: /admin/staff_unit/staffunit/add/?_to_field=id&_popup=1
+  - generic "View selected Штатная единица"
+  - generic: "Номер слота:"
+  - spinbutton "Номер слота:": "1"
+  - button "Save"
+  - button "Save and add another"
+  - button "Save and continue editing"
+  - link "Delete":
+    - /url: /admin/staff_unit/staffunit/1/delete/
+- contentinfo

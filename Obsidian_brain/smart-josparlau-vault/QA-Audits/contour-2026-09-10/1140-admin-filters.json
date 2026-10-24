@@ -1,0 +1,1891 @@
+[
+  {
+    "href": "/admin/auth/user/",
+    "name": "Users",
+    "category": "Доступ",
+    "filters": [
+      {
+        "name": "By staff status",
+        "option": {
+          "href": "?is_staff__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select user to change\" [level=1]\n  - list:\n    - link \"Add user\":\n      - /url: /admin/auth/user/add/?_changelist_fi",
+        "paginator": "\n\n7 users\n\n\n"
+      },
+      {
+        "name": "By superuser status",
+        "option": {
+          "href": "?is_superuser__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select user to change\" [level=1]\n  - list:\n    - link \"Add user\":\n      - /url: /admin/auth/user/add/?_changelist_fi",
+        "paginator": "\n\n1 user\n\n\n"
+      },
+      {
+        "name": "By active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select user to change\" [level=1]\n  - list:\n    - link \"Add user\":\n      - /url: /admin/auth/user/add/?_changelist_fi",
+        "paginator": "\n\n56 users\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/userrole/",
+    "name": "Роли пользователей (ОМ)",
+    "category": "Доступ",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Роль пользователя (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Роль пользователя (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n56 Роли пользователей (ОМ)\n\n\n"
+      },
+      {
+        "name": "By role code",
+        "option": {
+          "href": "?role_code__code__exact=VIEWER",
+          "text": "VIEWER"
+        },
+        "result": "\n  - heading \"Select Роль пользователя (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Роль пользователя (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n1 Роль пользователя (ОМ)\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/role/",
+    "name": "Роли раздела ОМ",
+    "category": "Доступ",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Роль раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Роль раздела ОМ\":\n      - /url: /admin/operati",
+        "paginator": "\n\n35 Роли раздела ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/permission/",
+    "name": "Права раздела ОМ",
+    "category": "Доступ",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Право раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Право раздела ОМ\":\n      - /url: /admin/opera",
+        "paginator": "\n\n56 Права раздела ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/rolepermission/",
+    "name": "Права ролей (ОМ)",
+    "category": "Доступ",
+    "filters": []
+  },
+  {
+    "href": "/admin/auth/group/",
+    "name": "Groups",
+    "category": "Доступ",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/temporarydutypermission/",
+    "name": "Временные права наряда",
+    "category": "Доступ",
+    "filters": [
+      {
+        "name": "By duty role code",
+        "option": {
+          "href": "?duty_role_code__exact=OMD",
+          "text": "ОМД"
+        },
+        "result": "\n  - heading \"Select Временное право наряда to change\" [level=1]\n  - list:\n    - link \"Add Временное право наряда\":\n      - /url: ",
+        "paginator": "\n\n0 Временные права наряда\n\n\n"
+      },
+      {
+        "name": "By starts at",
+        "option": {
+          "href": "?starts_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&starts_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Временное право наряда to change\" [level=1]\n  - list:\n    - link \"Add Временное право наряда\":\n      - /url: ",
+        "paginator": "\n\n0 Временные права наряда\n\n\n"
+      },
+      {
+        "name": "By ends at",
+        "option": {
+          "href": "?ends_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&ends_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Временное право наряда to change\" [level=1]\n  - list:\n    - link \"Add Временное право наряда\":\n      - /url: ",
+        "paginator": "\n\n0 Временные права наряда\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Временное право наряда to change\" [level=1]\n  - list:\n    - link \"Add Временное право наряда\":\n      - /url: ",
+        "paginator": "\n\n0 Временные права наряда\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/divisions/division/",
+    "name": "Подразделения",
+    "category": "Структура и штат",
+    "filters": [
+      {
+        "name": "By division type",
+        "option": {
+          "href": "?division_type__exact=organization",
+          "text": "Организация"
+        },
+        "result": "\n  - heading \"Select Подразделение to change\" [level=1]\n  - list:\n    - link \"Add Подразделение\":\n      - /url: /admin/divisions/d",
+        "paginator": "\n\n2 Подразделения\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Подразделение to change\" [level=1]\n  - list:\n    - link \"Add Подразделение\":\n      - /url: /admin/divisions/d",
+        "paginator": "\n\n55 Подразделения\n\n\n"
+      },
+      {
+        "name": "By is summary node",
+        "option": {
+          "href": "?is_summary_node__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Подразделение to change\" [level=1]\n  - list:\n    - link \"Add Подразделение\":\n      - /url: /admin/divisions/d",
+        "paginator": "\n\n1 Подразделение\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/staff_unit/staffunit/",
+    "name": "Штатные единицы",
+    "category": "Структура и штат",
+    "filters": [
+      {
+        "name": "By Подразделение",
+        "option": {
+          "href": "?division__id__exact=1",
+          "text": "Служба"
+        },
+        "result": "\n  - heading \"Select Штатная единица to change\" [level=1]\n  - list:\n    - link \"Add Штатная единица\":\n      - /url: /admin/staff_u",
+        "paginator": "\n\n0 Штатные единицы\n\n\n"
+      },
+      {
+        "name": "By level",
+        "option": {
+          "href": "?level=0",
+          "text": "0"
+        },
+        "result": "\n  - heading \"Select Штатная единица to change\" [level=1]\n  - list:\n    - link \"Add Штатная единица\":\n      - /url: /admin/staff_u",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n    4 \n\n    5 \n\n\n443 Штатные единицы\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/staff_unit/vacancy/",
+    "name": "Вакансии",
+    "category": "Структура и штат",
+    "filters": [
+      {
+        "name": "By Статус",
+        "option": {
+          "href": "?status__exact=open",
+          "text": "Открыта"
+        },
+        "result": "\n  - heading \"Select Вакансия to change\" [level=1]\n  - list:\n    - link \"Add Вакансия\":\n      - /url: /admin/staff_unit/vacancy/ad",
+        "paginator": "\n\n0 Вакансии\n\n\n"
+      },
+      {
+        "name": "By created at",
+        "option": {
+          "href": "?created_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&created_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Вакансия to change\" [level=1]\n  - list:\n    - link \"Add Вакансия\":\n      - /url: /admin/staff_unit/vacancy/ad",
+        "paginator": "\n\n0 Вакансии\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/employees/employee/",
+    "name": "Сотрудники",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n    4 \n\n    5 \n\n\n440 Сотрудники\n\n\n"
+      },
+      {
+        "name": "By employment status",
+        "option": {
+          "href": "?employment_status__exact=working",
+          "text": "Работает"
+        },
+        "result": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n    4 \n\n    5 \n\n\n442 Сотрудники\n\n\n"
+      },
+      {
+        "name": "By gender",
+        "option": {
+          "href": "?gender__exact=M",
+          "text": "Мужской"
+        },
+        "result": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n    4 \n\n\n333 Сотрудники\n\n\n"
+      },
+      {
+        "name": "By rank",
+        "option": {
+          "href": "?rank__id__exact=11",
+          "text": "полковник (Уровень: 1)"
+        },
+        "result": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/",
+        "paginator": "\n\n0 Сотрудники\n\n\n"
+      },
+      {
+        "name": "By Наличие пользователя",
+        "option": {
+          "href": "?has_user=yes",
+          "text": "С пользователем"
+        },
+        "result": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/",
+        "paginator": "\n\n14 Сотрудники\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/statuses/employeestatus/",
+    "name": "Статусы сотрудников",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By Тип статуса",
+        "option": {
+          "href": "?status_type=after_duty",
+          "text": "after_duty"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/sta",
+        "paginator": "\n\n6 Статусы сотрудников\n\n\n"
+      },
+      {
+        "name": "By Состояние статуса",
+        "option": {
+          "href": "?state__exact=planned",
+          "text": "Запланирован"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/sta",
+        "paginator": "\n\n4 Статусы сотрудников\n\n\n"
+      },
+      {
+        "name": "By Дата начала",
+        "option": {
+          "href": "?start_date__gte=2026-09-10&start_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/sta",
+        "paginator": "\n\n12 Статусы сотрудников\n\n\n"
+      },
+      {
+        "name": "By Дата создания",
+        "option": {
+          "href": "?created_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&created_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/sta",
+        "paginator": "\n\n18 Статусы сотрудников\n\n\n"
+      },
+      {
+        "name": "By Применен автоматически",
+        "option": {
+          "href": "?auto_applied__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/sta",
+        "paginator": "\n\n10 Статусы сотрудников\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsemployeestatus/",
+    "name": "Статусы сотрудников (ОМ)",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By source",
+        "option": {
+          "href": "?source__exact=USER",
+          "text": "User"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n\n181 Статусы сотрудников (ОМ)\nShow all\n\n"
+      },
+      {
+        "name": "By date start",
+        "option": {
+          "href": "?date_start__gte=2026-09-10&date_start__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n21 Статусы сотрудников (ОМ)\n\n\n"
+      },
+      {
+        "name": "By date end",
+        "option": {
+          "href": "?date_end__gte=2026-09-10&date_end__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n4 Статусы сотрудников (ОМ)\n\n\n"
+      },
+      {
+        "name": "By cancelled at",
+        "option": {
+          "href": "?cancelled_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&cancelled_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Статус сотрудника (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n0 Статусы сотрудников (ОМ)\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/secondment/",
+    "name": "Прикомандирования (ОМ)",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By return requested at",
+        "option": {
+          "href": "?return_requested_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&return_requested_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Прикомандирование (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Прикомандирование (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n0 Прикомандирования (ОМ)\n\n\n"
+      },
+      {
+        "name": "By return confirmed at",
+        "option": {
+          "href": "?return_confirmed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&return_confirmed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Прикомандирование (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Прикомандирование (ОМ)\":\n      - /url: ",
+        "paginator": "\n\n0 Прикомандирования (ОМ)\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/employees/employeetransferhistory/",
+    "name": "История переводов сотрудников",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By is temporary",
+        "option": {
+          "href": "?is_temporary__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select История перевода сотрудника to change\" [level=1]\n  - list:\n    - link \"Add История перевода сотрудника\":\n    ",
+        "paginator": "\n\n0 История переводов сотрудников\n\n\n"
+      },
+      {
+        "name": "By transfer date",
+        "option": {
+          "href": "?transfer_date__gte=2026-09-10&transfer_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select История перевода сотрудника to change\" [level=1]\n  - list:\n    - link \"Add История перевода сотрудника\":\n    ",
+        "paginator": "\n\n0 История переводов сотрудников\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/statusoverride/",
+    "name": "Обходы статусов",
+    "category": "Сотрудники и статусы",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsprotectedperson/",
+    "name": "Охраняемые лица",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By category",
+        "option": {
+          "href": "?category__exact=OURS",
+          "text": "Свои"
+        },
+        "result": "\n  - heading \"Select Охраняемое лицо to change\" [level=1]\n  - list:\n    - link \"Add Охраняемое лицо\":\n      - /url: /admin/operati",
+        "paginator": "\n\n5 Охраняемые лица\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Охраняемое лицо to change\" [level=1]\n  - list:\n    - link \"Add Охраняемое лицо\":\n      - /url: /admin/operati",
+        "paginator": "\n\n10 Охраняемые лица\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/statuses/statusdocument/",
+    "name": "Документы статусов",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By Дата загрузки",
+        "option": {
+          "href": "?uploaded_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&uploaded_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Документ статуса to change\" [level=1]\n  - list:\n    - link \"Add Документ статуса\":\n      - /url: /admin/statu",
+        "paginator": "\n\n0 Документы статусов\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/statuses/statuschangehistory/",
+    "name": "История изменений статусов",
+    "category": "Сотрудники и статусы",
+    "filters": [
+      {
+        "name": "By Тип изменения",
+        "option": {
+          "href": "?change_type__exact=created",
+          "text": "Создан"
+        },
+        "result": "\n  - heading \"Select История изменения статуса to change\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n    4 \n\n    … \n\n    72 \n\n    73 \n\n\n7247 История изменений статусов\n\n\n"
+      },
+      {
+        "name": "By Дата изменения",
+        "option": {
+          "href": "?changed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&changed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select История изменения статуса to change\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"",
+        "paginator": "\n\n63 История изменений статусов\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/dictionaries/position/",
+    "name": "Должности",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By Уровень",
+        "option": {
+          "href": "?level=1",
+          "text": "1"
+        },
+        "result": "\n  - heading \"Select Должность to change\" [level=1]\n  - list:\n    - link \"Add Должность\":\n      - /url: /admin/dictionaries/positi",
+        "paginator": "\n\n1 Должность\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/dictionaries/rank/",
+    "name": "Звания",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By Уровень",
+        "option": {
+          "href": "?level=1",
+          "text": "1"
+        },
+        "result": "\n  - heading \"Select Звание to change\" [level=1]\n  - list:\n    - link \"Add Звание\":\n      - /url: /admin/dictionaries/rank/add/?_c",
+        "paginator": "\n\n1 Звание\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/statustype/",
+    "name": "Типы статусов (ОМ)",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By is hard block",
+        "option": {
+          "href": "?is_hard_block__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n4 Типы статусов (ОМ)\n\n\n"
+      },
+      {
+        "name": "By counts in list",
+        "option": {
+          "href": "?counts_in_list__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n20 Типы статусов (ОМ)\n\n\n"
+      },
+      {
+        "name": "By counts in staff",
+        "option": {
+          "href": "?counts_in_staff__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n19 Типы статусов (ОМ)\n\n\n"
+      },
+      {
+        "name": "By is ku owned",
+        "option": {
+          "href": "?is_ku_owned__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n10 Типы статусов (ОМ)\n\n\n"
+      },
+      {
+        "name": "By restricts editing",
+        "option": {
+          "href": "?restricts_editing__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n1 Тип статуса (ОМ)\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/opera",
+        "paginator": "\n\n17 Типы статусов (ОМ)\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsdictionaryentry/",
+    "name": "Значения справочников ОМ",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Значение справочника ОМ to change\" [level=1]\n  - list:\n    - link \"Add Значение справочника ОМ\":\n      - /url",
+        "paginator": "\n\n58 Значения справочников ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsdutytype/",
+    "name": "Виды дежурств",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By requires senior",
+        "option": {
+          "href": "?requires_senior__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Вид дежурства to change\" [level=1]\n  - list:\n    - link \"Add Вид дежурства\":\n      - /url: /admin/operations/",
+        "paginator": "\n\n1 Вид дежурства\n\n\n"
+      },
+      {
+        "name": "By requires current passport",
+        "option": {
+          "href": "?requires_current_passport__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Вид дежурства to change\" [level=1]\n  - list:\n    - link \"Add Вид дежурства\":\n      - /url: /admin/operations/",
+        "paginator": "\n\n1 Вид дежурства\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opscombatdutytype/",
+    "name": "Виды дежурств боевых групп",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By supports multiple routes",
+        "option": {
+          "href": "?supports_multiple_routes__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Вид дежурства боевой группы to change\" [level=1]\n  - list:\n    - link \"Add Вид дежурства боевой группы\":\n    ",
+        "paginator": "\n\n1 Вид дежурства боевой группы\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opscity/",
+    "name": "Города",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By country",
+        "option": {
+          "href": "?country__id__exact=7",
+          "text": "Азербайджан"
+        },
+        "result": "\n  - heading \"Select Город to change\" [level=1]\n  - list:\n    - link \"Add Город\":\n      - /url: /admin/operations/opscity/add/?_ch",
+        "paginator": "\n\n1 Город\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Город to change\" [level=1]\n  - list:\n    - link \"Add Город\":\n      - /url: /admin/operations/opscity/add/?_ch",
+        "paginator": "\n\n42 Города\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsratinggroup/",
+    "name": "Группы рейтинга",
+    "category": "Справочники",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsattentiondetector/",
+    "name": "Детекторы внимания",
+    "category": "Справочники",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opslegaldocument/",
+    "name": "Законы об ОМ",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By kind",
+        "option": {
+          "href": "?kind__exact=LAW",
+          "text": "Закон"
+        },
+        "result": "\n  - heading \"Select Закон об ОМ to change\" [level=1]\n  - list:\n    - link \"Add Закон об ОМ\":\n      - /url: /admin/operations/opsl",
+        "paginator": "\n\n2 Законы об ОМ\n\n\n"
+      },
+      {
+        "name": "By status",
+        "option": {
+          "href": "?status__exact=IN_FORCE",
+          "text": "Действует"
+        },
+        "result": "\n  - heading \"Select Закон об ОМ to change\" [level=1]\n  - list:\n    - link \"Add Закон об ОМ\":\n      - /url: /admin/operations/opsl",
+        "paginator": "\n\n7 Законы об ОМ\n\n\n"
+      },
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Закон об ОМ to change\" [level=1]\n  - list:\n    - link \"Add Закон об ОМ\":\n      - /url: /admin/operations/opsl",
+        "paginator": "\n\n8 Законы об ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsanalyticsmetricdefinition/",
+    "name": "Показатели аналитики службы",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By drilldown available",
+        "option": {
+          "href": "?drilldown_available__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Показатель аналитики службы to change\" [level=1]\n  - list:\n    - link \"Add Показатель аналитики службы\":\n    ",
+        "paginator": "\n\n7 Показатели аналитики службы\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsanalyticsperiodpreset/",
+    "name": "Пресеты периодов аналитики",
+    "category": "Справочники",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opscountry/",
+    "name": "Страны",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Страна to change\" [level=1]\n  - list:\n    - link \"Add Страна\":\n      - /url: /admin/operations/opscountry/add",
+        "paginator": "\n\n14 Страны\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsservicereporttype/",
+    "name": "Типы служебных отчётов",
+    "category": "Справочники",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsvehicle/",
+    "name": "Транспорт ГОН",
+    "category": "Справочники",
+    "filters": [
+      {
+        "name": "By is active",
+        "option": {
+          "href": "?is_active__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select транспорт ГОН to change\" [level=1]\n  - list:\n    - link \"Add транспорт ГОН\":\n      - /url: /admin/operations/",
+        "paginator": "\n\n13 Транспорт ГОН\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opscombatroute/",
+    "name": "Трассы",
+    "category": "Справочники",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opssecurityevent/",
+    "name": "Охранные мероприятия",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By kind",
+        "option": {
+          "href": "?kind__exact=INTERNAL",
+          "text": "Внутреннее"
+        },
+        "result": "\n  - heading \"Select Охранное мероприятие to change\" [level=1]\n  - list:\n    - link \"Add Охранное мероприятие\":\n      - /url: /adm",
+        "paginator": "\n\n18 Охранные мероприятия\n\n\n"
+      },
+      {
+        "name": "By stage",
+        "option": {
+          "href": "?stage__exact=BULLETIN",
+          "text": "Бюллетень"
+        },
+        "result": "\n  - heading \"Select Охранное мероприятие to change\" [level=1]\n  - list:\n    - link \"Add Охранное мероприятие\":\n      - /url: /adm",
+        "paginator": "\n\n4 Охранные мероприятия\n\n\n"
+      },
+      {
+        "name": "By approval status",
+        "option": {
+          "href": "?approval_status__exact=PENDING",
+          "text": "Ожидает"
+        },
+        "result": "\n  - heading \"Select Охранное мероприятие to change\" [level=1]\n  - list:\n    - link \"Add Охранное мероприятие\":\n      - /url: /adm",
+        "paginator": "\n\n23 Охранные мероприятия\n\n\n"
+      },
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Охранное мероприятие to change\" [level=1]\n  - list:\n    - link \"Add Охранное мероприятие\":\n      - /url: /adm",
+        "paginator": "\n\n1 Охранное мероприятие\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opssecurityeventvisitobject/",
+    "name": "Объекты посещения ОМ",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By visit day",
+        "option": {
+          "href": "?visit_day__gte=2026-09-10&visit_day__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Объект посещения ОМ to change\" [level=1]\n  - list:\n    - link \"Add Объект посещения ОМ\":\n      - /url: /admin",
+        "paginator": "\n\n0 Объекты посещения ОМ\n\n\n"
+      },
+      {
+        "name": "By stage",
+        "option": {
+          "href": "?stage__exact=BULLETIN",
+          "text": "Бюллетень"
+        },
+        "result": "\n  - heading \"Select Объект посещения ОМ to change\" [level=1]\n  - list:\n    - link \"Add Объект посещения ОМ\":\n      - /url: /admin",
+        "paginator": "\n\n3 Объекты посещения ОМ\n\n\n"
+      },
+      {
+        "name": "By approval status",
+        "option": {
+          "href": "?approval_status__exact=PENDING",
+          "text": "Ожидает"
+        },
+        "result": "\n  - heading \"Select Объект посещения ОМ to change\" [level=1]\n  - list:\n    - link \"Add Объект посещения ОМ\":\n      - /url: /admin",
+        "paginator": "\n\n35 Объекты посещения ОМ\n\n\n"
+      },
+      {
+        "name": "By closed at",
+        "option": {
+          "href": "?closed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&closed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Объект посещения ОМ to change\" [level=1]\n  - list:\n    - link \"Add Объект посещения ОМ\":\n      - /url: /admin",
+        "paginator": "\n\n1 Объект посещения ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opssecurityobject/",
+    "name": "Охраняемые объекты",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By object state",
+        "option": {
+          "href": "?object_state__exact=ACTIVE",
+          "text": "Действующий"
+        },
+        "result": "\n  - heading \"Select Охраняемый объект to change\" [level=1]\n  - list:\n    - link \"Add Охраняемый объект\":\n      - /url: /admin/ope",
+        "paginator": "\n\n4 Охраняемые объекты\n\n\n"
+      },
+      {
+        "name": "By passport state",
+        "option": {
+          "href": "?passport_state__exact=RED",
+          "text": "Не оформлен"
+        },
+        "result": "\n  - heading \"Select Охраняемый объект to change\" [level=1]\n  - list:\n    - link \"Add Охраняемый объект\":\n      - /url: /admin/ope",
+        "paginator": "\n\n1 Охраняемый объект\n\n\n"
+      },
+      {
+        "name": "By ownership",
+        "option": {
+          "href": "?ownership__exact=OWN",
+          "text": "Собственный"
+        },
+        "result": "\n  - heading \"Select Охраняемый объект to change\" [level=1]\n  - list:\n    - link \"Add Охраняемый объект\":\n      - /url: /admin/ope",
+        "paginator": "\n\n0 Охраняемые объекты\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opssecuritypost/",
+    "name": "Посты паспорта объекта",
+    "category": "Охранные мероприятия",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsobjectsector/",
+    "name": "Секторы паспорта объекта",
+    "category": "Охранные мероприятия",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opseventevaluation/",
+    "name": "Оценки мероприятий",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By evaluated at",
+        "option": {
+          "href": "?evaluated_at__gte=2026-09-10&evaluated_at__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Оценка мероприятия to change\" [level=1]\n  - list:\n    - link \"Add Оценка мероприятия\":\n      - /url: /admin/o",
+        "paginator": "\n\n2 Оценки мероприятий\n\n\n"
+      },
+      {
+        "name": "By withdrawn at",
+        "option": {
+          "href": "?withdrawn_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&withdrawn_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Оценка мероприятия to change\" [level=1]\n  - list:\n    - link \"Add Оценка мероприятия\":\n      - /url: /admin/o",
+        "paginator": "\n\n0 Оценки мероприятий\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsforeignvisit/",
+    "name": "Визиты иностранных ОЛ",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By status",
+        "option": {
+          "href": "?status__exact=DRAFT",
+          "text": "Черновик"
+        },
+        "result": "\n  - heading \"Select Визит иностранного ОЛ to change\" [level=1]\n  - list:\n    - link \"Add Визит иностранного ОЛ\":\n      - /url: /a",
+        "paginator": "\n\n0 Визиты иностранных ОЛ\n\n\n"
+      },
+      {
+        "name": "By approved at",
+        "option": {
+          "href": "?approved_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&approved_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Визит иностранного ОЛ to change\" [level=1]\n  - list:\n    - link \"Add Визит иностранного ОЛ\":\n      - /url: /a",
+        "paginator": "\n\n0 Визиты иностранных ОЛ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsbulletinissue/",
+    "name": "Выпуски бюллетеня",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By as of",
+        "option": {
+          "href": "?as_of__gte=2026-09-10+00%3A00%3A00%2B05%3A00&as_of__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Выпуск бюллетеня to change\" [level=1]\n  - list:\n    - link \"Add Выпуск бюллетеня\":\n      - /url: /admin/opera",
+        "paginator": "\n\n0 Выпуски бюллетеня\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsevaluationworkitem/",
+    "name": "Задания на оценивание",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By actual starts at",
+        "option": {
+          "href": "?actual_starts_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_starts_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Задание на оценивание to change\" [level=1]\n  - list:\n    - link \"Add Задание на оценивание\":\n      - /url: /a",
+        "paginator": "\n\n3 Задания на оценивание\n\n\n"
+      },
+      {
+        "name": "By actual ends at",
+        "option": {
+          "href": "?actual_ends_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_ends_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Задание на оценивание to change\" [level=1]\n  - list:\n    - link \"Add Задание на оценивание\":\n      - /url: /a",
+        "paginator": "\n\n3 Задания на оценивание\n\n\n"
+      },
+      {
+        "name": "By participated",
+        "option": {
+          "href": "?participated__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Задание на оценивание to change\" [level=1]\n  - list:\n    - link \"Add Задание на оценивание\":\n      - /url: /a",
+        "paginator": "\n\n\n    1 \n\n    2 \n\n    3 \n\n\n262 Задания на оценивание\n\n\n"
+      },
+      {
+        "name": "By submitted at",
+        "option": {
+          "href": "?submitted_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&submitted_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Задание на оценивание to change\" [level=1]\n  - list:\n    - link \"Add Задание на оценивание\":\n      - /url: /a",
+        "paginator": "\n\n2 Задания на оценивание\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsvisitobjectdeputy/",
+    "name": "Замещающие на объектах посещения",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By can edit placement",
+        "option": {
+          "href": "?can_edit_placement__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Замещающий на объекте посещения to change\" [level=1]\n  - list:\n    - link \"Add Замещающий на объекте посещени",
+        "paginator": "\n\n2 Замещающие на объектах посещения\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsevaluationcorrection/",
+    "name": "Исправления оценок",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By corrected at",
+        "option": {
+          "href": "?corrected_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&corrected_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Исправление оценки to change\" [level=1]\n  - list:\n    - link \"Add Исправление оценки\":\n      - /url: /admin/o",
+        "paginator": "\n\n0 Исправления оценок\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsapprovalroutestep/",
+    "name": "Маршрут согласования",
+    "category": "Охранные мероприятия",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsevaluationevent/",
+    "name": "Мероприятия оценивания",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By actual starts at",
+        "option": {
+          "href": "?actual_starts_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_starts_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Мероприятие оценивания to change\" [level=1]\n  - list:\n    - link \"Add Мероприятие оценивания\":\n      - /url: ",
+        "paginator": "\n\n1 Мероприятие оценивания\n\n\n"
+      },
+      {
+        "name": "By actual ends at",
+        "option": {
+          "href": "?actual_ends_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_ends_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Мероприятие оценивания to change\" [level=1]\n  - list:\n    - link \"Add Мероприятие оценивания\":\n      - /url: ",
+        "paginator": "\n\n1 Мероприятие оценивания\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsdutymonthlyplan/",
+    "name": "Месячные планы дежурств",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By approved at",
+        "option": {
+          "href": "?approved_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&approved_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Месячный план дежурств to change\" [level=1]\n  - list:\n    - link \"Add Месячный план дежурств\":\n      - /url: ",
+        "paginator": "\n\n0 Месячные планы дежурств\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opstomorrowblockoverride/",
+    "name": "Обходы блокировки на завтра",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Обход блокировки на завтра to change\" [level=1]\n  - list:\n    - link \"Add Обход блокировки на завтра\":\n      ",
+        "paginator": "\n\n0 Обходы блокировки на завтра\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opssecurityeventtransition/",
+    "name": "Переходы стадий ОМ",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By occurred at",
+        "option": {
+          "href": "?occurred_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&occurred_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Переход стадии ОМ to change\" [level=1]\n  - list:\n    - link \"Add Переход стадии ОМ\":\n      - /url: /admin/ope",
+        "paginator": "\n\n1 Переход стадии ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsgvosummarypatch/",
+    "name": "Правки сводок ГВО",
+    "category": "Охранные мероприятия",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opscombatdutyshift/",
+    "name": "Смены боевых групп",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Смена боевой группы to change\" [level=1]\n  - list:\n    - link \"Add Смена боевой группы\":\n      - /url: /admin",
+        "paginator": "\n\n0 Смены боевых групп\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsdutyshift/",
+    "name": "Смены дежурств",
+    "category": "Охранные мероприятия",
+    "filters": [
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Смена дежурства to change\" [level=1]\n  - list:\n    - link \"Add Смена дежурства\":\n      - /url: /admin/operati",
+        "paginator": "\n\n0 Смены дежурств\n\n\n"
+      },
+      {
+        "name": "By acknowledged at",
+        "option": {
+          "href": "?acknowledged_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&acknowledged_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Смена дежурства to change\" [level=1]\n  - list:\n    - link \"Add Смена дежурства\":\n      - /url: /admin/operati",
+        "paginator": "\n\n0 Смены дежурств\n\n\n"
+      },
+      {
+        "name": "By actual start",
+        "option": {
+          "href": "?actual_start__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_start__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Смена дежурства to change\" [level=1]\n  - list:\n    - link \"Add Смена дежурства\":\n      - /url: /admin/operati",
+        "paginator": "\n\n0 Смены дежурств\n\n\n"
+      },
+      {
+        "name": "By actual end",
+        "option": {
+          "href": "?actual_end__gte=2026-09-10+00%3A00%3A00%2B05%3A00&actual_end__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Смена дежурства to change\" [level=1]\n  - list:\n    - link \"Add Смена дежурства\":\n      - /url: /admin/operati",
+        "paginator": "\n\n0 Смены дежурств\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsratedparticipant/",
+    "name": "Участники рейтинга",
+    "category": "Охранные мероприятия",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsdailysubmission/",
+    "name": "Сдачи дня",
+    "category": "Сбор сил и расход",
+    "filters": [
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n1 Сдача дня\n\n\n"
+      },
+      {
+        "name": "By is current",
+        "option": {
+          "href": "?is_current__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n54 Сдачи дня\n\n\n"
+      },
+      {
+        "name": "By event",
+        "option": {
+          "href": "?event__exact=CONFIRMED_NO_CHANGES",
+          "text": "Подтверждено без изменений"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n19 Сдачи дня\n\n\n"
+      },
+      {
+        "name": "By submitted at",
+        "option": {
+          "href": "?submitted_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&submitted_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n0 Сдачи дня\n\n\n"
+      },
+      {
+        "name": "By late",
+        "option": {
+          "href": "?late__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n17 Сдачи дня\n\n\n"
+      },
+      {
+        "name": "By sent at",
+        "option": {
+          "href": "?sent_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&sent_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdaily",
+        "paginator": "\n\n0 Сдачи дня\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsforcerequest/",
+    "name": "Заявки на сбор сил",
+    "category": "Сбор сил и расход",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsdepartmentrequest/",
+    "name": "Запросы департаментам",
+    "category": "Сбор сил и расход",
+    "filters": [
+      {
+        "name": "By due at",
+        "option": {
+          "href": "?due_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&due_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Запрос департаменту to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - b",
+        "paginator": "\n\n0 Запросы департаментам\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsunitrequest/",
+    "name": "Запросы управлениям",
+    "category": "Сбор сил и расход",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignevent/",
+    "name": "Мероприятия распределения сил",
+    "category": "Сбор сил и расход",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignassignment/",
+    "name": "Назначения сотрудников из общего пула",
+    "category": "Сбор сил и расход",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignhandover/",
+    "name": "Передачи общего пула в расстановку",
+    "category": "Сбор сил и расход",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsforcecampaign/",
+    "name": "Распределения сил по мероприятиям",
+    "category": "Сбор сил и расход",
+    "filters": [
+      {
+        "name": "By status",
+        "option": {
+          "href": "?status__exact=DRAFT",
+          "text": "Черновик"
+        },
+        "result": "\n  - heading \"Select Распределение сил по мероприятиям to change\" [level=1]\n  - list:\n    - link \"Add Распределение сил по меропри",
+        "paginator": "\n\n1 Распределение сил по мероприятиям\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsforcerequestmember/",
+    "name": "Состав по запросам",
+    "category": "Сбор сил и расход",
+    "filters": [
+      {
+        "name": "By added at",
+        "option": {
+          "href": "?added_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&added_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сотрудник в составе по запросу to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Sear",
+        "paginator": "\n\n0 Состав по запросам\n\n\n"
+      },
+      {
+        "name": "By removed at",
+        "option": {
+          "href": "?removed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&removed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сотрудник в составе по запросу to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Sear",
+        "paginator": "\n\n0 Состав по запросам\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignpoolmember/",
+    "name": "Сотрудники общего пула мероприятий",
+    "category": "Сбор сил и расход",
+    "filters": [
+      {
+        "name": "By removed at",
+        "option": {
+          "href": "?removed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&removed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Сотрудник общего пула мероприятий to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"S",
+        "paginator": "\n\n0 Сотрудники общего пула мероприятий\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsfeedbackrequest/",
+    "name": "Обращения обратной связи",
+    "category": "Обратная связь",
+    "filters": [
+      {
+        "name": "By type code",
+        "option": {
+          "href": "?type_code=ACCESS",
+          "text": "ACCESS"
+        },
+        "result": "\n  - heading \"Select Обращение обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Обращение обратной связи\":\n      - /u",
+        "paginator": "\n\n1 Обращение обратной связи\n\n\n"
+      },
+      {
+        "name": "By module code",
+        "option": {
+          "href": "?module_code=ANALYTICS",
+          "text": "ANALYTICS"
+        },
+        "result": "\n  - heading \"Select Обращение обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Обращение обратной связи\":\n      - /u",
+        "paginator": "\n\n2 Обращения обратной связи\n\n\n"
+      },
+      {
+        "name": "By priority code",
+        "option": {
+          "href": "?priority_code=CRITICAL",
+          "text": "CRITICAL"
+        },
+        "result": "\n  - heading \"Select Обращение обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Обращение обратной связи\":\n      - /u",
+        "paginator": "\n\n1 Обращение обратной связи\n\n\n"
+      },
+      {
+        "name": "By status code",
+        "option": {
+          "href": "?status_code=ACCEPTED",
+          "text": "ACCEPTED"
+        },
+        "result": "\n  - heading \"Select Обращение обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Обращение обратной связи\":\n      - /u",
+        "paginator": "\n\n1 Обращение обратной связи\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsfeedbackcomment/",
+    "name": "Комментарии обращений",
+    "category": "Обратная связь",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsfeedbackevent/",
+    "name": "События обращений",
+    "category": "Обратная связь",
+    "filters": [
+      {
+        "name": "By at",
+        "option": {
+          "href": "?at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Событие обращения to change\" [level=1]\n  - list:\n    - link \"Add Событие обращения\":\n      - /url: /admin/ope",
+        "paginator": "\n\n1 Событие обращения\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsfeedbackregistry/",
+    "name": "Справочник обратной связи",
+    "category": "Обратная связь",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsissueddocument/",
+    "name": "Выпуски документов",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Выпуск документа to change\" [level=1]\n  - list:\n    - link \"Add Выпуск документа\":\n      - /url: /admin/opera",
+        "paginator": "\n\n0 Выпуски документов\n\n\n"
+      },
+      {
+        "name": "By status",
+        "option": {
+          "href": "?status__exact=ISSUED",
+          "text": "Выпущен"
+        },
+        "result": "\n  - heading \"Select Выпуск документа to change\" [level=1]\n  - list:\n    - link \"Add Выпуск документа\":\n      - /url: /admin/opera",
+        "paginator": "\n\n1 Выпуск документа\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/reports/report/",
+    "name": "Отчёты",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By report type",
+        "option": {
+          "href": "?report_type__exact=personnel_roster",
+          "text": "Расход личного состава"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      },
+      {
+        "name": "By report format",
+        "option": {
+          "href": "?report_format__exact=docx",
+          "text": "Word документ"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      },
+      {
+        "name": "By date from",
+        "option": {
+          "href": "?date_from__gte=2026-09-10&date_from__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      },
+      {
+        "name": "By date to",
+        "option": {
+          "href": "?date_to__gte=2026-09-10&date_to__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      },
+      {
+        "name": "By status",
+        "option": {
+          "href": "?status__exact=pending",
+          "text": "В очереди"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      },
+      {
+        "name": "By completed at",
+        "option": {
+          "href": "?completed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&completed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/?_change",
+        "paginator": "\n\n0 Отчёты\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsservicereportartifact/",
+    "name": "Артефакты служебных отчётов",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By generated at",
+        "option": {
+          "href": "?generated_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&generated_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      ",
+        "paginator": "\n\n2 Артефакты служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By param from",
+        "option": {
+          "href": "?param_from__gte=2026-09-10&param_from__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      ",
+        "paginator": "\n\n0 Артефакты служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By param to",
+        "option": {
+          "href": "?param_to__gte=2026-09-10&param_to__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      ",
+        "paginator": "\n\n1 Артефакт служебного отчёта\n\n\n"
+      },
+      {
+        "name": "By sensitive",
+        "option": {
+          "href": "?sensitive__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      ",
+        "paginator": "\n\n0 Артефакты служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By expires at",
+        "option": {
+          "href": "?expires_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&expires_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      ",
+        "paginator": "\n\n25 Артефакты служебных отчётов\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsattachment/",
+    "name": "Вложения раздела",
+    "category": "Документы и отчёты",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsratingexportjob/",
+    "name": "Выгрузки рейтинга",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By requested at",
+        "option": {
+          "href": "?requested_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&requested_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Выгрузка рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Выгрузка рейтинга\":\n      - /url: /admin/ope",
+        "paginator": "\n\n0 Выгрузки рейтинга\n\n\n"
+      },
+      {
+        "name": "By finished at",
+        "option": {
+          "href": "?finished_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&finished_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Выгрузка рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Выгрузка рейтинга\":\n      - /url: /admin/ope",
+        "paginator": "\n\n0 Выгрузки рейтинга\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsservicereportjob/",
+    "name": "Работы служебных отчётов",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By requested at",
+        "option": {
+          "href": "?requested_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&requested_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /u",
+        "paginator": "\n\n2 Работы служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By completed at",
+        "option": {
+          "href": "?completed_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&completed_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /u",
+        "paginator": "\n\n2 Работы служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By sensitive",
+        "option": {
+          "href": "?sensitive__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /u",
+        "paginator": "\n\n0 Работы служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By param from",
+        "option": {
+          "href": "?param_from__gte=2026-09-10&param_from__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /u",
+        "paginator": "\n\n0 Работы служебных отчётов\n\n\n"
+      },
+      {
+        "name": "By param to",
+        "option": {
+          "href": "?param_to__gte=2026-09-10&param_to__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /u",
+        "paginator": "\n\n1 Работа служебного отчёта\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsratingexportartifact/",
+    "name": "Файлы выгрузок рейтинга",
+    "category": "Документы и отчёты",
+    "filters": [
+      {
+        "name": "By generated at",
+        "option": {
+          "href": "?generated_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&generated_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Файл выгрузки рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Файл выгрузки рейтинга\":\n      - /url: ",
+        "paginator": "\n\n0 Файлы выгрузок рейтинга\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsauditlog/",
+    "name": "Журналы раздела ОМ",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/audit/auditlog/",
+    "name": "Записи аудита",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By action type",
+        "option": {
+          "href": "?action_type__exact=CREATE",
+          "text": "Create"
+        },
+        "result": "\n  - heading \"Select Запись аудита to change\" [level=1]\n  - list:\n    - link \"Add Запись аудита\":\n      - /url: /admin/audit/audit",
+        "paginator": "\n\n0 Записи аудита\n\n\n"
+      },
+      {
+        "name": "By timestamp",
+        "option": {
+          "href": "?timestamp__gte=2026-09-10+00%3A00%3A00%2B05%3A00&timestamp__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Запись аудита to change\" [level=1]\n  - list:\n    - link \"Add Запись аудита\":\n      - /url: /admin/audit/audit",
+        "paginator": "\n\n2 Записи аудита\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/notifications/notification/",
+    "name": "Уведомления",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By notification type",
+        "option": {
+          "href": "?notification_type__exact=status_changed",
+          "text": "Изменение статуса"
+        },
+        "result": "\n  - heading \"Select Уведомление to change\" [level=1]\n  - list:\n    - link \"Add Уведомление\":\n      - /url: /admin/notifications/n",
+        "paginator": "\n\n0 Уведомления\n\n\n"
+      },
+      {
+        "name": "By is read",
+        "option": {
+          "href": "?is_read__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Уведомление to change\" [level=1]\n  - list:\n    - link \"Add Уведомление\":\n      - /url: /admin/notifications/n",
+        "paginator": "\n\n0 Уведомления\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsnotification/",
+    "name": "Уведомления раздела",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By kind",
+        "option": {
+          "href": "?kind__exact=SUBMISSION_LAGGING",
+          "text": "Отставание по сдаче"
+        },
+        "result": "\n  - heading \"Select Уведомление раздела to change\" [level=1]\n  - list:\n    - link \"Add Уведомление раздела\":\n      - /url: /admin",
+        "paginator": "\n\n1 Уведомление раздела\n\n\n"
+      },
+      {
+        "name": "By business date",
+        "option": {
+          "href": "?business_date__gte=2026-09-10&business_date__lt=2026-09-11",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Уведомление раздела to change\" [level=1]\n  - list:\n    - link \"Add Уведомление раздела\":\n      - /url: /admin",
+        "paginator": "\n\n4 Уведомления раздела\n\n\n"
+      },
+      {
+        "name": "By read at",
+        "option": {
+          "href": "?read_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&read_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Уведомление раздела to change\" [level=1]\n  - list:\n    - link \"Add Уведомление раздела\":\n      - /url: /admin",
+        "paginator": "\n\n0 Уведомления раздела\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsratingauditentry/",
+    "name": "Журнал оценивания",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By occurred at",
+        "option": {
+          "href": "?occurred_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&occurred_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Журнал оценивания to change\" [level=1]\n  - list:\n    - link \"Add Журнал оценивания\":\n      - /url: /admin/ope",
+        "paginator": "\n\n0 Журнал оценивания\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opssettingchangeevent/",
+    "name": "Изменения настроек",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opssubmissioncontrolsettings/",
+    "name": "Настройки контроля сдачи",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opspolicysetting/",
+    "name": "Настройки раздела ОМ",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By editable",
+        "option": {
+          "href": "?editable__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Настройка раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Настройка раздела ОМ\":\n      - /url: /adm",
+        "paginator": "\n\n16 Настройки раздела ОМ\n\n\n"
+      },
+      {
+        "name": "By value updated at",
+        "option": {
+          "href": "?value_updated_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&value_updated_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Настройка раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Настройка раздела ОМ\":\n      - /url: /adm",
+        "paginator": "\n\n0 Настройки раздела ОМ\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opspassportfreshnesspolicy/",
+    "name": "Политика актуальности паспорта",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsdutyconflictpolicy/",
+    "name": "Политика конфликтов дежурств",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsdivisionnotifyrecipient/",
+    "name": "Получатели уведомлений подразделений",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsdocumentsequence/",
+    "name": "Счётчики номеров документов",
+    "category": "Служебное",
+    "filters": []
+  },
+  {
+    "href": "/admin/operations/opsratingnotification/",
+    "name": "Уведомления рейтинга",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By notified at",
+        "option": {
+          "href": "?notified_at__gte=2026-09-10+00%3A00%3A00%2B05%3A00&notified_at__lt=2026-09-11+00%3A00%3A00%2B05%3A00",
+          "text": "Today"
+        },
+        "result": "\n  - heading \"Select Уведомление рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Уведомление рейтинга\":\n      - /url: /adm",
+        "paginator": "\n\n0 Уведомления рейтинга\n\n\n"
+      }
+    ]
+  },
+  {
+    "href": "/admin/operations/opsratingfeatureflags/",
+    "name": "Флаги рейтинга",
+    "category": "Служебное",
+    "filters": [
+      {
+        "name": "By operational ratings",
+        "option": {
+          "href": "?operational_ratings__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Флаги рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Флаги рейтинга\":\n      - /url: /admin/operation",
+        "paginator": "\n\n1 Флаги рейтинга\n\n\n"
+      },
+      {
+        "name": "By rating conflicts",
+        "option": {
+          "href": "?rating_conflicts__exact=1",
+          "text": "Yes"
+        },
+        "result": "\n  - heading \"Select Флаги рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Флаги рейтинга\":\n      - /url: /admin/operation",
+        "paginator": "\n\n1 Флаги рейтинга\n\n\n"
+      }
+    ]
+  }
+]

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:24px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;text-decoration:none">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </a>
+      <a href="./SmartQoldau.kz.dc.html" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none">← На главную</a>
+    </div>
+  </div>
+
+  <div style="max-width:820px;margin:0 auto;padding:64px 32px 90px">
+    <div style="font-size:32px;font-weight:800;color:#0f3f3a;margin-bottom:18px;line-height:1.2">Психологическая поддержка должна быть доступна каждому</div>
+    <div style="font-size:16px;font-weight:500;color:#5b7a75;line-height:1.7;margin-bottom:40px">SmartQoldau соединяет людей с квалифицированными психологами онлайн — в чате, по аудио или видеосвязи. Мы создавали платформу, чтобы обращение за поддержкой занимало минуты, а не недели, и не требовало от человека раскрывать больше, чем он готов.</div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:52px">
+      <div style="border-radius:18px;border:1px solid #eef2f0;padding:20px"><div style="font-size:26px;font-weight:800;color:#0f766e">1–2 мин</div><div style="font-size:12.5px;font-weight:600;color:#8fa6a1;margin-top:4px">среднее время подключения к специалисту</div></div>
+      <div style="border-radius:18px;border:1px solid #eef2f0;padding:20px"><div style="font-size:26px;font-weight:800;color:#0f766e">Чат · Аудио · Видео</div><div style="font-size:12.5px;font-weight:600;color:#8fa6a1;margin-top:4px">выбираете удобный формат</div></div>
+      <div style="border-radius:18px;border:1px solid #eef2f0;padding:20px"><div style="font-size:26px;font-weight:800;color:#0f766e">Анонимно</div><div style="font-size:12.5px;font-weight:600;color:#8fa6a1;margin-top:4px">можно обратиться без раскрытия личности</div></div>
+    </div>
+
+    <div style="font-size:22px;font-weight:800;color:#0f3f3a;margin-bottom:16px">Наши принципы</div>
+    <div style="display:flex;flex-direction:column;gap:18px;margin-bottom:52px">
+      <sc-for list="{{ principles }}" as="p" hint-placeholder-count="4">
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="width:38px;height:38px;border-radius:12px;background:#e3f3ee;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ p.icon }}" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div><div style="font-size:15px;font-weight:800;color:#0f3f3a;margin-bottom:3px">{{ p.title }}</div><div style="font-size:13.5px;font-weight:500;color:#6b8580;line-height:1.6">{{ p.text }}</div></div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="border-radius:22px;background:#f7faf9;padding:32px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap">
+      <div><div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:4px">Есть вопросы о платформе?</div><div style="font-size:13.5px;font-weight:500;color:#6b8580">Мы всегда на связи с пользователями и специалистами.</div></div>
+      <a href="./SmartQoldau Web - Поддержка.dc.html" style="height:46px;padding:0 22px;border-radius:23px;background:#0f766e;color:#fff;font-size:13.5px;font-weight:700;text-decoration:none;display:flex;align-items:center;white-space:nowrap">Связаться с поддержкой</a>
+    </div>
+  </div>
+
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      principles: [
+        { title: 'Конфиденциальность прежде всего', text: 'Личные данные пользователя ограничены в доступе даже для специалиста — по умолчанию психолог видит только тему обращения.', icon: 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z' },
+        { title: 'Быстрый доступ к помощи', text: 'Платформа подбирает свободного специалиста автоматически — без необходимости листать каталог в кризисный момент.', icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M12 7v5l3.5 2' },
+        { title: 'Проверенные специалисты', text: 'Психологи проходят проверку квалификации и документов перед тем, как начать принимать обращения.', icon: 'M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z' },
+        { title: 'Свобода выбора формата', text: 'Чат, аудио или видео — решает сам человек, в зависимости от того, что ему комфортнее в моменте.', icon: 'M4 5h16v11H8l-4 4V5z' },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

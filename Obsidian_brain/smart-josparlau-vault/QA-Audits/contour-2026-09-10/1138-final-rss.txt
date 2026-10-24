@@ -1,0 +1,7 @@
+2050642 273688   01:49:50 next-server (v1 next-server (v15.2.4)
+2119374 112368   01:16:31 next-server (v  next-server (v
+2240243 107660      14:05 next-server (v  next-server (v
+   3999 89172    17:55:31 next-server (v  next-server (v
+2050631 47556    01:49:50 MainThread      node /home/erda/Музыка/Smart Josparlau/Backend/PersonnelStatus/PersonalRecordFront/node_modules/.bin/next dev -p 3106
+2050606 38460    01:49:50 npm exec next d npm exec next dev -p 3106
+1837279 28024    03:50:40 next-server (v  next-server (v

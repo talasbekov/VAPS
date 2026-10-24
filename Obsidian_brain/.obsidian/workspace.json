@@ -1,0 +1,237 @@
+{
+  "main": {
+    "id": "d8a5946cc38f01b0",
+    "type": "split",
+    "children": [
+      {
+        "id": "c891138c8bd51d7f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ee74e3216bd7a970",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "smart_qoldau_vault/CLAUDE.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "CLAUDE"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "b88a1dbe0cc4c08f",
+    "type": "split",
+    "children": [
+      {
+        "id": "34ee5c5711806a67",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "bfb1dcfdf6e2fd0a",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Файловый менеджер"
+            }
+          },
+          {
+            "id": "548feec079320c8a",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Поиск"
+            }
+          },
+          {
+            "id": "eddd8af909e37883",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Закладки"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e758b8b77bca808d",
+    "type": "split",
+    "children": [
+      {
+        "id": "ceccf5e614bf570b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d9e6ea8dcb63ee88",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Обратные ссылки"
+            }
+          },
+          {
+            "id": "89c12e64aa81c1bc",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Исходящие ссылки"
+            }
+          },
+          {
+            "id": "295348c3ad739ab9",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Теги"
+            }
+          },
+          {
+            "id": "e0dac79fb9deabaa",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Все свойства"
+            }
+          },
+          {
+            "id": "732e98cf08cf5c9e",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Структура"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Меню быстрого перехода": false,
+      "graph:Граф": false,
+      "canvas:Создать новый холст": false,
+      "daily-notes:Сегодняшняя заметка": false,
+      "templates:Вставить шаблон": false,
+      "command-palette:Открыть палитру команд": false,
+      "bases:Создать новую базу": false
+    }
+  },
+  "active": "bfb1dcfdf6e2fd0a",
+  "lastOpenFiles": [
+    "smart_qoldau_vault/docs/product-blueprint/06_BUSINESS_RULES.md",
+    "smart_qoldau_vault/docs/product-blueprint/06_BUSINESS_RULES.md.tmp.11668.393e72241e03",
+    "smart_qoldau_vault/docs/product-blueprint/07_STATE_AND_LIFECYCLE_MODELS.md",
+    "smart_qoldau_vault/docs/product-blueprint/08_MONETIZATION_AND_UNIT_ECONOMICS.md",
+    "smart_qoldau_vault/docs/product-blueprint/03_ROLES_PERMISSIONS_AND_JTBD.md",
+    "smart_qoldau_vault/docs/product-blueprint/03_ROLES_PERMISSIONS_AND_JTBD.md.tmp.11668.62dc43503f35",
+    "smart_qoldau_vault/docs/product-blueprint/13_DESIGN_SYSTEM_AND_VISUAL_CONTRACT.md",
+    "smart_qoldau_vault/docs/product-blueprint/13_DESIGN_SYSTEM_AND_VISUAL_CONTRACT.md.tmp.11668.6b3752bf954c",
+    "smart_qoldau_vault/docs/product-blueprint/02_PRODUCT_SCOPE.md",
+    "smart_qoldau_vault/docs/product-blueprint/01_PROTOTYPE_AUDIT.md",
+    "smart_qoldau_vault/docs/product-blueprint/20_VISUAL_CHANGELOG.md",
+    "smart_qoldau_vault/docs/product-blueprint/20_VISUAL_CHANGELOG.md.tmp.11668.c0f968818507",
+    "smart_qoldau_vault/docs/product-blueprint/19_DECISION_LOG_AND_OPEN_QUESTIONS.md",
+    "smart_qoldau_vault/docs/product-blueprint/19_DECISION_LOG_AND_OPEN_QUESTIONS.md.tmp.11668.24e12e46bb8b",
+    "smart_qoldau_vault/OUTPUT/2026-09-13-журнал-product-frontend-blueprint.md",
+    "smart_qoldau_vault/OUTPUT/2026-09-13-журнал-product-frontend-blueprint.md.tmp.11668.8244255ace86",
+    "smart_qoldau_vault/docs/product-blueprint",
+    "smart_qoldau_vault/RAW/SmartQoldau_Fable_5_1_Product_Frontend_Master_Prompt.md",
+    "smart_qoldau_vault/OUTPUT/2026-09-13-журнал-аудита-и-мастер-плана.md",
+    "smart_qoldau_vault/RAW/Не подтвержден 375547.crdownload",
+    "smart_qoldau_vault/sedRl2jP6",
+    "smart_qoldau_vault/docs/deeplinks.md",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/test-mockup.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/23-profile.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/22-history.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/21-consultations.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/20b-meditation-player.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/20-meditation.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/19-articles.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/18-music.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/17b-breathing-session.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens/17-breathing.png",
+    "smart_qoldau_vault/docs/Прототип/assets/screens",
+    "smart_qoldau_vault/2026-08-20.md",
+    "smart_qoldau_vault/LOG.md",
+    "smart_qoldau_vault/WIKI/Расхождения в прототипе.md",
+    "smart-josparlau-vault/RAW/README.md",
+    "smart-josparlau-vault/OUTPUT/Проходка-ОМ-1142-2026-09-12.md",
+    "smart-josparlau-vault/OUTPUT/Обновление-закрытой-сети-10.15.3.187-2026-09-12.md",
+    "smart-josparlau-vault/WIKI/План-1236-Обновление-закрытой-сети-с-сохранением-данных.md",
+    "smart-josparlau-vault/OUTPUT/Инструкция-Ежедневный-расход-простыми-словами-2026-09-12.md",
+    "smart-josparlau-vault/WIKI/План-Отправка-свода-дежурному-2026-09-12.md",
+    "smart-josparlau-vault/WIKI/План-1209-Кадровые-статусы-в-расход.md",
+    "smart-josparlau-vault/WIKI/План-Учётки-роли-меню-2026-09-12.md",
+    "smart-josparlau-vault/WIKI/План-Ежедневный-расход-2026-09-12.md",
+    "smart-josparlau-vault/QA-Audits/1195-инструкция-2026-09-12/Проверка.md"
+  ]
+}

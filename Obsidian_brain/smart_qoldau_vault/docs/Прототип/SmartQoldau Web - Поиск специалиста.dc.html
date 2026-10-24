@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;padding:32px;box-sizing:border-box">
+  <div style="width:64px;height:64px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:26px;animation:pulse 1.6s ease-in-out infinite">
+    <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:36px;height:36px;border-radius:10px">
+  </div>
+  <div style="font-size:20px;font-weight:800;color:#0f3f3a;margin-bottom:8px">Подбираем для вас подходящего психолога</div>
+  <div style="font-size:14px;font-weight:500;color:#6b8580;margin-bottom:36px">{{ subtitle }}</div>
+  <a href="./SmartQoldau.kz.dc.html" style="font-size:13px;font-weight:700;color:#8fa6a1;text-decoration:none">Отменить поиск</a>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static NAME_TO_ID = { 'Айгуль Сатпаева': 'cat-1', 'Марат Ержанов': 'cat-2', 'Дана Қалиева': 'cat-3', 'Тимур Абенов': 'cat-4' };
+  componentDidMount() {
+    const params = new URLSearchParams(window.location.search);
+    const specialist = params.get('specialist');
+    const id = (specialist && Component.NAME_TO_ID[specialist]) || 'cat-1';
+    this._t = setTimeout(() => { window.location.href = `./SmartQoldau Web - Профиль психолога.dc.html?id=${id}&format=${params.get('format') || 'chat'}`; }, 3000);
+  }
+  componentWillUnmount() { clearTimeout(this._t); }
+  renderVals() {
+    const params = new URLSearchParams(window.location.search);
+    const specialist = params.get('specialist');
+    const topic = params.get('topic');
+    return { subtitle: specialist ? `Специалист: ${specialist}` : (topic ? `Тема: ${topic}` : 'Обычно это занимает 1–2 минуты') };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,241 @@
+
+  - paragraph: Настройки
+  - heading "Пользователи" [level=1]
+  - paragraph: "Учётные записи и их роли. Роль выдаётся с областью: подразделением или всей службой."
+  - textbox "Поиск по учётным записям":
+    - /placeholder: Поиск по логину, имени, фамилии или почте…
+  - button "Завести учётку"
+  - generic: Учётные записи37
+  - table:
+    - rowgroup:
+      - row "Логин Человек Состояние":
+        - columnheader "Логин"
+        - columnheader "Человек"
+        - columnheader "Состояние"
+    - rowgroup:
+      - row "acc_admin Проверка Администратор Входит":
+        - cell "acc_admin":
+          - button "acc_admin"
+        - cell "Проверка Администратор"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_dept_head Проверка Начальник департамента (не второй) Входит":
+        - cell "acc_dept_head":
+          - button "acc_dept_head"
+        - cell "Проверка Начальник департамента (не второй)"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_dept_head_d2 Проверка Начальник второго департамента Входит":
+        - cell "acc_dept_head_d2":
+          - button "acc_dept_head_d2"
+        - cell "Проверка Начальник второго департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_dir_head Проверка Начальник управления (не второй департамент) Входит":
+        - cell "acc_dir_head":
+          - button "acc_dir_head"
+        - cell "Проверка Начальник управления (не второй департамент)"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_dir_head_d2 Проверка Начальник управления второго департамента Входит":
+        - cell "acc_dir_head_d2":
+          - button "acc_dir_head_d2"
+        - cell "Проверка Начальник управления второго департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_employee Проверка Сотрудник Входит":
+        - cell "acc_employee":
+          - button "acc_employee"
+        - cell "Проверка Сотрудник"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_employee_d2 Проверка Сотрудник второго департамента Входит":
+        - cell "acc_employee_d2":
+          - button "acc_employee_d2"
+        - cell "Проверка Сотрудник второго департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_forces_officer Проверка Ответственный за сбор сил Входит":
+        - cell "acc_forces_officer":
+          - button "acc_forces_officer"
+        - cell "Проверка Ответственный за сбор сил"
+        - cell "Входит":
+          - generic: Входит
+      - row "acc_ops_staff Проверка Штаб второго департамента Входит":
+        - cell "acc_ops_staff":
+          - button "acc_ops_staff"
+        - cell "Проверка Штаб второго департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_admin Администратор системы Входит":
+        - cell "role_admin":
+          - button "role_admin"
+        - cell "Администратор системы"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_analyst Аналитик службы Входит":
+        - cell "role_analyst":
+          - button "role_analyst"
+        - cell "Аналитик службы"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_auditor Ревизор Входит":
+        - cell "role_auditor":
+          - button "role_auditor"
+        - cell "Ревизор"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_department_expense_officer Ответственный за расход департ Входит":
+        - cell "role_department_expense_officer":
+          - button "role_department_expense_officer"
+        - cell "Ответственный за расход департ"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_directorate_head Начальник управления Входит":
+        - cell "role_directorate_head":
+          - button "role_directorate_head"
+        - cell "Начальник управления"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_duty_officer Оперативный дежурный Входит":
+        - cell "role_duty_officer":
+          - button "role_duty_officer"
+        - cell "Оперативный дежурный"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_duty_plan_approver Утверждающий план дежурств Входит":
+        - cell "role_duty_plan_approver":
+          - button "role_duty_plan_approver"
+        - cell "Утверждающий план дежурств"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_duty_planner Планировщик дежурств Входит":
+        - cell "role_duty_planner":
+          - button "role_duty_planner"
+        - cell "Планировщик дежурств"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_employee Сотрудник Входит":
+        - cell "role_employee":
+          - button "role_employee"
+        - cell "Сотрудник"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_employee_ops_d2 Сотрудник второго департамента Входит":
+        - cell "role_employee_ops_d2":
+          - button "role_employee_ops_d2"
+        - cell "Сотрудник второго департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_event_approver Утверждающий расстановку Входит":
+        - cell "role_event_approver":
+          - button "role_event_approver"
+        - cell "Утверждающий расстановку"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_event_officer Офицер ОМ Входит":
+        - cell "role_event_officer":
+          - button "role_event_officer"
+        - cell "Офицер ОМ"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_feedback_triage Разбор обратной связи Входит":
+        - cell "role_feedback_triage":
+          - button "role_feedback_triage"
+        - cell "Разбор обратной связи"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_forces_gathering_officer Ответственный за сбор сил Входит":
+        - cell "role_forces_gathering_officer":
+          - button "role_forces_gathering_officer"
+        - cell "Ответственный за сбор сил"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_gvo_lead Старший ГВО Входит":
+        - cell "role_gvo_lead":
+          - button "role_gvo_lead"
+        - cell "Старший ГВО"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_head_department_line Начальник департамента (линейн Входит":
+        - cell "role_head_department_line":
+          - button "role_head_department_line"
+        - cell "Начальник департамента (линейн"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_head_directorate_line Начальник управления (линейный Входит":
+        - cell "role_head_directorate_line":
+          - button "role_head_directorate_line"
+        - cell "Начальник управления (линейный"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_head_ops_unit Начальник подразделения второг Входит":
+        - cell "role_head_ops_unit":
+          - button "role_head_ops_unit"
+        - cell "Начальник подразделения второг"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_integration_user Интеграционная учётная запись Входит":
+        - cell "role_integration_user":
+          - button "role_integration_user"
+        - cell "Интеграционная учётная запись"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_object_keeper Хозяин паспортов объектов Входит":
+        - cell "role_object_keeper":
+          - button "role_object_keeper"
+        - cell "Хозяин паспортов объектов"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_om_category_org Охранные мероприятия по всей о Входит":
+        - cell "role_om_category_org":
+          - button "role_om_category_org"
+        - cell "Охранные мероприятия по всей о"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_ops_staff Штаб сбора сил Входит":
+        - cell "role_ops_staff":
+          - button "role_ops_staff"
+        - cell "Штаб сбора сил"
+        - cell "Входит":
+          - generic: Входит
+      - 'row "role_ops_staff_command Штаб ОМ: команда по всей орган Входит"':
+        - cell "role_ops_staff_command":
+          - button "role_ops_staff_command"
+        - 'cell "Штаб ОМ: команда по всей орган"'
+        - cell "Входит":
+          - generic: Входит
+      - row "role_overview_department Обзор на уровне департамента Входит":
+        - cell "role_overview_department":
+          - button "role_overview_department"
+        - cell "Обзор на уровне департамента"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_patrol_lead Старший наряда Входит":
+        - cell "role_patrol_lead":
+          - button "role_patrol_lead"
+        - cell "Старший наряда"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_rating_evaluator Оценивающий Входит":
+        - cell "role_rating_evaluator":
+          - button "role_rating_evaluator"
+        - cell "Оценивающий"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_reference_admin Администратор справочников Входит":
+        - cell "role_reference_admin":
+          - button "role_reference_admin"
+        - cell "Администратор справочников"
+        - cell "Входит":
+          - generic: Входит
+      - row "role_security_admin Администратор доступа Входит":
+        - cell "role_security_admin":
+          - button "role_security_admin"
+        - cell "Администратор доступа"
+        - cell "Входит":
+          - generic: Входит
+  - generic: Выберите человека слева, чтобы увидеть и раздать его роли.
+- region "Notifications (F8)":
+  - list
+- alert

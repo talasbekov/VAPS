@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 32px;box-sizing:border-box">
+
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button onClick="{{ onBack }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+          <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a;flex:1">Уведомления</div>
+        <sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ onMarkAllRead }}" style="font-size:12px;font-weight:700;color:#0f766e;cursor:pointer;flex-shrink:0">Прочитать все</div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ hasNotifications }}" hint-placeholder-val="{{ true }}">
+        <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+          <div style="font-size:12px;font-weight:700;color:#8fa6a1;letter-spacing:0.3px;margin-bottom:8px;margin-top:4px">{{ g.label }}</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+            <sc-for list="{{ g.items }}" as="n" hint-placeholder-count="3">
+              <div onClick="{{ n.onClick }}" style="display:flex;align-items:flex-start;gap:12px;padding:13px;border-radius:16px;background:{{ n.bg }};cursor:pointer;position:relative">
+                <div style="width:38px;height:38px;border-radius:50%;background:{{ n.iconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13.5px;font-weight:700;color:#0f3f3a;line-height:1.4">{{ n.title }}</div>
+                  <div style="font-size:12px;font-weight:500;color:#8fa6a1;margin-top:2px;line-height:1.4">{{ n.body }}</div>
+                  <div style="font-size:11px;font-weight:600;color:#a9bdb9;margin-top:5px">{{ n.time }}</div>
+                </div>
+                <sc-if value="{{ n.unread }}" hint-placeholder-val="{{ false }}">
+                  <div style="width:8px;height:8px;border-radius:50%;background:#0f766e;flex-shrink:0;margin-top:4px"></div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </sc-if>
+
+      <sc-if value="{{ noNotifications }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;padding:40px 20px;color:#8fa6a1;font-size:13px;font-weight:500">Уведомлений пока нет</div>
+      </sc-if>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static ALL = [
+    { id: 1, group: 'today', unread: true, title: 'Консультация подтверждена', body: 'Айгуль Сатпаева ждёт вас сегодня в 18:00', time: '2 часа назад', iconBg: '#e3f3ee', iconColor: '#159a7c', icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M12 7v5l3.5 2', href: './SmartQoldau - Консультации.dc.html' },
+    { id: 2, group: 'today', unread: true, title: 'Специалист ответил в чате', body: 'Динара С.: «Как вы себя чувствуете сегодня?»', time: '3 часа назад', iconBg: '#e6f0fb', iconColor: '#3b82c4', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau - Чат.dc.html' },
+    { id: 3, group: 'week', unread: false, title: 'Не забудьте оценить консультацию', body: 'Поделитесь впечатлением о сессии с Маратом Абеновым', time: '2 дня назад', iconBg: '#f1eafb', iconColor: '#8b5fc9', icon: 'M12 2l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17l-6.2 3.5 1.6-6.8-5.2-4.7 6.9-.7L12 2z', href: './SmartQoldau - Оценка.dc.html' },
+    { id: 4, group: 'week', unread: false, title: 'Новая статья по вашей теме', body: '«Как справляться с тревогой перед сном»', time: '4 дня назад', iconBg: '#fdece3', iconColor: '#e08a4d', icon: 'M4 5.5C6 4.5 9 4.5 12 6v13c-3-1.5-6-1.5-8-0.5V5.5z M20 5.5c-2-1-5-1-8 0.5v13c3-1.5 6-1.5 8-0.5V5.5z', href: './SmartQoldau - Полезные статьи.dc.html' },
+  ];
+  static LABELS = { today: 'Сегодня', week: 'На этой неделе' };
+  static ORDER = ['today', 'week'];
+  state = { read: [] };
+  renderVals() {
+    const s = this.state;
+    const markRead = (id) => () => this.setState(st => ({ read: [...st.read, id] }));
+    const items = Component.ALL.map(n => ({
+      ...n,
+      unread: n.unread && !s.read.includes(n.id),
+      bg: n.unread && !s.read.includes(n.id) ? '#f7fbfa' : '#fff',
+      onClick: () => { markRead(n.id)(); window.location.href = n.href; },
+    }));
+    const groups = Component.ORDER.map(g => ({ label: Component.LABELS[g], items: items.filter(n => n.group === g) })).filter(g => g.items.length > 0);
+    return {
+      groups,
+      hasNotifications: groups.length > 0,
+      noNotifications: groups.length === 0,
+      hasUnread: items.some(n => n.unread),
+      onMarkAllRead: () => this.setState({ read: Component.ALL.map(n => n.id) }),
+      onBack: () => { window.location.href = './SmartQoldau - Главная.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

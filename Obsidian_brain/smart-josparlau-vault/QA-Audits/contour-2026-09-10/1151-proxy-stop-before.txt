@@ -1,0 +1,5 @@
+2026-09-10. Current proxy source301e3754, active browser WebSocket.
+docker stop --time 10 smart-josparlau-contour-final-proxy-1
+ExitCode=137 StopSignal=SIGQUIT
+Immediately docker start -> container started.
+Only nested offline proxy affected. Исполнитель: Кодекс Астра 6.

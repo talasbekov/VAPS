@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Smart Josparlau — Project Sentinel 07.09.2026</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#0b1020;--card:#151c31;--text:#eef2ff;--muted:#aab4d0;--bad:#ff6b6b;--warn:#ffd166;--ok:#63d69a;--line:#2a3658}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,sans-serif}main{max-width:1080px;margin:auto;padding:40px 24px 72px}h1{font-size:clamp(2rem,5vw,4rem);line-height:1.05;margin:.3em 0}.lead{font-size:1.2rem;color:var(--muted)}.verdict{display:inline-block;padding:.35rem .7rem;border:1px solid var(--bad);border-radius:999px;color:var(--bad);font-weight:800}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:28px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.n{font-size:2rem;font-weight:800}.muted{color:var(--muted)}h2{margin-top:42px;border-bottom:1px solid var(--line);padding-bottom:8px}li{margin:.45rem 0}.bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--ok)}code{background:#202a47;padding:.12rem .32rem;border-radius:4px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line)}footer{margin-top:48px;color:var(--muted)}
+  </style>
+</head>
+<body><main>
+  <span class="verdict">NO-GO</span>
+  <h1>Smart Josparlau</h1>
+  <p class="lead">Направление домена верное, но система поставки неустойчива: критические пробелы авторизации, дрейф канона и очередь приёмки. Красный gate исходного среза уже исправлен №945.</p>
+  <div class="grid">
+    <div class="card"><div class="n">959</div><div class="muted">карточек Plane</div></div>
+    <div class="card"><div class="n warn">590</div><div class="muted">Review + On test</div></div>
+    <div class="card"><div class="n">120</div><div class="muted">кодов канона</div></div>
+    <div class="card"><div class="n ok">38</div><div class="muted">файлов убраны в Archive</div></div>
+  </div>
+  <h2>Блокеры</h2>
+  <ol>
+    <li><strong class="bad">BACKEND-001:</strong> API статусов возвращает полный queryset любому вошедшему.</li>
+    <li><strong class="bad">BACKEND-002/003/004/006:</strong> сильные source-evidence ещё четырёх обходов permission/scope; нужна runtime-матрица.</li>
+    <li><strong class="bad">BACKEND-005:</strong> ReportViewSet наследует глобальный <code>AllowAny</code>.</li>
+    <li><strong>GATE-001:</strong> на исходном срезе <code>npm run check:stand</code> дважды завершился с кодом 1; после №945 — 23/23, код 0.</li>
+  </ol>
+  <h2>Почему много ошибок</h2>
+  <ul>
+    <li>Канон и живые доки одновременно описывали 5, 6 и 8 этапов.</li>
+    <li>Легаси- и target-API одних сущностей имеют разные permission, scope, enum и error-контракты.</li>
+    <li>Общий живой стенд и условные skips порождают мигающие и ложно-зелёные прогоны.</li>
+    <li>В gate нет ESLint, unit/component и automated accessibility; обратная связь поздняя и дорогая.</li>
+    <li>61,5% карточек находятся в Review или On test и не завершили полный цикл приёмки.</li>
+  </ul>
+  <h2>Порядок исправлений</h2>
+  <table><thead><tr><th>Шаг</th><th>Цель</th></tr></thead><tbody>
+    <tr><td>P0</td><td>Единая fail-closed авторизация и scope для statuses, employees, divisions, audit, reports, secondments.</td></tr>
+    <tr><td>P1</td><td>Зелёный mandatory gate, нескипаемые RBAC-фикстуры, fail-closed mock, gating walkthrough.</td></tr>
+    <tr><td>P2</td><td>Решения заказчика по ГВО и меню; затем декомпозиция больших файлов и дублей API.</td></tr>
+  </tbody></table>
+  <footer>Исполнитель: Кодекс Астра 6. Полные данные: report.md, report.json, report.sarif, raw-findings.json.</footer>
+</main></body></html>

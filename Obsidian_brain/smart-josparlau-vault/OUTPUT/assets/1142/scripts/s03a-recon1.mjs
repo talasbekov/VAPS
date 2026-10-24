@@ -1,0 +1,50 @@
+import fs from 'node:fs'
+import { open, shot, sleep, api } from './walk.mjs'
+const run = JSON.parse(fs.readFileSync('run.json', 'utf8'))
+const visit = run.visits[0]
+const { page, close } = await open('u_musakhan')
+await page.goto(`http://localhost:3106/security-ops/events/${run.eventId}?visit=${visit.id}`)
+await page.waitForLoadState('networkidle'); await sleep(800)
+const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+console.log('регион рекогносцировки:', await stage.count())
+await shot(page, 'musakhan-recon-start')
+const checks = stage.locator('[data-slot="recon-check-item"]')
+console.log('пунктов чек-листа:', await checks.count())
+await stage.getByRole('button', { name: 'Импорт из паспорта', exact: true }).click(); await sleep(1200)
+const postInputs = stage.getByLabel('Пост', { exact: true })
+console.log('постов после импорта:', await postInputs.count())
+const posts = await postInputs.evaluateAll(i => i.map(x => x.value))
+console.log('посты:', posts.join(' | '))
+// чек-лист: 1-й пункт — Замечание с текстом, остальные — Норма
+const items = await checks.all()
+for (const [i, item] of items.entries()) {
+  if (i === 0) {
+    await item.getByRole('button', { name: 'Замечание', exact: true }).click()
+    const ta = item.getByRole('textbox'); if (await ta.count()) await ta.first().fill('Проходка №1142: шлагбаум на въезде не закрывается — нужен пост у ворот')
+  } else await item.getByRole('button', { name: 'Норма', exact: true }).click()
+}
+for (let i = 0; i < posts.length; i++) {
+  await stage.getByLabel('Потребность', { exact: true }).nth(i).fill(i === 0 ? '2' : '1')
+  await stage.getByLabel(`Подробнее: ${posts[i]}`, { exact: true }).click()
+  const sel = stage.getByLabel(`Вид потребности: ${posts[i]}`, { exact: true })
+  if (i === 0) console.log('виды потребности:', (await sel.locator('option').allTextContents()).join(' | '))
+  await sel.selectOption(i === posts.length - 1 ? 'SCREENING_GROUP' : 'PHYSICAL_SQUAD')
+  await stage.getByLabel(`Спецификация потребности: ${posts[i]}`, { exact: true }).fill(i === posts.length - 1 ? 'Досмотр на входе' : 'Охрана периметра')
+}
+await shot(page, 'musakhan-recon-filled', true)
+await stage.getByRole('button', { name: 'Сохранить расчёт', exact: true }).click(); await sleep(1000)
+console.log('итог:', (await stage.locator('[data-slot="recon-need"]').allInnerTexts()).join(' | '))
+const fin = stage.getByRole('button', { name: 'Завершить рекогносцировку →', exact: true })
+console.log('завершить доступна:', await fin.isEnabled())
+await fin.click(); await sleep(500)
+await shot(page, 'musakhan-recon-confirm')
+console.log('диалог:', (await page.getByRole('dialog').innerText()).replace(/\n+/g, ' | ').slice(0, 300))
+const rp = page.waitForResponse(x => x.url().includes('/recon/complete/') && x.request().method() === 'POST')
+await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+const r = await rp; console.log('POST recon/complete', r.status(), (await r.text()).slice(0, 150))
+await sleep(1000)
+const ev = await api('u_musakhan', 'GET', `/api/ops/security-events/${run.eventId}/`)
+const v = ev.body.visitObjects.find(x => x.id === visit.id)
+console.log('объект 1 stage:', v.stage, '| ОМ stage:', ev.body.stage, '| demandRows:', JSON.stringify(ev.body.demandRows?.map(d => [d.visitObjectId, d.kindCode, d.need])), '| reconForceRequest', v.reconForceRequest)
+await shot(page, 'musakhan-recon-done')
+await close()

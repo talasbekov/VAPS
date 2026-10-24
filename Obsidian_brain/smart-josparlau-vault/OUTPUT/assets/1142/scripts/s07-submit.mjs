@@ -1,0 +1,23 @@
+import fs from 'node:fs'
+import { open, shot, sleep, api } from './walk.mjs'
+const run = JSON.parse(fs.readFileSync('run.json', 'utf8'))
+const { page, close } = await open('a_raiymzhanov')
+await page.goto(`http://localhost:3106/employees?request=${encodeURIComponent(run.allocationId)}&businessDate=${run.date}`)
+await page.waitForLoadState('networkidle'); await sleep(1000)
+const t = (await page.getByRole('main').innerText()).replace(/\n+/g, ' | ')
+const i = t.indexOf('Выделенные сотрудники')
+console.log('блок выделенных:', t.slice(i, i + 500))
+await shot(page, 'raiymzhanov-members-block', true)
+const btn = page.getByRole('button', { name: 'Отправить список в штаб', exact: true })
+console.log('кнопка:', await btn.count(), await btn.count() ? await btn.isEnabled() : '')
+await btn.click(); await sleep(500)
+console.log('подтверждение:', (await page.getByRole('dialog').innerText()).replace(/\n+/g, ' | ').slice(0, 400))
+await shot(page, 'raiymzhanov-submit-confirm')
+const rp = page.waitForResponse(x => /submit/.test(x.url()) && x.request().method() === 'POST')
+await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+const r = await rp; console.log('POST', r.url().replace(/^.*\/api/, '/api'), r.status(), (await r.text()).slice(0, 120))
+await sleep(1200)
+const a = (await api('a_raiymzhanov', 'GET', `/api/ops/security-events/forces/requests/${encodeURIComponent(run.allocationId)}/`)).body.allocation
+console.log('после:', JSON.stringify({ status: a.status, submittedAt: a.submittedAt, submittedLate: a.submittedLate, members: a.members?.map(m => [m.employeeId, m.employeeName ?? m.name, m.kindCode, m.roleCode]) }))
+await shot(page, 'raiymzhanov-submitted', true)
+await close()

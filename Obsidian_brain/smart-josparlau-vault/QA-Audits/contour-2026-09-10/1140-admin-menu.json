@@ -1,0 +1,407 @@
+[
+  {
+    "category": "Доступ",
+    "models": [
+      {
+        "href": "/admin/auth/user/",
+        "name": "Users"
+      },
+      {
+        "href": "/admin/operations/userrole/",
+        "name": "Роли пользователей (ОМ)"
+      },
+      {
+        "href": "/admin/operations/role/",
+        "name": "Роли раздела ОМ"
+      },
+      {
+        "href": "/admin/operations/permission/",
+        "name": "Права раздела ОМ"
+      },
+      {
+        "href": "/admin/operations/rolepermission/",
+        "name": "Права ролей (ОМ)"
+      },
+      {
+        "href": "/admin/auth/group/",
+        "name": "Groups"
+      },
+      {
+        "href": "/admin/operations/temporarydutypermission/",
+        "name": "Временные права наряда"
+      }
+    ]
+  },
+  {
+    "category": "Структура и штат",
+    "models": [
+      {
+        "href": "/admin/divisions/division/",
+        "name": "Подразделения"
+      },
+      {
+        "href": "/admin/staff_unit/staffunit/",
+        "name": "Штатные единицы"
+      },
+      {
+        "href": "/admin/staff_unit/vacancy/",
+        "name": "Вакансии"
+      }
+    ]
+  },
+  {
+    "category": "Сотрудники и статусы",
+    "models": [
+      {
+        "href": "/admin/employees/employee/",
+        "name": "Сотрудники"
+      },
+      {
+        "href": "/admin/statuses/employeestatus/",
+        "name": "Статусы сотрудников"
+      },
+      {
+        "href": "/admin/operations/opsemployeestatus/",
+        "name": "Статусы сотрудников (ОМ)"
+      },
+      {
+        "href": "/admin/operations/secondment/",
+        "name": "Прикомандирования (ОМ)"
+      },
+      {
+        "href": "/admin/employees/employeetransferhistory/",
+        "name": "История переводов сотрудников"
+      },
+      {
+        "href": "/admin/operations/statusoverride/",
+        "name": "Обходы статусов"
+      },
+      {
+        "href": "/admin/operations/opsprotectedperson/",
+        "name": "Охраняемые лица"
+      },
+      {
+        "href": "/admin/statuses/statusdocument/",
+        "name": "Документы статусов"
+      },
+      {
+        "href": "/admin/statuses/statuschangehistory/",
+        "name": "История изменений статусов"
+      }
+    ]
+  },
+  {
+    "category": "Справочники",
+    "models": [
+      {
+        "href": "/admin/dictionaries/position/",
+        "name": "Должности"
+      },
+      {
+        "href": "/admin/dictionaries/rank/",
+        "name": "Звания"
+      },
+      {
+        "href": "/admin/operations/statustype/",
+        "name": "Типы статусов (ОМ)"
+      },
+      {
+        "href": "/admin/operations/opsdictionaryentry/",
+        "name": "Значения справочников ОМ"
+      },
+      {
+        "href": "/admin/operations/opsdutytype/",
+        "name": "Виды дежурств"
+      },
+      {
+        "href": "/admin/operations/opscombatdutytype/",
+        "name": "Виды дежурств боевых групп"
+      },
+      {
+        "href": "/admin/operations/opscity/",
+        "name": "Города"
+      },
+      {
+        "href": "/admin/operations/opsratinggroup/",
+        "name": "Группы рейтинга"
+      },
+      {
+        "href": "/admin/operations/opsattentiondetector/",
+        "name": "Детекторы внимания"
+      },
+      {
+        "href": "/admin/operations/opslegaldocument/",
+        "name": "Законы об ОМ"
+      },
+      {
+        "href": "/admin/operations/opsanalyticsmetricdefinition/",
+        "name": "Показатели аналитики службы"
+      },
+      {
+        "href": "/admin/operations/opsanalyticsperiodpreset/",
+        "name": "Пресеты периодов аналитики"
+      },
+      {
+        "href": "/admin/operations/opscountry/",
+        "name": "Страны"
+      },
+      {
+        "href": "/admin/operations/opsservicereporttype/",
+        "name": "Типы служебных отчётов"
+      },
+      {
+        "href": "/admin/operations/opsvehicle/",
+        "name": "Транспорт ГОН"
+      },
+      {
+        "href": "/admin/operations/opscombatroute/",
+        "name": "Трассы"
+      }
+    ]
+  },
+  {
+    "category": "Охранные мероприятия",
+    "models": [
+      {
+        "href": "/admin/operations/opssecurityevent/",
+        "name": "Охранные мероприятия"
+      },
+      {
+        "href": "/admin/operations/opssecurityeventvisitobject/",
+        "name": "Объекты посещения ОМ"
+      },
+      {
+        "href": "/admin/operations/opssecurityobject/",
+        "name": "Охраняемые объекты"
+      },
+      {
+        "href": "/admin/operations/opssecuritypost/",
+        "name": "Посты паспорта объекта"
+      },
+      {
+        "href": "/admin/operations/opsobjectsector/",
+        "name": "Секторы паспорта объекта"
+      },
+      {
+        "href": "/admin/operations/opseventevaluation/",
+        "name": "Оценки мероприятий"
+      },
+      {
+        "href": "/admin/operations/opsforeignvisit/",
+        "name": "Визиты иностранных ОЛ"
+      },
+      {
+        "href": "/admin/operations/opsbulletinissue/",
+        "name": "Выпуски бюллетеня"
+      },
+      {
+        "href": "/admin/operations/opsevaluationworkitem/",
+        "name": "Задания на оценивание"
+      },
+      {
+        "href": "/admin/operations/opsvisitobjectdeputy/",
+        "name": "Замещающие на объектах посещения"
+      },
+      {
+        "href": "/admin/operations/opsevaluationcorrection/",
+        "name": "Исправления оценок"
+      },
+      {
+        "href": "/admin/operations/opsapprovalroutestep/",
+        "name": "Маршрут согласования"
+      },
+      {
+        "href": "/admin/operations/opsevaluationevent/",
+        "name": "Мероприятия оценивания"
+      },
+      {
+        "href": "/admin/operations/opsdutymonthlyplan/",
+        "name": "Месячные планы дежурств"
+      },
+      {
+        "href": "/admin/operations/opstomorrowblockoverride/",
+        "name": "Обходы блокировки на завтра"
+      },
+      {
+        "href": "/admin/operations/opssecurityeventtransition/",
+        "name": "Переходы стадий ОМ"
+      },
+      {
+        "href": "/admin/operations/opsgvosummarypatch/",
+        "name": "Правки сводок ГВО"
+      },
+      {
+        "href": "/admin/operations/opscombatdutyshift/",
+        "name": "Смены боевых групп"
+      },
+      {
+        "href": "/admin/operations/opsdutyshift/",
+        "name": "Смены дежурств"
+      },
+      {
+        "href": "/admin/operations/opsratedparticipant/",
+        "name": "Участники рейтинга"
+      }
+    ]
+  },
+  {
+    "category": "Сбор сил и расход",
+    "models": [
+      {
+        "href": "/admin/operations/opsdailysubmission/",
+        "name": "Сдачи дня"
+      },
+      {
+        "href": "/admin/operations/opsforcerequest/",
+        "name": "Заявки на сбор сил"
+      },
+      {
+        "href": "/admin/operations/opsdepartmentrequest/",
+        "name": "Запросы департаментам"
+      },
+      {
+        "href": "/admin/operations/opsunitrequest/",
+        "name": "Запросы управлениям"
+      },
+      {
+        "href": "/admin/operations/opsforcecampaignevent/",
+        "name": "Мероприятия распределения сил"
+      },
+      {
+        "href": "/admin/operations/opsforcecampaignassignment/",
+        "name": "Назначения сотрудников из общего пула"
+      },
+      {
+        "href": "/admin/operations/opsforcecampaignhandover/",
+        "name": "Передачи общего пула в расстановку"
+      },
+      {
+        "href": "/admin/operations/opsforcecampaign/",
+        "name": "Распределения сил по мероприятиям"
+      },
+      {
+        "href": "/admin/operations/opsforcerequestmember/",
+        "name": "Состав по запросам"
+      },
+      {
+        "href": "/admin/operations/opsforcecampaignpoolmember/",
+        "name": "Сотрудники общего пула мероприятий"
+      }
+    ]
+  },
+  {
+    "category": "Обратная связь",
+    "models": [
+      {
+        "href": "/admin/operations/opsfeedbackrequest/",
+        "name": "Обращения обратной связи"
+      },
+      {
+        "href": "/admin/operations/opsfeedbackcomment/",
+        "name": "Комментарии обращений"
+      },
+      {
+        "href": "/admin/operations/opsfeedbackevent/",
+        "name": "События обращений"
+      },
+      {
+        "href": "/admin/operations/opsfeedbackregistry/",
+        "name": "Справочник обратной связи"
+      }
+    ]
+  },
+  {
+    "category": "Документы и отчёты",
+    "models": [
+      {
+        "href": "/admin/operations/opsissueddocument/",
+        "name": "Выпуски документов"
+      },
+      {
+        "href": "/admin/reports/report/",
+        "name": "Отчёты"
+      },
+      {
+        "href": "/admin/operations/opsservicereportartifact/",
+        "name": "Артефакты служебных отчётов"
+      },
+      {
+        "href": "/admin/operations/opsattachment/",
+        "name": "Вложения раздела"
+      },
+      {
+        "href": "/admin/operations/opsratingexportjob/",
+        "name": "Выгрузки рейтинга"
+      },
+      {
+        "href": "/admin/operations/opsservicereportjob/",
+        "name": "Работы служебных отчётов"
+      },
+      {
+        "href": "/admin/operations/opsratingexportartifact/",
+        "name": "Файлы выгрузок рейтинга"
+      }
+    ]
+  },
+  {
+    "category": "Служебное",
+    "models": [
+      {
+        "href": "/admin/operations/opsauditlog/",
+        "name": "Журналы раздела ОМ"
+      },
+      {
+        "href": "/admin/audit/auditlog/",
+        "name": "Записи аудита"
+      },
+      {
+        "href": "/admin/notifications/notification/",
+        "name": "Уведомления"
+      },
+      {
+        "href": "/admin/operations/opsnotification/",
+        "name": "Уведомления раздела"
+      },
+      {
+        "href": "/admin/operations/opsratingauditentry/",
+        "name": "Журнал оценивания"
+      },
+      {
+        "href": "/admin/operations/opssettingchangeevent/",
+        "name": "Изменения настроек"
+      },
+      {
+        "href": "/admin/operations/opssubmissioncontrolsettings/",
+        "name": "Настройки контроля сдачи"
+      },
+      {
+        "href": "/admin/operations/opspolicysetting/",
+        "name": "Настройки раздела ОМ"
+      },
+      {
+        "href": "/admin/operations/opspassportfreshnesspolicy/",
+        "name": "Политика актуальности паспорта"
+      },
+      {
+        "href": "/admin/operations/opsdutyconflictpolicy/",
+        "name": "Политика конфликтов дежурств"
+      },
+      {
+        "href": "/admin/operations/opsdivisionnotifyrecipient/",
+        "name": "Получатели уведомлений подразделений"
+      },
+      {
+        "href": "/admin/operations/opsdocumentsequence/",
+        "name": "Счётчики номеров документов"
+      },
+      {
+        "href": "/admin/operations/opsratingnotification/",
+        "name": "Уведомления рейтинга"
+      },
+      {
+        "href": "/admin/operations/opsratingfeatureflags/",
+        "name": "Флаги рейтинга"
+      }
+    ]
+  }
+]

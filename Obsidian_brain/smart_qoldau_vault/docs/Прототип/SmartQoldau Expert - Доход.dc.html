@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+      <div style="font-size:21px;font-weight:800;color:#0f3f3a;margin-bottom:18px">Мой доход</div>
+
+      <div style="display:flex;gap:10px;margin-bottom:20px">
+        <div style="flex:1;border-radius:18px;background:#0f3f3a;padding:16px">
+          <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);margin-bottom:6px">Сегодня</div>
+          <div style="font-size:18px;font-weight:800;color:#fff">29 500 ₸</div>
+        </div>
+        <div style="flex:1;border-radius:18px;background:#f8faf9;padding:16px">
+          <div style="font-size:11px;font-weight:600;color:#8fa6a1;margin-bottom:6px">За неделю</div>
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">143 000 ₸</div>
+        </div>
+        <div style="flex:1;border-radius:18px;background:#f8faf9;padding:16px">
+          <div style="font-size:11px;font-weight:600;color:#8fa6a1;margin-bottom:6px">За месяц</div>
+          <div style="font-size:18px;font-weight:800;color:#0f3f3a">582 000 ₸</div>
+        </div>
+      </div>
+
+      <div style="border-radius:20px;border:1px solid #edf2f0;padding:18px;margin-bottom:22px">
+        <div style="display:flex;align-items:flex-end;gap:8px;height:110px">
+          <sc-for list="{{ chart }}" as="b" hint-placeholder-count="7">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+              <div style="width:100%;border-radius:6px 6px 0 0;background:{{ b.color }};height:{{ b.height }}"></div>
+              <div style="font-size:10px;font-weight:600;color:#a9bdb9">{{ b.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a">Последние операции</div>
+        <div onClick="{{ goPayouts }}" style="font-size:12.5px;font-weight:700;color:#0f766e;cursor:pointer">Выплаты</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ transactions }}" as="t" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#f8faf9">
+            <div style="width:42px;height:42px;border-radius:12px;background:{{ t.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ t.icon }}" stroke="{{ t.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ t.topic }}</div>
+              <div style="font-size:11px;font-weight:500;color:#8fa6a1">{{ t.date }}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:13.5px;font-weight:800;color:#0f3f3a">{{ t.amount }}</div>
+              <div style="font-size:10.5px;font-weight:700;color:{{ t.statusColor }}">{{ t.status }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  renderVals() {
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert - Консультации.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert - Доход.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert - Профиль.dc.html' },
+    ].map(n => ({ ...n, color: n.label === active ? '#0f766e' : '#a9bdb9', onClick: n.label === active ? () => {} : () => { window.location.href = n.href; } }));
+    return {
+      chart: [
+        { label: 'Пн', height: '55%', color: '#e3f3ee' },
+        { label: 'Вт', height: '70%', color: '#e3f3ee' },
+        { label: 'Ср', height: '40%', color: '#e3f3ee' },
+        { label: 'Чт', height: '85%', color: '#e3f3ee' },
+        { label: 'Пт', height: '60%', color: '#e3f3ee' },
+        { label: 'Сб', height: '30%', color: '#e3f3ee' },
+        { label: 'Вс', height: '95%', color: '#0f766e' },
+      ],
+      transactions: [
+        { topic: 'Тревожность · Видео', date: 'Сегодня, 19:00', amount: '3 990 ₸', status: 'Начислено', statusColor: '#159a7c', bg: '#e3f3ee', color: '#159a7c', icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z' },
+        { topic: 'Выгорание · Аудио', date: 'Сегодня, 15:00', amount: '3 990 ₸', status: 'Начислено', statusColor: '#159a7c', bg: '#e6f0fb', color: '#3b82c4', icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3' },
+        { topic: 'Отношения · Чат', date: '2 авг', amount: '3 990 ₸', status: 'Выплачено', statusColor: '#8fa6a1', bg: '#f1eafb', color: '#8b5fc9', icon: 'M4 5h16v11H8l-4 4V5z' },
+        { topic: 'Панические атаки · Видео', date: '31 июл', amount: '4 990 ₸', status: 'Выплачено', statusColor: '#8fa6a1', bg: '#fdece3', color: '#e08a4d', icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z' },
+      ],
+      goPayouts: () => { window.location.href = './SmartQoldau Expert - Выплаты.dc.html'; },
+      navItems: nav('Доход'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

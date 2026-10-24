@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951} select{outline:none;font-family:inherit}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:24px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;flex-shrink:0;text-decoration:none">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </a>
+      <div style="display:flex;align-items:center;gap:16px;flex-shrink:0">
+        <a href="./SmartQoldau - Регистрация.dc.html" style="font-size:13.5px;font-weight:700;color:#0f3f3a;text-decoration:none">Войти</a>
+        <a href="./SmartQoldau Web - Выбор темы.dc.html" style="height:40px;padding:0 20px;border-radius:20px;background:#0f766e;color:#fff;font-size:13.5px;font-weight:700;text-decoration:none;display:flex;align-items:center;white-space:nowrap">Мне нужна помощь</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1240px;margin:0 auto;padding:44px 32px 60px">
+    <div style="font-size:30px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Найдите своего специалиста</div>
+    <div style="font-size:14.5px;font-weight:500;color:#6b8580;margin-bottom:28px">{{ resultsText }}</div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px">
+      <select onChange="{{ onSpecChange }}" style="height:44px;padding:0 16px;border-radius:14px;border:1px solid #eef2f0;background:#fff;color:#0f3f3a;font-size:13px;font-weight:600">
+        <sc-for list="{{ specOptions }}" as="o" hint-placeholder-count="6"><option value="{{ o.value }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+      </select>
+      <select onChange="{{ onFormatChange }}" style="height:44px;padding:0 16px;border-radius:14px;border:1px solid #eef2f0;background:#fff;color:#0f3f3a;font-size:13px;font-weight:600">
+        <sc-for list="{{ formatOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+      </select>
+      <select onChange="{{ onLangChange }}" style="height:44px;padding:0 16px;border-radius:14px;border:1px solid #eef2f0;background:#fff;color:#0f3f3a;font-size:13px;font-weight:600">
+        <sc-for list="{{ langOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+      </select>
+      <select onChange="{{ onSortChange }}" style="height:44px;padding:0 16px;border-radius:14px;border:1px solid #eef2f0;background:#fff;color:#0f3f3a;font-size:13px;font-weight:600">
+        <sc-for list="{{ sortOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}" selected="{{ o.sel }}">{{ o.label }}</option></sc-for>
+      </select>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:18px">
+      <sc-for list="{{ specialists }}" as="p" hint-placeholder-count="6">
+        <div style="background:#fff;border-radius:20px;border:1px solid #eef2f0;padding:22px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <image-slot id="{{ p.slotId }}" style="width:56px;height:56px" shape="circle" placeholder="Фото"></image-slot>
+            <div style="min-width:0">
+              <div style="font-size:15px;font-weight:800;color:#0f3f3a">{{ p.name }}</div>
+              <div style="font-size:12px;font-weight:500;color:#8fa6a1">Психолог · {{ p.years }} опыта</div>
+            </div>
+          </div>
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">⭐ {{ p.rating }} · {{ p.reviews }} отзывов</div>
+          <div style="font-size:12px;font-weight:600;color:#5b7a75;margin-bottom:6px">{{ p.specs }}</div>
+          <div style="font-size:11.5px;font-weight:600;color:#8fa6a1;margin-bottom:14px">{{ p.langs }} · {{ p.formats }}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:14.5px;font-weight:800;color:#0f3f3a">{{ p.price }}</div>
+            <a href="{{ p.href }}" style="font-size:12.5px;font-weight:700;color:#0f766e;text-decoration:none">Смотреть профиль →</a>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+      <div style="text-align:center;padding:60px 20px;color:#8fa6a1;font-size:14px;font-weight:600">По заданным фильтрам специалисты не найдены</div>
+    </sc-if>
+  </div>
+
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static ALL = [
+    { slotId: 'cat-1', name: 'Айгуль Сатпаева', years: '6 лет', rating: '4.9', reviews: 312, spec: 'anxiety', specs: 'Тревога · стресс · выгорание', lang: 'ru', langs: 'Русский · Қазақша', formatsArr: ['chat','audio','video'], formats: 'Чат · Аудио · Видео', price: '3 990 ₸', priceNum: 3990 },
+    { slotId: 'cat-2', name: 'Марат Ержанов', years: '4 года', rating: '4.8', reviews: 187, spec: 'relationships', specs: 'Отношения · семья', lang: 'en', langs: 'Русский · English', formatsArr: ['chat','video'], formats: 'Чат · Видео', price: '3 500 ₸', priceNum: 3500 },
+    { slotId: 'cat-3', name: 'Дана Қалиева', years: '8 лет', rating: '5.0', reviews: 401, spec: 'panic', specs: 'Панические атаки · сон', lang: 'kz', langs: 'Қазақша · Русский', formatsArr: ['audio','video'], formats: 'Аудио · Видео', price: '4 200 ₸', priceNum: 4200 },
+    { slotId: 'cat-4', name: 'Тимур Абенов', years: '5 лет', rating: '4.9', reviews: 233, spec: 'addiction', specs: 'Зависимости · кризисы', lang: 'ru', langs: 'Русский', formatsArr: ['chat','audio'], formats: 'Чат · Аудио', price: '3 800 ₸', priceNum: 3800 },
+    { slotId: 'cat-5', name: 'Сара Ахметова', years: '3 года', rating: '4.7', reviews: 96, spec: 'anxiety', specs: 'Тревога · самооценка', lang: 'kz', langs: 'Қазақша · Русский', formatsArr: ['chat','video'], formats: 'Чат · Видео', price: '3 200 ₸', priceNum: 3200 },
+    { slotId: 'cat-6', name: 'Бекзат Нурлыбеков', years: '7 лет', rating: '4.9', reviews: 278, spec: 'relationships', specs: 'Отношения · выгорание', lang: 'ru', langs: 'Русский · English', formatsArr: ['audio','video'], formats: 'Аудио · Видео', price: '4 000 ₸', priceNum: 4000 },
+  ];
+  state = { spec: 'all', format: 'all', lang: 'all', sort: 'rating' };
+  renderVals() {
+    const s = this.state;
+    let list = Component.ALL.filter(p => (s.spec === 'all' || p.spec === s.spec) && (s.format === 'all' || p.formatsArr.includes(s.format)) && (s.lang === 'all' || p.lang === s.lang));
+    if (s.sort === 'rating') list = [...list].sort((a, b) => b.rating - a.rating);
+    if (s.sort === 'price_asc') list = [...list].sort((a, b) => a.priceNum - b.priceNum);
+    if (s.sort === 'experience') list = [...list].sort((a, b) => parseInt(b.years) - parseInt(a.years));
+    const items = list.map(p => ({ ...p, href: `./SmartQoldau Web - Профиль психолога.dc.html?id=${p.slotId}` }));
+    const opt = (value, label, current) => ({ value, label, sel: current === value });
+    return {
+      resultsText: `${items.length} специалистов доступно`,
+      noResults: items.length === 0,
+      specialists: items,
+      specOptions: [opt('all', 'Все специализации', s.spec), opt('anxiety', 'Тревога и стресс', s.spec), opt('relationships', 'Отношения', s.spec), opt('panic', 'Панические атаки', s.spec), opt('addiction', 'Зависимости', s.spec)],
+      formatOptions: [opt('all', 'Любой формат', s.format), opt('chat', 'Чат', s.format), opt('audio', 'Аудио', s.format), opt('video', 'Видео', s.format)],
+      langOptions: [opt('all', 'Любой язык', s.lang), opt('ru', 'Русский', s.lang), opt('kz', 'Қазақша', s.lang), opt('en', 'English', s.lang)],
+      sortOptions: [opt('rating', 'По рейтингу', s.sort), opt('price_asc', 'По цене (сначала дешевле)', s.sort), opt('experience', 'По опыту', s.sort)],
+      onSpecChange: (e) => this.setState({ spec: e.target.value }),
+      onFormatChange: (e) => this.setState({ format: e.target.value }),
+      onLangChange: (e) => this.setState({ lang: e.target.value }),
+      onSortChange: (e) => this.setState({ sort: e.target.value }),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

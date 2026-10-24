@@ -1,0 +1,792 @@
+[
+  {
+    "href": "/admin/auth/user/",
+    "name": "Users",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select user to change\" [level=1]\n  - list:\n    - link \"Add user\":\n      - /url: /admin/auth/user/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - text",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add user\" [level=1]\n  - paragraph: First, enter a username and password. Then, you’ll be able to edit more user options.\n  - generic: \"Username:\"\n  - textbox \"Username:\" [active]\n  - gen"
+  },
+  {
+    "href": "/admin/operations/userrole/",
+    "name": "Роли пользователей (ОМ)",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select Роль пользователя (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Роль пользователя (ОМ)\":\n      - /url: /admin/operations/userrole/add/\n  - search:\n    - img \"Search\"\n    - t",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Роль пользователя (ОМ)\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"User id:\"\n  - textbox \"User id:\"\n  - generic: \"Role code:\"\n  - combobox\n"
+  },
+  {
+    "href": "/admin/operations/role/",
+    "name": "Роли раздела ОМ",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select Роль раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Роль раздела ОМ\":\n      - /url: /admin/operations/role/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n  ",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Роль раздела ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: \""
+  },
+  {
+    "href": "/admin/operations/permission/",
+    "name": "Права раздела ОМ",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select Право раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Право раздела ОМ\":\n      - /url: /admin/operations/permission/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Se",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Право раздела ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: "
+  },
+  {
+    "href": "/admin/operations/rolepermission/",
+    "name": "Права ролей (ОМ)",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select Право роли (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Право роли (ОМ)\":\n      - /url: /admin/operations/rolepermission/add/\n  - search:\n    - img \"Search\"\n    - textbox \"",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Право роли (ОМ)\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  "
+  },
+  {
+    "href": "/admin/auth/group/",
+    "name": "Groups",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select group to change\" [level=1]\n  - list:\n    - link \"Add group\":\n      - /url: /admin/auth/group/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - p",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add group\" [level=1]\n  - generic: \"Name:\"\n  - textbox \"Name:\" [active]\n  - generic: \"Permissions:\"\n  - heading \"Available permissions This is the list of available permissions. You may c"
+  },
+  {
+    "href": "/admin/operations/temporarydutypermission/",
+    "name": "Временные права наряда",
+    "category": "Доступ",
+    "list": "\n  - heading \"Select Временное право наряда to change\" [level=1]\n  - list:\n    - link \"Add Временное право наряда\":\n      - /url: /admin/operations/temporarydutypermission/add/\n  - search:\n    - img \"",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Временное право наряда\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"User id:\"\n  - textbox \"User id:\"\n "
+  },
+  {
+    "href": "/admin/divisions/division/",
+    "name": "Подразделения",
+    "category": "Структура и штат",
+    "list": "\n  - heading \"Select Подразделение to change\" [level=1]\n  - list:\n    - link \"Add Подразделение\":\n      - /url: /admin/divisions/division/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n   ",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Подразделение\" [level=1]\n  - generic: \"Name:\"\n  - textbox \"Name:\" [active]\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: \"Division type:\"\n  - combobox \"Division type:\":\n    -"
+  },
+  {
+    "href": "/admin/staff_unit/staffunit/",
+    "name": "Штатные единицы",
+    "category": "Структура и штат",
+    "list": "\n  - heading \"Select Штатная единица to change\" [level=1]\n  - list:\n    - link \"Add Штатная единица\":\n      - /url: /admin/staff_unit/staffunit/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Searc",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Штатная единица\" [level=1]\n  - generic: \"Подразделение:\"\n  - combobox \"Подразделение:\" [active]:\n    - option \"---------\" [selected]\n    - option \"Служба\"\n    - option \"--- Департаме"
+  },
+  {
+    "href": "/admin/staff_unit/vacancy/",
+    "name": "Вакансии",
+    "category": "Структура и штат",
+    "list": "\n  - heading \"Select Вакансия to change\" [level=1]\n  - list:\n    - link \"Add Вакансия\":\n      - /url: /admin/staff_unit/vacancy/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button ",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Вакансия\" [level=1]\n  - generic: \"Статус:\"\n  - combobox \"Статус:\" [active]:\n    - option \"Открыта\" [selected]\n    - option \"Закрыта\"\n  - generic: \"Требования:\"\n  - textbox \"Требовани"
+  },
+  {
+    "href": "/admin/employees/employee/",
+    "name": "Сотрудники",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Сотрудник to change\" [level=1]\n  - list:\n    - link \"Add Сотрудник\":\n      - /url: /admin/employees/employee/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - butto",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Сотрудник\" [level=1]\n  - group \"Основная информация\":\n    - heading \"Основная информация\" [level=2]\n    - generic: \"Personnel number:\"\n    - textbox \"Personnel number:\" [active]: \"00"
+  },
+  {
+    "href": "/admin/statuses/employeestatus/",
+    "name": "Статусы сотрудников",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Статус сотрудника to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника\":\n      - /url: /admin/statuses/employeestatus/add/\n  - search:\n    - img \"Search\"\n    - textbox",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Статус сотрудника\" [level=1]\n  - group \"Основная информация\":\n    - heading \"Основная информация\" [level=2]\n    - generic: \"Сотрудник:\"\n    - combobox \"Сотрудник:\" [active]:\n      - "
+  },
+  {
+    "href": "/admin/operations/opsemployeestatus/",
+    "name": "Статусы сотрудников (ОМ)",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Статус сотрудника (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Статус сотрудника (ОМ)\":\n      - /url: /admin/operations/opsemployeestatus/add/\n  - search:\n    - img \"Search",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Статус сотрудника (ОМ)\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created "
+  },
+  {
+    "href": "/admin/operations/secondment/",
+    "name": "Прикомандирования (ОМ)",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Прикомандирование (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Прикомандирование (ОМ)\":\n      - /url: /admin/operations/secondment/add/\n  - search:\n    - img \"Search\"\n    -",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Прикомандирование (ОМ)\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created "
+  },
+  {
+    "href": "/admin/employees/employeetransferhistory/",
+    "name": "История переводов сотрудников",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select История перевода сотрудника to change\" [level=1]\n  - list:\n    - link \"Add История перевода сотрудника\":\n      - /url: /admin/employees/employeetransferhistory/add/\n  - search:\n  ",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add История перевода сотрудника\" [level=1]\n  - generic: \"Employee:\"\n  - combobox \"Employee:\" [active]:\n    - option \"---------\" [selected]\n    - option \"Абаев Абай\"\n    - option \"Абенов "
+  },
+  {
+    "href": "/admin/operations/statusoverride/",
+    "name": "Обходы статусов",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Обход статуса to change\" [level=1]\n  - list:\n    - link \"Add Обход статуса\":\n      - /url: /admin/operations/statusoverride/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Sear",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Обход статуса\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - "
+  },
+  {
+    "href": "/admin/operations/opsprotectedperson/",
+    "name": "Охраняемые лица",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Охраняемое лицо to change\" [level=1]\n  - list:\n    - link \"Add Охраняемое лицо\":\n      - /url: /admin/operations/opsprotectedperson/add/\n  - search:\n    - img \"Search\"\n    - textb",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Охраняемое лицо\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"Name:\"\n  - textbox \"Name:\"\n  - generic: \"Callsign:\"\n  - textbox \"Callsign:\"\n  -"
+  },
+  {
+    "href": "/admin/statuses/statusdocument/",
+    "name": "Документы статусов",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select Документ статуса to change\" [level=1]\n  - list:\n    - link \"Add Документ статуса\":\n      - /url: /admin/statuses/statusdocument/add/\n  - search:\n    - img \"Search\"\n    - textbox \"",
+    "search": "открыл результат без ошибки",
+    "form": "\n  - heading \"Add Документ статуса\" [level=1]\n  - generic: \"Статус:\"\n  - combobox \"Статус:\" [active]:\n    - option \"---------\" [selected]\n    - option \"Калиев Алишер - В командировке (2026-10-25)\"\n   "
+  },
+  {
+    "href": "/admin/statuses/statuschangehistory/",
+    "name": "История изменений статусов",
+    "category": "Сотрудники и статусы",
+    "list": "\n  - heading \"Select История изменения статуса to change\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - navigation:\n    - link \"‹ All dates\":\n     ",
+    "search": "найдены записи контрольных сотрудников",
+    "form": "Добавление запрещено для истории, корректно"
+  },
+  {
+    "href": "/admin/dictionaries/position/",
+    "name": "Должности",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/dictionaries/position/",
+    "list": "\n  - heading \"Select Должность to change\" [level=1]\n  - list:\n    - link \"Add Должность\":\n      - /url: /admin/dictionaries/position/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - bu",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Должность\" [level=1]\n  - generic: \"Название должности:\"\n  - textbox \"Название должности:\" [active]\n  - generic: \"Код:\"\n  - textbox \"Код:\"\n  - generic: \"Уровень:\"\n  - spinbutton \"Уров"
+  },
+  {
+    "href": "/admin/dictionaries/rank/",
+    "name": "Звания",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/dictionaries/rank/",
+    "list": "\n  - heading \"Select Звание to change\" [level=1]\n  - list:\n    - link \"Add Звание\":\n      - /url: /admin/dictionaries/rank/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Sear",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Звание\" [level=1]\n  - generic: \"Звание:\"\n  - textbox \"Звание:\" [active]\n  - generic: \"Код:\"\n  - textbox \"Код:\"\n  - generic: \"Уровень:\"\n  - spinbutton \"Уровень:\"\n  - generic: Чем мень"
+  },
+  {
+    "href": "/admin/operations/statustype/",
+    "name": "Типы статусов (ОМ)",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/statustype/",
+    "list": "\n  - heading \"Select Тип статуса (ОМ) to change\" [level=1]\n  - list:\n    - link \"Add Тип статуса (ОМ)\":\n      - /url: /admin/operations/statustype/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Se",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Тип статуса (ОМ)\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: "
+  },
+  {
+    "href": "/admin/operations/opsdictionaryentry/",
+    "name": "Значения справочников ОМ",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsdictionaryentry/",
+    "list": "\n  - heading \"Select Значение справочника ОМ to change\" [level=1]\n  - list:\n    - link \"Add Значение справочника ОМ\":\n      - /url: /admin/operations/opsdictionaryentry/add/\n  - search:\n    - img \"Sea",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Значение справочника ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created"
+  },
+  {
+    "href": "/admin/operations/opsdutytype/",
+    "name": "Виды дежурств",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsdutytype/",
+    "list": "\n  - heading \"Select Вид дежурства to change\" [level=1]\n  - list:\n    - link \"Add Вид дежурства\":\n      - /url: /admin/operations/opsdutytype/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Вид дежурства\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - "
+  },
+  {
+    "href": "/admin/operations/opscombatdutytype/",
+    "name": "Виды дежурств боевых групп",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opscombatdutytype/",
+    "list": "\n  - heading \"Select Вид дежурства боевой группы to change\" [level=1]\n  - list:\n    - link \"Add Вид дежурства боевой группы\":\n      - /url: /admin/operations/opscombatdutytype/add/\n  - search:\n    - i",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Вид дежурства боевой группы\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Cre"
+  },
+  {
+    "href": "/admin/operations/opscity/",
+    "name": "Города",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opscity/",
+    "list": "\n  - heading \"Select Город to change\" [level=1]\n  - list:\n    - link \"Add Город\":\n      - /url: /admin/operations/opscity/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Searc",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Город\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"Country:\"\n  - combobox\n  - combobox:\n    - textbox\n  - generic \"Change selected Страна\"\n "
+  },
+  {
+    "href": "/admin/operations/opsratinggroup/",
+    "name": "Группы рейтинга",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsratinggroup/",
+    "list": "\n  - heading \"Select Группа рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Группа рейтинга\":\n      - /url: /admin/operations/opsratinggroup/add/\n  - search:\n    - img \"Search\"\n    - textbox \"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Группа рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  "
+  },
+  {
+    "href": "/admin/operations/opsattentiondetector/",
+    "name": "Детекторы внимания",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsattentiondetector/",
+    "list": "\n  - heading \"Select Детектор внимания to change\" [level=1]\n  - list:\n    - link \"Add Детектор внимания\":\n      - /url: /admin/operations/opsattentiondetector/add/\n  - search:\n    - img \"Search\"\n    -",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Детектор внимания\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opslegaldocument/",
+    "name": "Законы об ОМ",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opslegaldocument/",
+    "list": "\n  - heading \"Select Закон об ОМ to change\" [level=1]\n  - list:\n    - link \"Add Закон об ОМ\":\n      - /url: /admin/operations/opslegaldocument/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Закон об ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - ge"
+  },
+  {
+    "href": "/admin/operations/opsanalyticsmetricdefinition/",
+    "name": "Показатели аналитики службы",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsanalyticsmetricdefinition/",
+    "list": "\n  - heading \"Select Показатель аналитики службы to change\" [level=1]\n  - list:\n    - link \"Add Показатель аналитики службы\":\n      - /url: /admin/operations/opsanalyticsmetricdefinition/add/\n  - sear",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Показатель аналитики службы\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Cre"
+  },
+  {
+    "href": "/admin/operations/opsanalyticsperiodpreset/",
+    "name": "Пресеты периодов аналитики",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsanalyticsperiodpreset/",
+    "list": "\n  - heading \"Select Пресет периода аналитики to change\" [level=1]\n  - list:\n    - link \"Add Пресет периода аналитики\":\n      - /url: /admin/operations/opsanalyticsperiodpreset/add/\n  - search:\n    - ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Пресет периода аналитики\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Create"
+  },
+  {
+    "href": "/admin/operations/opscountry/",
+    "name": "Страны",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opscountry/",
+    "list": "\n  - heading \"Select Страна to change\" [level=1]\n  - list:\n    - link \"Add Страна\":\n      - /url: /admin/operations/opscountry/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Страна\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: \"Name:\"\n  - textbox \"Name:\"\n  - checkbox \"Is act"
+  },
+  {
+    "href": "/admin/operations/opsservicereporttype/",
+    "name": "Типы служебных отчётов",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsservicereporttype/",
+    "list": "\n  - heading \"Select Тип служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Тип служебного отчёта\":\n      - /url: /admin/operations/opsservicereporttype/add/\n  - search:\n    - img \"Searc",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Тип служебного отчёта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created b"
+  },
+  {
+    "href": "/admin/operations/opsvehicle/",
+    "name": "Транспорт ГОН",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opsvehicle/",
+    "list": "\n  - heading \"Select транспорт ГОН to change\" [level=1]\n  - list:\n    - link \"Add транспорт ГОН\":\n      - /url: /admin/operations/opsvehicle/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add транспорт ГОН\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - "
+  },
+  {
+    "href": "/admin/operations/opscombatroute/",
+    "name": "Трассы",
+    "category": "Справочники",
+    "url": "http://localhost:8100/admin/operations/opscombatroute/",
+    "list": "\n  - heading \"Select Трасса to change\" [level=1]\n  - list:\n    - link \"Add Трасса\":\n      - /url: /admin/operations/opscombatroute/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - butt",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Трасса\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - generic"
+  },
+  {
+    "href": "/admin/operations/opssecurityevent/",
+    "name": "Охранные мероприятия",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opssecurityevent/",
+    "list": "\n  - heading \"Select Охранное мероприятие to change\" [level=1]\n  - list:\n    - link \"Add Охранное мероприятие\":\n      - /url: /admin/operations/opssecurityevent/add/\n  - search:\n    - img \"Search\"\n   ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Охранное мероприятие\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"Code:\"\n  - textbox \"Code:\"\n  - generic: \"Title:\"\n  - textbox \"Title:\"\n  - "
+  },
+  {
+    "href": "/admin/operations/opssecurityeventvisitobject/",
+    "name": "Объекты посещения ОМ",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opssecurityeventvisitobject/",
+    "list": "\n  - heading \"Select Объект посещения ОМ to change\" [level=1]\n  - list:\n    - link \"Add Объект посещения ОМ\":\n      - /url: /admin/operations/opssecurityeventvisitobject/add/\n  - search:\n    - img \"Se",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Объект посещения ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:"
+  },
+  {
+    "href": "/admin/operations/opssecurityobject/",
+    "name": "Охраняемые объекты",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opssecurityobject/",
+    "list": "\n  - heading \"Select Охраняемый объект to change\" [level=1]\n  - list:\n    - link \"Add Охраняемый объект\":\n      - /url: /admin/operations/opssecurityobject/add/\n  - search:\n    - img \"Search\"\n    - te",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Охраняемый объект\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opssecuritypost/",
+    "name": "Посты паспорта объекта",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opssecuritypost/",
+    "list": "\n  - heading \"Select Пост паспорта объекта to change\" [level=1]\n  - list:\n    - link \"Add Пост паспорта объекта\":\n      - /url: /admin/operations/opssecuritypost/add/\n  - search:\n    - img \"Search\"\n  ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Пост паспорта объекта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created b"
+  },
+  {
+    "href": "/admin/operations/opsobjectsector/",
+    "name": "Секторы паспорта объекта",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsobjectsector/",
+    "list": "\n  - heading \"Select Сектор паспорта объекта to change\" [level=1]\n  - list:\n    - link \"Add Сектор паспорта объекта\":\n      - /url: /admin/operations/opsobjectsector/add/\n  - search:\n    - img \"Search",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Сектор паспорта объекта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created"
+  },
+  {
+    "href": "/admin/operations/opseventevaluation/",
+    "name": "Оценки мероприятий",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opseventevaluation/",
+    "list": "\n  - heading \"Select Оценка мероприятия to change\" [level=1]\n  - list:\n    - link \"Add Оценка мероприятия\":\n      - /url: /admin/operations/opseventevaluation/add/\n  - search:\n    - img \"Search\"\n    -",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Оценка мероприятия\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\""
+  },
+  {
+    "href": "/admin/operations/opsforeignvisit/",
+    "name": "Визиты иностранных ОЛ",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsforeignvisit/",
+    "list": "\n  - heading \"Select Визит иностранного ОЛ to change\" [level=1]\n  - list:\n    - link \"Add Визит иностранного ОЛ\":\n      - /url: /admin/operations/opsforeignvisit/add/\n  - search:\n    - img \"Search\"\n  ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Визит иностранного ОЛ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created b"
+  },
+  {
+    "href": "/admin/operations/opsbulletinissue/",
+    "name": "Выпуски бюллетеня",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsbulletinissue/",
+    "list": "\n  - heading \"Select Выпуск бюллетеня to change\" [level=1]\n  - list:\n    - link \"Add Выпуск бюллетеня\":\n      - /url: /admin/operations/opsbulletinissue/add/\n  - search:\n    - img \"Search\"\n    - textb",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Выпуск бюллетеня\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n "
+  },
+  {
+    "href": "/admin/operations/opsevaluationworkitem/",
+    "name": "Задания на оценивание",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsevaluationworkitem/",
+    "list": "\n  - heading \"Select Задание на оценивание to change\" [level=1]\n  - list:\n    - link \"Add Задание на оценивание\":\n      - /url: /admin/operations/opsevaluationworkitem/add/\n  - search:\n    - img \"Sear",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Задание на оценивание\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created b"
+  },
+  {
+    "href": "/admin/operations/opsvisitobjectdeputy/",
+    "name": "Замещающие на объектах посещения",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsvisitobjectdeputy/",
+    "list": "\n  - heading \"Select Замещающий на объекте посещения to change\" [level=1]\n  - list:\n    - link \"Add Замещающий на объекте посещения\":\n      - /url: /admin/operations/opsvisitobjectdeputy/add/\n  - sear",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Замещающий на объекте посещения\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox "
+  },
+  {
+    "href": "/admin/operations/opsevaluationcorrection/",
+    "name": "Исправления оценок",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsevaluationcorrection/",
+    "list": "\n  - heading \"Select Исправление оценки to change\" [level=1]\n  - list:\n    - link \"Add Исправление оценки\":\n      - /url: /admin/operations/opsevaluationcorrection/add/\n  - search:\n    - img \"Search\"\n",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Исправление оценки\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\""
+  },
+  {
+    "href": "/admin/operations/opsapprovalroutestep/",
+    "name": "Маршрут согласования",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsapprovalroutestep/",
+    "list": "\n  - heading \"Select Шаг маршрута согласования to change\" [level=1]\n  - list:\n    - link \"Add Шаг маршрута согласования\":\n      - /url: /admin/operations/opsapprovalroutestep/add/\n  - search:\n    - im",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Шаг маршрута согласования\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Creat"
+  },
+  {
+    "href": "/admin/operations/opsevaluationevent/",
+    "name": "Мероприятия оценивания",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsevaluationevent/",
+    "list": "\n  - heading \"Select Мероприятие оценивания to change\" [level=1]\n  - list:\n    - link \"Add Мероприятие оценивания\":\n      - /url: /admin/operations/opsevaluationevent/add/\n  - search:\n    - img \"Searc",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Мероприятие оценивания\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created "
+  },
+  {
+    "href": "/admin/operations/opsdutymonthlyplan/",
+    "name": "Месячные планы дежурств",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsdutymonthlyplan/",
+    "list": "\n  - heading \"Select Месячный план дежурств to change\" [level=1]\n  - list:\n    - link \"Add Месячный план дежурств\":\n      - /url: /admin/operations/opsdutymonthlyplan/add/\n  - search:\n    - img \"Searc",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Месячный план дежурств\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created "
+  },
+  {
+    "href": "/admin/operations/opstomorrowblockoverride/",
+    "name": "Обходы блокировки на завтра",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opstomorrowblockoverride/",
+    "list": "\n  - heading \"Select Обход блокировки на завтра to change\" [level=1]\n  - list:\n    - link \"Add Обход блокировки на завтра\":\n      - /url: /admin/operations/opstomorrowblockoverride/add/\n  - search:\n  ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Обход блокировки на завтра\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Crea"
+  },
+  {
+    "href": "/admin/operations/opssecurityeventtransition/",
+    "name": "Переходы стадий ОМ",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opssecurityeventtransition/",
+    "list": "\n  - heading \"Select Переход стадии ОМ to change\" [level=1]\n  - list:\n    - link \"Add Переход стадии ОМ\":\n      - /url: /admin/operations/opssecurityeventtransition/add/\n  - search:\n    - img \"Search\"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Переход стадии ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opsgvosummarypatch/",
+    "name": "Правки сводок ГВО",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsgvosummarypatch/",
+    "list": "\n  - heading \"Select Правка сводки ГВО to change\" [level=1]\n  - list:\n    - link \"Add Правка сводки ГВО\":\n      - /url: /admin/operations/opsgvosummarypatch/add/\n  - search:\n    - img \"Search\"\n    - t",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Правка сводки ГВО\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opscombatdutyshift/",
+    "name": "Смены боевых групп",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opscombatdutyshift/",
+    "list": "\n  - heading \"Select Смена боевой группы to change\" [level=1]\n  - list:\n    - link \"Add Смена боевой группы\":\n      - /url: /admin/operations/opscombatdutyshift/add/\n  - search:\n    - img \"Search\"\n   ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Смена боевой группы\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:"
+  },
+  {
+    "href": "/admin/operations/opsdutyshift/",
+    "name": "Смены дежурств",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsdutyshift/",
+    "list": "\n  - heading \"Select Смена дежурства to change\" [level=1]\n  - list:\n    - link \"Add Смена дежурства\":\n      - /url: /admin/operations/opsdutyshift/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Se",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Смена дежурства\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  "
+  },
+  {
+    "href": "/admin/operations/opsratedparticipant/",
+    "name": "Участники рейтинга",
+    "category": "Охранные мероприятия",
+    "url": "http://localhost:8100/admin/operations/opsratedparticipant/",
+    "list": "\n  - heading \"Select Участник рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Участник рейтинга\":\n      - /url: /admin/operations/opsratedparticipant/add/\n  - search:\n    - img \"Search\"\n    - ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Участник рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opsdailysubmission/",
+    "name": "Сдачи дня",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsdailysubmission/",
+    "list": "\n  - heading \"Select Сдача дня to change\" [level=1]\n  - list:\n    - link \"Add Сдача дня\":\n      - /url: /admin/operations/opsdailysubmission/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Сдача дня\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  - gene"
+  },
+  {
+    "href": "/admin/operations/opsforcerequest/",
+    "name": "Заявки на сбор сил",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcerequest/",
+    "list": "\n  - heading \"Select Заявка на сбор сил to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"ID Created by Ev",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsdepartmentrequest/",
+    "name": "Запросы департаментам",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsdepartmentrequest/",
+    "list": "\n  - heading \"Select Запрос департаменту to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"ID Created by E",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsunitrequest/",
+    "name": "Запросы управлениям",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsunitrequest/",
+    "list": "\n  - heading \"Select Запрос управлению to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"ID Created by Eve",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignevent/",
+    "name": "Мероприятия распределения сил",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcecampaignevent/",
+    "list": "\n  - heading \"Select Мероприятие распределения сил to change\" [level=1]\n  - list:\n    - link \"Add Мероприятие распределения сил\":\n      - /url: /admin/operations/opsforcecampaignevent/add/\n  - search:",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Мероприятие распределения сил\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"C"
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignassignment/",
+    "name": "Назначения сотрудников из общего пула",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcecampaignassignment/",
+    "list": "\n  - heading \"Select Назначение сотрудника из общего пула to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignhandover/",
+    "name": "Передачи общего пула в расстановку",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcecampaignhandover/",
+    "list": "\n  - heading \"Select Передача общего пула в расстановку to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsforcecampaign/",
+    "name": "Распределения сил по мероприятиям",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcecampaign/",
+    "list": "\n  - heading \"Select Распределение сил по мероприятиям to change\" [level=1]\n  - list:\n    - link \"Add Распределение сил по мероприятиям\":\n      - /url: /admin/operations/opsforcecampaign/add/\n  - sear",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Распределение сил по мероприятиям\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Code:\"\n  - textbox \"Cod"
+  },
+  {
+    "href": "/admin/operations/opsforcerequestmember/",
+    "name": "Состав по запросам",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcerequestmember/",
+    "list": "\n  - heading \"Select Сотрудник в составе по запросу to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"ID C",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsforcecampaignpoolmember/",
+    "name": "Сотрудники общего пула мероприятий",
+    "category": "Сбор сил и расход",
+    "url": "http://localhost:8100/admin/operations/opsforcecampaignpoolmember/",
+    "list": "\n  - heading \"Select Сотрудник общего пула мероприятий to view\" [level=1]\n  - list\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n  - table:\n    - rowgroup:\n      - row \"I",
+    "search": "результат без ошибки",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opsfeedbackrequest/",
+    "name": "Обращения обратной связи",
+    "category": "Обратная связь",
+    "url": "http://localhost:8100/admin/operations/opsfeedbackrequest/",
+    "list": "\n  - heading \"Select Обращение обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Обращение обратной связи\":\n      - /url: /admin/operations/opsfeedbackrequest/add/\n  - search:\n    - img \"S",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Обращение обратной связи\" [level=1]\n  - generic: \"Created by:\"\n  - textbox \"Created by:\" [active]\n  - generic: \"Subject:\"\n  - textbox \"Subject:\"\n  - generic: \"Description:\"\n  - textb"
+  },
+  {
+    "href": "/admin/operations/opsfeedbackcomment/",
+    "name": "Комментарии обращений",
+    "category": "Обратная связь",
+    "url": "http://localhost:8100/admin/operations/opsfeedbackcomment/",
+    "list": "\n  - heading \"Select Комментарий обращения to change\" [level=1]\n  - list:\n    - link \"Add Комментарий обращения\":\n      - /url: /admin/operations/opsfeedbackcomment/add/\n  - search:\n    - img \"Search\"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Комментарий обращения\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created b"
+  },
+  {
+    "href": "/admin/operations/opsfeedbackevent/",
+    "name": "События обращений",
+    "category": "Обратная связь",
+    "url": "http://localhost:8100/admin/operations/opsfeedbackevent/",
+    "list": "\n  - heading \"Select Событие обращения to change\" [level=1]\n  - list:\n    - link \"Add Событие обращения\":\n      - /url: /admin/operations/opsfeedbackevent/add/\n  - search:\n    - img \"Search\"\n    - tex",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Событие обращения\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opsfeedbackregistry/",
+    "name": "Справочник обратной связи",
+    "category": "Обратная связь",
+    "url": "http://localhost:8100/admin/operations/opsfeedbackregistry/",
+    "list": "\n  - heading \"Select Справочник обратной связи to change\" [level=1]\n  - list:\n    - link \"Add Справочник обратной связи\":\n      - /url: /admin/operations/opsfeedbackregistry/add/\n  - search:\n    - img",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Справочник обратной связи\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Creat"
+  },
+  {
+    "href": "/admin/operations/opsissueddocument/",
+    "name": "Выпуски документов",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsissueddocument/",
+    "list": "\n  - heading \"Select Выпуск документа to change\" [level=1]\n  - list:\n    - link \"Add Выпуск документа\":\n      - /url: /admin/operations/opsissueddocument/add/\n  - search:\n    - img \"Search\"\n    - text",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Выпуск документа\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n "
+  },
+  {
+    "href": "/admin/reports/report/",
+    "name": "Отчёты",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/reports/report/",
+    "list": "\n  - heading \"Select Отчёт to change\" [level=1]\n  - list:\n    - link \"Add Отчёт\":\n      - /url: /admin/reports/report/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - button \"Search\"\n ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Отчёт\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Report type:\"\n  - combobox \"Report type:\":\n    - op"
+  },
+  {
+    "href": "/admin/operations/opsservicereportartifact/",
+    "name": "Артефакты служебных отчётов",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsservicereportartifact/",
+    "list": "\n  - heading \"Select Артефакт служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Артефакт служебного отчёта\":\n      - /url: /admin/operations/opsservicereportartifact/add/\n  - search:\n  ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Артефакт служебного отчёта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Crea"
+  },
+  {
+    "href": "/admin/operations/opsattachment/",
+    "name": "Вложения раздела",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsattachment/",
+    "list": "\n  - heading \"Select Вложение раздела to change\" [level=1]\n  - list:\n    - link \"Add Вложение раздела\":\n      - /url: /admin/operations/opsattachment/add/\n  - search:\n    - img \"Search\"\n    - textbox ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Вложение раздела\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n "
+  },
+  {
+    "href": "/admin/operations/opsratingexportjob/",
+    "name": "Выгрузки рейтинга",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsratingexportjob/",
+    "list": "\n  - heading \"Select Выгрузка рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Выгрузка рейтинга\":\n      - /url: /admin/operations/opsratingexportjob/add/\n  - search:\n    - img \"Search\"\n    - t",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Выгрузка рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opsservicereportjob/",
+    "name": "Работы служебных отчётов",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsservicereportjob/",
+    "list": "\n  - heading \"Select Работа служебного отчёта to change\" [level=1]\n  - list:\n    - link \"Add Работа служебного отчёта\":\n      - /url: /admin/operations/opsservicereportjob/add/\n  - search:\n    - img \"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Работа служебного отчёта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Create"
+  },
+  {
+    "href": "/admin/operations/opsratingexportartifact/",
+    "name": "Файлы выгрузок рейтинга",
+    "category": "Документы и отчёты",
+    "url": "http://localhost:8100/admin/operations/opsratingexportartifact/",
+    "list": "\n  - heading \"Select Файл выгрузки рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Файл выгрузки рейтинга\":\n      - /url: /admin/operations/opsratingexportartifact/add/\n  - search:\n    - img \"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Файл выгрузки рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created "
+  },
+  {
+    "href": "/admin/operations/opsauditlog/",
+    "name": "Журналы раздела ОМ",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsauditlog/",
+    "list": "\n  - heading \"Select Журнал раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Журнал раздела ОМ\":\n      - /url: /admin/operations/opsauditlog/add/\n  - search:\n    - img \"Search\"\n    - textbox ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Журнал раздела ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Actor user id:\"\n  - textbox \"Actor user"
+  },
+  {
+    "href": "/admin/audit/auditlog/",
+    "name": "Записи аудита",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/audit/auditlog/",
+    "list": "\n  - heading \"Select Запись аудита to change\" [level=1]\n  - list:\n    - link \"Add Запись аудита\":\n      - /url: /admin/audit/auditlog/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"\n    - b",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Запись аудита\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"User:\"\n  - textbox \"User:\"\n  - link \"Lookup"
+  },
+  {
+    "href": "/admin/notifications/notification/",
+    "name": "Уведомления",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/notifications/notification/",
+    "list": "\n  - heading \"Select Уведомление to change\" [level=1]\n  - list:\n    - link \"Add Уведомление\":\n      - /url: /admin/notifications/notification/add/\n  - search:\n    - img \"Search\"\n    - textbox \"Search\"",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Уведомление\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Recipient:\"\n  - textbox \"Recipient:\"\n  - link"
+  },
+  {
+    "href": "/admin/operations/opsnotification/",
+    "name": "Уведомления раздела",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsnotification/",
+    "list": "\n  - heading \"Select Уведомление раздела to change\" [level=1]\n  - list:\n    - link \"Add Уведомление раздела\":\n      - /url: /admin/operations/opsnotification/add/\n  - search:\n    - img \"Search\"\n    - ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Уведомление раздела\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:"
+  },
+  {
+    "href": "/admin/operations/opsratingauditentry/",
+    "name": "Журнал оценивания",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsratingauditentry/",
+    "list": "\n  - heading \"Select Журнал оценивания to change\" [level=1]\n  - list:\n    - link \"Add Журнал оценивания\":\n      - /url: /admin/operations/opsratingauditentry/add/\n  - search:\n    - img \"Search\"\n    - ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Журнал оценивания\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n"
+  },
+  {
+    "href": "/admin/operations/opssettingchangeevent/",
+    "name": "Изменения настроек",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opssettingchangeevent/",
+    "list": "\n  - heading \"Select Изменение настройки to change\" [level=1]\n  - list:\n    - link \"Add Изменение настройки\":\n      - /url: /admin/operations/opssettingchangeevent/add/\n  - search:\n    - img \"Search\"\n",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Изменение настройки\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:"
+  },
+  {
+    "href": "/admin/operations/opssubmissioncontrolsettings/",
+    "name": "Настройки контроля сдачи",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opssubmissioncontrolsettings/",
+    "list": "\n  - heading \"Select Настройки контроля сдачи to change\" [level=1]\n  - list\n  - table:\n    - rowgroup:\n      - row \"Control hour Required division ids Default notify recipient\":\n        - columnheader",
+    "search": "нет",
+    "form": "нет"
+  },
+  {
+    "href": "/admin/operations/opspolicysetting/",
+    "name": "Настройки раздела ОМ",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opspolicysetting/",
+    "list": "\n  - heading \"Select Настройка раздела ОМ to change\" [level=1]\n  - list:\n    - link \"Add Настройка раздела ОМ\":\n      - /url: /admin/operations/opspolicysetting/add/\n  - search:\n    - img \"Search\"\n   ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Настройка раздела ОМ\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by"
+  },
+  {
+    "href": "/admin/operations/opspassportfreshnesspolicy/",
+    "name": "Политика актуальности паспорта",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opspassportfreshnesspolicy/",
+    "list": "\n  - heading \"Select Политика актуальности паспорта to change\" [level=1]\n  - list:\n    - link \"Add Политика актуальности паспорта\":\n      - /url: /admin/operations/opspassportfreshnesspolicy/add/\n  - ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Политика актуальности паспорта\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \""
+  },
+  {
+    "href": "/admin/operations/opsdutyconflictpolicy/",
+    "name": "Политика конфликтов дежурств",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsdutyconflictpolicy/",
+    "list": "\n  - heading \"Select Политика конфликтов дежурств to change\" [level=1]\n  - list:\n    - link \"Add Политика конфликтов дежурств\":\n      - /url: /admin/operations/opsdutyconflictpolicy/add/\n  - search:\n ",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Политика конфликтов дежурств\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Cr"
+  },
+  {
+    "href": "/admin/operations/opsdivisionnotifyrecipient/",
+    "name": "Получатели уведомлений подразделений",
+    "category": "Служебное",
+    "list": "Select Получатель уведомлений подразделения to change",
+    "search": "0 результатов, без ошибки",
+    "form": "Add Получатель уведомлений подразделения"
+  },
+  {
+    "href": "/admin/operations/opsdocumentsequence/",
+    "name": "Счётчики номеров документов",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsdocumentsequence/",
+    "list": "\n  - heading \"Select Счётчик номеров документов to change\" [level=1]\n  - list:\n    - link \"Add Счётчик номеров документов\":\n      - /url: /admin/operations/opsdocumentsequence/add/\n  - search:\n    - i",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Счётчик номеров документов\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Doc type:\"\n  - textbox \"Doc ty"
+  },
+  {
+    "href": "/admin/operations/opsratingnotification/",
+    "name": "Уведомления рейтинга",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsratingnotification/",
+    "list": "\n  - heading \"Select Уведомление рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Уведомление рейтинга\":\n      - /url: /admin/operations/opsratingnotification/add/\n  - search:\n    - img \"Search",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Уведомление рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by"
+  },
+  {
+    "href": "/admin/operations/opsratingfeatureflags/",
+    "name": "Флаги рейтинга",
+    "category": "Служебное",
+    "url": "http://localhost:8100/admin/operations/opsratingfeatureflags/",
+    "list": "\n  - heading \"Select Флаги рейтинга to change\" [level=1]\n  - list:\n    - link \"Add Флаги рейтинга\":\n      - /url: /admin/operations/opsratingfeatureflags/add/\n  - search:\n    - img \"Search\"\n    - text",
+    "search": "результат без ошибки",
+    "form": "\n  - heading \"Add Флаги рейтинга\" [level=1]\n  - button \"Save\" [active]\n  - button \"Save and add another\"\n  - button \"Save and continue editing\"\n  - generic: \"Created by:\"\n  - textbox \"Created by:\"\n  -"
+  }
+]

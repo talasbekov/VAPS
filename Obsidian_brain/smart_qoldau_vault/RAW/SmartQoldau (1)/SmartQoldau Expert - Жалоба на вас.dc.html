@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none} textarea{font-family:inherit;outline:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 32px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button onClick="{{ onBack }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+          <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a">Жалоба на вас</div>
+      </div>
+
+      <div style="display:inline-flex;padding:5px 12px;border-radius:12px;background:{{ statusBg }};font-size:12px;font-weight:700;color:{{ statusColor }};margin-bottom:18px">{{ statusLabel }}</div>
+
+      <div style="border-radius:16px;background:#f8faf9;padding:16px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:#8fa6a1;margin-bottom:5px">Причина жалобы от клиента</div>
+        <div style="font-size:14px;font-weight:700;color:#0f3f3a;margin-bottom:8px">{{ reason }}</div>
+        <div style="font-size:13px;font-weight:500;color:#0f3f3a;line-height:1.5">{{ description }}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+        <div style="border-radius:14px;background:#f8faf9;padding:12px"><div style="font-size:10.5px;font-weight:700;color:#8fa6a1">Дата сессии</div><div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-top:2px">{{ sessionDate }}</div></div>
+        <div style="border-radius:14px;background:#f8faf9;padding:12px"><div style="font-size:10.5px;font-weight:700;color:#8fa6a1">Формат</div><div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-top:2px">{{ format }}</div></div>
+      </div>
+
+      <sc-if value="{{ !resolved }}" hint-placeholder-val="{{ true }}">
+        <sc-if value="{{ !explanationSent }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:13px;font-weight:700;color:#0f3f3a;margin-bottom:8px">Ваш комментарий</div>
+          <div style="font-size:12px;font-weight:500;color:#8fa6a1;margin-bottom:10px;line-height:1.5">Дайте своё объяснение до того, как администратор примет решение</div>
+          <textarea value="{{ explanation }}" onInput="{{ onExplanation }}" placeholder="Опишите вашу версию произошедшего" style="width:100%;height:120px;border:1.5px solid #edf2f0;border-radius:14px;padding:14px;font-size:13.5px;color:#0f3f3a;box-sizing:border-box;resize:none;margin-bottom:16px"></textarea>
+          <button onClick="{{ onSendExplanation }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer">Отправить объяснение</button>
+        </sc-if>
+        <sc-if value="{{ explanationSent }}" hint-placeholder-val="{{ false }}">
+          <div style="border-radius:16px;background:#f2fbf8;border:1px solid #d9ede7;padding:16px">
+            <div style="font-size:11px;font-weight:700;color:#159a7c;margin-bottom:5px">Ваше объяснение отправлено</div>
+            <div style="font-size:13px;font-weight:500;color:#0f3f3a;line-height:1.5">{{ explanation }}</div>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <sc-if value="{{ resolved }}" hint-placeholder-val="{{ false }}">
+        <div style="border-radius:16px;background:#f8faf9;padding:16px">
+          <div style="font-size:11px;font-weight:700;color:#8fa6a1;margin-bottom:5px">Решение администратора</div>
+          <div style="font-size:14px;font-weight:800;color:#0f3f3a">{{ resolution }}</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { explanation: '', explanationSent: false };
+  renderVals() {
+    const s = this.state;
+    const status = s.explanationSent ? 'reviewing' : 'awaiting';
+    const STATUS = {
+      awaiting: { label: 'Ожидает вашего ответа', bg: '#fdedec', color: '#c0392b' },
+      reviewing: { label: 'На рассмотрении администратором', bg: '#fdf3e3', color: '#c98a2e' },
+    };
+    return {
+      statusLabel: STATUS[status].label, statusBg: STATUS[status].bg, statusColor: STATUS[status].color,
+      reason: 'Специалист опоздал на 20 минут и не смог помочь',
+      description: 'Клиент сообщает, что специалист подключился на 20 минут позже назначенного времени и консультация оказалась неполноценной.',
+      sessionDate: '1 сент, 19:00',
+      format: 'Видео',
+      resolved: false,
+      resolution: '',
+      explanation: s.explanation,
+      onExplanation: (e) => this.setState({ explanation: e.target.value }),
+      explanationSent: s.explanationSent,
+      onSendExplanation: () => { if (s.explanation.trim()) this.setState({ explanationSent: true }); },
+      onBack: () => window.history.back(),
+    };
+  }
+}
+</script>
+</body>
+</html>

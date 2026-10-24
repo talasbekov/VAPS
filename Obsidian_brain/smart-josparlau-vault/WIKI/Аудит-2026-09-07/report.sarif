@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": {"driver": {"name": "Project Sentinel / Кодекс Астра 6", "rules": [
+      {"id":"BACKEND-001","shortDescription":{"text":"Unscoped status reads"}},
+      {"id":"BACKEND-002","shortDescription":{"text":"Unscoped employee directory"}},
+      {"id":"BACKEND-003","shortDescription":{"text":"Division mutations lack role permission"}},
+      {"id":"BACKEND-004","shortDescription":{"text":"Legacy audit disclosure"}},
+      {"id":"BACKEND-005","shortDescription":{"text":"Report API inherits AllowAny"}},
+      {"id":"BACKEND-006","shortDescription":{"text":"Secondment role bypass"}},
+      {"id":"GATE-001","shortDescription":{"text":"Mandatory frontend gate fails"}},
+      {"id":"FE-003","shortDescription":{"text":"Walkthrough findings do not gate"}},
+      {"id":"FE-005","shortDescription":{"text":"Mock mode fails open"}},
+      {"id":"DOC-004","shortDescription":{"text":"GVO canon and implementation conflict"}}
+    ]}},
+    "results": [
+      {"ruleId":"BACKEND-001","level":"error","message":{"text":"Authenticated users receive the complete employee-status queryset."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/api/views.py"},"region":{"startLine":152,"endLine":169}}}]},
+      {"ruleId":"BACKEND-002","level":"error","message":{"text":"personnel.view is checked without grant-scope filtering."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/core/api/views.py"},"region":{"startLine":78,"endLine":102}}}]},
+      {"ruleId":"BACKEND-003","level":"error","message":{"text":"Division ModelViewSet mutations require only authentication."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/divisions/api/views.py"},"region":{"startLine":33,"endLine":41}}}]},
+      {"ruleId":"BACKEND-004","level":"error","message":{"text":"Legacy audit endpoint exposes all fields to any authenticated user."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/audit/views.py"},"region":{"startLine":18,"endLine":30}}}]},
+      {"ruleId":"BACKEND-005","level":"error","message":{"text":"Report endpoints inherit the global AllowAny policy."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/api/views.py"},"region":{"startLine":18,"endLine":101}}}]},
+      {"ruleId":"BACKEND-006","level":"error","message":{"text":"Secondment transitions do not require an authorized role."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/Personnel-Records/organization_management/apps/secondments/api/views.py"},"region":{"startLine":57,"endLine":100}}}]},
+      {"ruleId":"GATE-001","level":"note","baselineState":"absent","message":{"text":"Historical failure on f28e9e54; fixed by Plane 945 and verified 23/23 on 504b99d0."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/neighbours-test.sh"},"region":{"startLine":69,"endLine":70}}}]},
+      {"ruleId":"FE-003","level":"warning","message":{"text":"Portal walkthrough records failure-class findings without failing."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/PersonalRecordFront/e2e/smoke-buttons.spec.ts"},"region":{"startLine":867,"endLine":955}}}]},
+      {"ruleId":"FE-005","level":"warning","message":{"text":"Mock startup failure and unhandled routes can reach the live backend."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"Backend/PersonnelStatus/PersonalRecordFront/hooks/use-ops-mock-worker.ts"},"region":{"startLine":20,"endLine":29}}}]},
+      {"ruleId":"DOC-004","level":"warning","message":{"text":"[GVO-01]/[GVO-02] require a module and tabs missing from current implementation."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/RAW/README.md"},"region":{"startLine":821,"endLine":823}}}]}
+    ]
+  }]
+}

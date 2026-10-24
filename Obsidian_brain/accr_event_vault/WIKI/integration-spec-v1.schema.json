@@ -1,0 +1,43 @@
+{
+  "spec_version": "1.1",
+  "status": "CONFIRMED — формат утверждён Project Lead (Erda) 2026-06-23 (Story 4.1); bump 1.0→1.1 story hd-1.1 (2026-07-02, аддитивное поле schema_version). Единый источник правды для export serializer (Story 4.3) и contract-теста.",
+  "description": "Машиночитаемый контракт одного объекта attendee в attendees.json.",
+  "object": "attendee",
+  "date_format": "DD.MM.YYYY",
+  "datetime_format": "DD.MM.YYYY HH:MM:SS",
+  "fields": [
+    {"name": "attendee_id", "type": "integer", "required": true, "nullable": false, "source": "Attendee.id"},
+    {"name": "schema_version", "type": "string", "required": true, "nullable": false, "enum": ["1.1"], "source": "eventproject.services.export.SCHEMA_VERSION (story hd-1.1)"},
+    {"name": "event_id", "type": "integer", "required": true, "nullable": false, "source": "Attendee.request.event.id"},
+    {"name": "event_code", "type": "string", "required": true, "nullable": false, "source": "Attendee.request.event.event_code"},
+    {"name": "category", "type": "string", "required": true, "nullable": true, "source": "Attendee.category.name (null если не задана)"},
+    {"name": "status", "type": "string", "required": true, "nullable": false, "enum": ["ready"], "source": "Attendee.status (экспортируются только ready)"},
+    {"name": "surname", "type": "string", "required": true, "nullable": false, "source": "Attendee.surname"},
+    {"name": "firstname", "type": "string", "required": true, "nullable": false, "source": "Attendee.firstname"},
+    {"name": "patronymic", "type": "string", "required": false, "nullable": true, "source": "Attendee.patronymic"},
+    {"name": "transcription", "type": "string", "required": true, "nullable": false, "source": "Attendee.transcription (latin)"},
+    {"name": "birth_date", "type": "date", "format": "DD.MM.YYYY", "required": true, "nullable": true, "source": "Attendee.birthDate"},
+    {"name": "iin", "type": "string", "required": true, "nullable": true, "pattern": "^[0-9]{12}$", "source": "Attendee.iin (расшифрован; null для нерезидента)", "pii": true},
+    {"name": "is_resident", "type": "boolean", "required": true, "nullable": false, "source": "Attendee.is_resident"},
+    {"name": "sex_id", "type": "string", "required": true, "nullable": false, "source": "Attendee.sexId (= directories.Sex.sex_code)"},
+    {"name": "sex_name", "type": "string", "required": true, "nullable": true, "source": "directories.Sex.name_rus по sex_code (null если код не найден)"},
+    {"name": "country_id", "type": "string", "required": true, "nullable": false, "source": "Attendee.countryId (= directories.Country.country_code)"},
+    {"name": "country_name", "type": "string", "required": true, "nullable": true, "source": "directories.Country.name_rus по country_code (null если код не найден)"},
+    {"name": "post", "type": "string", "required": true, "nullable": false, "source": "Attendee.post"},
+    {"name": "doc_type_id", "type": "string", "required": true, "nullable": false, "source": "Attendee.docTypeId (= directories.DocumentType.doc_code)"},
+    {"name": "doc_type_name", "type": "string", "required": true, "nullable": true, "source": "directories.DocumentType.name_rus по doc_code (null если код не найден)"},
+    {"name": "doc_series", "type": "string", "required": true, "nullable": false, "source": "Attendee.docSeries"},
+    {"name": "doc_number", "type": "string", "required": false, "nullable": true, "source": "Attendee.docNumber"},
+    {"name": "doc_begin", "type": "date", "format": "DD.MM.YYYY", "required": false, "nullable": true, "source": "Attendee.docBegin"},
+    {"name": "doc_end", "type": "date", "format": "DD.MM.YYYY", "required": false, "nullable": true, "source": "Attendee.docEnd"},
+    {"name": "doc_issue", "type": "string", "required": true, "nullable": false, "source": "Attendee.docIssue"},
+    {"name": "visit_objects", "type": "string", "required": true, "nullable": false, "source": "Attendee.visitObjects"},
+    {"name": "date_add", "type": "datetime", "format": "DD.MM.YYYY HH:MM:SS", "required": true, "nullable": false, "source": "Attendee.dateAdd"},
+    {"name": "photo_file", "type": "string", "required": true, "nullable": true, "pattern": "^photos/", "source": "путь в ZIP: photos/<attendee_id>.<ext> (null, если файла нет на диске)"},
+    {"name": "doc_scan_file", "type": "string", "required": true, "nullable": true, "pattern": "^documents/", "source": "путь в ZIP: documents/<attendee_id>.<ext> (null, если файла нет на диске)"}
+  ],
+  "archive": {
+    "name_pattern": "export_<event_id>_<category>_<timestamp>.zip",
+    "contents": ["attendees.json", "photos/<attendee_id>.<ext>", "documents/<attendee_id>.<ext>"]
+  }
+}

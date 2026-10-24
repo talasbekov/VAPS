@@ -1,0 +1,219 @@
+{
+  "agent": "ui-qa-engineer+accessibility-globalization-engineer",
+  "inventory": [
+    {
+      "item": "docs/frontend-audit-2026-08-17.md",
+      "note": "Full 8-direction audit of PersonalRecordFront, 6 days old. Treated as artifact_backed prior evidence per task instructions; not re-derived."
+    },
+    {
+      "item": "obsidian-vault/Frontend/Status.md",
+      "note": "Read for 'Осознанно НЕ сделано' (consciously deferred) list; used as basis for spot-checks against current HEAD."
+    },
+    {
+      "item": "Spot-check: react-hook-form adoption",
+      "note": "grep 'react-hook-form' under app/security-ops/** = 0 hits (forms live in features/**, imported into pages, not defined under app/security-ops literally). Tree-wide grep finds react-hook-form now used in shared/lib/form.tsx, shared/lib/field-errors.tsx, features/employee-status-update/ui/EditStatusDialog.tsx, features/add-employee/ui/AddEmployeeDialog.tsx, features/send-feedback/ui/feedback-dialog.tsx, features/employee-status-update/ui/MassStatusUpdate.tsx, features/employee-status-update/ui/SecondEmployeeDialog.tsx, features/gvo-section-edit/ui/GvoSectionDialog.tsx. This confirms Status.md's claim that Sprint 4 (18.08.2026) landed RHF+zod adoption across most large forms — current as of this audit. features/create-security-event/ui/CreateSecurityEventDialog.tsx still uses manual state + zod (no react-hook-form import), consistent with the 17.08 audit's High finding ('1 форма из 24 на react-hook-form' — now several more forms migrated, this one specifically was already zod-only before and remains so)."
+    },
+    {
+      "item": "Spot-check: eslint.ignoreDuringBuilds / eslint installed",
+      "note": "package.json devDependencies has no 'eslint' entry (grep -i eslint on package.json = 0 hits). next.config.js:10-11 still sets eslint.ignoreDuringBuilds: true. Confirms Status.md/audit claim is still current (not stale) — see finding RAW-20260823-0008."
+    },
+    {
+      "item": "Spot-check: Tailwind v4-only utility classes (shadow-xs/rounded-xs/outline-hidden/field-sizing-content)",
+      "note": "grep across entire repo tree (components/ui/*, app/security-ops/objects/page.tsx, etc.) for shadow-xs|rounded-xs|outline-hidden|field-sizing-content = 0 hits. components/ui/button.tsx now uses shadow-sm (v3-valid) at variant classes. This C1 finding from the 17.08 audit has been resolved since (Sprint 1, closed 17.08.2026) and remains resolved as of 23.08.2026 — no new finding filed."
+    },
+    {
+      "item": "Step 3: app/security-ops/events/page.tsx",
+      "note": "Has inline loading state (isLoading branch, 'Загрузка реестра…'/'Загрузка календаря…'), inline error state (isError branch, destructive-ink text + retry hint), inline empty state ('Мероприятия не найдены'), and permission guard via dedicated <OpsAccessDenied what=\"реестра ОМ\" /> component (not a CSS class toggle) at line 101-105. No app/security-ops/events/loading.tsx or error.tsx exists at this route level, but app/security-ops/error.tsx (root of the section) covers it via Next.js error-boundary cascade. No defect found for this route."
+    },
+    {
+      "item": "Step 3: app/security-ops/objects/page.tsx",
+      "note": "Same pattern: ObjectsRegistry component branches isLoading/isError/objects.length===0 before rendering cards/table (lines 666-702), permission guard OpsAccessDenied at line 395-397. No defect found for this route."
+    },
+    {
+      "item": "Step 3: app/security-ops/persons/page.tsx",
+      "note": "Page-level isLoading/isError/empty branches at lines 114-129, plus a SECOND independent loading/error/empty branch for the derived cross-reference data (events+GVO patches) inside PersonLinks (lines 273-303) — deliberately separated from the 'no matches' case so a fetch failure isn't mislabeled as 'person has no events'. Permission guard OpsAccessDenied at line 65-67. No loading/empty/error-state defect found. However a raw-ISO-date leak was found in this file (RAW-20260823-0001)."
+    },
+    {
+      "item": "Step 3: app/security-ops/events/[id]/page.tsx (detail route, spot-check for C6 regression)",
+      "note": "Permission guard present (OpsAccessDenied at line 56-57), isLoading (line 60) and isError-or-undefined (line 67) branches present. Confirms the 17.08 audit's C6 fix (8 detail routes lacking guards) remains in place for this route; no regression found."
+    },
+    {
+      "item": "Step 4: grep for raw .toISOString() reaching JSX under app/security-ops, features, entities, widgets",
+      "note": "10 .toISOString() call sites found; all are internal date-math/model helpers (comparators, ID composition, query-range builders, form payload construction) — none interpolate the result directly into JSX. This class of leak (raw ISO datetime like '2026-08-21T17:50:06...' printed verbatim) appears CLOSED, consistent with Status.md's claim ('сырой ISO вида ...больше не печатается нигде')."
+    },
+    {
+      "item": "Step 4: grep for raw businessDate/dueAt/updatedAt-style fields reaching JSX directly (bypassing formatIsoDate/formatIsoDateTime)",
+      "note": "shared/lib/date.ts defines formatIsoDate/formatIsoDateLong/formatIsoDateTime specifically to convert 'YYYY-MM-DD' (or full ISO timestamp) fields to ru-RU display format. Multiple JSX sites still interpolate the raw field value directly instead of calling the helper — see findings RAW-20260823-0001 through -0007. The sweep referenced in Status.md ('форматирование дат... сырой ISO больше не печатается') is PARTIAL, not complete: it covers events registry table and a few other spots (app/security-ops/events/page.tsx correctly calls formatIsoDate at lines 325 and 330), but several other screens (persons, objects/[id], command-center, analytics x2, analytics/operations) were missed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "RAW-20260823-0001",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date string (businessDate) interpolated directly into JSX, bypassing formatIsoDate",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/persons/page.tsx",
+        "line": 318,
+        "end_line": 318,
+        "symbol": "PersonLinks",
+        "source_sha256": "448858e6bc848a528ebd3f3403d0a8069b609e7dec49b8b4cefe14716409b421"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "Call formatIsoDate(event.businessDate) instead of interpolating event.businessDate raw — the helper exists in shared/lib/date.ts precisely to avoid printing 'YYYY-MM-DD' unlocalized strings to end users; the same file's events/page.tsx already does this correctly for the same field.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-20260823-0002",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (verificationDueAt) interpolated into a user-facing sentence, bypassing formatIsoDate",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/objects/[id]/page.tsx",
+        "line": 320,
+        "end_line": 320,
+        "symbol": "PassportAlert",
+        "source_sha256": "541723f103564886e4c000894e1dfc854a4f651dad03459a092035d43847c4df"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "`Срок очередной проверки — ${freshness.verificationDueAt}.` should read `Срок очередной проверки — ${formatIsoDate(freshness.verificationDueAt)}.` — the sibling list page (app/security-ops/objects/page.tsx FreshnessCell) already formats the same field correctly via a local formatDate() helper.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-20260823-0003",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (businessDate) interpolated into command-center 'upcoming events' list",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/command-center/page.tsx",
+        "line": 294,
+        "end_line": 294,
+        "symbol": null,
+        "source_sha256": "8d671e7db91f34e5c6aa176319d86310483f854177082eac8d96e62e3ab036ea"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "Replace `{event.businessDate} · {event.objectName}` with `{formatIsoDate(event.businessDate)} · {event.objectName}`. Note the same file already correctly extracts just the day via `.slice(8, 10)` at line 287 for a different display, showing the raw-value habit is inconsistent within the same component.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-20260823-0004",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (snapshot.businessDate) interpolated into analytics/operations summary line",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/analytics/operations/page.tsx",
+        "line": 243,
+        "end_line": 243,
+        "symbol": null,
+        "source_sha256": "cb73cdc47139911fc4cee86e299e99117de7c481a42efe8af1c8fa20243f9b0c"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "Wrap snapshot.businessDate in formatIsoDate() before display.",
+        "confidence_label": "supported"
+      }
+    },
+    {
+      "id": "RAW-20260823-0005",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (snapshot.businessDate) interpolated into analytics page header",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/analytics/page.tsx",
+        "line": 414,
+        "end_line": 414,
+        "symbol": null,
+        "source_sha256": "57ab9b029dfdb03afda37f8954ad702551450f4f4d393c883707f7a24a295af0"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "Wrap snapshot.businessDate in formatIsoDate() before display.",
+        "confidence_label": "supported"
+      }
+    },
+    {
+      "id": "RAW-20260823-0006",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (row.businessDate) printed as a table cell without formatting",
+      "severity": "low",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/analytics/page.tsx",
+        "line": 516,
+        "end_line": 516,
+        "symbol": null,
+        "source_sha256": "57ab9b029dfdb03afda37f8954ad702551450f4f4d393c883707f7a24a295af0"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "`<TableCell>{row.businessDate}</TableCell>` should format via formatIsoDate(row.businessDate) — every other date column in the same table-heavy section of the app formats through the shared helper.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-20260823-0007",
+      "domain": "a11y_i18n",
+      "category": "raw-iso-date-leak",
+      "title": "Raw ISO date (businessDate) interpolated into clamped-series explanatory caption",
+      "severity": "low",
+      "confidence": 0.5,
+      "status": "proposed",
+      "location": {
+        "file": "app/security-ops/analytics/page.tsx",
+        "line": 1168,
+        "end_line": 1168,
+        "symbol": null,
+        "source_sha256": "57ab9b029dfdb03afda37f8954ad702551450f4f4d393c883707f7a24a295af0"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "`Ряд обрывается на {businessDate}: ...` should format via formatIsoDate(businessDate).",
+        "confidence_label": "supported"
+      }
+    },
+    {
+      "id": "RAW-20260823-0008",
+      "domain": "ui",
+      "category": "lint-guard-disabled",
+      "title": "eslint remains uninstalled and next.config.js still sets eslint.ignoreDuringBuilds: true — react-hooks/exhaustive-deps runs on nobody's build",
+      "severity": "low",
+      "confidence": 0.85,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/PersonalRecordFront/next.config.js",
+        "line": 10,
+        "end_line": 11,
+        "symbol": null,
+        "source_sha256": "e0d964ee3bb6781ae3749ce6c73933e62beef036a6715f834ec86544c907e02d"
+      },
+      "evidence": { "tier": "source_anchored" },
+      "recommendation": {
+        "text": "This is a re-verification (not a new finding) of docs/frontend-audit-2026-08-17.md's Medium item 'eslint.ignoreDuringBuilds: true' (next.config.js:5 in that snapshot; now line 10-11) plus its stated root cause ('eslint в проекте не установлен вовсе — next lint падает на \"ESLint must be installed\"'). package.json devDependencies still has zero 'eslint' entries. Still open as of 23.08.2026 — install eslint + eslint-config-next (or equivalent flat config), let `next lint` run clean or fix the violations it surfaces, then drop ignoreDuringBuilds.",
+        "confidence_label": "grounded"
+      }
+    }
+  ]
+}

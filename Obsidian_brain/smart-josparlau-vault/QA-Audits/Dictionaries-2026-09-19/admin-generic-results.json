@@ -1,0 +1,55 @@
+[
+  {
+    "catalog": "POST_REQUIREMENTS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/72/change/",
+    "result": "create/edit/reload OK; missing group rejected; key read-only"
+  },
+  {
+    "catalog": "JOURNAL_ENTRY_TYPES",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/73/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": true
+  },
+  {
+    "catalog": "RETURN_REASONS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/74/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": false
+  },
+  {
+    "catalog": "POST_REQUIREMENT_GROUPS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/75/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": true
+  },
+  {
+    "catalog": "PLACEMENT_ROLES",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/76/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": false
+  },
+  {
+    "catalog": "PLACEMENT_SECTIONS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/77/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": false
+  },
+  {
+    "catalog": "SEASONAL_CORRECTIONS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/78/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": false
+  },
+  {
+    "catalog": "EVENT_GROUP_ROLES",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/79/change/",
+    "result": "create/edit/reload OK; inactive",
+    "deleteLink": false
+  },
+  {
+    "catalog": "EVENT_PARTICIPATION_KINDS",
+    "url": "http://localhost:8112/admin/operations/opsdictionaryentry/80/change/",
+    "result": "create/edit/reload OK; missing owner rejected; inactive",
+    "deleteLink": false
+  }
+]

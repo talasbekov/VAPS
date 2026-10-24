@@ -1,0 +1,707 @@
+{
+  "9550": {
+    "status": 200,
+    "body": {
+      "id": "9550",
+      "code": "ОМ-2026-43",
+      "title": "Проходка ОМ №1081 — внутреннее",
+      "objectId": null,
+      "objectName": "",
+      "passportBinding": null,
+      "businessDate": "2026-09-15",
+      "stage": "PLACEMENT",
+      "readinessPercent": 60,
+      "forceNeed": 4,
+      "conflictsCount": 0,
+      "ownerName": "Мырзабеков Б.",
+      "reconChecklist": [
+        {
+          "id": "checklist-0",
+          "done": false,
+          "label": "Подъездные пути и парковка",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-1",
+          "done": false,
+          "label": "Периметр и ограждение",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-2",
+          "done": false,
+          "label": "Входные группы и КПП",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-3",
+          "done": false,
+          "label": "Пути эвакуации",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-4",
+          "done": false,
+          "label": "Связь и электропитание",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        }
+      ],
+      "reconSectorPosts": [
+        {
+          "id": "post-d4fd72adbb75",
+          "need": 1,
+          "post": "Пост 1",
+          "task": "Охрана периметра",
+          "shift": "",
+          "result": null,
+          "sector": "Периметр",
+          "comment": "",
+          "minRating": null,
+          "requirements": "Допуск",
+          "sourcePostId": "8",
+          "visitObjectId": "8459",
+          "demandKindCode": "PHYSICAL_SQUAD",
+          "sourceSectorId": "7",
+          "demandSpecification": ""
+        },
+        {
+          "id": "post-0746429c17c0",
+          "need": 1,
+          "post": "Пост 2",
+          "task": "Наблюдение",
+          "shift": "",
+          "result": null,
+          "sector": "Периметр",
+          "comment": "",
+          "minRating": null,
+          "requirements": "Допуск",
+          "sourcePostId": "9",
+          "visitObjectId": "8459",
+          "demandKindCode": "PHYSICAL_SQUAD",
+          "sourceSectorId": "7",
+          "demandSpecification": ""
+        },
+        {
+          "id": "post-2a1540d496fd",
+          "need": 1,
+          "post": "Пост 3",
+          "task": "Пропускной режим",
+          "shift": "",
+          "result": null,
+          "sector": "КПП",
+          "comment": "",
+          "minRating": null,
+          "requirements": "Допуск",
+          "sourcePostId": "10",
+          "visitObjectId": "8459",
+          "demandKindCode": "PHYSICAL_SQUAD",
+          "sourceSectorId": "8",
+          "demandSpecification": ""
+        },
+        {
+          "id": "post-22a149f0821b",
+          "need": 1,
+          "post": "Пост второго объекта",
+          "task": "Контроль входа",
+          "shift": "",
+          "result": null,
+          "sector": "Сектор 1",
+          "weapon": "",
+          "comment": "",
+          "uniform": "",
+          "postType": "",
+          "minRating": null,
+          "parentPostId": "",
+          "requirements": "",
+          "sourcePostId": null,
+          "visitObjectId": "8460",
+          "demandKindCode": "PHYSICAL_SQUAD",
+          "sourceSectorId": null,
+          "demandSpecification": ""
+        }
+      ],
+      "reconForceRequest": 4,
+      "reconForceRequestedAt": "2026-09-09T12:47:03.829109+00:00",
+      "demandRows": [
+        {
+          "id": "demand-post-d4fd72adbb75",
+          "need": 1,
+          "task": "Охрана периметра",
+          "place": "Периметр · Пост 1",
+          "shift": "",
+          "sector": "Периметр",
+          "comment": "",
+          "kindCode": "PHYSICAL_SQUAD",
+          "requirements": "Допуск",
+          "sourcePostId": "post-d4fd72adbb75",
+          "specification": "",
+          "visitObjectId": "8459"
+        },
+        {
+          "id": "demand-post-0746429c17c0",
+          "need": 1,
+          "task": "Наблюдение",
+          "place": "Периметр · Пост 2",
+          "shift": "",
+          "sector": "Периметр",
+          "comment": "",
+          "kindCode": "PHYSICAL_SQUAD",
+          "requirements": "Допуск",
+          "sourcePostId": "post-0746429c17c0",
+          "specification": "",
+          "visitObjectId": "8459"
+        },
+        {
+          "id": "demand-post-2a1540d496fd",
+          "need": 1,
+          "task": "Пропускной режим",
+          "place": "КПП · Пост 3",
+          "shift": "",
+          "sector": "КПП",
+          "comment": "",
+          "kindCode": "PHYSICAL_SQUAD",
+          "requirements": "Допуск",
+          "sourcePostId": "post-2a1540d496fd",
+          "specification": "",
+          "visitObjectId": "8459"
+        },
+        {
+          "id": "demand-post-22a149f0821b",
+          "need": 1,
+          "task": "Контроль входа",
+          "place": "Сектор 1 · Пост второго объекта",
+          "shift": "",
+          "sector": "Сектор 1",
+          "comment": "",
+          "kindCode": "PHYSICAL_SQUAD",
+          "requirements": "",
+          "sourcePostId": "post-22a149f0821b",
+          "specification": "",
+          "visitObjectId": "8460"
+        }
+      ],
+      "demandApproved": true,
+      "forceRequests": [
+        {
+          "id": "force-request-1",
+          "group": "По расчёту рекогносцировки",
+          "status": "PARTIALLY_ALLOCATED",
+          "comment": "",
+          "allocatedCount": 3,
+          "requestedCount": 4
+        }
+      ],
+      "forceAllocation": [
+        {
+          "id": "force-allocation-631-2026-09-09T12:48:53.743695+00:00",
+          "need": 4,
+          "dueAt": "2026-09-14T00:00:00+05:00",
+          "sentAt": "2026-09-09T12:48:53.749822+00:00",
+          "status": "SUBMITTED",
+          "comment": "",
+          "members": [
+            {
+              "name": "Токтаров А.",
+              "addedAt": "2026-09-09T13:00:04.449496+00:00",
+              "kindCode": "PHYSICAL_SQUAD",
+              "divisionId": "632",
+              "employeeId": "18",
+              "divisionName": "Первое управление",
+              "reserveCampaignId": "1"
+            },
+            {
+              "name": "Байжанов А.",
+              "addedAt": "2026-09-09T13:00:04.467857+00:00",
+              "kindCode": "PHYSICAL_SQUAD",
+              "divisionId": "633",
+              "employeeId": "20",
+              "divisionName": "Первый отдел",
+              "reserveCampaignId": "1"
+            },
+            {
+              "name": "Мукашев А.",
+              "addedAt": "2026-09-09T13:00:04.485490+00:00",
+              "kindCode": "PHYSICAL_SQUAD",
+              "divisionId": "633",
+              "employeeId": "22",
+              "divisionName": "Первый отдел",
+              "reserveCampaignId": "1"
+            }
+          ],
+          "decidedAt": null,
+          "allocating": 3,
+          "declinedAt": null,
+          "notifiedAt": "2026-09-09T12:50:37.508425+00:00",
+          "groupOffers": [],
+          "submittedAt": "2026-09-09T13:01:05.207159+00:00",
+          "departmentId": "631",
+          "directorates": [
+            {
+              "id": "force-directorate-632",
+              "name": "Первое управление",
+              "need": 3,
+              "divisionId": "632",
+              "notifiedAt": "2026-09-09T12:50:37.508425+00:00",
+              "groupDemandIds": [],
+              "assigned": 3
+            },
+            {
+              "id": "force-directorate-635",
+              "name": "Второе управление",
+              "need": 0,
+              "divisionId": "635",
+              "notifiedAt": null,
+              "groupDemandIds": [],
+              "assigned": 0
+            },
+            {
+              "id": "force-directorate-638",
+              "name": "Третье управление",
+              "need": 0,
+              "divisionId": "638",
+              "notifiedAt": null,
+              "groupDemandIds": [],
+              "assigned": 0
+            },
+            {
+              "id": "force-directorate-641",
+              "name": "Четвёртое управление",
+              "need": 0,
+              "divisionId": "641",
+              "notifiedAt": null,
+              "groupDemandIds": [],
+              "assigned": 0
+            },
+            {
+              "id": "force-directorate-645",
+              "name": "Первое сквозное управление",
+              "need": 0,
+              "divisionId": "645",
+              "notifiedAt": null,
+              "groupDemandIds": [],
+              "assigned": 0
+            },
+            {
+              "id": "force-directorate-646",
+              "name": "Второе сквозное управление",
+              "need": 0,
+              "divisionId": "646",
+              "notifiedAt": null,
+              "groupDemandIds": [],
+              "assigned": 0
+            }
+          ],
+          "groupDemands": [],
+          "answerComment": "Проходка №1081: выделяем 3 при запросе 4, недобор 1",
+          "submittedLate": false,
+          "departmentName": "Первый департамент",
+          "decisionComment": "",
+          "statusBeforeDecline": null,
+          "overdue": false
+        }
+      ],
+      "forceRoster": [
+        {
+          "employeeId": "18",
+          "demandRowId": "demand-post-d4fd72adbb75",
+          "employeeName": "Токтаров А.",
+          "visitObjectId": "8459",
+          "campaignAssignmentId": "1",
+          "statusCode": "IN_EVENT",
+          "statusLabel": "Участие в ОМ"
+        },
+        {
+          "employeeId": "20",
+          "demandRowId": "demand-post-0746429c17c0",
+          "employeeName": "Байжанов А.",
+          "visitObjectId": "8459",
+          "campaignAssignmentId": "2",
+          "statusCode": "IN_EVENT",
+          "statusLabel": "Участие в ОМ"
+        },
+        {
+          "employeeId": "22",
+          "demandRowId": "demand-post-22a149f0821b",
+          "employeeName": "Мукашев А.",
+          "visitObjectId": "8460",
+          "campaignAssignmentId": "3",
+          "statusCode": "IN_EVENT",
+          "statusLabel": "Участие в ОМ"
+        }
+      ],
+      "forceDemandTotal": 4,
+      "placementAssignments": [],
+      "approvalStatus": "PENDING",
+      "approvalComment": "",
+      "journalEntries": [],
+      "closureDirectionSummaries": [],
+      "closingComment": "",
+      "closureSummary": {
+        "posts": 4,
+        "need": 4,
+        "assigned": 0,
+        "replacements": 0,
+        "declines": 0,
+        "incidents": 0
+      },
+      "acknowledgementDeadline": "2026-09-15T07:00:00+05:00",
+      "closedAt": null,
+      "businessDateEnd": "2026-09-16",
+      "kind": "INTERNAL",
+      "eventTime": null,
+      "protectedPersonId": "2",
+      "protectedPersonName": "Салимова Гульнара Ержановна",
+      "protectedPersons": [
+        {
+          "id": "2",
+          "code": "OL-2",
+          "name": "Салимова Гульнара Ержановна",
+          "arrivalAt": null,
+          "departureAt": null,
+          "flightArrival": "",
+          "flightDeparture": "",
+          "isSenior": false,
+          "note": ""
+        }
+      ],
+      "location": "Казахстан, Астана",
+      "countryId": "1",
+      "countryName": "Казахстан",
+      "cityId": "1",
+      "cityName": "Астана",
+      "address": "",
+      "chiefEmployeeId": "160",
+      "chiefName": "Калиев А.",
+      "approvalRoute": [],
+      "approvalRemarks": [],
+      "approvalStale": false,
+      "visitObjects": [
+        {
+          "id": "8459",
+          "objectId": "8",
+          "objectName": "Стенд: объект с готовым паспортом",
+          "photoUrl": null,
+          "passportBinding": {
+            "boundAt": "2026-09-09T12:39:25.875918+00:00",
+            "objectId": "8",
+            "versionId": "9",
+            "objectName": "Стенд: объект с готовым паспортом",
+            "effectiveFrom": "2026-08-27",
+            "versionNumber": 2
+          },
+          "protectedPersonId": null,
+          "protectedPersonName": "",
+          "position": 0,
+          "visitDay": null,
+          "note": "",
+          "description": "",
+          "chiefEmployeeId": "161",
+          "chiefName": "Мырзабеков Б.",
+          "reconChecklist": [
+            {
+              "id": "checklist-0",
+              "done": true,
+              "label": "Подъездные пути и парковка",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-1",
+              "done": true,
+              "label": "Периметр и ограждение",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-2",
+              "done": true,
+              "label": "Входные группы и КПП",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-3",
+              "done": true,
+              "label": "Пути эвакуации",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-4",
+              "done": true,
+              "label": "Связь и электропитание",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            }
+          ],
+          "reconForceRequest": 3,
+          "placementNeed": 3,
+          "placementAssigned": 0,
+          "stage": "PLACEMENT",
+          "statusLabel": "Рекогносцировка завершена",
+          "closedAt": null,
+          "closingComment": "",
+          "closureSummary": {
+            "posts": 3,
+            "need": 3,
+            "assigned": 0,
+            "replacements": 0,
+            "declines": 0,
+            "incidents": 0
+          },
+          "approvalStatus": "PENDING",
+          "approvalComment": "",
+          "approvalRoute": [],
+          "approvalRemarks": [],
+          "approvalStale": false,
+          "documentVersion": 0,
+          "documentStatus": "DRAFT",
+          "documentVersions": [],
+          "deputies": [],
+          "canManageRecon": false
+        },
+        {
+          "id": "8460",
+          "objectId": "9",
+          "objectName": "Стенд: второй объект посещения",
+          "photoUrl": null,
+          "passportBinding": null,
+          "protectedPersonId": null,
+          "protectedPersonName": "",
+          "position": 1,
+          "visitDay": null,
+          "note": "",
+          "description": "",
+          "chiefEmployeeId": "158",
+          "chiefName": "Едилов А.",
+          "reconChecklist": [
+            {
+              "id": "checklist-0",
+              "done": true,
+              "label": "Подъездные пути и парковка",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-1",
+              "done": true,
+              "label": "Периметр и ограждение",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-2",
+              "done": true,
+              "label": "Входные группы и КПП",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-3",
+              "done": true,
+              "label": "Пути эвакуации",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            },
+            {
+              "id": "checklist-4",
+              "done": true,
+              "label": "Связь и электропитание",
+              "state": "NORMAL",
+              "result": "MATCHES",
+              "comment": "",
+              "required": true
+            }
+          ],
+          "reconForceRequest": 1,
+          "placementNeed": 1,
+          "placementAssigned": 0,
+          "stage": "PLACEMENT",
+          "statusLabel": "Рекогносцировка завершена",
+          "closedAt": null,
+          "closingComment": "",
+          "closureSummary": {
+            "posts": 1,
+            "need": 1,
+            "assigned": 0,
+            "replacements": 0,
+            "declines": 0,
+            "incidents": 0
+          },
+          "approvalStatus": "PENDING",
+          "approvalComment": "",
+          "approvalRoute": [],
+          "approvalRemarks": [],
+          "approvalStale": false,
+          "documentVersion": 0,
+          "documentStatus": "DRAFT",
+          "documentVersions": [],
+          "deputies": [],
+          "canManageRecon": false
+        }
+      ],
+      "vehicles": [],
+      "createdAt": "2026-09-09T12:37:52.180162+00:00",
+      "updatedAt": "2026-09-09T13:02:13.889366+00:00",
+      "canEditBulletin": true,
+      "canManageVisitObjects": true
+    }
+  },
+  "9551": {
+    "status": 200,
+    "body": {
+      "id": "9551",
+      "code": "ОМ-2026-44",
+      "title": "Проходка ОМ №1081 — иностранный визит",
+      "objectId": null,
+      "objectName": "",
+      "passportBinding": null,
+      "businessDate": "2026-09-17",
+      "stage": "BULLETIN",
+      "readinessPercent": 0,
+      "forceNeed": 0,
+      "conflictsCount": 0,
+      "ownerName": "Мырзабеков Б.",
+      "reconChecklist": [
+        {
+          "id": "checklist-0",
+          "done": false,
+          "label": "Подъездные пути и парковка",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-1",
+          "done": false,
+          "label": "Периметр и ограждение",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-2",
+          "done": false,
+          "label": "Входные группы и КПП",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-3",
+          "done": false,
+          "label": "Пути эвакуации",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        },
+        {
+          "id": "checklist-4",
+          "done": false,
+          "label": "Связь и электропитание",
+          "state": "UNCHECKED",
+          "result": null,
+          "comment": "",
+          "required": true
+        }
+      ],
+      "reconSectorPosts": [],
+      "reconForceRequest": 0,
+      "reconForceRequestedAt": null,
+      "demandRows": [],
+      "demandApproved": false,
+      "forceRequests": [],
+      "forceAllocation": [],
+      "forceRoster": [],
+      "forceDemandTotal": 0,
+      "placementAssignments": [],
+      "approvalStatus": "PENDING",
+      "approvalComment": "",
+      "journalEntries": [],
+      "closureDirectionSummaries": [],
+      "closingComment": "",
+      "closureSummary": {
+        "posts": 0,
+        "need": 0,
+        "assigned": 0,
+        "replacements": 0,
+        "declines": 0,
+        "incidents": 0
+      },
+      "acknowledgementDeadline": "2026-09-17T09:00:00+05:00",
+      "closedAt": null,
+      "businessDateEnd": "2026-09-18",
+      "kind": "FOREIGN",
+      "eventTime": "10:00",
+      "protectedPersonId": "5",
+      "protectedPersonName": "Hassan Al-Farsi",
+      "protectedPersons": [
+        {
+          "id": "5",
+          "code": "OL-5",
+          "name": "Hassan Al-Farsi",
+          "arrivalAt": "2026-09-17T10:00",
+          "departureAt": null,
+          "flightArrival": "TEST-1081",
+          "flightDeparture": "",
+          "isSenior": false,
+          "note": ""
+        }
+      ],
+      "location": "Казахстан, Астана",
+      "countryId": "1",
+      "countryName": "Казахстан",
+      "cityId": "1",
+      "cityName": "Астана",
+      "address": "",
+      "chiefEmployeeId": "160",
+      "chiefName": "Калиев А.",
+      "approvalRoute": [],
+      "approvalRemarks": [],
+      "approvalStale": false,
+      "visitObjects": [],
+      "vehicles": [],
+      "createdAt": "2026-09-09T12:54:33.010863+00:00",
+      "updatedAt": "2026-09-09T12:54:33.010878+00:00",
+      "canEditBulletin": true,
+      "canManageVisitObjects": true
+    }
+  }
+}

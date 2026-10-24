@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<sc-if value="{{ show }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:0;right:0;bottom:0;z-index:150;background:#0f3f3a;padding:16px 24px;display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;box-shadow:0 -10px 30px -10px rgba(0,0,0,0.3);font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif">
+    <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.85);max-width:640px;line-height:1.5">Мы используем файлы cookie для улучшения работы сайта. Продолжая пользоваться сайтом, вы соглашаетесь с <a href="./SmartQoldau Web - Политика конфиденциальности.dc.html" style="color:#7fd6c2;text-decoration:underline">Политикой конфиденциальности</a>.</div>
+    <button onClick="{{ onAccept }}" style="height:38px;padding:0 20px;border:none;border-radius:19px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;flex-shrink:0">Принять</button>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { accepted: localStorage.getItem('sq_cookie_consent') === '1' };
+  renderVals() {
+    return {
+      show: !this.state.accepted,
+      onAccept: () => { localStorage.setItem('sq_cookie_consent', '1'); this.setState({ accepted: true }); },
+    };
+  }
+}
+</script>
+</body>
+</html>

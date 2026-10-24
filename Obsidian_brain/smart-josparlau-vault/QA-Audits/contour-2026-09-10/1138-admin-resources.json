@@ -1,0 +1,12 @@
+{
+  "resources": [
+    "http://10.115.70.68:3118/staticfiles/admin/css/base.css",
+    "http://10.115.70.68:3118/staticfiles/admin/css/dark_mode.css",
+    "http://10.115.70.68:3118/staticfiles/admin/js/theme.js",
+    "http://10.115.70.68:3118/staticfiles/admin/css/nav_sidebar.css",
+    "http://10.115.70.68:3118/staticfiles/admin/js/nav_sidebar.js",
+    "http://10.115.70.68:3118/staticfiles/admin/css/dashboard.css",
+    "http://10.115.70.68:3118/staticfiles/admin/css/responsive.css"
+  ],
+  "url": "http://10.115.70.68:3118/admin/"
+}

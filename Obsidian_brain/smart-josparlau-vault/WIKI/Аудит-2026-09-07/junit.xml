@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Smart Josparlau Project Sentinel" tests="7" failures="1" skipped="2" time="0.40">
+  <properties>
+    <property name="executor" value="Кодекс Астра 6"/>
+    <property name="repository_head" value="f28e9e54978c1c855740d4141020df5320d4e879"/>
+    <property name="final_observed_head" value="504b99d009b37fbc0c53fe01d58e9e431b102f47"/>
+    <property name="verdict" value="NO-GO"/>
+  </properties>
+  <testcase classname="frontend.static" name="tsc --noEmit"/>
+  <testcase classname="frontend.static" name="check:rewrites"/>
+  <testcase classname="frontend.static" name="check:shots"/>
+  <testcase classname="frontend.gate" name="check:stand"/>
+  <testcase classname="security.static" name="authorization audit"><failure message="release blocking authorization finding">EmployeeStatusViewSet returns all statuses to any authenticated user.</failure></testcase>
+  <testcase classname="backend.runtime" name="full pytest"><skipped message="Shared test database was owned by another pytest at audit time."/></testcase>
+  <testcase classname="browser.runtime" name="live role matrix"><skipped message="Read-only analytical scope; runtime verification proposed in Plane."/></testcase>
+</testsuite>

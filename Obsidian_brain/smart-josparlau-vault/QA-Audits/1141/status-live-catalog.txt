@@ -1,0 +1,390 @@
+- link "Перейти к содержимому":
+  - /url: "#main-content"
+- complementary:
+  - generic: SЖ
+  - generic: Smart Жоспарлау
+  - generic: Силы и мероприятия
+  - navigation "Основная навигация":
+    - heading "Личный кабинет" [level=2]
+    - list "Личный кабинет":
+      - link "Мой профиль":
+        - /url: /security-ops/profile/
+        - generic: Мой профиль
+        - text: В разработке
+      - generic: "В разработке: Карточки назначений «Ознакомлен, заступлю» / «Не могу заступить» (№405); Шапка: должность и подразделение словами, рейтинг; история закрытых ОМ (№434); Три вкладки, календарь с полосками постов, без заглушек (№449)"
+      - link "Сотрудники Службы":
+        - /url: /service-employees/
+        - generic: Сотрудники Службы
+    - heading "Ежедневный расход" [level=2]
+    - list "Ежедневный расход":
+      - link "Командный центр":
+        - /url: /security-ops/command-center/
+        - generic: Командный центр
+      - link "Обзор":
+        - /url: /dashboard/
+        - generic: Обзор
+      - link "Статусы сотрудников":
+        - /url: /statuses/
+        - generic: Статусы сотрудников
+        - text: В разработке
+      - generic: "В разработке: «Участие в ОМ» только из запроса, колонка «По разделу ОМ», «ознакомлен» (№427)"
+      - link "Сбор сил на ОМ":
+        - /url: /employees/
+        - generic: Сбор сил на ОМ
+        - text: В разработке
+      - generic: "В разработке: Заявки и запросы таблицами, довыделение новой строкой (№425); Потребность по объектам, колонки «Выделяют / Прислано», «Срочно» вверх (№426); Входящие запросы департамента: колонки «выделяем / собрано» (№444)"
+      - link "Аналитика службы":
+        - /url: /security-ops/analytics/
+        - generic: Аналитика службы
+      - link "Ежедневный отчет":
+        - /url: /reports/
+        - generic: Ежедневный отчет
+      - link "Отчёты по Службе":
+        - /url: /security-ops/service-reports/
+        - generic: Отчёты по Службе
+        - text: В разработке
+      - generic: "В разработке: Печать: интервал без года, «Фамилия / позывной», заголовок среза (№438); «Скачать дело» одним PDF (№437)"
+      - link "Свод по Службе":
+        - /url: /security-ops/service-summary/
+        - generic: Свод по Службе
+    - heading "Объекты" [level=2]
+    - list "Объекты":
+      - link "Объекты и паспорта":
+        - /url: /security-ops/objects/
+        - generic: Объекты и паспорта
+    - heading "Охранные мероприятия" [level=2]
+    - list "Охранные мероприятия":
+      - 'link "Реестр ОМ Мероприятий в реестре: 26"':
+        - /url: /security-ops/events/
+        - generic: Реестр ОМ
+        - 'generic "Мероприятий в реестре: 26"': "26"
+        - text: В разработке
+      - generic: "В разработке: Бейджи «Возвращено», «Срочно», «потребность/назначено» в реестре (№423); Форма создания ОМ по спецификации: ОЛ-чипы, страна/город, превью (№419, №439); Визит иностранного ОЛ отдельной страницей со статусом (№435, №436, №441)"
+      - link "Охраняемые лица":
+        - /url: /security-ops/persons/
+        - generic: Охраняемые лица
+        - text: В разработке
+      - generic: "В разработке: Код охраняемого лица OL-N (№417)"
+      - link "Законы об ОМ":
+        - /url: /security-ops/laws/
+        - generic: Законы об ОМ
+      - link "Транспорт ГОН":
+        - /url: /security-ops/vehicles/
+        - generic: Транспорт ГОН
+      - link "Аналитика ОМ":
+        - /url: /security-ops/analytics/operations/
+        - generic: Аналитика ОМ
+    - heading "Система" [level=2]
+    - list "Система":
+      - link "Справочники":
+        - /url: /security-ops/dictionaries/
+        - generic: Справочники
+        - text: В разработке
+      - generic: "В разработке: Справочник стран и городов (№417)"
+      - link "Администрирование":
+        - /url: /security-ops/settings/
+        - generic: Администрирование
+      - link "Права":
+        - /url: /settings/permissions/
+        - generic: Права
+      - link "Роли":
+        - /url: /settings/roles/
+        - generic: Роли
+      - link "Пользователи":
+        - /url: /settings/users/
+        - generic: Пользователи
+      - link "Аудит":
+        - /url: /security-ops/audit/
+        - generic: Аудит
+      - link "Журнал изменений":
+        - /url: /security-ops/changelog/
+        - generic: Журнал изменений
+    - heading "Обратная связь" [level=2]
+    - list "Обратная связь":
+      - link "Обратная связь":
+        - /url: /feedback/
+        - generic: Обратная связь
+  - paragraph: Закрытый контур · связь есть
+  - link "A acc_admin Администратор системы":
+    - /url: /security-ops/profile/
+    - generic: A
+    - generic: acc_admin
+    - generic: Администратор системы
+- banner:
+  - button "Скрыть боковое меню" [expanded]:
+  - navigation "Хлебные крошки":
+    - list:
+      - link "Smart Жоспарлау":
+        - /url: /security-ops/command-center/
+      - generic: Охранные мероприятия
+      - generic: Справочники
+  - generic: "Раздел ОМ:"
+  - generic: Администратор системы
+  - button "Переключить на тёмную тему":
+  - button "Уведомления":
+    - generic: "50"
+  - button "Меню пользователя":
+    - img "Пользователь"
+- main:
+  - paragraph: Система · Справочники
+  - heading "Типы статусов сотрудников" [level=1]
+  - 'generic "В разработке: Справочник стран и городов (№417)"':
+    - text: В разработке
+  - paragraph: "Каталог статусов раздела ОМ: приоритет, колонка суточного расхода и правила конфликтов"
+  - link "← Все справочники":
+    - /url: /security-ops/dictionaries/
+  - table:
+    - rowgroup:
+      - row "Тип Приоритет Колонка расхода Жёсткая блокировка В списке В штате Предельный срок Кадровый код":
+        - columnheader "Тип"
+        - columnheader "Приоритет"
+        - columnheader "Колонка расхода"
+        - columnheader "Жёсткая блокировка"
+        - columnheader "В списке"
+        - columnheader "В штате"
+        - columnheader "Предельный срок"
+        - columnheader "Кадровый код"
+    - rowgroup:
+      - row "SICK_LEAVE На больничном 10 SICK да да да без ограничения sick_leave":
+        - cell "SICK_LEAVE На больничном":
+          - text: SICK_LEAVE
+          - generic: На больничном
+        - cell "10"
+        - cell "SICK"
+        - cell "да"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "sick_leave"
+      - row "LEAVE_BY_REPORT Отпуск по рапорту 15 VACATION да да да без ограничения leave_by_report":
+        - cell "LEAVE_BY_REPORT Отпуск по рапорту":
+          - text: LEAVE_BY_REPORT
+          - generic: Отпуск по рапорту
+        - cell "15"
+        - cell "VACATION"
+        - cell "да"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "leave_by_report"
+      - row "VACATION В отпуске 20 VACATION да да да без ограничения vacation":
+        - cell "VACATION В отпуске":
+          - text: VACATION
+          - generic: В отпуске
+        - cell "20"
+        - cell "VACATION"
+        - cell "да"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "vacation"
+      - row "COMMAND В командировке 30 COMMAND да да да без ограничения business_trip":
+        - cell "COMMAND В командировке":
+          - text: COMMAND
+          - generic: В командировке
+        - cell "30"
+        - cell "COMMAND"
+        - cell "да"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "business_trip"
+      - row "STUDY Учёба 32 TRAINING — да да без ограничения training":
+        - cell "STUDY Учёба":
+          - text: STUDY
+          - generic: Учёба
+        - cell "32"
+        - cell "TRAINING"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "training"
+      - row "COMPETITION Соревнования 34 TRAINING — да да без ограничения competition":
+        - cell "COMPETITION Соревнования":
+          - text: COMPETITION
+          - generic: Соревнования
+        - cell "34"
+        - cell "TRAINING"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "competition"
+      - row "CONFERENCE Конференция 36 TRAINING — да да без ограничения conference":
+        - cell "CONFERENCE Конференция":
+          - text: CONFERENCE
+          - generic: Конференция
+        - cell "36"
+        - cell "TRAINING"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "conference"
+      - row "OTHER_ABSENCE Иное отсутствие 38 OTHER — да да без ограничения other_absence":
+        - cell "OTHER_ABSENCE Иное отсутствие":
+          - text: OTHER_ABSENCE
+          - generic: Иное отсутствие
+        - cell "38"
+        - cell "OTHER"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "other_absence"
+      - row "DETACHED Откомандирован 40 DETACHED — да да без ограничения seconded_to":
+        - cell "DETACHED Откомандирован":
+          - text: DETACHED
+          - generic: Откомандирован
+        - cell "40"
+        - cell "DETACHED"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "seconded_to"
+      - row "ATTACHED Прикомандирован 50 ATTACHED — да — без ограничения seconded_from":
+        - cell "ATTACHED Прикомандирован":
+          - text: ATTACHED
+          - generic: Прикомандирован
+        - cell "50"
+        - cell "ATTACHED"
+        - cell "—"
+        - cell "да"
+        - cell "—"
+        - cell "без ограничения"
+        - cell "seconded_from"
+      - row "REST_AFTER_DUTY После дежурства 60 AFTER_DUTY — да да без ограничения after_duty":
+        - cell "REST_AFTER_DUTY После дежурства":
+          - text: REST_AFTER_DUTY
+          - generic: После дежурства
+        - cell "60"
+        - cell "AFTER_DUTY"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "after_duty"
+      - row "BEFORE_DUTY Перед дежурством 65 BEFORE_DUTY — да да без ограничения —":
+        - cell "BEFORE_DUTY Перед дежурством":
+          - text: BEFORE_DUTY
+          - generic: Перед дежурством
+        - cell "65"
+        - cell "BEFORE_DUTY"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "DUTY На дежурстве 70 ON_DUTY — да да без ограничения on_duty":
+        - cell "DUTY На дежурстве":
+          - text: DUTY
+          - generic: На дежурстве
+        - cell "70"
+        - cell "ON_DUTY"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "on_duty"
+      - row "GEV Группа экстренного выезда 75 ON_DUTY — да да без ограничения —":
+        - cell "GEV Группа экстренного выезда":
+          - text: GEV
+          - generic: Группа экстренного выезда
+        - cell "75"
+        - cell "ON_DUTY"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "IN_EVENT Участие в ОМ 75 IN_SERVICE — да да без ограничения —":
+        - cell "IN_EVENT Участие в ОМ":
+          - text: IN_EVENT
+          - generic: Участие в ОМ
+        - cell "75"
+        - cell "IN_SERVICE"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "EVENT_ASSIGNMENT Привлечён на мероприятие (наряд) Выключен 80 IN_SERVICE — да да без ограничения —":
+        - cell "EVENT_ASSIGNMENT Привлечён на мероприятие (наряд) Выключен":
+          - text: EVENT_ASSIGNMENT
+          - text: Привлечён на мероприятие (наряд)
+          - generic: Выключен
+        - cell "80"
+        - cell "IN_SERVICE"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "EVENT_ASSIGNMENT_GROUP Привлечён на мероприятие (боевая группа) Выключен 81 IN_SERVICE — да да без ограничения —":
+        - cell "EVENT_ASSIGNMENT_GROUP Привлечён на мероприятие (боевая группа) Выключен":
+          - text: EVENT_ASSIGNMENT_GROUP
+          - text: Привлечён на мероприятие (боевая группа)
+          - generic: Выключен
+        - cell "81"
+        - cell "IN_SERVICE"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "CONTOUR1140 Контур1140 — тип после правки Выключен 99 OTHER — да да 2 дн. —":
+        - cell "CONTOUR1140 Контур1140 — тип после правки Выключен":
+          - text: CONTOUR1140
+          - text: Контур1140 — тип после правки
+          - generic: Выключен
+        - cell "99"
+        - cell "OTHER"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "2 дн."
+        - cell "—"
+      - row "CONTOUR1141 Контур1141 — тип из Django 99 OTHER — да да без ограничения —":
+        - cell "CONTOUR1141 Контур1141 — тип из Django":
+          - text: CONTOUR1141
+          - generic: Контур1141 — тип из Django
+        - cell "99"
+        - cell "OTHER"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "PENDING_CLARIFICATION Уточняется 990 PENDING — да да без ограничения —":
+        - cell "PENDING_CLARIFICATION Уточняется":
+          - text: PENDING_CLARIFICATION
+          - generic: Уточняется
+        - cell "990"
+        - cell "PENDING"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "—"
+      - row "IN_SERVICE В строю 999 IN_SERVICE — да да без ограничения in_service":
+        - cell "IN_SERVICE В строю":
+          - text: IN_SERVICE
+          - generic: В строю
+        - cell "999"
+        - cell "IN_SERVICE"
+        - cell "—"
+        - cell "да"
+        - cell "да"
+        - cell "без ограничения"
+        - cell "in_service"
+  - paragraph:
+    - text: Справочник только для чтения. Типы заводятся и правятся в админке и командой
+    - code: seed_status_types
+    - text: ": у типа есть свойства, меняющие поведение системы — жёсткая блокировка, колонка суточного расхода, счёт в списке и в штате. Выключенный тип не удалён: строки статусов продолжают на него ссылаться и сохраняют подпись."
+- button "Уведомления ОМ (онлайн)":
+- generic: Новых уведомлений нет
+- region "Notifications (F8)":
+  - list
+- alert

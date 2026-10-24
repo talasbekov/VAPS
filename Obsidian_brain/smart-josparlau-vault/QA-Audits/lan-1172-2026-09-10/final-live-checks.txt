@@ -1,0 +1,24 @@
+http://127.0.0.1:3300/ → 200
+http://127.0.0.1:3300/admin/login/ → 200
+http://127.0.0.1:8300/admin/login/ → 200
+http://127.0.0.1:8300/docs → 200
+Local assets: 4, all HTTP200
+http://127.0.0.1:8300/redoc → 200
+Local assets: 1, all HTTP200
+media.tar.gz: no files
+private.tar.gz: no files
+Browser CUA: login form visible at 127.0.0.1:3300 after container external routes removed.
+Bundle root checksums, source checksums, outer tar checksum: PASS.
+Wrong probes /docs/ and frontend3300/docs returned 404. Documented backend8300/docs returned200; no application changes required.
+Source revision: 835dde7a590c25cb43d91bbc4bd2ae7b2b0d6222
+Archive bytes: 1065666560
+Archive SHA256: 2ecdc2dae628a7e24b0501480db348700698644cd1db4d5ae6e91dbaa6cda2d3  smart-josparlau-offline-2026-09-10.tar
+
+NAME                          IMAGE                                            COMMAND                  SERVICE    CREATED         STATUS                   PORTS
+sj-lan1172-final-backend-1    smart-josparlau/lan-backend:1172-835dde7a590c    "/entrypoint.sh guni…"   backend    4 minutes ago   Up 3 minutes (healthy)   8000/tcp
+sj-lan1172-final-beat-1       smart-josparlau/lan-backend:1172-835dde7a590c    "celery -A organizat…"   beat       4 minutes ago   Up 3 minutes             8000/tcp
+sj-lan1172-final-db-1         smart-josparlau/lan-postgres:1172-835dde7a590c   "docker-entrypoint.s…"   db         4 minutes ago   Up 4 minutes (healthy)   127.0.0.1:5300->5432/tcp
+sj-lan1172-final-frontend-1   smart-josparlau/lan-frontend:1172-835dde7a590c   "docker-entrypoint.s…"   frontend   4 minutes ago   Up 3 minutes (healthy)   3000/tcp
+sj-lan1172-final-proxy-1      smart-josparlau/lan-proxy:1172-835dde7a590c      "/usr/local/bin/cont…"   proxy      4 minutes ago   Up 3 minutes             127.0.0.1:3300->80/tcp, 127.0.0.1:8300->81/tcp
+sj-lan1172-final-redis-1      smart-josparlau/lan-redis:1172-835dde7a590c      "docker-entrypoint.s…"   redis      4 minutes ago   Up 4 minutes (healthy)   6379/tcp
+sj-lan1172-final-worker-1     smart-josparlau/lan-backend:1172-835dde7a590c    "celery -A organizat…"   worker     4 minutes ago   Up 3 minutes (healthy)   8000/tcp

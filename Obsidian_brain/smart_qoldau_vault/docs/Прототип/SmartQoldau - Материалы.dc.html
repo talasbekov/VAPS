@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+
+      <div style="margin-bottom:20px">
+        <div style="font-size:21px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Материалы</div>
+        <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Практики и материалы для самопомощи</div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:22px">
+        <div style="flex:1;border-radius:16px;background:#f2fbf8;padding:14px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#159a7c">34</div>
+          <div style="font-size:10.5px;font-weight:600;color:#6b8580;margin-top:2px">Медитации</div>
+        </div>
+        <div style="flex:1;border-radius:16px;background:#f2fbf8;padding:14px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#159a7c">11</div>
+          <div style="font-size:10.5px;font-weight:600;color:#6b8580;margin-top:2px">Дыхание</div>
+        </div>
+        <div style="flex:1;border-radius:16px;background:#f2fbf8;padding:14px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#159a7c">6</div>
+          <div style="font-size:10.5px;font-weight:600;color:#6b8580;margin-top:2px">Дней подряд</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ items }}" as="it" hint-placeholder-count="4">
+          <div onClick="{{ it.onClick }}" style="display:flex;align-items:center;gap:14px;border:1px solid #edf2f0;border-radius:18px;padding:16px;cursor:pointer">
+            <div style="width:48px;height:48px;border-radius:14px;background:{{ it.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="{{ it.icon }}" stroke="{{ it.color }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14.5px;font-weight:800;color:#0f3f3a">{{ it.title }}</div>
+              <div style="font-size:12px;font-weight:500;color:#8fa6a1;margin-top:1px">{{ it.subtitle }}</div>
+            </div>
+            <svg width="8" height="13" viewBox="0 0 9 14" fill="none" style="flex-shrink:0"><path d="M1 1l6 6-6 6" stroke="#c4d3cf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  renderVals() {
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau - Главная.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau - Консультации.dc.html' },
+      { label: 'Избранное', icon: 'M12 21s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z', href: './SmartQoldau - Избранное.dc.html' },
+      { label: 'Материалы', icon: 'M12 21c0-6-4-9-8-9 0 6 4 9 8 9z M12 21c0-9 4-14 8-15 1 8-3 14-8 15z', href: './SmartQoldau - Материалы.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau - Профиль.dc.html' },
+    ].map(n => ({ ...n, color: n.label === active ? '#0f766e' : '#a9bdb9', onClick: n.label === active ? () => {} : () => { window.location.href = n.href; } }));
+    return {
+      items: [
+        { title: 'Дыхательные упражнения', subtitle: 'Снижение тревоги, 2–5 минут', bg: '#e3f3ee', color: '#159a7c', icon: 'M12 21c0-6-4-9-8-9 0 6 4 9 8 9z M12 21c0-9 4-14 8-15 1 8-3 14-8 15z', onClick: () => { window.location.href = './SmartQoldau - Дыхательное упражнение.dc.html'; } },
+        { title: 'Расслабляющая музыка', subtitle: 'Для сна и концентрации', bg: '#e6f0fb', color: '#3b82c4', icon: 'M9 18V5l11-2v13', onClick: () => { window.location.href = './SmartQoldau - Расслабляющая музыка.dc.html'; } },
+        { title: 'Полезные статьи', subtitle: 'Материалы от психологов', bg: '#fdece3', color: '#e08a4d', icon: 'M4 5.5C6 4.5 9 4.5 12 6v13c-3-1.5-6-1.5-8-0.5V5.5z M20 5.5c-2-1-5-1-8 0.5v13c3-1.5 6-1.5 8-0.5V5.5z', onClick: () => { window.location.href = './SmartQoldau - Полезные статьи.dc.html'; } },
+        { title: 'Медитации', subtitle: 'Направленные практики', bg: '#f1eafb', color: '#8b5fc9', icon: 'M9 5a3 3 0 016 0v6a3 3 0 01-6 0V5z M5 11a7 7 0 0014 0M12 18v3', onClick: () => { window.location.href = './SmartQoldau - Медитации.dc.html'; } },
+      ],
+      navItems: nav('Материалы'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+
+
+### 2026-09-18 — №1267: локальный merge 1c3c8050bf124b25dfa1b67723aa5efa123d6314
+Исполнитель: Кодекс Астра 6. Merge parents0f64bac2+90277694, веткаcodex/mvp-current-integration-1267, рабочее дерево чистое; push НЕ выполнялся. Front gate exit0, BUILD_ID Ax2hTp5GGTLJWlSTmIpZG. Независимыйreview: новых merge-регрессий нет;108MVP-only+38audit-only файлов совпадают с родителями, четыре автоматических и два ручных пересечения сохраняют оба смысла. Списокsmoke639тестов/144файла; Python AST63изменённыхфайлаPASS. Дополнительные безБД-пробы:service-summary-access1PASS;smoke-preserve-data3FAIL на Uncontrolled teardown dependency:./purge-python; эти3файла идентичны обоимродителям, причина не создана merge. Отказы не исправляются; родитель оформляет отдельное предложение (не1282). Backend gate/UI актуальнойсборки ещёне выполнены — ожидается прямое user-подтверждение после2auto-review отказов.

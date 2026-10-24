@@ -1,0 +1,7 @@
+               Local time: Thu 2026-09-10 13:49:46 +05
+           Universal time: Thu 2026-09-10 08:49:46 UTC
+                 RTC time: Thu 2026-09-10 08:49:46
+                Time zone: Asia/Almaty (+05, +0500)
+System clock synchronized: yes
+              NTP service: active
+          RTC in local TZ: no

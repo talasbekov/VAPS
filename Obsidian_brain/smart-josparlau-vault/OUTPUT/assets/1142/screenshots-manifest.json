@@ -1,0 +1,657 @@
+[
+ {
+  "file": "01-musakhan-registry.png",
+  "bytes": 249068,
+  "sha256": "dbd2c4e1e87923611e8a04f0d9aa39a39d34b3ee67c4f4cfebb29412ab480517"
+ },
+ {
+  "file": "02-musakhan-create-dialog.png",
+  "bytes": 242287,
+  "sha256": "baff6f2eabd68946d5478bb0b8f38ca5dc8ee9b65637b6eb2d19867de1286000"
+ },
+ {
+  "file": "03-admin-user-rakhymzhanov-before.png",
+  "bytes": 137367,
+  "sha256": "7628e6e1a94fb7248b378e4000d6f3a47b34acda11ba9bc18fc59d1446fb303b"
+ },
+ {
+  "file": "04-admin-user-rakhymzhanov-role-granted.png",
+  "bytes": 140427,
+  "sha256": "5b05130784c6301631901563993b808fd2b2a50cc383460546646c7564b7c30a"
+ },
+ {
+  "file": "05-admin-approval-route-before.png",
+  "bytes": 206670,
+  "sha256": "bf4667544f5ade778d9758b453d1576633c6738fe663d2ae6b800c9ac3a329b2"
+ },
+ {
+  "file": "06-admin-approval-route-saved.png",
+  "bytes": 203403,
+  "sha256": "d643fdad4b43e3f2deb90796d562292c5d3cd3a0a3aed10e3becfec1b3a17346"
+ },
+ {
+  "file": "07-musakhan-create-chief-search.png",
+  "bytes": 240577,
+  "sha256": "eedcd20f2b3eb4848078a694ee56cea70a87c95afa0e74e4d290622aebf9e063"
+ },
+ {
+  "file": "08-musakhan-create-filled.png",
+  "bytes": 245035,
+  "sha256": "8da161b47be63473466107abc7d5c15f8ea3c6f6940ac8dbb08571b040e397d9"
+ },
+ {
+  "file": "09-musakhan-event-created.png",
+  "bytes": 180387,
+  "sha256": "87c4a65431968ad2a24ce6fb8fe1b0e81a6476cc2481fcefa9dfbe2b2b83946b"
+ },
+ {
+  "file": "10-musakhan-registry-after-chief.png",
+  "bytes": 147503,
+  "sha256": "a0636fc403d675855c3fba7006527f28ed4e4c5505d1f8d20aec58cd15a88485"
+ },
+ {
+  "file": "100-talasbekov-profile-history.png",
+  "bytes": 190460,
+  "sha256": "8495ec558662d54fce2cb643d893fdb7e6c458c77372534cefb17af061aef054"
+ },
+ {
+  "file": "100-u-musakhan-incident-form.png",
+  "bytes": 293856,
+  "sha256": "c9ba16348bbfea490511880412c899dfcaa3075f163e3654298be56ea58ed117"
+ },
+ {
+  "file": "101-baglanov-registry-closed.png",
+  "bytes": 147629,
+  "sha256": "e946ddab2d66d5faa9c99ecbc961725fbb78130a0d0a2463c99879ce453a42ce"
+ },
+ {
+  "file": "101-u-musakhan-close-dialog.png",
+  "bytes": 174600,
+  "sha256": "6d0d26e072db14f378903cd32c56791c05242de4f561fcb930c8acbb0fe4dcb6"
+ },
+ {
+  "file": "102-baglanov-closed-event-card.png",
+  "bytes": 243290,
+  "sha256": "5c2633b484f1401a74414143d43a13f93c294bbcf96c99c8108b6d00faa74b3d"
+ },
+ {
+  "file": "102-u-musakhan-object-closed.png",
+  "bytes": 227086,
+  "sha256": "bf1a6605b287d08bd655336d7521714d8486524295549383d64c076a5c88fbec"
+ },
+ {
+  "file": "103-baglanov-analytics.png",
+  "bytes": 91816,
+  "sha256": "799985201ba425ff42e2e93f82c559095fae291d9c436aefa24fdad265b018e0"
+ },
+ {
+  "file": "103-m-turmagambetov-conduct-start.png",
+  "bytes": 273468,
+  "sha256": "b77d559f059524fc2a50b1885a9bd4984b260f5703bb3beac11a1f83b2a46a6b"
+ },
+ {
+  "file": "104-m-turmagambetov-incident-form.png",
+  "bytes": 293930,
+  "sha256": "a9bd1c875a575a189c5cf9c8b76fddd2128fab97e32064b733e0027d1272de21"
+ },
+ {
+  "file": "105-m-turmagambetov-close-dialog.png",
+  "bytes": 179592,
+  "sha256": "a3c0f902186f3ae3e941d8c987959c3767f1596241c3ec8894f61bc155d12c07"
+ },
+ {
+  "file": "106-m-turmagambetov-object-closed.png",
+  "bytes": 241575,
+  "sha256": "3362972d3334e6ed833fcc925a0e1be51cfec7b31a3e4db161a75947a69017d4"
+ },
+ {
+  "file": "11-musakhan-replace-chief-search.png",
+  "bytes": 162190,
+  "sha256": "64245dece1489be4a50be33007e1299b628d853fbe8f4e19682e8c0a54af46e7"
+ },
+ {
+  "file": "111-y-meiram-analytics.png",
+  "bytes": 1074529,
+  "sha256": "97e4b3d464c69f7f68767809633e62a852d43cc8f09567224e3a4df9cbcaad24"
+ },
+ {
+  "file": "112-acc-admin-analytics.png",
+  "bytes": 1329687,
+  "sha256": "734b1480b91c171bfe618695a10f617580905b83dbdb5520940f4f1679957aaa"
+ },
+ {
+  "file": "113-acc-admin-ratings-workspace.png",
+  "bytes": 294372,
+  "sha256": "fb8e9a6f2dd7c7e99f541ed671489270011802f89bc6a220770453968795c86b"
+ },
+ {
+  "file": "114-r2-create.png",
+  "bytes": 250090,
+  "sha256": "33bf84f433f3573e089315c47c996b60075b3fc20eae843c9119e24381396583"
+ },
+ {
+  "file": "115-r2-objects.png",
+  "bytes": 225460,
+  "sha256": "d022a3ed6f1838b0da1868d1d526d23fb9146431e6f47fb35108c0eb5f64a56b"
+ },
+ {
+  "file": "116-r2-recon-done.png",
+  "bytes": 205822,
+  "sha256": "647f1b44e6e14b450852fdcfd93328d06c0652a0831b676eef1447786b1f44c3"
+ },
+ {
+  "file": "117-r2-campaign.png",
+  "bytes": 163602,
+  "sha256": "7cb368dec12f49b025ab0081cb26ab3c97a12d3497aa30ee813e34db3488a15d"
+ },
+ {
+  "file": "118-r2-responsible-sent.png",
+  "bytes": 165248,
+  "sha256": "5dd3d10112654954ffcca8034178b18eb4e929838d3293e8d71db2989c61b8ec"
+ },
+ {
+  "file": "119-r2-head-selected.png",
+  "bytes": 189874,
+  "sha256": "18b33a81f6b2d329fc69df62bab6d9c4d051b51c58de11eb1e7148716781acad"
+ },
+ {
+  "file": "12-musakhan-replace-chief-search.png",
+  "bytes": 162194,
+  "sha256": "a2f8fd159c6e7fcc378bf9100d11a089394a8ea7e997dce0d6bb480575aac11c"
+ },
+ {
+  "file": "120-r2-handover.png",
+  "bytes": 168818,
+  "sha256": "7532c635103180b87a202803a4ad1866afc4b7077a7738ebeaffb6b4621c86f3"
+ },
+ {
+  "file": "121-r2-sent-approval.png",
+  "bytes": 215579,
+  "sha256": "34d0d7503759c4f0b538fab146bc6a79e9467752d38832af836b31a88031fa88"
+ },
+ {
+  "file": "122-r2-self-ack.png",
+  "bytes": 208679,
+  "sha256": "d1d2bb63450b866388abb290bb48eb495a50fc964fcc4b44ea98844751854c75"
+ },
+ {
+  "file": "123-r2-scored.png",
+  "bytes": 246938,
+  "sha256": "6ce806176a253efe852212835573226f63ef0dede3de799c4fd1c40c7e2fb964"
+ },
+ {
+  "file": "124-r2-closed.png",
+  "bytes": 174362,
+  "sha256": "d684451b4d90db8c80c8092eb811701e73a5cb2c8e870c4db2a30192e25f537b"
+ },
+ {
+  "file": "125-r2-profile-history-self.png",
+  "bytes": 195358,
+  "sha256": "a4a0275108d0ffd8b99a4f248ef1afd8cc131048e1f1ef7509dbe90f87f3731d"
+ },
+ {
+  "file": "126-r2-profile-calendar.png",
+  "bytes": 236244,
+  "sha256": "c11aff29817d32a8e28c14130c309bce9e74b441f02be3e32b9a84dae746c7bb"
+ },
+ {
+  "file": "127-r2-n-meldebekov-history-20.png",
+  "bytes": 209216,
+  "sha256": "319ed220b167b9edbcf3d212e771649bd12a2cb1e064fe50ad4a78d2e5ae86b8"
+ },
+ {
+  "file": "128-r2-acc-admin-history-20.png",
+  "bytes": 223998,
+  "sha256": "e1a90bd9fd49259abd0813e3140125035fa36a889d2b3e3e6b7c780f107f358e"
+ },
+ {
+  "file": "129-r2-admin-event-analytics.png",
+  "bytes": 559829,
+  "sha256": "19de9a3ea17dd9e0497d5d22e87609160184182e55e8ef15e087f61471fcb29e"
+ },
+ {
+  "file": "13-musakhan-replace-chief-14-same.png",
+  "bytes": 175613,
+  "sha256": "743d06157bda51edf8a787db10b0e017ce5ae399c60d30538503f1ae7bd76f3d"
+ },
+ {
+  "file": "130-r2-admin-rating-analytics.png",
+  "bytes": 175274,
+  "sha256": "3e060efa370709efea54cf3db962884dc83a77f6c37565dbf8ddadac6f875f5e"
+ },
+ {
+  "file": "131-r2-admin-ratings-workspace.png",
+  "bytes": 294428,
+  "sha256": "c1f3f286cd5ed8103630695763bff838c31071ec3e12c11d4c18b1177b32f0f3"
+ },
+ {
+  "file": "14-musakhan-event-card.png",
+  "bytes": 217202,
+  "sha256": "0ca9c1a02f75a68181ae6dac83b82f5ff2f23e1cf7fa1ac423a62d802f025934"
+ },
+ {
+  "file": "15-baglanov-row-menu.png",
+  "bytes": 152528,
+  "sha256": "a89933fd116d6be6575432970165120696e2000b74df5018d5c1ad34a6c76829"
+ },
+ {
+  "file": "16-baglanov-edit-bulletin.png",
+  "bytes": 185031,
+  "sha256": "98b49dace4144ec65f407999f89d0d75983e9e7515c58b6df31f675e5621287f"
+ },
+ {
+  "file": "17-baglanov-edit-bulletin-ol2.png",
+  "bytes": 186383,
+  "sha256": "43fd794c4b4e643ba4661fa9c4280c858265e70167d19da500f252ba9c05d8a8"
+ },
+ {
+  "file": "18-baglanov-add-objects-dialog.png",
+  "bytes": 172621,
+  "sha256": "16d2da467c46c2be66b63a9c727c60c20f4fbcfb8379d092e6c52cd2ed489c08"
+ },
+ {
+  "file": "19-baglanov-row-expanded.png",
+  "bytes": 196580,
+  "sha256": "38552710111c272cae94c0b2c77e6971d27d29d2ae0a2b8fdba6a87a787b3eda"
+ },
+ {
+  "file": "20-baglanov-object-chief-search.png",
+  "bytes": 198056,
+  "sha256": "79a9f983ae020eb136e0b2cc972e3520ba80a2f6d753eb84a1934fca02abaa08"
+ },
+ {
+  "file": "21-baglanov-object-chiefs-assigned.png",
+  "bytes": 200175,
+  "sha256": "61c660697c7e3145f1d6b9d12d2f66425c91d49c62023deb32de3a2e2301a5a7"
+ },
+ {
+  "file": "22-baglanov-recon-opened.png",
+  "bytes": 224865,
+  "sha256": "89d524e5daa2f454f8d3b175c4911d8a35da8d84c9d497263ffd86db8bc8fef9"
+ },
+ {
+  "file": "23-musakhan-recon-start.png",
+  "bytes": 220367,
+  "sha256": "db6e6b4e8f97871ead749db8a216f0f802bc682a6076feaac4732ffcdaa9cf01"
+ },
+ {
+  "file": "24-musakhan-recon-filled.png",
+  "bytes": 285780,
+  "sha256": "a6d7fbe101f307f79b75c190b05461d8a308db58ea29f117c1710362bc5de56a"
+ },
+ {
+  "file": "25-musakhan-recon-confirm.png",
+  "bytes": 224942,
+  "sha256": "23a4331c1aa4f7c5b9d9c456d1ee1453c071ac462efcd6f7b02ec930592f2226"
+ },
+ {
+  "file": "26-musakhan-recon-done.png",
+  "bytes": 218555,
+  "sha256": "2cfbc2732250ae8c8d1484be1e77159b398df32755e8ed67bcbde8ef3cf6e4d3"
+ },
+ {
+  "file": "27-a-esmagambetov-registry-access.png",
+  "bytes": 87459,
+  "sha256": "64886a93bf61968300a864a656f3c8ab4fa5f61241e8ca93e40b9581702e2e7a"
+ },
+ {
+  "file": "28-observer-registry-access.png",
+  "bytes": 223558,
+  "sha256": "2671715ff42ee2cde4cc8714f3ae57f3f425f62cd1cbb63fc0ab497605a0ae64"
+ },
+ {
+  "file": "29-y-talasbekov-registry-access.png",
+  "bytes": 73177,
+  "sha256": "cfefc6569b00c29eeab555512a637fe7651b1cf307dee1f63b1bbe1601b466d0"
+ },
+ {
+  "file": "30-turmagambetov-recon2-start.png",
+  "bytes": 224094,
+  "sha256": "fea60d1c1b820d3af4dbcc3d4b24d630c4bdb36a9a21839e2f2fc84ca1b218a3"
+ },
+ {
+  "file": "31-turmagambetov-recon2-filled.png",
+  "bytes": 243144,
+  "sha256": "54804b546d3b9b551163a68cd342110f70f5e2dca483f5cbe46db5f9a78e896c"
+ },
+ {
+  "file": "32-turmagambetov-recon2-done.png",
+  "bytes": 209943,
+  "sha256": "84e68d4c6cbd5c390c2c37eeb177505809a32e1c42c29a614bf0dbdb545af792"
+ },
+ {
+  "file": "33-meiram-workspace.png",
+  "bytes": 208983,
+  "sha256": "204be728cd1e8cffbda75df5248b516afe948745e6ae7c73c582452e0493190a"
+ },
+ {
+  "file": "34-meiram-forces-list-while-object2-recon.png",
+  "bytes": 208981,
+  "sha256": "b283bce13cc461d13209af8bc5c53d9c2717eba08162453b5657b03c491504b5"
+ },
+ {
+  "file": "35-meiram-collection-card.png",
+  "bytes": 168634,
+  "sha256": "08d17280ff01b0536bf005bfbac3f13a7d9906c41cf2b5522c37f0874e68ec2d"
+ },
+ {
+  "file": "36-meiram-request-draft.png",
+  "bytes": 182806,
+  "sha256": "5ab9b862cffdfb8cf0f3dfde45b1b88637367d667c15b302f20083a4a7ee9544"
+ },
+ {
+  "file": "37-meiram-send-requests-confirm.png",
+  "bytes": 194293,
+  "sha256": "1d4de495e6f13a57a5f6e6d683d34e76bcc3fb12f60ce8bea26190eb6792f4f5"
+ },
+ {
+  "file": "38-raiymzhanov-workspace.png",
+  "bytes": 214910,
+  "sha256": "65a2ffb1fbf64bb26efa175d192804552f925699de0ebddafc08339f81bfb307"
+ },
+ {
+  "file": "39-raiymzhanov-workspace.png",
+  "bytes": 214930,
+  "sha256": "e9c3e152af15e540ec923945cc5d07ae2679ddd00cf919fef00c6864dcaaf791"
+ },
+ {
+  "file": "40-raiymzhanov-request-card.png",
+  "bytes": 270491,
+  "sha256": "0f8c16ae0e09f20731e6708f0e97d6327c3bbb59f46f09b1fe68faedd0c12842"
+ },
+ {
+  "file": "41-raiymzhanov-answer-saved.png",
+  "bytes": 276658,
+  "sha256": "995c64bb9f39e4c1056ac45c51fb6f17d3a6d91991507bf6aeec8750ed33a4a6"
+ },
+ {
+  "file": "42-raiymzhanov-notify-confirm.png",
+  "bytes": 200385,
+  "sha256": "d80608cfcc6030f079b6e4451759bbfa63d4ed2cc611bdfe4f11113bbb6ed571"
+ },
+ {
+  "file": "43-raiymzhanov-sent-to-directorates.png",
+  "bytes": 281768,
+  "sha256": "a3a959e41e24aab1df5cd4334b47b8422212774b0a6432120cb317cca6870c36"
+ },
+ {
+  "file": "44-meldebekov-statuses-banner.png",
+  "bytes": 209172,
+  "sha256": "ef1039e2297ee4953492dbc5d712812ab6fcbe5bd4aec82dc8d6f9051fb3b91a"
+ },
+ {
+  "file": "45-meldebekov-select-no-campaign.png",
+  "bytes": 184850,
+  "sha256": "d39c36912fb93e7d0a8b526bb281a17e0593f8b36f7bdf73f9f341c3c6a5b4e3"
+ },
+ {
+  "file": "46-meldebekov-no-campaign-error.png",
+  "bytes": 192264,
+  "sha256": "2185beaf164d83fa74a788ce219c649401c8f9a992a084734b16bd55308c9e34"
+ },
+ {
+  "file": "47-meiram-new-campaign-form.png",
+  "bytes": 169000,
+  "sha256": "cd054b5b3044a73f1982b6c20c5d65c8633738b764f4d9b85238b7adf236415d"
+ },
+ {
+  "file": "48-meiram-campaign-created.png",
+  "bytes": 190110,
+  "sha256": "d4d01adc28faf8e76a82af4be7f159bedcd1e2125958facb36868ed5a450087b"
+ },
+ {
+  "file": "49-meldebekov-two-selected-physical.png",
+  "bytes": 195253,
+  "sha256": "e5785ada5d8d4823a0c2d809921b7264d3f899ac695cbab03f0883bc40a6efbc"
+ },
+ {
+  "file": "50-meldebekov-physical-reserved.png",
+  "bytes": 193090,
+  "sha256": "20e06edb790688b1a5bdcc4ac8d102d883bff581a6b931debf5a2eadb0b4e729"
+ },
+ {
+  "file": "51-meldebekov-groups-branch.png",
+  "bytes": 180516,
+  "sha256": "05faae703b3bc7ea40dcdc745d6967f2d50b673b9e7fa15e4079a004a51d790f"
+ },
+ {
+  "file": "52-meldebekov-other-groups-search.png",
+  "bytes": 171060,
+  "sha256": "5bb8c841b2a80673d3cc75a284b04a70e35e62ffced30ffb12fca8063d5aae27"
+ },
+ {
+  "file": "53-meldebekov-group-selected.png",
+  "bytes": 181782,
+  "sha256": "d9d8488ca95c4263a45f9578fc0923c246d94a2a021602deb962aa3d28f3f769"
+ },
+ {
+  "file": "54-meldebekov-group-allocated.png",
+  "bytes": 182366,
+  "sha256": "0c2546b426d2fdc5eab9db207860ad156d74defbab74f0e9608689926c147d39"
+ },
+ {
+  "file": "55-raiymzhanov-members-block.png",
+  "bytes": 27309,
+  "sha256": "444acf841a8cb2d676129258edad18204a23b2e320c6edbefd75a1aa07fc8f0a"
+ },
+ {
+  "file": "56-raiymzhanov-members-block.png",
+  "bytes": 284973,
+  "sha256": "4ff05f13b6e7379523811779d1374fef6d9de84b7a9783454bf3ce0059782055"
+ },
+ {
+  "file": "57-raiymzhanov-submit-confirm.png",
+  "bytes": 179021,
+  "sha256": "e7564ad796aecf9b92334fde28c55c998d22de28a0dada3834d115bdda909fab"
+ },
+ {
+  "file": "58-raiymzhanov-submitted.png",
+  "bytes": 286275,
+  "sha256": "3c0177925c2744e14e3328b08d00119949f990bc9ec2607707190d56977feb57"
+ },
+ {
+  "file": "59-meiram-campaign-pool.png",
+  "bytes": 201289,
+  "sha256": "701fd50b4ef6ce08f7c99bdc2abd7b90f9bdedaf91aebe93d14fe232223c4287"
+ },
+ {
+  "file": "60-meiram-assignment-form.png",
+  "bytes": 154660,
+  "sha256": "4621c14676acfcc816f335c5f96548927b5e61981683ea05eaab8e10c9748975"
+ },
+ {
+  "file": "61-meiram-two-assignments.png",
+  "bytes": 198066,
+  "sha256": "ebbcac7fddfb52e7e826e312306e2d633a4ba7032645f3c99267c1a7caea9942"
+ },
+ {
+  "file": "62-meiram-conflict-warning.png",
+  "bytes": 173170,
+  "sha256": "5ed39587475f153feb0b4272e5e167e97e6ab1dc19fd00059c81d193afaa7808"
+ },
+ {
+  "file": "63-musakhan-placement-start.png",
+  "bytes": 232186,
+  "sha256": "0d2986a04f98a0a5028d590341269ce6dc8ed9ddedb906acf2bfff86c7677fc5"
+ },
+ {
+  "file": "64-musakhan-autofill-preview.png",
+  "bytes": 235344,
+  "sha256": "f14f3531d53f8e454a1c6e3dadd314fd87b97103b2506c95b10da9267cc392ab"
+ },
+ {
+  "file": "65-musakhan-autofill-applied.png",
+  "bytes": 245688,
+  "sha256": "1ec883ca936044a87245a5a48f54b9c6b2097c6f7c68452901c5b1291b23403a"
+ },
+ {
+  "file": "66-musakhan-remove-post-dialog.png",
+  "bytes": 216394,
+  "sha256": "3b9df191a1b79f3af3e008660c34c6b98e8d54bf899fe84ff72bb8b9b546cb11"
+ },
+ {
+  "file": "67-musakhan-post-removed.png",
+  "bytes": 244113,
+  "sha256": "dc8fbe7593871152429a50cf9adf58f57ea5889367a3785518e2c0beb5859df9"
+ },
+ {
+  "file": "68-musakhan-shortage-dialog.png",
+  "bytes": 220581,
+  "sha256": "d53afca2068063cd4fb05775e0c82292d82737e2773a42ac3ea2fe8bcf7762d4"
+ },
+ {
+  "file": "69-musakhan-placement-completed.png",
+  "bytes": 260928,
+  "sha256": "738a7bb620e80ee5fcceb31594bd0be7bcf6a29488414ba442df81732f4f7024"
+ },
+ {
+  "file": "70-turmagambetov-placement-start.png",
+  "bytes": 220247,
+  "sha256": "cac7e192c4e0a9386838154c11d5d984aed6cc17e0c3c68f6e7b1f8cc46ea414"
+ },
+ {
+  "file": "71-turmagambetov-placement-sidebar-check.png",
+  "bytes": 227730,
+  "sha256": "bdd26672ca5b93d709fc112f34e80a2fedb3c3673333b1f4031a1d37f3e53088"
+ },
+ {
+  "file": "72-turmagambetov-candidate-selected.png",
+  "bytes": 204249,
+  "sha256": "6dceaf19f66a7b96a8b9fb65d3115c9c6b5351a54a2f475e52fb1ff5784f7e67"
+ },
+ {
+  "file": "73-turmagambetov-placement-completed.png",
+  "bytes": 245249,
+  "sha256": "d02450eaa0cd8234434cfcde8795b2c0ee23c0998626d5f16678d911e265d1be"
+ },
+ {
+  "file": "74-musakhan-approval-start.png",
+  "bytes": 259732,
+  "sha256": "4038e14a9446acb4f6f26849c778adc687a07f0dc0d1243209deb2c766c2e6b1"
+ },
+ {
+  "file": "75-musakhan-approver-chosen.png",
+  "bytes": 189763,
+  "sha256": "b8bd24cae7a2e9bdac0b858dd2eb95cd64da80be09ffb5f40c9d5a4f4ac7edc4"
+ },
+ {
+  "file": "76-musakhan-route-set.png",
+  "bytes": 261374,
+  "sha256": "9b9d247ff6e8be7354fa3f94c4e6f34bd3e9edf27fcbf5488f64f7453bac1a3b"
+ },
+ {
+  "file": "77-musakhan-sent-for-approval.png",
+  "bytes": 264598,
+  "sha256": "ee673d58d55d36c32894ce1d91141906a8eda4aa52fe1033649a7bf15952eccb"
+ },
+ {
+  "file": "78-rakhymzhanov-before-first-signature.png",
+  "bytes": 261734,
+  "sha256": "da8edd1605468866a077cbefb84e10d52028f232c3796e118261e6b573588a42"
+ },
+ {
+  "file": "79-turmagambetov-approval-pending.png",
+  "bytes": 266329,
+  "sha256": "424f4af1004b393fb134f9193f161ef04613369bff98e39568900fbcbe757029"
+ },
+ {
+  "file": "80-turmagambetov-return-dialog.png",
+  "bytes": 276651,
+  "sha256": "9c8550c73b78b41ea03ba7c2219cfdf70f62ab7f2082886469460e130381e240"
+ },
+ {
+  "file": "81-turmagambetov-returned.png",
+  "bytes": 282445,
+  "sha256": "96d27c627032a6172b43aa2ba1adc9c529e8e1331dce55de7c51877d3e4c27c6"
+ },
+ {
+  "file": "82-musakhan-after-return.png",
+  "bytes": 283033,
+  "sha256": "c3207bbbb4b3bb50b3721bec16ff5e8c0ad60ec7d6515bed85c504ec95c15d7e"
+ },
+ {
+  "file": "83-musakhan-remarks-answered.png",
+  "bytes": 290340,
+  "sha256": "be83b868740b9e027df8b55c9fd8787c1fb3e692b6f6c506ec9895e2bab39570"
+ },
+ {
+  "file": "84-musakhan-v2-sent.png",
+  "bytes": 319635,
+  "sha256": "ccf7787e81b44c714e7bdf2143bd1041ec7460385004803b93ac65b5485d8e28"
+ },
+ {
+  "file": "85-musakhan-remarks-on-approval.png",
+  "bytes": 318342,
+  "sha256": "4e6efd61b6bbed3dd34c33250d1bf0dac593ee158a131190f5cadebae0e7048a"
+ },
+ {
+  "file": "86-musakhan-remarks-resolved.png",
+  "bytes": 318420,
+  "sha256": "330a546b7d62435ddd63f07e9e43b4a33f516cafeda02f90f4873e57f8f25d7a"
+ },
+ {
+  "file": "87-m-turmagambetov-signed-object1.png",
+  "bytes": 323964,
+  "sha256": "e6853b7894dcd455d51c095e6ff9b0eba68be7d9215799d674ca14098dca6a90"
+ },
+ {
+  "file": "88-a-rakhymzhanov-signed-object1.png",
+  "bytes": 192465,
+  "sha256": "c15688e7ae3d2b5b43e379a287d71444e725db8eb4a30b05fc7f70ef5deccbbf"
+ },
+ {
+  "file": "89-turmagambetov-object2-sent.png",
+  "bytes": 249590,
+  "sha256": "cc3622a44536e39d0556a1371a9820ca3d7f8a15b510b8a26fdb318cf19f4f45"
+ },
+ {
+  "file": "90-k-baglanov-signed-object2.png",
+  "bytes": 268467,
+  "sha256": "afa24328de33a524e37214b654c9fc76d608d3407afc28d1d96ad87a238b4bb0"
+ },
+ {
+  "file": "91-a-rakhymzhanov-signed-object2.png",
+  "bytes": 186883,
+  "sha256": "b6a5ed73013050d6fe6f60e717d52b85f835c27a2a5a05f7c516e4d593a69924"
+ },
+ {
+  "file": "92-talasbekov-my-assignment.png",
+  "bytes": 210875,
+  "sha256": "208b76a3ced8b5022e89d0e31cbcb406d66ac74f4086a1b4c73ec1421095f0f1"
+ },
+ {
+  "file": "93-talasbekov-acknowledged.png",
+  "bytes": 208837,
+  "sha256": "b583faac3c5898158773679fc407aa3f230c2ac2db0b9ea0ebd540e816c8d0b9"
+ },
+ {
+  "file": "94-meldebekov-esimov-profile.png",
+  "bytes": 204980,
+  "sha256": "19e3da93c6f2464892ac261a4c39d04f2ccf8e5ea1b89dd8be34648808de2550"
+ },
+ {
+  "file": "95-meldebekov-personal-ack-dialog.png",
+  "bytes": 193954,
+  "sha256": "307e0b57c360bedb7f656e224ecff4e506f8c037d442d36cd0f3f235ecd307a7"
+ },
+ {
+  "file": "96-meldebekov-personal-acknowledged.png",
+  "bytes": 203990,
+  "sha256": "3c72bdeac26921d11f1a987211bb5f73f7d5d563778512778e0820909595f3d7"
+ },
+ {
+  "file": "97-musakhan-ack-stage-object-chief.png",
+  "bytes": 185267,
+  "sha256": "2521aac4329bced8fa28236f4ad8bbfda54e5c55acb8953f219c148062a09759"
+ },
+ {
+  "file": "98-baglanov-ack-stage.png",
+  "bytes": 179443,
+  "sha256": "91458302acc8c842b66702b9b95f05f23d7eca79f11a4b4928dd77a2c78a4e66"
+ },
+ {
+  "file": "99-u-musakhan-conduct-start.png",
+  "bytes": 275225,
+  "sha256": "0b0ac8d8677352cda9eb2d07af5aa187d68f3b639783f9c032b382d0039335b7"
+ }
+]

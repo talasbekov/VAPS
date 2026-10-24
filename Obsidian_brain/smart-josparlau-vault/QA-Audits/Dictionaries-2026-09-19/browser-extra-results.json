@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Виды дежурств",
+    "url": "http://localhost:8112/admin/operations/opsdutytype/3/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Виды дежурств боевых групп",
+    "url": "http://localhost:8112/admin/operations/opscombatdutytype/3/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Группы рейтинга",
+    "url": "http://localhost:8112/admin/operations/opsratinggroup/4/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Трассы",
+    "url": "http://localhost:8112/admin/operations/opscombatroute/4/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Показатели аналитики службы",
+    "url": "http://localhost:8112/admin/operations/opsanalyticsmetricdefinition/8/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Пресеты периодов аналитики",
+    "url": "http://localhost:8112/admin/operations/opsanalyticsperiodpreset/5/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Детекторы внимания",
+    "url": "http://localhost:8112/admin/operations/opsattentiondetector/6/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Типы служебных отчётов",
+    "url": "http://localhost:8112/admin/operations/opsservicereporttype/2/change/",
+    "result": "create/edit/reload OK"
+  },
+  {
+    "name": "Типы статусов (ОМ)",
+    "url": "http://localhost:8112/admin/operations/statustype/QA1909_5FSTATUS/change/",
+    "result": "create/edit/reload OK; inactive"
+  },
+  {
+    "name": "Транспорт ГОН",
+    "url": "http://localhost:8112/admin/operations/opsvehicle/17/change/",
+    "result": "create/edit/reload OK; inactive"
+  },
+  {
+    "name": "Законы об ОМ",
+    "url": "http://localhost:8112/admin/operations/opslegaldocument/9/change/",
+    "result": "create/edit/reload OK; inactive"
+  },
+  {
+    "name": "Охраняемые лица",
+    "url": "http://localhost:8112/admin/operations/opsprotectedperson/24/change/",
+    "result": "create/edit/reload OK; inactive"
+  }
+]

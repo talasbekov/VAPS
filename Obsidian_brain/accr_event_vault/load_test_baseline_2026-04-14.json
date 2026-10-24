@@ -1,0 +1,53 @@
+{
+  "date": "2026-04-14",
+  "tool": "locust",
+  "version": "2.32.3",
+  "target_host": "http://127.0.0.1:8000",
+  "users_simulated": 100,
+  "spawn_rate": 10,
+  "duration_seconds": 60,
+  "nfr5_requirement_ms": 5000,
+  "redis_cache_hit_rate_percent": "N/A (using LocMemCache for smoke test)",
+  "endpoints": {
+    "/health/": {
+      "p50_ms": 17,
+      "p95_ms": 130,
+      "p99_ms": 400,
+      "rps": 20.6,
+      "failure_rate_percent": 0.0
+    },
+    "/api/health/": {
+      "p50_ms": 18,
+      "p95_ms": 120,
+      "p99_ms": 620,
+      "rps": 11.9,
+      "failure_rate_percent": 0.0
+    },
+    "/application/": {
+      "p50_ms": 22,
+      "p95_ms": 240,
+      "p99_ms": 590,
+      "rps": 8.5,
+      "failure_rate_percent": 0.0
+    },
+    "/add_attendee/": {
+      "p50_ms": 59,
+      "p95_ms": 130,
+      "p99_ms": 360,
+      "rps": 4.4,
+      "failure_rate_percent": 98.1,
+      "notes": "Hit rate limit (429 Too Many Requests) at 100 users."
+    }
+  },
+  "nfr5_compliance": {
+    "compliant": null,
+    "compliant_note": "UNVERIFIED (was incorrectly 'true'). This run = 100 users on SQLite, NOT the NFR5 target of 3000. /add_attendee/ had 98.1% failures (429 rate-limit) and is excluded; the original harness lacked failure detection and may have measured login redirects rather than the real endpoints. Re-run on Postgres+Redis at 3000 users with the fixed harness (docs/load_tests/locustfile.py) before asserting NFR5 compliance.",
+    "worst_p99_ms": 3000,
+    "worst_endpoint": "/user_login/ (POST)",
+    "bottlenecks": [
+      "Rate limiting on /add_attendee/ prevents full load testing of this endpoint with high concurrency.",
+      "Login endpoint response time increases significantly under load (p99=3000ms)."
+    ]
+  },
+  "notes": "This is a smoke test baseline using local SQLite. Full test with 3000 users against production-like env (PostgreSQL + Redis) is required for final verification. Rate limits should be tuned for load testing."
+}

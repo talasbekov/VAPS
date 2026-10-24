@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} @keyframes sq-home-spin{to{transform:rotate(360deg)}}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:70">
+        <div style="width:40px;height:40px;border-radius:50%;border:3px solid #e3f3ee;border-top-color:#0f766e;animation:sq-home-spin 0.8s linear infinite"></div>
+      </div>
+    </sc-if>
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="font-size:19px;font-weight:800;color:#0f3f3a;flex-shrink:0">Здравствуйте 👋</div>
+          <div onClick="{{ openCityPicker }}" style="display:flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-5.4-7-11a7 7 0 0114 0c0 5.6-7 11-7 11z" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.4" stroke="#0f766e" stroke-width="1.8"/></svg>
+            <div style="font-size:12px;font-weight:700;color:#0f766e">{{ city }}</div>
+            <svg width="8" height="5" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button onClick="{{ goToNotifications }}" style="width:38px;height:38px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">
+            <svg width="17" height="19" viewBox="0 0 24 24" fill="none"><path d="M12 3a6 6 0 00-6 6v3.5c0 .8-.3 1.6-.9 2.2L4 16h16l-1.1-1.3a3 3 0 01-.9-2.2V9a6 6 0 00-6-6z" stroke="#0f3f3a" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.5 19a2.5 2.5 0 005 0" stroke="#0f3f3a" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <div style="position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#c0392b;border:1.5px solid #fff"></div>
+          </button>
+          <button style="width:38px;height:38px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="#0f3f3a" stroke-width="1.7"/><path d="M4.5 20c0-4 3.4-6.8 7.5-6.8s7.5 2.8 7.5 6.8" stroke="#0f3f3a" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button onClick="{{ goToTopics }}" style="width:100%;border:none;border-radius:26px;background:#0f766e;color:#fff;font-family:inherit;cursor:pointer;padding:20px 20px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 16px 32px -10px rgba(15,118,110,0.45);margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5l-8-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <div style="font-size:18px;font-weight:800">Мне нужна помощь сейчас</div>
+        </div>
+        <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,0.8)">Среднее время подключения — до 2 минут</div>
+      </button>
+
+      <div style="margin:18px 0 4px;font-size:16px;font-weight:800;color:#0f3f3a">Выберите тему, которая вас беспокоит</div>
+      <div style="font-size:12px;font-weight:500;color:#8fa6a1;margin-bottom:10px">Мы подберём подходящего специалиста</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+        <div onClick="{{ goToAnxiety }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 20c0-8 5-14 15-15-1 9-6 14-15 15z" stroke="#159a7c" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 15c2-2 5-4 9-5" stroke="#159a7c" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Тревога<br>и стресс</div>
+        </div>
+        <div onClick="{{ goToDepression }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e6f0fb;display:flex;align-items:center;justify-content:center">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="M7 17a4.5 4.5 0 010-9 5.5 5.5 0 0110.6-1.8A4 4 0 0117 17H7z" stroke="#3b82c4" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Депрессия<br>и апатия</div>
+        </div>
+        <div onClick="{{ goToPanic }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="M2 12h4l2-5 4 10 3-7 2 4h5" stroke="#159a7c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Панические<br>атаки</div>
+        </div>
+        <div onClick="{{ goToAddiction }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#f1eafb;display:flex;align-items:center;justify-content:center">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#8b5fc9" stroke-width="1.8"/><path d="M6 18L18 6" stroke="#8b5fc9" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Зависимости<br>и срывы</div>
+        </div>
+        <div onClick="{{ goToRelationships }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#fdece3;display:flex;align-items:center;justify-content:center">
+            <svg width="22" height="20" viewBox="0 0 24 24" fill="none"><circle cx="8" cy="9" r="3.2" stroke="#e08a4d" stroke-width="1.7"/><circle cx="16" cy="9" r="3.2" stroke="#e08a4d" stroke-width="1.7"/><path d="M2.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M11 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5" stroke="#e08a4d" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Отношения<br>и семья</div>
+        </div>
+        <div onClick="{{ goToLoss }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#fbe7ec;display:flex;align-items:center;justify-content:center">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M12 20s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z" stroke="#d9698a" stroke-width="1.8" stroke-linejoin="round"/><path d="M10.5 9l1.5 2-2 2.2 2 2.3" stroke="#d9698a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Потеря<br>и горе</div>
+        </div>
+        <div onClick="{{ goToSelfesteem }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#f1eafb;display:flex;align-items:center;justify-content:center">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.7 1.6 6.8L12 17l-6.2 3.5 1.6-6.8-5.2-4.7 6.9-.7L12 2z" stroke="#8b5fc9" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Самооценка<br>и уверенность</div>
+        </div>
+        <div onClick="{{ goToBurnout }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="16" height="10" rx="2.5" stroke="#159a7c" stroke-width="1.7"/><path d="M21 10v4" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round"/><path d="M10.5 9.5L8 12.5h3l-2 2.3" stroke="#159a7c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Выгорание<br>и усталость</div>
+        </div>
+        <div onClick="{{ goToOther }}" style="border:1px solid #edf2f0;border-radius:16px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#eef1f0;display:flex;align-items:center;justify-content:center">
+            <svg width="24" height="8" viewBox="0 0 24 8" fill="none"><circle cx="4" cy="4" r="2.4" fill="#8b9994"/><circle cx="12" cy="4" r="2.4" fill="#8b9994"/><circle cx="20" cy="4" r="2.4" fill="#8b9994"/></svg>
+          </div>
+          <div style="font-size:10.5px;font-weight:700;color:#0f3f3a;line-height:1.2">Другое</div>
+        </div>
+      </div>
+
+      <sc-if value="{{ showPremiumBanner }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ goPremium }}" style="border-radius:18px;background:linear-gradient(135deg,#0f3f3a,#0f766e);padding:15px 16px;display:flex;align-items:center;gap:12px;margin-bottom:14px;cursor:pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 2l2.6 5.5 6 .7-4.4 4.1 1.2 6-5.4-3-5.4 3 1.2-6-4.4-4.1 6-.7z" fill="#f2d16b"/></svg>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:800;color:#fff">Скидка 25% на консультации с Premium</div>
+            <div style="font-size:11px;font-weight:500;color:rgba(255,255,255,0.75);margin-top:1px">Плюс безлимит на медитации и практики</div>
+          </div>
+          <svg width="8" height="13" viewBox="0 0 9 14" fill="none" style="flex-shrink:0"><path d="M1 1l6 6-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </sc-if>
+
+      <div onClick="{{ goToAnalysis }}" style="border:1px solid #edf2f0;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:14px;cursor:pointer">
+        <div style="width:42px;height:42px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2-5 4 10 3-7 2 4h5" stroke="#159a7c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:13.5px;font-weight:800;color:#0f3f3a">Ваше состояние сейчас</div>
+          <div style="font-size:11.5px;font-weight:500;color:#8fa6a1;margin-top:1px">Пульс 96 уд/мин · данные с часов</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#a9bdb9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <div onClick="{{ openEmergencyModal }}" style="background:#fdedec;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px;margin-bottom:18px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 21s-7.5-4.6-9.7-9.3C.7 8.2 2.6 4.5 6 4.5c2 0 3.3 1 4.5 2.7C11.7 5.5 13 4.5 15 4.5c3.4 0 5.3 3.7 3.7 7.2C16.5 16.4 12 21 12 21z" fill="#c0392b"/></svg>
+          <div style="font-size:14px;font-weight:800;color:#c0392b">Экстренная ситуация</div>
+        </div>
+        <div style="font-size:12px;font-weight:500;color:#a8564d;line-height:1.5">У нас есть специалисты, готовые подключиться в приоритетном порядке прямо сейчас</div>
+      </div>
+
+      <sc-if value="{{ showCityPicker }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeCityPicker }}" style="position:absolute;inset:0;background:rgba(15,40,37,0.45);z-index:50"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:26px 26px 0 0;padding:22px 22px 32px;box-sizing:border-box;z-index:51;box-shadow:0 -20px 40px -16px rgba(0,0,0,0.2)">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Выберите город</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ cityOptions }}" as="c" hint-placeholder-count="3">
+            <div onClick="{{ c.onClick }}" style="padding:14px 16px;border-radius:14px;background:{{ c.bg }};display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ c.label }}</div>
+              <sc-if value="{{ c.selected }}" hint-placeholder-val="{{ false }}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#0f766e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showEmergencyModal }}" hint-placeholder-val="{{ false }}">
+        <div style="position:fixed;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+          <div style="width:100%;max-width:340px;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+            <div style="font-size:16px;font-weight:800;color:#0f3f3a">Вам сейчас угрожает непосредственная опасность?</div>
+            <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Если есть угроза жизни или здоровью — обратитесь в экстренные службы, это быстрее, чем любое приложение</div>
+            <div style="width:100%;display:flex;gap:8px;margin-top:6px">
+              <a href="tel:102" style="flex:1;height:46px;border-radius:14px;background:#fdedec;color:#c0392b;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;text-decoration:none">102 · Полиция</a>
+              <a href="tel:103" style="flex:1;height:46px;border-radius:14px;background:#fdedec;color:#c0392b;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;text-decoration:none">103 · Скорая</a>
+            </div>
+            <div style="width:100%;height:1px;background:#edf2f0;margin:12px 0"></div>
+            <button onClick="{{ confirmEmergency }}" style="width:100%;height:56px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;line-height:1.35">Мне нужна срочно<br>психологическая помощь</button>
+            <button onClick="{{ closeEmergencyModal }}" style="width:100%;height:44px;border:none;background:transparent;color:#8fa6a1;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Отмена</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="font-size:15px;font-weight:700;color:#0f3f3a;margin-bottom:10px">Формат консультации</div>
+      <div style="display:flex;gap:10px;margin-bottom:20px">
+        <div onClick="{{ goToChat }}" style="flex:1;background:#f7fbfa;border-radius:18px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H8l-4 4V5z" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <div style="font-size:12px;font-weight:700;color:#0f3f3a">Чат</div>
+        </div>
+        <div onClick="{{ goToAudio }}" style="flex:1;background:#f7fbfa;border-radius:18px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 13v-2a8 8 0 0116 0v2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/><rect x="3" y="13" width="5" height="7" rx="2" stroke="#0f766e" stroke-width="1.8"/><rect x="16" y="13" width="5" height="7" rx="2" stroke="#0f766e" stroke-width="1.8"/></svg>
+          <div style="font-size:12px;font-weight:700;color:#0f3f3a">Аудио</div>
+        </div>
+        <div onClick="{{ goToVideo }}" style="flex:1;background:#f7fbfa;border-radius:18px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="13" height="12" rx="2.5" stroke="#0f766e" stroke-width="1.8"/><path d="M16 10l5-3v10l-5-3" stroke="#0f766e" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <div style="font-size:12px;font-weight:700;color:#0f3f3a">Видео</div>
+        </div>
+      </div>
+
+      <div style="font-size:15px;font-weight:700;color:#0f3f3a;margin-bottom:12px">Полезные материалы</div>
+      <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+        <div onClick="{{ goToBreathing }}" style="flex:0 0 108px;border:1px solid #edf2f0;border-radius:16px;padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 21c0-6-4-9-8-9 0 6 4 9 8 9z" stroke="#159a7c" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 21c0-9 4-14 8-15 1 8-3 14-8 15z" stroke="#159a7c" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#0f3f3a;line-height:1.25">Дыхательные<br>упражнения</div>
+        </div>
+        <div onClick="{{ goToMusic }}" style="flex:0 0 108px;border:1px solid #edf2f0;border-radius:16px;padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer">
+          <div style="width:36px;height:36px;border-radius:50%;background:#e6f0fb;display:flex;align-items:center;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l11-2v13" stroke="#3b82c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" stroke="#3b82c4" stroke-width="1.7"/><circle cx="17" cy="16" r="3" stroke="#3b82c4" stroke-width="1.7"/></svg>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#0f3f3a;line-height:1.25">Расслабляющая<br>музыка</div>
+        </div>
+        <div onClick="{{ goToArticles }}" style="flex:0 0 108px;border:1px solid #edf2f0;border-radius:16px;padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:#fdece3;display:flex;align-items:center;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C6 4.5 9 4.5 12 6v13c-3-1.5-6-1.5-8-0.5V5.5z" stroke="#e08a4d" stroke-width="1.7" stroke-linejoin="round"/><path d="M20 5.5c-2-1-5-1-8 0.5v13c3-1.5 6-1.5 8-0.5V5.5z" stroke="#e08a4d" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#0f3f3a;line-height:1.25">Полезные<br>статьи</div>
+        </div>
+        <div onClick="{{ goToMeditations }}" style="flex:0 0 108px;border:1px solid #edf2f0;border-radius:16px;padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer">
+          <div style="width:36px;height:36px;border-radius:50%;background:#f1eafb;display:flex;align-items:center;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 5a3 3 0 016 0v6a3 3 0 01-6 0V5z" stroke="#8b5fc9" stroke-width="1.7"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#8b5fc9" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#0f3f3a;line-height:1.25">Медитации</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="position:absolute;left:0;right:0;bottom:0;height:88px;background:#fff;display:flex;padding-top:12px;border-top:1px solid #eef2f0;box-sizing:border-box;z-index:30">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:10.5px;font-weight:700;color:{{ n.color }}">{{ n.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static CITIES = ['Астана', 'Алматы', 'Шымкент'];
+  state = { showEmergencyModal: false, isLoading: true, showCityPicker: false, city: localStorage.getItem('sq_city') || 'Астана' };
+  componentDidMount() {
+    setTimeout(() => this.setState({ isLoading: false }), 700);
+  }
+  renderVals() {
+    const startNow = () => {};
+    const goTopic = (id) => () => { window.location.href = './SmartQoldau - Каталог.dc.html?topic=' + id; };
+    const s = this.state;
+    const cityOptions = Component.CITIES.map(c => ({
+      label: c,
+      selected: c === s.city,
+      bg: c === s.city ? '#f2fbf8' : '#f8faf9',
+      onClick: () => { localStorage.setItem('sq_city', c); this.setState({ city: c, showCityPicker: false }); },
+    }));
+    return {
+      startNow,
+      isLoading: this.state.isLoading,
+      city: s.city,
+      goToNotifications: () => { window.location.href = './SmartQoldau - Уведомления.dc.html'; },
+      cityOptions,
+      showCityPicker: s.showCityPicker,
+      openCityPicker: () => this.setState({ showCityPicker: true }),
+      closeCityPicker: () => this.setState({ showCityPicker: false }),
+      showPremiumBanner: localStorage.getItem('sq_premium') !== '1',
+      goPremium: () => { window.location.href = './SmartQoldau - Premium.dc.html'; },
+      showEmergencyModal: this.state.showEmergencyModal,
+      openEmergencyModal: () => this.setState({ showEmergencyModal: true }),
+      closeEmergencyModal: () => this.setState({ showEmergencyModal: false }),
+      confirmEmergency: () => { window.location.href = './SmartQoldau - Экстренный поиск.dc.html?format=audio'; },
+      goToChat: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html?format=chat'; },
+      goToAudio: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html?format=audio'; },
+      goToVideo: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html?format=video'; },
+      goToTopics: () => { window.location.href = './SmartQoldau - Выбор темы.dc.html'; },
+      goToAnalysis: () => { window.location.href = './SmartQoldau - Анализ.dc.html'; },
+      goToBreathing: () => { window.location.href = './SmartQoldau - Дыхательное упражнение.dc.html'; },
+      goToMusic: () => { window.location.href = './SmartQoldau - Расслабляющая музыка.dc.html'; },
+      goToArticles: () => { window.location.href = './SmartQoldau - Полезные статьи.dc.html'; },
+      goToMeditations: () => { window.location.href = './SmartQoldau - Медитации.dc.html'; },
+      goToAnxiety: goTopic('anxiety'),
+      goToDepression: goTopic('depression'),
+      goToPanic: goTopic('panic'),
+      goToAddiction: goTopic('addiction'),
+      goToRelationships: goTopic('relationships'),
+      goToLoss: goTopic('loss'),
+      goToSelfesteem: goTopic('selfesteem'),
+      goToBurnout: goTopic('burnout'),
+      goToOther: goTopic('other'),
+      navItems: [
+        { label: 'Главная', color: '#0f766e', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', onClick: () => {} },
+        { label: 'Консультации', color: '#a9bdb9', icon: 'M4 5h16v11H8l-4 4V5z', onClick: () => { window.location.href = './SmartQoldau - Консультации.dc.html'; } },
+        { label: 'Избранное', color: '#a9bdb9', icon: 'M12 21s-8-5-8-11.5A4.5 4.5 0 0112 5a4.5 4.5 0 018 3.5C20 15 12 20 12 20z', onClick: () => { window.location.href = './SmartQoldau - Избранное.dc.html'; } },
+        { label: 'Материалы', color: '#a9bdb9', icon: 'M12 21c0-6-4-9-8-9 0 6 4 9 8 9z M12 21c0-9 4-14 8-15 1 8-3 14-8 15z', onClick: () => { window.location.href = './SmartQoldau - Материалы.dc.html'; } },
+        { label: 'Профиль', color: '#a9bdb9', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', onClick: () => { window.location.href = './SmartQoldau - Профиль.dc.html'; } },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+{
+  "agent": "security-auth-engineer",
+  "inventory": [
+    {
+      "item": "AuthN: permission_classes coverage across organization_management/apps/* viewsets/APIViews",
+      "tested": "tested",
+      "reason": "Grepped all files matching APIView/ViewSet/generics.* for permission_classes; manually reviewed every class lacking an explicit declaration. Most rely on custom fail-closed gates (RequirePermissionMixin, inline require_permission()/resolve_actor_id() calls, or get_queryset() authenticated-check). Confirmed one real gap: reports/api/views.py ReportViewSet.generate (see RAW-00000005-0)."
+    },
+    {
+      "item": "AuthZ / division-tenant isolation in apps/ops, apps/operations, apps/employees",
+      "tested": "tested",
+      "reason": "Reviewed get_queryset()/get_object() scoping in EmployeeViewSet, SecondmentRequestViewSet, RequirePermissionMixin + _resolve_division_scope() in operations/ops. No get_object() override bypasses queryset filtering; division scoping is enforced in the queryset layer, not just serializer/UI, in every viewset checked. One integrity gap found in EmployeeViewSet.transfer (RAW-00000003-0): a denied cross-division transfer still commits a false history record because the authorization check runs mid-transaction, after a write, and the early `return Response(...)` inside `transaction.atomic()` does not roll back prior writes in that block."
+    },
+    {
+      "item": "Injection: .raw(), cursor.execute(), eval(), exec() with request-derived strings",
+      "tested": "tested",
+      "reason": "grep -rn for these patterns across organization_management/apps/*.py (excluding tests) returned zero matches. No findings."
+    },
+    {
+      "item": "Secrets handling: request bodies/tokens/passwords logged unredacted",
+      "tested": "tested",
+      "reason": "grep for logger.*(request.data|password|token) and print(...) equivalents returned zero matches. audit/middleware.py logs a computed model_to_dict() diff (old/new field values) rather than the raw request body; this could theoretically surface a hashed password field if a User-model endpoint were ever routed through this middleware's app_label/model matching, but no such route was found reachable, so this is not raised as a standalone finding."
+    },
+    {
+      "item": "CSRF: Django CsrfViewMiddleware active for state-changing endpoints",
+      "tested": "tested",
+      "reason": "config/settings/base.py MIDDLEWARE includes 'django.middleware.csrf.CsrfViewMiddleware'. DRF's JWT-authenticated API endpoints are exempt from session-based CSRF enforcement by design (no SessionAuthentication in DEFAULT_AUTHENTICATION_CLASSES), which is standard for a token-bearer API and not flagged as a gap."
+    },
+    {
+      "item": "SSRF: outbound fetch of user-supplied URL (attachment/webhook)",
+      "tested": "tested",
+      "reason": "grep for requests.get/post, httpx.get/post, urlopen( across the backend returned zero matches. No outbound-fetch-of-user-URL code path found."
+    },
+    {
+      "item": "PersonalRecordFront middleware.ts gating of /security-ops/*",
+      "tested": "tested",
+      "reason": "Read middleware.ts matcher and hooks/use-ops-permissions.ts. /security-ops/* is explicitly excluded from the matcher; access control for that route tree is client-side only (see RAW-00000004-0)."
+    },
+    {
+      "item": "Destructive/load testing of any confirmed gap (e.g. live POST to /api/reports/reports/generate/ as anonymous, live transfer() race)",
+      "blocked": "blocked",
+      "reason": "Dev servers are not running per task scope, and destructive/load testing requires explicit authorization not granted this run. All findings below are status:proposed, confidence capped at 0.6, based on static source read only."
+    }
+  ],
+  "findings": [
+    {
+      "id": "RAW-00000001-0",
+      "domain": "security",
+      "category": "insecure-default-permission",
+      "title": "Global DRF DEFAULT_PERMISSION_CLASSES is AllowAny — any new/omitted view defaults to public",
+      "severity": "medium",
+      "confidence": 0.6,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/config/settings/base.py",
+        "line": 165,
+        "end_line": 167,
+        "symbol": "REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']",
+        "source_sha256": "e671f2e412e4467375cf91341c35ff7b8dff0e60653a19756ebfd62d79cfcd62"
+      },
+      "evidence": {
+        "tier": "source_anchored",
+        "detail": "'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'] — comment explains it's needed for public endpoints like /api/token/, but it applies repo-wide, so any viewset that forgets to set permission_classes (or a permission-gating mixin) is silently public. Two concrete instances of this default being relied on/exploitable were found: notifications/views.py (RAW-00000002-0, mitigated) and reports/api/views.py ReportViewSet.generate (RAW-00000005-0, NOT mitigated)."
+      },
+      "recommendation": {
+        "text": "Flip the global default to IsAuthenticated and explicitly opt individual public endpoints (e.g. token obtain) into AllowAny at the view level, so a forgotten permission declaration fails closed instead of open.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-00000002-0",
+      "domain": "security",
+      "category": "missing-authn-check",
+      "title": "NotificationViewSet has no explicit permission_classes; relies solely on get_queryset() self-filtering",
+      "severity": "low",
+      "confidence": 0.5,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/notifications/views.py",
+        "line": 17,
+        "end_line": 43,
+        "symbol": "NotificationViewSet",
+        "source_sha256": "5886d306ff725cf6f7ecfc76bfdc984167f1fcbdf6567da87d5c90dceafecc2b"
+      },
+      "evidence": {
+        "tier": "source_anchored",
+        "detail": "class NotificationViewSet(viewsets.ReadOnlyModelViewSet) declares no permission_classes and no RequirePermissionMixin. Under the repo-wide AllowAny default (RAW-00000001-0), an anonymous request reaches the view; get_queryset() explicitly checks `if not user.is_authenticated: return Notification.objects.none()`, and mark_as_read()'s get_object() reuses that empty queryset, so in the current code an anonymous caller gets an empty list / 404 rather than another user's data. The gap is architectural: correctness here depends entirely on every action remembering the manual is_authenticated check, with no declared permission class as a backstop — the same class of omission that IS exploitable in RAW-00000005-0."
+      },
+      "recommendation": {
+        "text": "Add permission_classes = [IsAuthenticated] to NotificationViewSet for defense in depth, consistent with every sibling viewset in the codebase.",
+        "confidence_label": "supported"
+      }
+    },
+    {
+      "id": "RAW-00000003-0",
+      "domain": "security",
+      "category": "authorization-bypass",
+      "title": "EmployeeViewSet.transfer(): denied cross-division transfer still commits a false EmployeeTransferHistory record",
+      "severity": "medium",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py",
+        "line": 115,
+        "end_line": 162,
+        "symbol": "EmployeeViewSet.transfer",
+        "source_sha256": "8852a5ebc23d8cd8adbf1bb4b8c2195032e6ae2a774926dc91d569621ee48bfa"
+      },
+      "evidence": {
+        "tier": "source_anchored",
+        "detail": "Inside `with transaction.atomic():` (line 129), EmployeeTransferHistory.objects.create(...) runs at line 132 — BEFORE the role/zone authorization check at lines 147-158 (DIRECTORATE_HEAD/DIVISION_HEAD 'own zone' restriction). When that check fails, the code does `return Response({'detail': 'Перевод вне вашего управления/отдела запрещен.'}, status=403)` at lines 153/157, from inside the atomic block. A plain `return` exits the `with transaction.atomic()` context manager without raising, so Django COMMITS the transaction rather than rolling it back — the employee.division_id/position_id write itself is correctly skipped (it happens after the check, at line 160), but the fabricated EmployeeTransferHistory row (recording a transfer that never took place, to a division the actor has no rights over) is persisted. This corrupts the audit trail for a denied privileged action."
+      },
+      "recommendation": {
+        "text": "Move the role/zone authorization check to the top of transfer(), before any write (including EmployeeTransferHistory.objects.create), or raise a DRF exception (e.g. PermissionDenied) instead of returning a Response from inside the atomic block so the transaction actually rolls back.",
+        "confidence_label": "grounded"
+      }
+    },
+    {
+      "id": "RAW-00000004-0",
+      "domain": "security",
+      "category": "client-side-only-access-control",
+      "title": "PersonalRecordFront middleware.ts does not gate /security-ops/* server-side; gating is delegated to a client component and backend 403s",
+      "severity": "medium",
+      "confidence": 0.55,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/PersonalRecordFront/middleware.ts",
+        "line": 13,
+        "end_line": 22,
+        "symbol": "config.matcher",
+        "source_sha256": "2b954549b56fd1ab17e67c4354c3ac7ddefabaa7ebbff64c6ee69d99f844c226"
+      },
+      "evidence": {
+        "tier": "source_anchored",
+        "detail": "export const config = { matcher: [\"/dashboard/:path*\", \"/employees/:path*\", \"/organization/:path*\", \"/statuses/:path*\", \"/reports/:path*\", \"/settings/:path*\", \"/feedback/:path*\"] } — /security-ops/:path* is deliberately absent (comment at lines 3-7 explains why). An unauthenticated direct request to any /security-ops/* route therefore reaches the Next.js page/route tree without any server-side (middleware) auth check — next-auth/middleware never runs for it. Gating is pushed entirely to hooks/use-ops-permissions.ts (\"use client\", confirmed at lines 1 and 27-40), which fires a GET /api/operations/my-permissions/ query and only then flips hasPermission()/isLoading to close the page. This is a client-component redirect, not a server-side gate: the page shell, client JS bundle, and route existence are all reachable pre-auth; actual business DATA remains protected because every downstream /api/operations/* and /api/ops/* call independently enforces auth on the Django backend (confirmed via RequirePermissionMixin / inline require_permission across ops and operations viewsets), so this is a defense-in-depth gap rather than a confirmed data leak."
+      },
+      "recommendation": {
+        "text": "If the intent is truly relying on backend 403s by design (as the code comment states), this is a documented architectural trade-off, not an oversight — but it is still worth confirming no /security-ops/* page ever renders any data client-side before the permissions query resolves (i.e. no pre-check render of protected content, only chrome/loading state), and consider adding /security-ops/:path* to the middleware matcher (with a route-aware permission check) for real defense in depth, matching the recent 17.08.2026 fix already applied to /reports, /settings, /feedback per the middleware.ts comment.",
+        "confidence_label": "supported"
+      }
+    },
+    {
+      "id": "RAW-00000005-0",
+      "domain": "security",
+      "category": "missing-authn-check",
+      "title": "ReportViewSet.generate is reachable by unauthenticated requests — no permission_classes, no explicit auth check",
+      "severity": "high",
+      "confidence": 0.6,
+      "status": "proposed",
+      "location": {
+        "file": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/api/views.py",
+        "line": 48,
+        "end_line": 75,
+        "symbol": "ReportViewSet.generate",
+        "source_sha256": "0a9c5024a7a58c03ecb5436b2395ec3a8a5c208f3a14193862d6c74004070782"
+      },
+      "evidence": {
+        "tier": "source_anchored",
+        "detail": "class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet) (line 18) declares NO class-level permission_classes. get_queryset() (line 27) checks `user.is_authenticated` and returns qs.none() for anon, which correctly protects list/retrieve/status/download (all of which call self.get_object(), routed through get_queryset()). BUT the @action(detail=False, methods=['post']) 'generate' (lines 48-75) is a POST that does NOT call get_object()/get_queryset() at all, and has no `permission_classes=[...]` override (unlike the sibling `expense` action at line 119, which explicitly sets permission_classes=[permissions.IsAuthenticated]). Under the repo-wide DEFAULT_PERMISSION_CLASSES=AllowAny (RAW-00000001-0), an anonymous POST to /api/reports/reports/generate/ reaches business logic: it validates the serializer, and if `division` is omitted from the payload the division-scope check (lines 56-71) is skipped entirely (it's inside `if division_id:`), falling straight to `report = serializer.save(created_by=user)` at line 74 with `user = request.user` = AnonymousUser — which is not a valid FK target for Report.created_by (a ForeignKey to settings.AUTH_USER_MODEL, nullable via SET_NULL but typed, not permissively assignable from AnonymousUser), and generate_report_task.delay(report.id) at line 75 would then be invoked. This is a confirmed missing-authn gap at the code level, independent of what the ultimate runtime outcome of assigning AnonymousUser to a User FK is (likely a 500 rather than a clean 201, but the auth check that should precede all of this is absent)."
+      },
+      "recommendation": {
+        "text": "Add an explicit permission_classes=[permissions.IsAuthenticated] to the `generate` @action (matching the pattern already used on the `expense` action in the same file), or set a class-level permission_classes on ReportViewSet, so this does not depend on the global AllowAny default plus incidental FK-assignment failure to stay closed.",
+        "confidence_label": "grounded"
+      }
+    }
+  ]
+}

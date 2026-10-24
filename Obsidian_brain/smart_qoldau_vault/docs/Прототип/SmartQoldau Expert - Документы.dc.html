@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+      <div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">Шаг 2 из 2</div>
+      <div style="font-size:22px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Документы</div>
+      <div style="font-size:13.5px;font-weight:500;color:#6b8580;line-height:1.5;margin-bottom:26px">Загрузите документы для проверки квалификации. Это необходимо для допуска к консультациям</div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ docs }}" as="d" hint-placeholder-count="4">
+          <div onClick="{{ d.onClick }}" style="display:flex;align-items:center;gap:14px;border:1.5px solid {{ d.borderColor }};border-radius:18px;padding:16px;cursor:pointer">
+            <div style="width:46px;height:46px;border-radius:14px;background:{{ d.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><path d="M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="{{ d.color }}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:700;color:#0f3f3a">{{ d.title }}</div>
+              <div style="font-size:11.5px;font-weight:700;color:{{ d.statusColor }};margin-top:2px">{{ d.statusLabel }}</div>
+            </div>
+            <svg width="8" height="13" viewBox="0 0 9 14" fill="none" style="flex-shrink:0"><path d="M1 1l6 6-6 6" stroke="#c4d3cf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="border-radius:16px;background:#f2fbf8;border:1px solid #d9ede7;padding:14px 16px;margin-top:22px">
+        <div style="font-size:12.5px;font-weight:500;color:#3f6b62;line-height:1.5">После загрузки всех документов профиль отправится на проверку. Обычно это занимает до 24 часов</div>
+      </div>
+
+      <button onClick="{{ onContinue }}" style="{{ btnStyle }}">Отправить на проверку</button>
+    </div>
+
+    <sc-if value="{{ showSent }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+        <div style="width:100%;background:#fff;border-radius:24px;padding:30px 24px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+          <div style="width:64px;height:64px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:17px;font-weight:800;color:#0f3f3a">Документы отправлены на проверку</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Обычно проверка занимает до 24 часов. Мы уведомим вас о результате</div>
+          <button onClick="{{ onSentContinue }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:14px">Продолжить</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static STATUS = {
+    empty: { label: 'Не загружено', color: '#a9bdb9', border: '#edf2f0', bg: '#f8faf9' },
+    pending: { label: 'Загружено', color: '#159a7c', border: '#d9ede7', bg: '#e3f3ee' },
+    verified: { label: 'Подтверждено', color: '#159a7c', border: '#d9ede7', bg: '#e3f3ee' },
+    rejected: { label: 'Требуется повторная загрузка', color: '#c0392b', border: '#f5d0d0', bg: '#fdece3' },
+  };
+  state = {
+    docs: [
+      { id: 'id', title: 'Удостоверение личности', status: 'empty' },
+      { id: 'diploma', title: 'Диплом об образовании', status: 'empty' },
+      { id: 'cert', title: 'Сертификаты', status: 'empty' },
+      { id: 'license', title: 'Документы о квалификации', status: 'empty' },
+    ],
+    showSent: false,
+  };
+  cycleStatus(s) { return { empty: 'pending', pending: 'verified', verified: 'rejected', rejected: 'empty' }[s]; }
+  renderVals() {
+    const s = this.state;
+    const docs = s.docs.map(d => {
+      const st = Component.STATUS[d.status];
+      return { id: d.id, title: d.title, statusLabel: st.label, statusColor: st.color, borderColor: st.border, bg: st.bg, color: d.status === 'empty' ? '#8fa6a1' : st.color,
+        onClick: () => this.setState(prev => ({ docs: prev.docs.map(x => x.id === d.id ? { ...x, status: this.cycleStatus(x.status) } : x) })) };
+    });
+    const allUploaded = s.docs.every(d => d.status === 'verified' || d.status === 'pending');
+    return {
+      docs,
+      allUploaded,
+      btnStyle: { width: '100%', height: '54px', border: 'none', borderRadius: '27px', background: allUploaded ? '#0f766e' : '#c4d3cf', color: '#fff', fontFamily: 'inherit', fontSize: '15.5px', fontWeight: 700, cursor: allUploaded ? 'pointer' : 'default', marginTop: '24px' },
+      showSent: s.showSent,
+      onContinue: () => { if (allUploaded) this.setState({ showSent: true }); },
+      onSentContinue: () => { window.location.href = './SmartQoldau Expert - Верификация.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

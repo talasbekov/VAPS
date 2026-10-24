@@ -1,0 +1,48 @@
+Task: Plane #1276
+Executor: Кодекс Астра 6
+Commit: feb20ae96c74378ecf2ac20007b1ee38b652229b
+Branch: codex/1276-passport-readonly
+Command: SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3108 SMOKE_APP=http://localhost:3108 npm run playwright -- -c /tmp/playwright-1276.config.ts
+Result: 520 passed, 77 failed, 23 skipped; 620 total; duration 19.6m
+Object passport: 11/11 passed, including both Plane #1276 scenarios.
+
+Failing files (count):
+access-accounts.spec.ts 1
+access-matrix-menu.spec.ts 2
+access-multi-role.spec.ts 1
+access-permissions.spec.ts 1
+access-roles.spec.ts 1
+access-users.spec.ts 1
+acknowledgement-stage.spec.ts 8
+approval-stage.spec.ts 1
+closure-stage.spec.ts 6
+conduct-evaluations.spec.ts 2
+department-requests.spec.ts 2
+department-summary.spec.ts 1
+employees-read-access.spec.ts 1
+fixture-steps-checked.spec.ts 1
+force-collections.spec.ts 1
+forces-gathering.spec.ts 9
+gvo-sections.spec.ts 1
+lagging-reminders.spec.ts 1
+legal-documents.spec.ts 1
+main-daily-expense-walkthrough.spec.ts 1
+main-om-walkthrough.spec.ts 1
+menu-access.spec.ts 1
+my-profile.spec.ts 3
+placement-pool.spec.ts 3
+placement-stage.spec.ts 15
+protected-persons.spec.ts 1
+prototype-skin.spec.ts 1
+service-summary.spec.ts 1
+smoke-preserve-data.spec.ts 3
+staff-persona-chain.spec.ts 2
+stage-chain.spec.ts 1
+tables-data.spec.ts 1
+ui-access-rule.spec.ts 1
+
+Artifact root: /tmp/smart-josparlau-1276/Backend/PersonnelStatus/PersonalRecordFront/test-results
+Error contexts present: 43
+Trace archives: none (not enabled by this Playwright config)
+Production log: /tmp/next-prod-3108.log
+Production PID file: /tmp/next-prod-3108.pid

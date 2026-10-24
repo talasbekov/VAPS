@@ -1,0 +1,4 @@
+stop command exit=0, elapsed=5.31s
+ExitCode=0 StopSignal=SIGQUIT
+start command exit=0
+smart-josparlau-contour-final-proxy-1

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>body{margin:0} ::-webkit-scrollbar{display:none} *{scrollbar-width:none}</style>
+</helmet>
+<x-import component-from-global-scope="deck-stage" from="./deck-stage.js" width="1920" height="1080" hint-size="100%,100%">
+
+  <section data-label="Титул" style="width:100%;height:100%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Inter',sans-serif;box-sizing:border-box;position:relative">
+    <div style="width:96px;height:96px;border-radius:26px;overflow:hidden;margin-bottom:40px;box-shadow:0 20px 50px -16px rgba(15,118,110,0.35)">
+      <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:100%;height:100%;object-fit:cover">
+    </div>
+    <div style="font-size:64px;font-weight:800;color:#0f3f3a;letter-spacing:-1px">SmartQoldau</div>
+    <div style="font-size:26px;font-weight:500;color:#159a7c;margin-top:16px">Психологическая поддержка нового поколения</div>
+    <div style="font-size:18px;font-weight:500;color:#8fa6a1;margin-top:28px">Поддержка рядом, когда она нужна</div>
+  </section>
+
+  <sc-for list="{{ screens }}" as="s" hint-placeholder-count="22">
+    <section data-label="{{ s.label }}" style="width:100%;height:100%;background:#fff;display:flex;align-items:center;font-family:'Inter',sans-serif;box-sizing:border-box;padding:64px 96px">
+      <div style="flex:1;display:flex;flex-direction:column;gap:20px;padding-right:60px;max-width:640px">
+        <div style="font-size:15px;font-weight:700;color:#159a7c;letter-spacing:1.5px;text-transform:uppercase">{{ s.num }}</div>
+        <div style="font-size:48px;font-weight:800;color:#0f3f3a;line-height:1.1;letter-spacing:-0.5px">{{ s.title }}</div>
+        <div style="font-size:20px;font-weight:500;color:#5b7a75;line-height:1.6">{{ s.desc }}</div>
+      </div>
+      <div style="flex-shrink:0;height:100%;display:flex;align-items:center;justify-content:center">
+        <img src="{{ s.img }}" alt="{{ s.title }}" style="max-height:96%;max-width:520px;width:auto">
+      </div>
+    </section>
+  </sc-for>
+
+  <section data-label="Финал" style="width:100%;height:100%;background:#0f3f3a;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Inter',sans-serif;box-sizing:border-box">
+    <div style="width:88px;height:88px;border-radius:24px;overflow:hidden;margin-bottom:36px">
+      <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:100%;height:100%;object-fit:cover">
+    </div>
+    <div style="font-size:52px;font-weight:800;color:#fff">SmartQoldau</div>
+    <div style="font-size:22px;font-weight:500;color:rgba(255,255,255,0.75);margin-top:16px">Поддержка рядом, когда она нужна</div>
+    <div style="font-size:17px;font-weight:500;color:rgba(255,255,255,0.45);margin-top:44px">Спасибо за внимание</div>
+  </section>
+
+</x-import>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  renderVals() {
+    const screens = [
+      { num: '02', label: 'Splash Screen', title: 'Splash Screen', desc: 'Первый экран приложения. Задаёт тон спокойствия и доверия с первой секунды.', img: 'assets/screens/02-splash.png' },
+      { num: '03', label: 'Онбординг', title: 'Онбординг', desc: 'Знакомство пользователя с возможностями сервиса.', img: 'assets/screens/03-onboarding.png' },
+      { num: '04', label: 'Добро пожаловать', title: 'Добро пожаловать', desc: 'Выбор способа входа и начало работы.', img: 'assets/screens/04-welcome.png' },
+      { num: '05', label: 'Регистрация', title: 'Регистрация', desc: 'Создание аккаунта пользователя.', img: 'assets/screens/05-registration.png' },
+      { num: '06', label: 'Разрешения', title: 'Разрешения', desc: 'Предоставление необходимых разрешений для работы приложения.', img: 'assets/screens/06-permissions.png' },
+      { num: '07', label: 'Главная', title: 'Главная', desc: 'Центральный экран приложения и быстрый доступ к психологической помощи.', img: 'assets/screens/07-home.png' },
+      { num: '08', label: 'Выбор темы', title: 'Выбор темы обращения', desc: 'Пользователь выбирает проблему, с которой хочет обратиться.', img: 'assets/screens/08-topic.png' },
+      { num: '09', label: 'Поиск специалиста', title: 'Поиск специалиста', desc: 'Автоматический подбор свободного психолога.', img: 'assets/screens/09-search.png' },
+      { num: '10', label: 'Специалист найден', title: 'Специалист найден', desc: 'Карточка психолога перед началом консультации.', img: 'assets/screens/10-found.png' },
+      { num: '11', label: 'Профиль психолога', title: 'Профиль психолога', desc: 'Информация о специалисте: опыт, рейтинг, специализация и отзывы.', img: 'assets/screens/11-therapist-profile.png' },
+      { num: '12', label: 'Чат', title: 'Чат', desc: 'Конфиденциальная текстовая консультация.', img: 'assets/screens/12-chat.png' },
+      { num: '13', label: 'Аудиозвонок', title: 'Аудиозвонок', desc: 'Голосовая консультация с психологом.', img: 'assets/screens/13-audio.png' },
+      { num: '14', label: 'Видеозвонок', title: 'Видеозвонок', desc: 'Онлайн-консультация по видеосвязи.', img: 'assets/screens/14-video.png' },
+      { num: '15', label: 'Оценка', title: 'Оценка консультации', desc: 'Пользователь оценивает качество оказанной помощи и оставляет отзыв.', img: 'assets/screens/15-rating.png' },
+      { num: '16', label: 'Экстренный поиск', title: 'Экстренный поиск', desc: 'Быстрое подключение к ближайшему доступному специалисту в срочной ситуации.', img: 'assets/screens/16-emergency.png' },
+      { num: '17', label: 'Дыхательное упражнение', title: 'Дыхательное упражнение', desc: 'Выбор техники и длительности перед началом практики.', img: 'assets/screens/17-breathing.png' },
+      { num: '17', label: 'Дыхание — сессия', title: 'Дыхательное упражнение: сессия', desc: 'Пошаговый ритм вдоха и выдоха с описанием техники и счётчиком циклов.', img: 'assets/screens/17b-breathing-session.png' },
+      { num: '18', label: 'Расслабляющая музыка', title: 'Расслабляющая музыка', desc: 'Подборка музыки для расслабления, концентрации и восстановления эмоционального состояния.', img: 'assets/screens/18-music.png' },
+      { num: '19', label: 'Полезные статьи', title: 'Полезные статьи', desc: 'Образовательные материалы и рекомендации психологов.', img: 'assets/screens/19-articles.png' },
+      { num: '20', label: 'Медитации', title: 'Медитации', desc: 'Коллекция медитаций для снижения стресса и улучшения эмоционального состояния.', img: 'assets/screens/20-meditation.png' },
+      { num: '20', label: 'Медитация — плеер', title: 'Медитации: плеер', desc: 'Экран воспроизведения с таймером сна, фоновым звуком и индикатором дыхания.', img: 'assets/screens/20b-meditation-player.png' },
+      { num: '21', label: 'Консультации', title: 'Консультации', desc: 'Управление активными и предстоящими консультациями.', img: 'assets/screens/21-consultations.png' },
+      { num: '22', label: 'История', title: 'История', desc: 'Архив прошлых консультаций и обращений пользователя.', img: 'assets/screens/22-history.png' },
+      { num: '23', label: 'Профиль', title: 'Профиль', desc: 'Управление аккаунтом, настройками безопасности и персональными данными.', img: 'assets/screens/23-profile.png' },
+    ];
+    return { screens };
+  }
+}
+
+</script>
+</body>
+</html>

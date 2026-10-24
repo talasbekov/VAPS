@@ -1,0 +1,17 @@
+import fs from 'node:fs'
+import { open, shot, sleep, api } from './walk.mjs'
+const run = JSON.parse(fs.readFileSync('run.json', 'utf8'))
+const { page, close } = await open('y_meiram')
+await page.goto(`http://localhost:3106/employees`)
+await page.waitForLoadState('networkidle'); await sleep(800)
+console.log('рабочий стол Штаба:', (await page.getByRole('main').innerText()).replace(/\n+/g, ' | ').slice(0, 400))
+await shot(page, 'meiram-workspace')
+await page.goto(`http://localhost:3106/employees?view=forces&businessDate=${run.date}`)
+await page.waitForLoadState('networkidle'); await sleep(1000)
+console.log('вкладки:', (await page.getByRole('tab').allInnerTexts()).join(' | '))
+const t = (await page.getByRole('main').innerText()).replace(/\n+/g, ' | ')
+console.log('есть ОМ-2026-45 в сборах:', t.includes(run.code), '| фрагмент:', t.slice(t.indexOf(run.code) - 100, t.indexOf(run.code) + 300))
+await shot(page, 'meiram-forces-list-while-object2-recon')
+const fc = await api('y_meiram', 'GET', `/api/ops/security-events/${run.eventId}/force-collection/`)
+console.log('force-collection:', fc.status, JSON.stringify({ canCollect: fc.body.canCollect, stage: fc.body.stage, demandTotal: fc.body.demandTotal ?? fc.body.need, rows: fc.body.demandRows?.map(d => [d.visitObjectId, d.kindCode, d.need]), publishedVisits: fc.body.publishedVisitIds }).slice(0, 400))
+await close()

@@ -1,0 +1,837 @@
+{
+  "base": "a3303cf37c285bf4d1bcc640dcedc6502743c375",
+  "refs": {
+    "eb23e04765b5bc7689bfd7440dca5b0c0faa11f9": [
+      "refs/heads/archive/claude/elegant-haslett-5a997d",
+      "refs/remotes/origin/archive/claude/elegant-haslett-5a997d"
+    ],
+    "5f15b9f9efd6ac6d80a3da82993f74e8e6f98ac1": [
+      "refs/heads/archive/claude/frosty-lamport-ed0c21",
+      "refs/remotes/origin/archive/claude/frosty-lamport-ed0c21"
+    ],
+    "a6025d3af259d2beaf9f46befee18b0c8e62e960": [
+      "refs/heads/archive/claude/gifted-hertz-ebe729",
+      "refs/remotes/origin/archive/claude/gifted-hertz-ebe729"
+    ],
+    "07982ae5fe38ae0bfec9b1975c260a6d3625fa96": [
+      "refs/heads/archive/claude/goofy-cartwright-e40826",
+      "refs/remotes/origin/archive/claude/goofy-cartwright-e40826"
+    ],
+    "48f7e09d8dcb487d60cfc39de00c6bbbfff19e48": [
+      "refs/heads/archive/claude/vigilant-sutherland-fddc31",
+      "refs/remotes/origin/archive/claude/vigilant-sutherland-fddc31"
+    ],
+    "7de00c9ac1018f2ecf74accc9b01ff753fb0e51b": [
+      "refs/heads/backup/om-walkthrough-before-squash-20260910"
+    ],
+    "8dbca3f8a9ceac83136b215814f42ec7a1ad82f6": [
+      "refs/heads/claude/agitated-lalande-27da16",
+      "refs/heads/claude/lucid-albattani-2c58c7"
+    ],
+    "38297142d74d67616da9c784da9536bea7a2ffd1": [
+      "refs/heads/claude/awesome-jemison-1319e0"
+    ],
+    "a62a7abdcc497dbe6049a9c146a4b188e89716b1": [
+      "refs/heads/claude/cranky-elbakyan-46dc63"
+    ],
+    "0366260b3d8e7944c4b811e2a8adf04ad2a4692b": [
+      "refs/heads/claude/dazzling-noether-c4ac54"
+    ],
+    "f47afb075bf64da548c2b4b99825497b6911aa9e": [
+      "refs/heads/claude/e10-e11-mainline",
+      "refs/remotes/origin/archive/claude/e10-e11-mainline"
+    ],
+    "b7f8440170838827b2029ed7632e4a2c9f1a8634": [
+      "refs/heads/claude/eager-hermann-65cce3",
+      "refs/heads/claude/fervent-bohr-f773ac"
+    ],
+    "7530b19d56e9708c2b4f4dfab1a82266fdab1af4": [
+      "refs/heads/claude/exciting-vaughan-3e478b",
+      "refs/remotes/origin/archive/claude/exciting-vaughan-3e478b"
+    ],
+    "c9b708431e4bfb02122ce4a0084391cdcfa17ea0": [
+      "refs/heads/claude/frosty-villani-bb0be9"
+    ],
+    "8ec9f029dceb8f50bbf8f6ff648e937cf6fbe98e": [
+      "refs/heads/claude/gifted-tharp-26f561"
+    ],
+    "6632e3d89f68a2ab3598cc6a5ae93781a792f4e6": [
+      "refs/heads/claude/happy-babbage-9cbaac"
+    ],
+    "b13145ac7a8b8ca5f66e510b2eb43c90f395adc6": [
+      "refs/heads/claude/heuristic-mclaren-6f494d"
+    ],
+    "fe8f14700bfb9b707f2dbdafadb4c42abf1c5e3a": [
+      "refs/heads/claude/hungry-leavitt-78b450"
+    ],
+    "64d8098a8066e2ca9662f1838f26813f73a6c3d9": [
+      "refs/heads/claude/inspiring-feistel-f9454a",
+      "refs/remotes/origin/archive/claude/trusting-borg-65b650"
+    ],
+    "64b7bfc73dbe022b5c4af79f4050a707c3fbcb0c": [
+      "refs/heads/claude/om-bulletin-brief-cleanup-950",
+      "refs/remotes/origin/claude/om-bulletin-brief-cleanup-950"
+    ],
+    "e4f81f4ffd2a864d36d4b1a5243948210ccf2ea5": [
+      "refs/heads/claude/om-forces-review-cleanup-1023",
+      "refs/remotes/origin/claude/om-forces-review-cleanup-1023"
+    ],
+    "8de8e8b707d23d0ae897841acdb639e524d6e602": [
+      "refs/heads/claude/om-placement-shift-1058",
+      "refs/remotes/origin/claude/om-placement-shift-1058"
+    ],
+    "3b2ad09f66ae6467416f9f9edc1b0befd994dffd": [
+      "refs/heads/claude/om-registry-nplus1-1031",
+      "refs/heads/codex/sol-878",
+      "refs/remotes/origin/claude/om-registry-nplus1-1031"
+    ],
+    "9294d0a73971932ef76437aec763af6172552cb7": [
+      "refs/heads/claude/reverent-dhawan-7d6fc8",
+      "refs/heads/claude/trusting-borg-65b650"
+    ],
+    "3ca67ab65a46959a009fb8cfa03fc1313c340090": [
+      "refs/heads/claude/smart-josparlau-e55",
+      "refs/remotes/origin/archive/claude/smart-josparlau-e55"
+    ],
+    "3102df3b2e0f1e97438948a4bed1225f48fdd249": [
+      "refs/heads/claude/wizardly-chaplygin-f750e9",
+      "refs/remotes/origin/archive/claude/wizardly-chaplygin-f750e9"
+    ],
+    "53972b2305d806b0b1f27d36ee45eb2b8053d1ee": [
+      "refs/heads/codex/1015-protected-photo-auth",
+      "refs/remotes/origin/codex/1015-protected-photo-auth"
+    ],
+    "53fb6169887b3707a03e9252e82ca1c8745e388f": [
+      "refs/heads/codex/1017-visit-object-delete-permission",
+      "refs/remotes/origin/codex/1017-visit-object-delete-permission"
+    ],
+    "59a11ad78c08431858381c94bc5b2df49b3a4fc5": [
+      "refs/heads/codex/1021-force-collection-n-plus-one"
+    ],
+    "074a81016e67b15448fae7f60878df69e047e7ce": [
+      "refs/heads/codex/1030-date-pagination",
+      "refs/heads/codex/integration-1116"
+    ],
+    "0bd601edbbe4aed9fb170fff82c0f4237a7a2deb": [
+      "refs/heads/codex/1032-dismiss-deactivates"
+    ],
+    "b1959f7c798767647d906362caf4bf550c4c655a": [
+      "refs/heads/codex/1041-permission-errors"
+    ],
+    "3044f3d6b00e8e79df87c71bf1741e9d2b92da9d": [
+      "refs/heads/codex/1069-photo-fallback",
+      "refs/remotes/origin/codex/1069-photo-fallback"
+    ],
+    "63674cf1d6d4ca13b6b98285f0e0af40b3a3ff15": [
+      "refs/heads/codex/1071-service-reports-navigation"
+    ],
+    "398ae6248cf977e815fa9ac909c809a45808e874": [
+      "refs/heads/codex/1079-review-fix"
+    ],
+    "ca0a7f3ab3b10ebcc197c1eb7cba9f6f8c66bd53": [
+      "refs/heads/codex/1080-force-workspaces"
+    ],
+    "f05f695302eea5969f008d138a7b1e906a55933d": [
+      "refs/heads/codex/1110-django-log-rotation"
+    ],
+    "f45e63702406619760226303e4a504c6030a43c7": [
+      "refs/heads/codex/1111-status-button"
+    ],
+    "e42d01536fa4f9321985ea6c14c3029943dd3fa6": [
+      "refs/heads/codex/1112-status-dialog"
+    ],
+    "d9bac15ea966a5f7bcb8628fc2c23c86fb93b1bb": [
+      "refs/heads/codex/1117-1123-backend-deps"
+    ],
+    "c1c50a2bb04fb2e5926cbe42fb68da7f3133be17": [
+      "refs/heads/codex/1118-gvo-access-e2e"
+    ],
+    "df6e958f74a770a9325f4267c3d90e171abea418": [
+      "refs/heads/codex/1119-worktree-purge-python"
+    ],
+    "624a536cd3edba7ab4dc294400649ec0b566d717": [
+      "refs/heads/codex/1120-role-default-route"
+    ],
+    "08b62f7de08408d829d729c1c23aec09b0a910a8": [
+      "refs/heads/codex/1121-next-build-secret"
+    ],
+    "47359b9a2a0e9b51770160236f4338467a9bbe80": [
+      "refs/heads/codex/1125-dept-head-service-reports"
+    ],
+    "e4708bb0b0dc31aa16640aa18082f2612393c606": [
+      "refs/heads/codex/1130-worktree-deps"
+    ],
+    "316ec6e328fed4f1080dce528eb760a78a72ae29": [
+      "refs/heads/codex/828-token-blacklist",
+      "refs/remotes/origin/codex/828-token-blacklist"
+    ],
+    "f9ef8fb30b3c84f774169534d9521c9bef26d632": [
+      "refs/heads/codex/858-status-dedupe"
+    ],
+    "a1f98f4fe0cf9134adc6426f14cc7c37f80d263c": [
+      "refs/heads/codex/887-empty-distribution"
+    ],
+    "85d767425ed55804b3069943854675617f8073b6": [
+      "refs/heads/codex/890-atomic-e2e-fixture-dates"
+    ],
+    "3eda7d19aac8d376be1b5496c8a9ddd39a80e7db": [
+      "refs/heads/codex/ack-unit-head-984"
+    ],
+    "00020f20078ea483fd8ff536fbcc821dd013d64f": [
+      "refs/heads/codex/approval-selector-983"
+    ],
+    "24e4c3ae71ea70002ca127486bd4c80bf2a1dc5f": [
+      "refs/heads/codex/claude-queue-20260908",
+      "refs/remotes/origin/codex/claude-queue-20260908"
+    ],
+    "343e090952338164ba601032d500714b664a52cb": [
+      "refs/heads/codex/core-walkthrough-1046"
+    ],
+    "3eb07a829b82d78e5d87a02261cadd40eb15400d": [
+      "refs/heads/codex/core-walkthroughs-20260908"
+    ],
+    "8c597b181dd2f7ea934584f58377315b6afdaa02": [
+      "refs/heads/codex/force-demand-spec-979"
+    ],
+    "b9176fe5f3a0b72a4ffa3b97efe6a91bec1f8ce9": [
+      "refs/heads/codex/luna-1018",
+      "refs/heads/codex/luna-934",
+      "refs/remotes/origin/codex/luna-934"
+    ],
+    "3ddc1a9de12f63300c88c2577386ca37ddd6a661": [
+      "refs/heads/codex/luna-1024",
+      "refs/remotes/origin/codex/luna-1024"
+    ],
+    "f2a9d49b7c86321960fbbc608ea1ee20f6fb9862": [
+      "refs/heads/codex/luna-1025",
+      "refs/remotes/origin/codex/luna-1025"
+    ],
+    "913381d8bd19c224959ceefa6d13b82523c11c93": [
+      "refs/heads/codex/luna-1040",
+      "refs/remotes/origin/codex/luna-1040"
+    ],
+    "163368a2fd051a91526f8228aecfb6ad7a9c2ae2": [
+      "refs/heads/codex/luna-1055",
+      "refs/remotes/origin/codex/luna-1055"
+    ],
+    "4842a3a7813d87ddbf18f67d1ff729008cbf7399": [
+      "refs/heads/codex/luna-1056",
+      "refs/remotes/origin/codex/luna-1056"
+    ],
+    "03183445f48bb97401374335b1e8a5f9457a8268": [
+      "refs/heads/codex/luna-1059",
+      "refs/remotes/origin/codex/luna-1059"
+    ],
+    "7462aa657715968f4363b1550b15134288aa7b13": [
+      "refs/heads/codex/luna-1060",
+      "refs/remotes/origin/codex/luna-1060"
+    ],
+    "fb97f04abe124a84a6f2600004a414b359d59aa0": [
+      "refs/heads/codex/luna-858",
+      "refs/heads/codex/luna-993",
+      "refs/remotes/origin/codex/luna-993"
+    ],
+    "b62afbf4fa62e561c27e384602cfa8556b0a9e25": [
+      "refs/heads/codex/luna-885",
+      "refs/remotes/origin/codex/luna-885"
+    ],
+    "8c50ac99f8c827da661529a43b4535b9771dec44": [
+      "refs/heads/codex/om-walkthrough-1081-fixes",
+      "refs/remotes/origin/codex/om-walkthrough-1081-fixes"
+    ],
+    "557ff464005973be9834f88ce7361a4c029be639": [
+      "refs/heads/codex/recon-object-scope-982"
+    ],
+    "dc52ae0c2c640d1d87602f0db030679ee8ca1823": [
+      "refs/heads/codex/sol-1022",
+      "refs/remotes/origin/codex/sol-1022"
+    ],
+    "a38c84609a5c01c5e8526b1fbe5e27c6d5704668": [
+      "refs/heads/codex/sol-1035",
+      "refs/remotes/origin/codex/sol-1035"
+    ],
+    "ba6f7009abbb533a54b47b22dfaec0e95bfafcfe": [
+      "refs/heads/codex/sol-1036",
+      "refs/remotes/origin/codex/sol-1036"
+    ],
+    "6f5ceff8f76c46622303ff7ac845e2406a3b5a4f": [
+      "refs/heads/codex/sol-1050",
+      "refs/remotes/origin/codex/sol-1050"
+    ],
+    "ce5d8abb93e6a2b70c4e51e404ba85dde1dee555": [
+      "refs/heads/codex/sol-962",
+      "refs/remotes/origin/codex/sol-962"
+    ],
+    "3736510016daf0f2e7d5fc7494ff072083066e30": [
+      "refs/heads/codex/status-button-1111"
+    ],
+    "990e1835a4c2fba3de2a6c1752a8d7775b2da022": [
+      "refs/heads/codex/status-schedule-962",
+      "refs/heads/codex/status-task-errors-961",
+      "refs/remotes/origin/codex/status-task-errors-961"
+    ],
+    "a0ec89b3dba5b77ce53271cfb0221ad7fe75f721": [
+      "refs/heads/codex/terra-1008",
+      "refs/remotes/origin/codex/terra-1008"
+    ],
+    "a3303cf37c285bf4d1bcc640dcedc6502743c375": [
+      "refs/heads/codex/terra-898",
+      "refs/heads/main",
+      "refs/remotes/origin/main"
+    ],
+    "eecf03231959a8d33ffb14fcc5ec76af7b7b9bb5": [
+      "refs/heads/docs/wiki-usecases-1028"
+    ],
+    "96643893612434ae07d64a6fbcc8c9d336d07959": [
+      "refs/heads/e10-portal-screens"
+    ],
+    "03f2ee9eb57a451491c784518233fcd7e025377a": [
+      "refs/heads/e3-catchup-clock-concurrency"
+    ],
+    "3fdaddc50f9d00c9cbab0626e27e995b354fff2e": [
+      "refs/heads/feat/frontend-battle-modules"
+    ],
+    "e8823b71dfb2d6b3dfc561d90915f72c6ca1982b": [
+      "refs/heads/feat/prototype-skin"
+    ],
+    "c11a52e61da73f6bd3d3104b3698fa5e9ee4171f": [
+      "refs/heads/orphan/duty-calendar-stage8"
+    ],
+    "d99f331bddf460bdd37efb62e540a2ad2c026de4": [
+      "refs/heads/personnel/1057-day-submission-date",
+      "refs/remotes/origin/personnel/1057-day-submission-date"
+    ],
+    "74bcb6c829d5a66d1741be4b74741b7d9954b7a6": [
+      "refs/heads/personnel/985-service-reports-rename",
+      "refs/remotes/origin/personnel/985-service-reports-rename"
+    ],
+    "81c7c9e0ad2701793fcd442288694b31cbc270ee": [
+      "refs/heads/personnel/986-pdf-only-format",
+      "refs/remotes/origin/personnel/986-pdf-only-format"
+    ],
+    "053de287e161734feaccf25a21281ee9281861a0": [
+      "refs/heads/sonnet-om/1061-protected-person-link",
+      "refs/remotes/origin/sonnet-om/1061-protected-person-link"
+    ],
+    "548e4d2b9f3c986f9641f0191fa091da1f7d05c2": [
+      "refs/heads/sonnet-om/1113-status-celery",
+      "refs/remotes/origin/sonnet-om/1113-status-celery"
+    ],
+    "0216073dd3294e380ff18a4981570c9be60d5219": [
+      "refs/remotes/gitlab-local/feat/frontend-battle-modules"
+    ],
+    "89cfbd9209c6a8d2ced6ace858c3a1078206e3a6": [
+      "refs/remotes/origin/archive/claude/hungry-leavitt-78b450"
+    ],
+    "4a94d9f7f40dda6644e2731cba84ce718f43ab2c": [
+      "refs/remotes/origin/claude/install-obsidian-skills"
+    ],
+    "353ba9776230a5001ed0ff3f3146b9ac45133b9d": [
+      "refs/remotes/origin/codex/1079-sharp-0.35.4"
+    ],
+    "c6cd3144ce7b1ea09f9ee191bdfa3149e7e81e05": [
+      "refs/remotes/origin/codex/890-atomic-e2e-fixture-dates"
+    ],
+    "81b3a0e4e180064c23b20f4b989c2868b847b709": [
+      "refs/remotes/origin/codex/core-walkthrough-1046",
+      "refs/remotes/origin/feat/frontend-battle-modules"
+    ],
+    "34428768b78396850c7f52a8c5c581fdb9f99670": [
+      "refs/remotes/origin/codex/core-walkthroughs-20260908"
+    ],
+    "a942649dad14fab2e28e63d96e2210a3400deb0a": [
+      "refs/remotes/origin/codex/service-employees-1043"
+    ],
+    "f12ca7fe50999bc2f1815ac611db6e4ba3b5e182": [
+      "refs/remotes/origin/e3-catchup-clock-concurrency"
+    ]
+  },
+  "pending": {
+    "eb23e04765b5bc7689bfd7440dca5b0c0faa11f9": [
+      "refs/heads/archive/claude/elegant-haslett-5a997d",
+      "refs/remotes/origin/archive/claude/elegant-haslett-5a997d"
+    ],
+    "5f15b9f9efd6ac6d80a3da82993f74e8e6f98ac1": [
+      "refs/heads/archive/claude/frosty-lamport-ed0c21",
+      "refs/remotes/origin/archive/claude/frosty-lamport-ed0c21"
+    ],
+    "07982ae5fe38ae0bfec9b1975c260a6d3625fa96": [
+      "refs/heads/archive/claude/goofy-cartwright-e40826",
+      "refs/remotes/origin/archive/claude/goofy-cartwright-e40826"
+    ],
+    "48f7e09d8dcb487d60cfc39de00c6bbbfff19e48": [
+      "refs/heads/archive/claude/vigilant-sutherland-fddc31",
+      "refs/remotes/origin/archive/claude/vigilant-sutherland-fddc31"
+    ],
+    "7de00c9ac1018f2ecf74accc9b01ff753fb0e51b": [
+      "refs/heads/backup/om-walkthrough-before-squash-20260910"
+    ],
+    "38297142d74d67616da9c784da9536bea7a2ffd1": [
+      "refs/heads/claude/awesome-jemison-1319e0"
+    ],
+    "c9b708431e4bfb02122ce4a0084391cdcfa17ea0": [
+      "refs/heads/claude/frosty-villani-bb0be9"
+    ],
+    "8ec9f029dceb8f50bbf8f6ff648e937cf6fbe98e": [
+      "refs/heads/claude/gifted-tharp-26f561"
+    ],
+    "fe8f14700bfb9b707f2dbdafadb4c42abf1c5e3a": [
+      "refs/heads/claude/hungry-leavitt-78b450"
+    ],
+    "64d8098a8066e2ca9662f1838f26813f73a6c3d9": [
+      "refs/heads/claude/inspiring-feistel-f9454a",
+      "refs/remotes/origin/archive/claude/trusting-borg-65b650"
+    ],
+    "64b7bfc73dbe022b5c4af79f4050a707c3fbcb0c": [
+      "refs/heads/claude/om-bulletin-brief-cleanup-950",
+      "refs/remotes/origin/claude/om-bulletin-brief-cleanup-950"
+    ],
+    "e4f81f4ffd2a864d36d4b1a5243948210ccf2ea5": [
+      "refs/heads/claude/om-forces-review-cleanup-1023",
+      "refs/remotes/origin/claude/om-forces-review-cleanup-1023"
+    ],
+    "8de8e8b707d23d0ae897841acdb639e524d6e602": [
+      "refs/heads/claude/om-placement-shift-1058",
+      "refs/remotes/origin/claude/om-placement-shift-1058"
+    ],
+    "3b2ad09f66ae6467416f9f9edc1b0befd994dffd": [
+      "refs/heads/claude/om-registry-nplus1-1031",
+      "refs/heads/codex/sol-878",
+      "refs/remotes/origin/claude/om-registry-nplus1-1031"
+    ],
+    "53972b2305d806b0b1f27d36ee45eb2b8053d1ee": [
+      "refs/heads/codex/1015-protected-photo-auth",
+      "refs/remotes/origin/codex/1015-protected-photo-auth"
+    ],
+    "53fb6169887b3707a03e9252e82ca1c8745e388f": [
+      "refs/heads/codex/1017-visit-object-delete-permission",
+      "refs/remotes/origin/codex/1017-visit-object-delete-permission"
+    ],
+    "59a11ad78c08431858381c94bc5b2df49b3a4fc5": [
+      "refs/heads/codex/1021-force-collection-n-plus-one"
+    ],
+    "074a81016e67b15448fae7f60878df69e047e7ce": [
+      "refs/heads/codex/1030-date-pagination",
+      "refs/heads/codex/integration-1116"
+    ],
+    "0bd601edbbe4aed9fb170fff82c0f4237a7a2deb": [
+      "refs/heads/codex/1032-dismiss-deactivates"
+    ],
+    "b1959f7c798767647d906362caf4bf550c4c655a": [
+      "refs/heads/codex/1041-permission-errors"
+    ],
+    "3044f3d6b00e8e79df87c71bf1741e9d2b92da9d": [
+      "refs/heads/codex/1069-photo-fallback",
+      "refs/remotes/origin/codex/1069-photo-fallback"
+    ],
+    "63674cf1d6d4ca13b6b98285f0e0af40b3a3ff15": [
+      "refs/heads/codex/1071-service-reports-navigation"
+    ],
+    "398ae6248cf977e815fa9ac909c809a45808e874": [
+      "refs/heads/codex/1079-review-fix"
+    ],
+    "ca0a7f3ab3b10ebcc197c1eb7cba9f6f8c66bd53": [
+      "refs/heads/codex/1080-force-workspaces"
+    ],
+    "f05f695302eea5969f008d138a7b1e906a55933d": [
+      "refs/heads/codex/1110-django-log-rotation"
+    ],
+    "f45e63702406619760226303e4a504c6030a43c7": [
+      "refs/heads/codex/1111-status-button"
+    ],
+    "e42d01536fa4f9321985ea6c14c3029943dd3fa6": [
+      "refs/heads/codex/1112-status-dialog"
+    ],
+    "d9bac15ea966a5f7bcb8628fc2c23c86fb93b1bb": [
+      "refs/heads/codex/1117-1123-backend-deps"
+    ],
+    "c1c50a2bb04fb2e5926cbe42fb68da7f3133be17": [
+      "refs/heads/codex/1118-gvo-access-e2e"
+    ],
+    "df6e958f74a770a9325f4267c3d90e171abea418": [
+      "refs/heads/codex/1119-worktree-purge-python"
+    ],
+    "624a536cd3edba7ab4dc294400649ec0b566d717": [
+      "refs/heads/codex/1120-role-default-route"
+    ],
+    "08b62f7de08408d829d729c1c23aec09b0a910a8": [
+      "refs/heads/codex/1121-next-build-secret"
+    ],
+    "47359b9a2a0e9b51770160236f4338467a9bbe80": [
+      "refs/heads/codex/1125-dept-head-service-reports"
+    ],
+    "e4708bb0b0dc31aa16640aa18082f2612393c606": [
+      "refs/heads/codex/1130-worktree-deps"
+    ],
+    "316ec6e328fed4f1080dce528eb760a78a72ae29": [
+      "refs/heads/codex/828-token-blacklist",
+      "refs/remotes/origin/codex/828-token-blacklist"
+    ],
+    "f9ef8fb30b3c84f774169534d9521c9bef26d632": [
+      "refs/heads/codex/858-status-dedupe"
+    ],
+    "a1f98f4fe0cf9134adc6426f14cc7c37f80d263c": [
+      "refs/heads/codex/887-empty-distribution"
+    ],
+    "85d767425ed55804b3069943854675617f8073b6": [
+      "refs/heads/codex/890-atomic-e2e-fixture-dates"
+    ],
+    "3eda7d19aac8d376be1b5496c8a9ddd39a80e7db": [
+      "refs/heads/codex/ack-unit-head-984"
+    ],
+    "00020f20078ea483fd8ff536fbcc821dd013d64f": [
+      "refs/heads/codex/approval-selector-983"
+    ],
+    "24e4c3ae71ea70002ca127486bd4c80bf2a1dc5f": [
+      "refs/heads/codex/claude-queue-20260908",
+      "refs/remotes/origin/codex/claude-queue-20260908"
+    ],
+    "343e090952338164ba601032d500714b664a52cb": [
+      "refs/heads/codex/core-walkthrough-1046"
+    ],
+    "3eb07a829b82d78e5d87a02261cadd40eb15400d": [
+      "refs/heads/codex/core-walkthroughs-20260908"
+    ],
+    "8c597b181dd2f7ea934584f58377315b6afdaa02": [
+      "refs/heads/codex/force-demand-spec-979"
+    ],
+    "b9176fe5f3a0b72a4ffa3b97efe6a91bec1f8ce9": [
+      "refs/heads/codex/luna-1018",
+      "refs/heads/codex/luna-934",
+      "refs/remotes/origin/codex/luna-934"
+    ],
+    "3ddc1a9de12f63300c88c2577386ca37ddd6a661": [
+      "refs/heads/codex/luna-1024",
+      "refs/remotes/origin/codex/luna-1024"
+    ],
+    "f2a9d49b7c86321960fbbc608ea1ee20f6fb9862": [
+      "refs/heads/codex/luna-1025",
+      "refs/remotes/origin/codex/luna-1025"
+    ],
+    "913381d8bd19c224959ceefa6d13b82523c11c93": [
+      "refs/heads/codex/luna-1040",
+      "refs/remotes/origin/codex/luna-1040"
+    ],
+    "163368a2fd051a91526f8228aecfb6ad7a9c2ae2": [
+      "refs/heads/codex/luna-1055",
+      "refs/remotes/origin/codex/luna-1055"
+    ],
+    "4842a3a7813d87ddbf18f67d1ff729008cbf7399": [
+      "refs/heads/codex/luna-1056",
+      "refs/remotes/origin/codex/luna-1056"
+    ],
+    "03183445f48bb97401374335b1e8a5f9457a8268": [
+      "refs/heads/codex/luna-1059",
+      "refs/remotes/origin/codex/luna-1059"
+    ],
+    "7462aa657715968f4363b1550b15134288aa7b13": [
+      "refs/heads/codex/luna-1060",
+      "refs/remotes/origin/codex/luna-1060"
+    ],
+    "fb97f04abe124a84a6f2600004a414b359d59aa0": [
+      "refs/heads/codex/luna-858",
+      "refs/heads/codex/luna-993",
+      "refs/remotes/origin/codex/luna-993"
+    ],
+    "b62afbf4fa62e561c27e384602cfa8556b0a9e25": [
+      "refs/heads/codex/luna-885",
+      "refs/remotes/origin/codex/luna-885"
+    ],
+    "8c50ac99f8c827da661529a43b4535b9771dec44": [
+      "refs/heads/codex/om-walkthrough-1081-fixes",
+      "refs/remotes/origin/codex/om-walkthrough-1081-fixes"
+    ],
+    "557ff464005973be9834f88ce7361a4c029be639": [
+      "refs/heads/codex/recon-object-scope-982"
+    ],
+    "dc52ae0c2c640d1d87602f0db030679ee8ca1823": [
+      "refs/heads/codex/sol-1022",
+      "refs/remotes/origin/codex/sol-1022"
+    ],
+    "a38c84609a5c01c5e8526b1fbe5e27c6d5704668": [
+      "refs/heads/codex/sol-1035",
+      "refs/remotes/origin/codex/sol-1035"
+    ],
+    "ba6f7009abbb533a54b47b22dfaec0e95bfafcfe": [
+      "refs/heads/codex/sol-1036",
+      "refs/remotes/origin/codex/sol-1036"
+    ],
+    "6f5ceff8f76c46622303ff7ac845e2406a3b5a4f": [
+      "refs/heads/codex/sol-1050",
+      "refs/remotes/origin/codex/sol-1050"
+    ],
+    "ce5d8abb93e6a2b70c4e51e404ba85dde1dee555": [
+      "refs/heads/codex/sol-962",
+      "refs/remotes/origin/codex/sol-962"
+    ],
+    "3736510016daf0f2e7d5fc7494ff072083066e30": [
+      "refs/heads/codex/status-button-1111"
+    ],
+    "990e1835a4c2fba3de2a6c1752a8d7775b2da022": [
+      "refs/heads/codex/status-schedule-962",
+      "refs/heads/codex/status-task-errors-961",
+      "refs/remotes/origin/codex/status-task-errors-961"
+    ],
+    "a0ec89b3dba5b77ce53271cfb0221ad7fe75f721": [
+      "refs/heads/codex/terra-1008",
+      "refs/remotes/origin/codex/terra-1008"
+    ],
+    "eecf03231959a8d33ffb14fcc5ec76af7b7b9bb5": [
+      "refs/heads/docs/wiki-usecases-1028"
+    ],
+    "03f2ee9eb57a451491c784518233fcd7e025377a": [
+      "refs/heads/e3-catchup-clock-concurrency"
+    ],
+    "3fdaddc50f9d00c9cbab0626e27e995b354fff2e": [
+      "refs/heads/feat/frontend-battle-modules"
+    ],
+    "e8823b71dfb2d6b3dfc561d90915f72c6ca1982b": [
+      "refs/heads/feat/prototype-skin"
+    ],
+    "c11a52e61da73f6bd3d3104b3698fa5e9ee4171f": [
+      "refs/heads/orphan/duty-calendar-stage8"
+    ],
+    "d99f331bddf460bdd37efb62e540a2ad2c026de4": [
+      "refs/heads/personnel/1057-day-submission-date",
+      "refs/remotes/origin/personnel/1057-day-submission-date"
+    ],
+    "74bcb6c829d5a66d1741be4b74741b7d9954b7a6": [
+      "refs/heads/personnel/985-service-reports-rename",
+      "refs/remotes/origin/personnel/985-service-reports-rename"
+    ],
+    "81c7c9e0ad2701793fcd442288694b31cbc270ee": [
+      "refs/heads/personnel/986-pdf-only-format",
+      "refs/remotes/origin/personnel/986-pdf-only-format"
+    ],
+    "053de287e161734feaccf25a21281ee9281861a0": [
+      "refs/heads/sonnet-om/1061-protected-person-link",
+      "refs/remotes/origin/sonnet-om/1061-protected-person-link"
+    ],
+    "548e4d2b9f3c986f9641f0191fa091da1f7d05c2": [
+      "refs/heads/sonnet-om/1113-status-celery",
+      "refs/remotes/origin/sonnet-om/1113-status-celery"
+    ],
+    "0216073dd3294e380ff18a4981570c9be60d5219": [
+      "refs/remotes/gitlab-local/feat/frontend-battle-modules"
+    ],
+    "89cfbd9209c6a8d2ced6ace858c3a1078206e3a6": [
+      "refs/remotes/origin/archive/claude/hungry-leavitt-78b450"
+    ],
+    "4a94d9f7f40dda6644e2731cba84ce718f43ab2c": [
+      "refs/remotes/origin/claude/install-obsidian-skills"
+    ],
+    "353ba9776230a5001ed0ff3f3146b9ac45133b9d": [
+      "refs/remotes/origin/codex/1079-sharp-0.35.4"
+    ],
+    "c6cd3144ce7b1ea09f9ee191bdfa3149e7e81e05": [
+      "refs/remotes/origin/codex/890-atomic-e2e-fixture-dates"
+    ],
+    "34428768b78396850c7f52a8c5c581fdb9f99670": [
+      "refs/remotes/origin/codex/core-walkthroughs-20260908"
+    ],
+    "f12ca7fe50999bc2f1815ac611db6e4ba3b5e182": [
+      "refs/remotes/origin/e3-catchup-clock-concurrency"
+    ]
+  },
+  "maximal": {
+    "eb23e04765b5bc7689bfd7440dca5b0c0faa11f9": [
+      "refs/heads/archive/claude/elegant-haslett-5a997d",
+      "refs/remotes/origin/archive/claude/elegant-haslett-5a997d"
+    ],
+    "5f15b9f9efd6ac6d80a3da82993f74e8e6f98ac1": [
+      "refs/heads/archive/claude/frosty-lamport-ed0c21",
+      "refs/remotes/origin/archive/claude/frosty-lamport-ed0c21"
+    ],
+    "07982ae5fe38ae0bfec9b1975c260a6d3625fa96": [
+      "refs/heads/archive/claude/goofy-cartwright-e40826",
+      "refs/remotes/origin/archive/claude/goofy-cartwright-e40826"
+    ],
+    "48f7e09d8dcb487d60cfc39de00c6bbbfff19e48": [
+      "refs/heads/archive/claude/vigilant-sutherland-fddc31",
+      "refs/remotes/origin/archive/claude/vigilant-sutherland-fddc31"
+    ],
+    "7de00c9ac1018f2ecf74accc9b01ff753fb0e51b": [
+      "refs/heads/backup/om-walkthrough-before-squash-20260910"
+    ],
+    "38297142d74d67616da9c784da9536bea7a2ffd1": [
+      "refs/heads/claude/awesome-jemison-1319e0"
+    ],
+    "c9b708431e4bfb02122ce4a0084391cdcfa17ea0": [
+      "refs/heads/claude/frosty-villani-bb0be9"
+    ],
+    "8ec9f029dceb8f50bbf8f6ff648e937cf6fbe98e": [
+      "refs/heads/claude/gifted-tharp-26f561"
+    ],
+    "fe8f14700bfb9b707f2dbdafadb4c42abf1c5e3a": [
+      "refs/heads/claude/hungry-leavitt-78b450"
+    ],
+    "64d8098a8066e2ca9662f1838f26813f73a6c3d9": [
+      "refs/heads/claude/inspiring-feistel-f9454a",
+      "refs/remotes/origin/archive/claude/trusting-borg-65b650"
+    ],
+    "e4f81f4ffd2a864d36d4b1a5243948210ccf2ea5": [
+      "refs/heads/claude/om-forces-review-cleanup-1023",
+      "refs/remotes/origin/claude/om-forces-review-cleanup-1023"
+    ],
+    "8de8e8b707d23d0ae897841acdb639e524d6e602": [
+      "refs/heads/claude/om-placement-shift-1058",
+      "refs/remotes/origin/claude/om-placement-shift-1058"
+    ],
+    "3b2ad09f66ae6467416f9f9edc1b0befd994dffd": [
+      "refs/heads/claude/om-registry-nplus1-1031",
+      "refs/heads/codex/sol-878",
+      "refs/remotes/origin/claude/om-registry-nplus1-1031"
+    ],
+    "53972b2305d806b0b1f27d36ee45eb2b8053d1ee": [
+      "refs/heads/codex/1015-protected-photo-auth",
+      "refs/remotes/origin/codex/1015-protected-photo-auth"
+    ],
+    "53fb6169887b3707a03e9252e82ca1c8745e388f": [
+      "refs/heads/codex/1017-visit-object-delete-permission",
+      "refs/remotes/origin/codex/1017-visit-object-delete-permission"
+    ],
+    "59a11ad78c08431858381c94bc5b2df49b3a4fc5": [
+      "refs/heads/codex/1021-force-collection-n-plus-one"
+    ],
+    "074a81016e67b15448fae7f60878df69e047e7ce": [
+      "refs/heads/codex/1030-date-pagination",
+      "refs/heads/codex/integration-1116"
+    ],
+    "0bd601edbbe4aed9fb170fff82c0f4237a7a2deb": [
+      "refs/heads/codex/1032-dismiss-deactivates"
+    ],
+    "b1959f7c798767647d906362caf4bf550c4c655a": [
+      "refs/heads/codex/1041-permission-errors"
+    ],
+    "3044f3d6b00e8e79df87c71bf1741e9d2b92da9d": [
+      "refs/heads/codex/1069-photo-fallback",
+      "refs/remotes/origin/codex/1069-photo-fallback"
+    ],
+    "63674cf1d6d4ca13b6b98285f0e0af40b3a3ff15": [
+      "refs/heads/codex/1071-service-reports-navigation"
+    ],
+    "398ae6248cf977e815fa9ac909c809a45808e874": [
+      "refs/heads/codex/1079-review-fix"
+    ],
+    "ca0a7f3ab3b10ebcc197c1eb7cba9f6f8c66bd53": [
+      "refs/heads/codex/1080-force-workspaces"
+    ],
+    "f05f695302eea5969f008d138a7b1e906a55933d": [
+      "refs/heads/codex/1110-django-log-rotation"
+    ],
+    "f45e63702406619760226303e4a504c6030a43c7": [
+      "refs/heads/codex/1111-status-button"
+    ],
+    "e42d01536fa4f9321985ea6c14c3029943dd3fa6": [
+      "refs/heads/codex/1112-status-dialog"
+    ],
+    "d9bac15ea966a5f7bcb8628fc2c23c86fb93b1bb": [
+      "refs/heads/codex/1117-1123-backend-deps"
+    ],
+    "c1c50a2bb04fb2e5926cbe42fb68da7f3133be17": [
+      "refs/heads/codex/1118-gvo-access-e2e"
+    ],
+    "df6e958f74a770a9325f4267c3d90e171abea418": [
+      "refs/heads/codex/1119-worktree-purge-python"
+    ],
+    "624a536cd3edba7ab4dc294400649ec0b566d717": [
+      "refs/heads/codex/1120-role-default-route"
+    ],
+    "08b62f7de08408d829d729c1c23aec09b0a910a8": [
+      "refs/heads/codex/1121-next-build-secret"
+    ],
+    "47359b9a2a0e9b51770160236f4338467a9bbe80": [
+      "refs/heads/codex/1125-dept-head-service-reports"
+    ],
+    "316ec6e328fed4f1080dce528eb760a78a72ae29": [
+      "refs/heads/codex/828-token-blacklist",
+      "refs/remotes/origin/codex/828-token-blacklist"
+    ],
+    "f9ef8fb30b3c84f774169534d9521c9bef26d632": [
+      "refs/heads/codex/858-status-dedupe"
+    ],
+    "a1f98f4fe0cf9134adc6426f14cc7c37f80d263c": [
+      "refs/heads/codex/887-empty-distribution"
+    ],
+    "85d767425ed55804b3069943854675617f8073b6": [
+      "refs/heads/codex/890-atomic-e2e-fixture-dates"
+    ],
+    "24e4c3ae71ea70002ca127486bd4c80bf2a1dc5f": [
+      "refs/heads/codex/claude-queue-20260908",
+      "refs/remotes/origin/codex/claude-queue-20260908"
+    ],
+    "343e090952338164ba601032d500714b664a52cb": [
+      "refs/heads/codex/core-walkthrough-1046"
+    ],
+    "3eb07a829b82d78e5d87a02261cadd40eb15400d": [
+      "refs/heads/codex/core-walkthroughs-20260908"
+    ],
+    "163368a2fd051a91526f8228aecfb6ad7a9c2ae2": [
+      "refs/heads/codex/luna-1055",
+      "refs/remotes/origin/codex/luna-1055"
+    ],
+    "dc52ae0c2c640d1d87602f0db030679ee8ca1823": [
+      "refs/heads/codex/sol-1022",
+      "refs/remotes/origin/codex/sol-1022"
+    ],
+    "ba6f7009abbb533a54b47b22dfaec0e95bfafcfe": [
+      "refs/heads/codex/sol-1036",
+      "refs/remotes/origin/codex/sol-1036"
+    ],
+    "6f5ceff8f76c46622303ff7ac845e2406a3b5a4f": [
+      "refs/heads/codex/sol-1050",
+      "refs/remotes/origin/codex/sol-1050"
+    ],
+    "ce5d8abb93e6a2b70c4e51e404ba85dde1dee555": [
+      "refs/heads/codex/sol-962",
+      "refs/remotes/origin/codex/sol-962"
+    ],
+    "990e1835a4c2fba3de2a6c1752a8d7775b2da022": [
+      "refs/heads/codex/status-schedule-962",
+      "refs/heads/codex/status-task-errors-961",
+      "refs/remotes/origin/codex/status-task-errors-961"
+    ],
+    "a0ec89b3dba5b77ce53271cfb0221ad7fe75f721": [
+      "refs/heads/codex/terra-1008",
+      "refs/remotes/origin/codex/terra-1008"
+    ],
+    "eecf03231959a8d33ffb14fcc5ec76af7b7b9bb5": [
+      "refs/heads/docs/wiki-usecases-1028"
+    ],
+    "03f2ee9eb57a451491c784518233fcd7e025377a": [
+      "refs/heads/e3-catchup-clock-concurrency"
+    ],
+    "3fdaddc50f9d00c9cbab0626e27e995b354fff2e": [
+      "refs/heads/feat/frontend-battle-modules"
+    ],
+    "e8823b71dfb2d6b3dfc561d90915f72c6ca1982b": [
+      "refs/heads/feat/prototype-skin"
+    ],
+    "c11a52e61da73f6bd3d3104b3698fa5e9ee4171f": [
+      "refs/heads/orphan/duty-calendar-stage8"
+    ],
+    "d99f331bddf460bdd37efb62e540a2ad2c026de4": [
+      "refs/heads/personnel/1057-day-submission-date",
+      "refs/remotes/origin/personnel/1057-day-submission-date"
+    ],
+    "74bcb6c829d5a66d1741be4b74741b7d9954b7a6": [
+      "refs/heads/personnel/985-service-reports-rename",
+      "refs/remotes/origin/personnel/985-service-reports-rename"
+    ],
+    "81c7c9e0ad2701793fcd442288694b31cbc270ee": [
+      "refs/heads/personnel/986-pdf-only-format",
+      "refs/remotes/origin/personnel/986-pdf-only-format"
+    ],
+    "053de287e161734feaccf25a21281ee9281861a0": [
+      "refs/heads/sonnet-om/1061-protected-person-link",
+      "refs/remotes/origin/sonnet-om/1061-protected-person-link"
+    ],
+    "548e4d2b9f3c986f9641f0191fa091da1f7d05c2": [
+      "refs/heads/sonnet-om/1113-status-celery",
+      "refs/remotes/origin/sonnet-om/1113-status-celery"
+    ],
+    "4a94d9f7f40dda6644e2731cba84ce718f43ab2c": [
+      "refs/remotes/origin/claude/install-obsidian-skills"
+    ]
+  }
+}

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 40px;box-sizing:border-box">
+      <div onClick="{{ goBack }}" style="width:36px;height:36px;border-radius:50%;background:#f2f2f0;display:flex;align-items:center;justify-content:center;cursor:pointer;margin-bottom:22px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#0f3f3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <sc-if value="{{ clientCancelled }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:14px;background:#fdece3;margin-bottom:20px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 16v.1" stroke="#c0392b" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="#c0392b" stroke-width="1.6"/></svg>
+          <div style="font-size:13px;font-weight:700;color:#c0392b">Клиент отменил консультацию</div>
+        </div>
+      </sc-if>
+      <div onClick="{{ openClient }}" style="cursor:pointer">
+        <div style="width:64px;height:64px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;margin-bottom:16px">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="#159a7c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:18px;font-weight:800;color:#0f3f3a;margin-bottom:4px">Анонимный клиент #1048</div>
+        <div style="font-size:12.5px;font-weight:500;color:#8fa6a1;margin-bottom:24px">Предыдущих обращений: 2 · Открыть профиль клиента ›</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:26px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f2f2f0">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Тема</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">Тревожность</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f2f2f0">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Формат</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ formatLabel }}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f2f2f0">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Дата</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">Сегодня, 19:00</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f2f2f0">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Стоимость</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">3 990 ₸</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:13px;font-weight:600;color:#8fa6a1">Статус</div>
+          <div style="font-size:13.5px;font-weight:700;color:{{ completed ? '#8fa6a1' : '#0f766e' }}">{{ completed ? 'Завершена' : 'Запланирована' }}</div>
+        </div>
+      </div>
+
+      <sc-if value="{{ !completed }}" hint-placeholder-val="{{ true }}">
+        <button onClick="{{ onStart }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;margin-bottom:10px">Начать консультацию</button>
+        <div style="display:flex;gap:8px">
+          <button onClick="{{ onReschedule }}" style="flex:1;height:48px;border:1.5px solid #edf2f0;border-radius:14px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Перенести</button>
+          <button onClick="{{ onCancel }}" style="flex:1;height:48px;border:1.5px solid #f5d9df;border-radius:14px;background:#fff;color:#c0435f;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Отменить</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ completed }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ goBack }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#f2f2f0;color:#0f3f3a;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer">Готово</button>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ showCancelModal }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+        <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px">
+          <div style="font-size:17px;font-weight:800;color:#0f3f3a">Отменить консультацию?</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Клиент будет уведомлён об отмене</div>
+          <button onClick="{{ onConfirmCancel }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#fbe7ec;color:#c0435f;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px">Да, отменить</button>
+          <button onClick="{{ closeCancelModal }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer">Оставить запись</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { showCancelModal: false };
+  renderVals() {
+    const params = new URLSearchParams(window.location.search);
+    const completed = params.get('status') === 'completed';
+    const clientCancelled = params.get('demo') === 'client_cancelled';
+    const formatId = params.get('format') || 'video';
+    const formatMap = {
+      chat: { label: 'Чат', route: './SmartQoldau Expert - Чат (эксперт).dc.html' },
+      audio: { label: 'Аудиоконсультация', route: './SmartQoldau Expert - Аудиозвонок (эксперт).dc.html' },
+      video: { label: 'Видеоконсультация', route: './SmartQoldau Expert - Видеозвонок (эксперт).dc.html' },
+    };
+    const f = formatMap[formatId] || formatMap.video;
+    return {
+      completed,
+      clientCancelled,
+      formatLabel: f.label,
+      goBack: () => { window.history.back(); },
+      openClient: () => { window.location.href = './SmartQoldau Expert - Клиент.dc.html?format=' + formatId; },
+      onStart: () => { window.location.href = f.route; },
+      onReschedule: () => {},
+      onCancel: () => this.setState({ showCancelModal: true }),
+      showCancelModal: this.state.showCancelModal,
+      closeCancelModal: () => this.setState({ showCancelModal: false }),
+      onConfirmCancel: () => { window.location.href = './SmartQoldau Expert - Консультации.dc.html'; },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

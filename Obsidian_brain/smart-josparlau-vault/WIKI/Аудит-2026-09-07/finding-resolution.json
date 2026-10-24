@@ -1,0 +1,14 @@
+{
+  "date": "2026-09-07",
+  "executor": "Кодекс Астра 6",
+  "deduplication": [
+    {"root_cause": "authorization-scope", "members": ["BACKEND-001", "BACKEND-002", "BACKEND-003", "BACKEND-004", "BACKEND-005", "BACKEND-006"], "resolution": "kept separately because each exposes a distinct endpoint family"},
+    {"root_cause": "canon-gvo-drift", "members": ["DOC-004", "FE-002"], "resolution": "kept separately: topology and menu-policy are different owner decisions"},
+    {"root_cause": "false-green", "members": ["GATE-001", "FE-003", "FE-004", "FE-005", "FE-010"], "resolution": "grouped in recommendations but retained as separate verifiable defects"},
+    {"root_cause": "duplicated-contracts", "members": ["BACKEND-011", "FE-RT-001", "FE-RT-002"], "resolution": "status enum is a finding; boundary adapters and date helpers are refactoring targets"}
+  ],
+  "release_gate": {
+    "verdict": "NO-GO",
+    "reason": "At least one independently verified critical authorization finding remains. The historical frontend gate failure was fixed by Plane 945 and verified 23/23 on final observed HEAD."
+  }
+}

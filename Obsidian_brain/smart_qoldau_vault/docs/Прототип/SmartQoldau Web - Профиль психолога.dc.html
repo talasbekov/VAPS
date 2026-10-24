@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>body{margin:0;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} a{color:#0f766e} a:hover{color:#0a5951}</style>
+</helmet>
+<div style="width:100%;background:#fff;min-height:100vh">
+
+  <div style="position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #eef2f0">
+    <div style="max-width:1240px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;gap:24px">
+      <a href="./SmartQoldau.kz.dc.html" style="display:flex;align-items:center;gap:9px;flex-shrink:0;text-decoration:none">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:32px;height:32px;border-radius:9px">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a">SmartQoldau</div>
+      </a>
+      <a href="./SmartQoldau Web - Каталог.dc.html" style="font-size:13px;font-weight:700;color:#0f3f3a;text-decoration:none">← Все специалисты</a>
+    </div>
+  </div>
+
+  <div style="max-width:1000px;margin:0 auto;padding:48px 32px 90px;display:grid;grid-template-columns:1.4fr 1fr;gap:36px">
+    <div>
+      <div style="display:flex;align-items:center;gap:18px;margin-bottom:22px">
+        <image-slot id="profile-photo" style="width:88px;height:88px" shape="circle" placeholder="Фото"></image-slot>
+        <div>
+          <div style="font-size:24px;font-weight:800;color:#0f3f3a">{{ p.name }}</div>
+          <div style="font-size:14px;font-weight:500;color:#8fa6a1;margin-top:2px">Клинический психолог · {{ p.years }} опыта</div>
+          <div style="font-size:14px;font-weight:700;color:#0f3f3a;margin-top:6px">⭐ {{ p.rating }} · {{ p.reviews }} отзывов</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="font-size:13px;font-weight:700;color:#8fa6a1;margin-bottom:8px">О специалисте</div>
+        <div style="font-size:14px;font-weight:500;color:#3f5450;line-height:1.6">{{ p.bio }}</div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px">
+        <sc-for list="{{ p.specTags }}" as="t" hint-placeholder-count="4"><div style="padding:7px 13px;border-radius:12px;background:#f2f2f0;font-size:12.5px;font-weight:700;color:#0f3f3a">{{ t }}</div></sc-for>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:28px">
+        <div style="border-radius:16px;background:#f8faf9;padding:16px">
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Языки</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ p.langs }}</div>
+        </div>
+        <div style="border-radius:16px;background:#f8faf9;padding:16px">
+          <div style="font-size:11.5px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Форматы</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0f3f3a">{{ p.formats }}</div>
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:#8fa6a1;margin-bottom:12px">Отзывы</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ reviews }}" as="r" hint-placeholder-count="3">
+          <div style="border-radius:14px;border:1px solid #eef2f0;padding:14px 16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+              <div style="font-size:12.5px;font-weight:700;color:#0f3f3a">{{ r.stars }}</div>
+              <div style="font-size:11px;font-weight:600;color:#a9bdb9">{{ r.date }} · Анонимный клиент</div>
+            </div>
+            <div style="font-size:13px;font-weight:500;color:#5b7a75;line-height:1.5">{{ r.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div>
+      <div style="position:sticky;top:90px;border-radius:22px;border:1px solid #eef2f0;padding:24px;background:#fff">
+        <div style="font-size:22px;font-weight:800;color:#0f3f3a;margin-bottom:2px">{{ p.price }}</div>
+        <div style="font-size:12px;font-weight:600;color:#8fa6a1;margin-bottom:18px">за консультацию</div>
+        <div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:8px">Формат</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">
+          <sc-for list="{{ formatChoices }}" as="f" hint-placeholder-count="3">
+            <div onClick="{{ f.onClick }}" style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:13px;border:1.5px solid {{ f.borderColor }};background:{{ f.bg }};cursor:pointer">
+              <div style="font-size:13px;font-weight:700;color:#0f3f3a">{{ f.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <a href="{{ bookHref }}" style="display:flex;align-items:center;justify-content:center;height:50px;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;text-decoration:none;margin-bottom:10px">Записаться на консультацию</a>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" stroke="#8fa6a1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:11.5px;font-weight:600;color:#8fa6a1">Можно обратиться анонимно</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#0f3f3a;padding:30px 32px;text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4)">© SmartQoldau</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static PROFILES = {
+    'cat-1': { name: 'Айгуль Сатпаева', years: '6 лет', rating: '4.9', reviews: 312, price: '3 990 ₸', langs: 'Русский · Қазақша', formats: 'Чат · Аудио · Видео', bio: 'Помогает клиентам справляться с тревогой, стрессом и эмоциональным выгоранием. Работает в когнитивно-поведенческом подходе.', specTags: ['Тревога и стресс', 'Панические атаки', 'Выгорание', 'Отношения'], formatIds: ['chat','audio','video'] },
+    'cat-2': { name: 'Марат Ержанов', years: '4 года', rating: '4.8', reviews: 187, price: '3 500 ₸', langs: 'Русский · English', formats: 'Чат · Видео', bio: 'Специализируется на семейных и парных отношениях, помогает найти взаимопонимание и выстроить здоровые границы.', specTags: ['Отношения', 'Семья'], formatIds: ['chat','video'] },
+    'cat-3': { name: 'Дана Қалиева', years: '8 лет', rating: '5.0', reviews: 401, price: '4 200 ₸', langs: 'Қазақша · Русский', formats: 'Аудио · Видео', bio: 'Работает с паническими атаками и нарушениями сна, использует техники стабилизации и заземления.', specTags: ['Панические атаки', 'Бессонница'], formatIds: ['audio','video'] },
+    'cat-4': { name: 'Тимур Абенов', years: '5 лет', rating: '4.9', reviews: 233, price: '3 800 ₸', langs: 'Русский', formats: 'Чат · Аудио', bio: 'Помогает справляться с зависимостями и жизненными кризисами, поддерживает без осуждения.', specTags: ['Зависимости', 'Жизненные кризисы'], formatIds: ['chat','audio'] },
+  };
+  static FORMAT_LABELS = { chat: '💬 Чат', audio: '🎧 Аудио', video: '📹 Видео' };
+  state = { format: null };
+  renderVals() {
+    const id = new URLSearchParams(window.location.search).get('id') || 'cat-1';
+    const base = Component.PROFILES[id] || Component.PROFILES['cat-1'];
+    const s = this.state;
+    const chosenFormat = s.format || base.formatIds[0];
+    const formatChoices = base.formatIds.map(f => ({ id: f, label: Component.FORMAT_LABELS[f], borderColor: chosenFormat === f ? '#0f766e' : '#eef2f0', bg: chosenFormat === f ? '#f2fbf8' : '#fff', onClick: () => this.setState({ format: f }) }));
+    return {
+      p: base,
+      formatChoices,
+      reviews: [
+        { stars: '⭐⭐⭐⭐⭐', date: '3 авг', text: 'Очень внимательно выслушала и помогла разобраться в чувствах.' },
+        { stars: '⭐⭐⭐⭐⭐', date: '29 июл', text: 'Профессионально и с заботой. Стало легче после первой консультации.' },
+        { stars: '⭐⭐⭐⭐', date: '22 июл', text: 'Хороший специалист, дал конкретные рекомендации.' },
+      ],
+      bookHref: `./SmartQoldau Web - Выбор темы.dc.html?format=${chosenFormat}&specialist=${encodeURIComponent(base.name)}`,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

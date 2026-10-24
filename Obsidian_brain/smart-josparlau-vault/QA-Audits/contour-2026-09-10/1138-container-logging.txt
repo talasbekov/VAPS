@@ -1,0 +1,6 @@
+exit=0
+/smart-josparlau-contour-final-backend-1 {"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/smart-josparlau-contour-final-frontend-1 {"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/smart-josparlau-contour-final-proxy-1 {"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/smart-josparlau-contour-final-db-1 {"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}
+/smart-josparlau-contour-final-redis-1 {"Type":"json-file","Config":{"max-file":"3","max-size":"10m"}}

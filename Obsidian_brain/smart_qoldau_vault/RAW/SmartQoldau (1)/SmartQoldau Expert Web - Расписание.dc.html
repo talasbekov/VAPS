@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#eef2f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif} input{outline:none;font-family:inherit}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;justify-content:center;background:#eef2f0;padding:24px;box-sizing:border-box">
+  <div style="width:1440px;max-width:100%;min-height:1024px;display:flex;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(15,63,58,0.18)">
+
+    <div style="width:260px;flex-shrink:0;background:#0f3f3a;display:flex;flex-direction:column;padding:28px 18px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px;margin-bottom:36px">
+        <img src="uploads/logo_smartqoldau.png" alt="SmartQoldau" style="width:34px;height:34px;border-radius:9px;flex-shrink:0">
+        <div><div style="font-size:14px;font-weight:800;color:#fff;line-height:1.1">SmartQoldau</div><div style="font-size:11px;font-weight:700;color:#7fd6c2;letter-spacing:0.5px">EXPERT</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="9">
+          <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;background:{{ n.bg }};cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ n.icon }}" stroke="{{ n.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13.5px;font-weight:700;color:{{ n.textColor }}">{{ n.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
+        <sc-for list="{{ bottomLinks }}" as="b" hint-placeholder-count="3">
+          <div onClick="{{ b.onClick }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="{{ b.icon }}" stroke="rgba(255,255,255,0.5)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.55)">{{ b.label }}</div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 10px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,0.08)">
+          <div style="width:34px;height:34px;border-radius:50%;background:#e3f3ee;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#159a7c;flex-shrink:0">А</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#fff">Айгуль Сатпаева</div><div style="display:flex;align-items:center;gap:5px;margin-top:1px"><div style="width:6px;height:6px;border-radius:50%;background:#159a7c"></div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.55)">Принимаю клиентов</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;background:#f7faf9;padding:36px 40px;box-sizing:border-box;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:24px;font-weight:800;color:#0f3f3a">Расписание</div>
+        <button onClick="{{ openSettings }}" style="height:40px;padding:0 16px;border:1.5px solid #eef2f0;border-radius:20px;background:#fff;color:#0f3f3a;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Настроить расписание</button>
+      </div>
+
+      <div style="display:flex;gap:6px;background:#eef2f0;border-radius:14px;padding:4px;margin-bottom:22px;width:fit-content">
+        <sc-for list="{{ viewTabs }}" as="t" hint-placeholder-count="3">
+          <div onClick="{{ t.onClick }}" style="padding:9px 20px;border-radius:11px;background:{{ t.bg }};box-shadow:{{ t.shadow }};font-size:13px;font-weight:700;color:{{ t.color }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ isDay }}" hint-placeholder-val="{{ true }}">
+      <div style="border-radius:20px;border:1px solid #eef2f0;padding:20px">
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <div style="width:56px;flex-shrink:0"></div>
+          <div style="flex:1;font-size:12.5px;font-weight:800;color:#0f3f3a">Сегодня, {{ todayDate }}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ slots }}" as="h" hint-placeholder-count="10">
+            <div style="display:flex;gap:8px;min-height:56px">
+              <div style="width:56px;flex-shrink:0;font-size:11.5px;font-weight:600;color:#a9bdb9;padding-top:2px">{{ h.label }}</div>
+              <div style="flex:1;border-top:1px solid #f2f2f0;padding-top:2px;padding-bottom:8px">
+                <sc-if value="{{ h.booking }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-radius:12px;background:{{ h.bg }};padding:10px 14px">
+                    <div style="font-size:12.5px;font-weight:800;color:{{ h.color }}">{{ h.title }}</div>
+                    <div style="font-size:11px;font-weight:500;color:{{ h.color }};opacity:0.75">{{ h.subtitle }}</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ h.isBreak }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:11px;font-weight:600;color:#c4d3cf">Перерыв</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isWeek }}" hint-placeholder-val="{{ false }}">
+      <div style="border-radius:20px;border:1px solid #eef2f0;padding:20px;display:grid;grid-template-columns:repeat(7,1fr);gap:10px">
+        <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7">
+          <div>
+            <div style="font-size:12px;font-weight:800;color:#0f3f3a;margin-bottom:10px;text-align:center">{{ d.label }}</div>
+            <div style="display:flex;flex-direction:column;gap:6px;min-height:120px">
+              <sc-for list="{{ d.bookings }}" as="b" hint-placeholder-count="1">
+                <div style="border-radius:10px;background:{{ b.bg }};padding:8px 9px">
+                  <div style="font-size:10.5px;font-weight:800;color:{{ b.color }}">{{ b.time }}</div>
+                  <div style="font-size:10px;font-weight:600;color:{{ b.color }};opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.title }}</div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ d.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;font-weight:600;color:#c4d3cf;text-align:center;padding-top:16px">Свободно</div></sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isMonth }}" hint-placeholder-val="{{ false }}">
+      <div style="border-radius:20px;border:1px solid #eef2f0;padding:20px">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:8px">
+          <sc-for list="{{ weekdayLabels }}" as="w" hint-placeholder-count="7"><div style="font-size:11px;font-weight:700;color:#8fa6a1;text-align:center;padding:6px 0">{{ w }}</div></sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">
+          <sc-for list="{{ monthCells }}" as="m" hint-placeholder-count="35">
+            <div style="aspect-ratio:1;border-radius:12px;background:{{ m.bg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;opacity:{{ m.opacity }}">
+              <div style="font-size:12px;font-weight:700;color:#0f3f3a">{{ m.day }}</div>
+              <sc-if value="{{ m.hasBooking }}" hint-placeholder-val="{{ false }}"><div style="width:5px;height:5px;border-radius:50%;background:#0f766e"></div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+<sc-if value="{{ showSettings }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeSettings }}" style="position:fixed;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;z-index:50">
+    <div onClick="{{ stop }}" style="width:440px;max-width:90vw;background:#fff;border-radius:22px;padding:28px;box-sizing:border-box;max-height:85vh;overflow-y:auto">
+      <div style="font-size:17px;font-weight:800;color:#0f3f3a;margin-bottom:20px">Настроить расписание</div>
+
+      <div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:8px">Рабочие дни</div>
+      <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap">
+        <sc-for list="{{ workDays }}" as="d" hint-placeholder-count="7">
+          <div onClick="{{ d.onClick }}" style="width:38px;height:38px;border-radius:11px;background:{{ d.bg }};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:{{ d.color }};cursor:pointer">{{ d.label }}</div>
+        </sc-for>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Начало работы</div>
+          <input value="{{ startTime }}" onChange="{{ onStart }}" style="width:100%;height:42px;border:1.5px solid #eef2f0;border-radius:12px;padding:0 12px;font-size:13px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Конец работы</div>
+          <input value="{{ endTime }}" onChange="{{ onEnd }}" style="width:100%;height:42px;border:1.5px solid #eef2f0;border-radius:12px;padding:0 12px;font-size:13px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;color:#8fa6a1;margin-bottom:6px">Перерыв</div>
+        <input value="{{ breakTime }}" onChange="{{ onBreak }}" style="width:100%;height:42px;border:1.5px solid #eef2f0;border-radius:12px;padding:0 12px;font-size:13px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+      </div>
+
+      <div onClick="{{ toggleEmergency }}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 2px;border-top:1px solid #f2f2f0;cursor:pointer">
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a">Принимать срочные обращения</div>
+        <div style="width:42px;height:24px;border-radius:12px;background:{{ emergencyOn ? '#0f766e' : '#e3e9e7' }};position:relative"><div style="position:absolute;top:2px;left:{{ emergencyOn ? '20px' : '2px' }};width:20px;height:20px;border-radius:50%;background:#fff;transition:left 0.15s"></div></div>
+      </div>
+      <div onClick="{{ toggleAutoAccept }}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 2px;border-top:1px solid #f2f2f0;cursor:pointer;margin-bottom:22px">
+        <div style="font-size:13px;font-weight:700;color:#0f3f3a">Автоматически принимать заявки</div>
+        <div style="width:42px;height:24px;border-radius:12px;background:{{ autoAcceptOn ? '#0f766e' : '#e3e9e7' }};position:relative"><div style="position:absolute;top:2px;left:{{ autoAcceptOn ? '20px' : '2px' }};width:20px;height:20px;border-radius:50%;background:#fff;transition:left 0.15s"></div></div>
+      </div>
+
+      <button onClick="{{ closeSettings }}" style="width:100%;height:48px;border:none;border-radius:14px;background:#0f766e;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">Сохранить</button>
+    </div>
+  </div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static HOURS = ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'];
+  static BOOKINGS = {
+    '11:00': { title: 'Марат Ж. · Клиент 1', subtitle: 'Отношения · Чат', bg: '#e3f3ee', color: '#159a7c' },
+    '13:00': 'break',
+    '18:30': null,
+    '15:00': { title: 'Анонимный клиент #3067', subtitle: 'Выгорание · Аудио', bg: '#e6f0fb', color: '#3b82c4' },
+  };
+  state = { view: 'day', showSettings: false, startTime: '09:00', endTime: '18:00', breakTime: '13:00–13:30', emergencyOn: true, autoAcceptOn: false, offDays: ['Вс'] };
+  renderVals() {
+    const s = this.state;
+    const nav = (active) => [
+      { label: 'Главная', icon: 'M4 11.5L12 4l8 7.5M6 10v9h5v-5h2v5h5v-9', href: './SmartQoldau Expert Web - Главная.dc.html' },
+      { label: 'Заявки', icon: 'M14 3v4a1 1 0 001 1h4 M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z', href: './SmartQoldau Expert Web - Заявки.dc.html' },
+      { label: 'Консультации', icon: 'M4 5h16v11H8l-4 4V5z', href: './SmartQoldau Expert Web - Консультации.dc.html' },
+      { label: 'Клиенты', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75', href: './SmartQoldau Expert Web - Клиенты.dc.html' },
+      { label: 'Чаты', icon: 'M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z', href: './SmartQoldau Expert Web - Чаты.dc.html' },
+      { label: 'Расписание', icon: 'M8 2v4M16 2v4M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', href: './SmartQoldau Expert Web - Расписание.dc.html' },
+      { label: 'Доход', icon: 'M2 7h20v13H2z M2 7l3-4h14l3 4 M2 12h20', href: './SmartQoldau Expert Web - Доход.dc.html' },
+      { label: 'Рейтинг', icon: 'M12 2l3 6.5 7 1-5 5 1.2 7-6.2-3.5-6.2 3.5 1.2-7-5-5 7-1z', href: './SmartQoldau Expert Web - Рейтинг.dc.html' },
+      { label: 'Профиль', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8z M4 20c0-4 3.6-7 8-7s8 3 8 7', href: './SmartQoldau Expert Web - Профиль.dc.html' },
+    ].map(n => {
+      const isActive = n.label === active;
+      return { ...n, active: isActive, bg: isActive ? 'rgba(255,255,255,0.12)' : 'transparent', iconColor: isActive ? '#fff' : 'rgba(255,255,255,0.55)', textColor: isActive ? '#fff' : 'rgba(255,255,255,0.6)', onClick: isActive ? () => {} : () => { window.location.href = n.href; } };
+    });
+
+    const viewTabs = [
+      { id: 'day', label: 'День' }, { id: 'week', label: 'Неделя' }, { id: 'month', label: 'Месяц' },
+    ].map(t => { const sel = s.view === t.id; return { ...t, selected: sel, bg: sel ? '#fff' : 'transparent', shadow: sel ? '0 2px 6px rgba(0,0,0,0.08)' : 'none', color: sel ? '#0f3f3a' : '#8fa6a1', onClick: () => this.setState({ view: t.id }) }; });
+
+    const slots = Component.HOURS.map(h => {
+      const b = Component.BOOKINGS[h];
+      return { label: h, booking: b && b !== 'break', isBreak: b === 'break', title: b && b !== 'break' ? b.title : null, subtitle: b && b !== 'break' ? b.subtitle : null, bg: b && b !== 'break' ? b.bg : null, color: b && b !== 'break' ? b.color : null };
+    });
+
+    const WEEK_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+    const WEEK_DATA = {
+      'Пн': [{ time: '11:00', title: 'Марат Ж.', bg: '#e3f3ee', color: '#159a7c' }],
+      'Вт': [{ time: '15:00', title: 'Анонимный #3067', bg: '#e6f0fb', color: '#3b82c4' }],
+      'Ср': [],
+      'Чт': [{ time: '10:00', title: 'Анонимный #2214', bg: '#e3f3ee', color: '#159a7c' }, { time: '17:30', title: 'Анонимный #4590', bg: '#fdece3', color: '#e08a4d' }],
+      'Пт': [{ time: '18:30', title: 'Анонимный #1048', bg: '#fdece3', color: '#e08a4d' }],
+      'Сб': [],
+      'Вс': [],
+    };
+    const weekDays = WEEK_LABELS.map(label => ({ label, bookings: WEEK_DATA[label], empty: WEEK_DATA[label].length === 0 }));
+
+    const weekdayLabels = WEEK_LABELS;
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const firstDow = (new Date(now.getFullYear(), now.getMonth(), 1).getDay() + 6) % 7;
+    const bookedDays = [3, 7, 11, 15, 19, 22, 27];
+    const monthCells = [];
+    for (let i = 0; i < firstDow; i++) monthCells.push({ day: '', bg: 'transparent', opacity: 0, hasBooking: false });
+    for (let d = 1; d <= daysInMonth; d++) monthCells.push({ day: d, bg: d === now.getDate() ? '#f2fbf8' : '#f8faf9', opacity: 1, hasBooking: bookedDays.includes(d) });
+
+    const workDays = WEEK_LABELS.map(label => {
+      const off = s.offDays.includes(label);
+      return { label, bg: off ? '#f2f2f0' : '#0f766e', color: off ? '#a9bdb9' : '#fff', onClick: () => this.setState(prev => ({ offDays: prev.offDays.includes(label) ? prev.offDays.filter(d => d !== label) : [...prev.offDays, label] })) };
+    });
+
+    return {
+      navItems: nav('Расписание'),
+      bottomLinks: [
+        { label: 'Уведомления', icon: 'M6 8a6 6 0 1112 0c0 3.5 1 5.5 2 7H4c1-1.5 2-3.5 2-7z M9.5 19a2.5 2.5 0 005 0', onClick: () => { window.location.href = './SmartQoldau Expert Web - Уведомления.dc.html'; } },
+        { label: 'Поддержка', icon: 'M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 17v.1 M12 21a9 9 0 100-18 9 9 0 000 18z', onClick: () => { window.location.href = './SmartQoldau Expert Web - Поддержка.dc.html'; } },
+        { label: 'Настройки', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z', onClick: () => {} },
+      ],
+      viewTabs,
+      isDay: s.view === 'day',
+      isWeek: s.view === 'week',
+      isMonth: s.view === 'month',
+      todayDate: new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+      slots,
+      weekDays,
+      weekdayLabels,
+      monthCells,
+      openSettings: () => this.setState({ showSettings: true }),
+      closeSettings: () => this.setState({ showSettings: false }),
+      showSettings: s.showSettings,
+      stop: (e) => e.stopPropagation(),
+      workDays,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      breakTime: s.breakTime,
+      onStart: (e) => this.setState({ startTime: e.target.value }),
+      onEnd: (e) => this.setState({ endTime: e.target.value }),
+      onBreak: (e) => this.setState({ breakTime: e.target.value }),
+      emergencyOn: s.emergencyOn,
+      autoAcceptOn: s.autoAcceptOn,
+      toggleEmergency: () => this.setState(prev => ({ emergencyOn: !prev.emergencyOn })),
+      toggleAutoAccept: () => this.setState(prev => ({ autoAcceptOn: !prev.autoAcceptOn })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

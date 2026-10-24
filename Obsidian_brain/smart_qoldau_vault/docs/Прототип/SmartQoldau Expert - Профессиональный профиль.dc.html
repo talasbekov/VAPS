@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} ::-webkit-scrollbar{display:none} *{scrollbar-width:none} input,textarea,select{outline:none;font-family:inherit} textarea{resize:none}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 110px;box-sizing:border-box">
+      <div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">Шаг 1 из 2</div>
+      <div style="font-size:22px;font-weight:800;color:#0f3f3a;margin-bottom:6px">Профессиональный профиль</div>
+      <div style="font-size:13.5px;font-weight:500;color:#6b8580;line-height:1.5;margin-bottom:26px">Клиенты увидят эту информацию при выборе специалиста</div>
+
+      <div style="display:flex;justify-content:center;margin-bottom:26px">
+        <div onClick="{{ onUploadPhoto }}" style="width:96px;height:96px;border-radius:50%;background:#f2fbf8;border:1.5px dashed #b9dfd5;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M4 15V19a2 2 0 002 2h12a2 2 0 002-2v-4M17 8l-5-5-5 5M12 3v13" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="position:absolute;bottom:-6px;font-size:10.5px;font-weight:700;color:#0f766e;white-space:nowrap">Фото</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:7px">Город</div>
+          <div onClick="{{ openCityPicker }}" style="width:100%;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 14px;font-size:14px;color:#0f3f3a;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+            <span>{{ city }}</span>
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="#8fa6a1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:7px">Опыт работы</div>
+          <div onClick="{{ openExperiencePicker }}" style="width:100%;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 14px;font-size:14px;color:#0f3f3a;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+            <span>{{ experience }}</span>
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="#8fa6a1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:7px">Образование</div>
+        <input value="{{ education }}" onInput="{{ onEducation }}" placeholder="КазНУ им. Аль-Фараби, психология" style="width:100%;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 14px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:9px">Специализация</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <sc-for list="{{ specializations }}" as="sp" hint-placeholder-count="9">
+          <div onClick="{{ sp.onClick }}" style="padding:9px 14px;border-radius:14px;background:{{ sp.bg }};color:{{ sp.color }};font-size:12.5px;font-weight:700;cursor:pointer">{{ sp.label }}</div>
+        </sc-for>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:9px">Языки</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <sc-for list="{{ languages }}" as="l" hint-placeholder-count="3">
+          <div onClick="{{ l.onClick }}" style="padding:9px 14px;border-radius:14px;background:{{ l.bg }};color:{{ l.color }};font-size:12.5px;font-weight:700;cursor:pointer">{{ l.label }}</div>
+        </sc-for>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:7px">Стоимость консультации, ₸</div>
+        <input value="{{ price }}" onInput="{{ onPrice }}" inputmode="numeric" placeholder="3990" style="width:100%;height:50px;border:1.5px solid #edf2f0;border-radius:14px;padding:0 14px;font-size:14px;color:#0f3f3a;box-sizing:border-box"/>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:#0f3f3a;margin-bottom:9px">Форматы консультаций</div>
+      <div style="display:flex;gap:8px;margin-bottom:24px">
+        <sc-for list="{{ formats }}" as="f" hint-placeholder-count="3">
+          <div onClick="{{ f.onClick }}" style="flex:1;padding:12px 8px;border-radius:14px;background:{{ f.bg }};border:1.5px solid {{ f.borderColor }};display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="{{ f.icon }}" stroke="{{ f.iconColor }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:11.5px;font-weight:700;color:{{ f.iconColor }}">{{ f.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ error }}" hint-placeholder-val="{{ false }}">
+        <div style="font-size:12.5px;font-weight:600;color:#c0392b;margin-bottom:14px">{{ error }}</div>
+      </sc-if>
+
+      <button onClick="{{ onContinue }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer">Продолжить</button>
+    </div>
+
+    <sc-if value="{{ showCityPicker }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeCityPicker }}" style="position:absolute;inset:0;background:rgba(15,40,37,0.45);z-index:50"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:26px 26px 0 0;padding:22px 22px 32px;box-sizing:border-box;z-index:51;box-shadow:0 -20px 40px -16px rgba(0,0,0,0.2)">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Выберите город</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ cityOptions }}" as="c" hint-placeholder-count="3">
+            <div onClick="{{ c.onClick }}" style="padding:14px 16px;border-radius:14px;background:{{ c.bg }};font-size:14px;font-weight:700;color:#0f3f3a;cursor:pointer">{{ c.label }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showExperiencePicker }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeExperiencePicker }}" style="position:absolute;inset:0;background:rgba(15,40,37,0.45);z-index:50"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:26px 26px 0 0;padding:22px 22px 32px;box-sizing:border-box;z-index:51;box-shadow:0 -20px 40px -16px rgba(0,0,0,0.2)">
+        <div style="font-size:16px;font-weight:800;color:#0f3f3a;margin-bottom:14px">Опыт работы</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ experiencePickerOptions }}" as="e" hint-placeholder-count="5">
+            <div onClick="{{ e.onClick }}" style="padding:14px 16px;border-radius:14px;background:{{ e.bg }};font-size:14px;font-weight:700;color:#0f3f3a;cursor:pointer">{{ e.label }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  static SPECS = ['Тревожность', 'Стресс', 'Отношения', 'Семейные проблемы', 'Эмоциональное выгорание', 'Зависимости', 'Самооценка', 'Кризисные ситуации', 'Другое'];
+  static LANGS = ['Русский', 'Қазақша', 'English'];
+  static FORMATS = [
+    { id: 'chat', label: 'Чат', icon: 'M4 5h16v11H8l-4 4V5z' },
+    { id: 'audio', label: 'Аудио', icon: 'M12 1a4 4 0 00-4 4v6a4 4 0 008 0V5a4 4 0 00-4-4z M5 11a7 7 0 0014 0M12 18v3' },
+    { id: 'video', label: 'Видео', icon: 'M23 7l-7 5 7 5V7z M14 5H3a2 2 0 00-2 2v10a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2z' },
+  ];
+  static CITIES = ['Астана', 'Алматы', 'Шымкент'];
+  static EXPERIENCE_OPTIONS = ['Менее года', '1-3 года', '3-5 лет', '5-10 лет', 'Более 10 лет'];
+  state = { city: 'Астана', experience: '3-5 лет', education: '', price: '', selectedSpecs: [], selectedLangs: ['Русский'], selectedFormats: ['chat', 'video'], error: '', showCityPicker: false, showExperiencePicker: false };
+  toggleSpec(label) { this.setState(s => ({ selectedSpecs: s.selectedSpecs.includes(label) ? s.selectedSpecs.filter(x => x !== label) : [...s.selectedSpecs, label] })); }
+  toggleLang(label) { this.setState(s => ({ selectedLangs: s.selectedLangs.includes(label) ? s.selectedLangs.filter(x => x !== label) : [...s.selectedLangs, label] })); }
+  toggleFormat(id) { this.setState(s => ({ selectedFormats: s.selectedFormats.includes(id) ? s.selectedFormats.filter(x => x !== id) : [...s.selectedFormats, id] })); }
+  renderVals() {
+    const s = this.state;
+    return {
+      city: s.city,
+      showCityPicker: s.showCityPicker,
+      openCityPicker: () => this.setState({ showCityPicker: true }),
+      closeCityPicker: () => this.setState({ showCityPicker: false }),
+      cityOptions: Component.CITIES.map(c => ({ label: c, bg: c === s.city ? '#f2fbf8' : '#f8faf9', onClick: () => this.setState({ city: c, showCityPicker: false }) })),
+      experience: s.experience,
+      showExperiencePicker: s.showExperiencePicker,
+      openExperiencePicker: () => this.setState({ showExperiencePicker: true }),
+      closeExperiencePicker: () => this.setState({ showExperiencePicker: false }),
+      experiencePickerOptions: Component.EXPERIENCE_OPTIONS.map(e => ({ label: e, bg: e === s.experience ? '#f2fbf8' : '#f8faf9', onClick: () => this.setState({ experience: e, showExperiencePicker: false }) })),
+      education: s.education, onEducation: (e) => this.setState({ education: e.target.value }),
+      price: s.price, onPrice: (e) => this.setState({ price: e.target.value.replace(/\D/g,'') }),
+      specializations: Component.SPECS.map(label => { const sel = s.selectedSpecs.includes(label); return { label, bg: sel ? '#0f766e' : '#f2f2f0', color: sel ? '#fff' : '#0f3f3a', onClick: () => this.toggleSpec(label) }; }),
+      languages: Component.LANGS.map(label => { const sel = s.selectedLangs.includes(label); return { label, bg: sel ? '#0f766e' : '#f2f2f0', color: sel ? '#fff' : '#0f3f3a', onClick: () => this.toggleLang(label) }; }),
+      formats: Component.FORMATS.map(f => { const sel = s.selectedFormats.includes(f.id); return { ...f, bg: sel ? '#e3f3ee' : '#f8faf9', borderColor: sel ? '#0f766e' : 'transparent', iconColor: sel ? '#0f766e' : '#8fa6a1', onClick: () => this.toggleFormat(f.id) }; }),
+      error: s.error,
+      onUploadPhoto: () => {},
+      onContinue: () => {
+        if (s.selectedSpecs.length === 0) { this.setState({ error: 'Выберите хотя бы одну специализацию' }); return; }
+        if (!s.price) { this.setState({ error: 'Укажите стоимость консультации' }); return; }
+        if (s.selectedFormats.length === 0) { this.setState({ error: 'Выберите хотя бы один формат консультации' }); return; }
+        window.location.href = './SmartQoldau Expert - Документы.dc.html';
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

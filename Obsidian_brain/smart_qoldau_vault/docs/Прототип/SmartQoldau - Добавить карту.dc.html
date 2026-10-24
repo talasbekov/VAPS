@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff} input::placeholder{color:#a9bdb9} input{outline:none} ::-webkit-scrollbar{display:none} @keyframes sq-fade{0%{opacity:0}100%{opacity:1}}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f2f7">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ false }}" hint-size="390,844">
+  <div style="position:relative;width:100%;height:100%;background:#fff;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden">
+
+    <div style="position:absolute;inset:0;overflow-y:auto;padding:64px 22px 32px;box-sizing:border-box">
+
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+        <button onClick="{{ onBack }}" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(15,118,110,0.07);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+          <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div style="font-size:19px;font-weight:800;color:#0f3f3a">Добавить карту</div>
+      </div>
+
+      <div style="width:100%;box-sizing:border-box;border-radius:20px;background:linear-gradient(135deg,#0f3f3a,#0f766e);padding:22px 20px;margin-bottom:26px;color:#fff;box-shadow:0 16px 32px -10px rgba(15,118,110,0.35)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:26px">
+          <svg width="26" height="18" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2.5" stroke="#fff" stroke-width="1.5"/><path d="M2 9h20" stroke="#fff" stroke-width="1.5"/></svg>
+          <div style="font-size:12px;font-weight:700;opacity:0.8">{{ brand }}</div>
+        </div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:2px;margin-bottom:16px">{{ numberDisplay }}</div>
+        <div style="display:flex;justify-content:space-between">
+          <div style="font-size:12px;font-weight:600;opacity:0.8">{{ nameDisplay }}</div>
+          <div style="font-size:12px;font-weight:600;opacity:0.8">{{ expiryDisplay }}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:22px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:12.5px;font-weight:600;color:#3a5450">Номер карты</label>
+          <input type="tel" inputmode="numeric" value="{{ numberFormatted }}" onChange="{{ onNumberChange }}" placeholder="0000 0000 0000 0000" style="width:100%;height:52px;border-radius:16px;border:1.5px solid #e6efec;background:#fafcfb;padding:0 14px;font-size:15px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+        </div>
+        <div style="display:flex;gap:12px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <label style="font-size:12.5px;font-weight:600;color:#3a5450">Срок действия</label>
+            <input type="tel" inputmode="numeric" value="{{ expiryFormatted }}" onChange="{{ onExpiryChange }}" placeholder="ММ/ГГ" style="width:100%;height:52px;border-radius:16px;border:1.5px solid #e6efec;background:#fafcfb;padding:0 14px;font-size:15px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <label style="font-size:12.5px;font-weight:600;color:#3a5450">CVC</label>
+            <input type="tel" inputmode="numeric" value="{{ cvc }}" onChange="{{ onCvcChange }}" placeholder="123" style="width:100%;height:52px;border-radius:16px;border:1.5px solid #e6efec;background:#fafcfb;padding:0 14px;font-size:15px;font-family:inherit;color:#0f3f3a;box-sizing:border-box"/>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:12.5px;font-weight:600;color:#3a5450">Имя держателя карты</label>
+          <input type="text" value="{{ name }}" onChange="{{ onNameChange }}" placeholder="IVAN IVANOV" style="width:100%;height:52px;border-radius:16px;border:1.5px solid #e6efec;background:#fafcfb;padding:0 14px;font-size:15px;font-family:inherit;color:#0f3f3a;box-sizing:border-box;text-transform:uppercase"/>
+        </div>
+        <sc-if value="{{ formError }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12px;font-weight:600;color:#c0392b">{{ formError }}</div>
+        </sc-if>
+      </div>
+
+      <button onClick="{{ onSubmit }}" style="width:100%;height:54px;border:none;border-radius:27px;background:#0f766e;color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 12px 24px -8px rgba(15,118,110,0.4);margin-bottom:12px">Привязать карту</button>
+      <div style="font-size:11px;font-weight:500;color:#a9bdb9;text-align:center;line-height:1.4">Данные карты передаются в зашифрованном виде и не хранятся на серверах SmartQoldau</div>
+    </div>
+
+    <sc-if value="{{ showDeclined }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(15,40,37,0.45);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box;z-index:50">
+        <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;box-shadow:0 24px 48px -12px rgba(0,0,0,0.25)">
+          <div style="width:48px;height:48px;border-radius:50%;background:#fdedec;display:flex;align-items:center;justify-content:center;margin-bottom:6px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 16v.1" stroke="#c0392b" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="#c0392b" stroke-width="1.6"/></svg>
+          </div>
+          <div style="font-size:17px;font-weight:800;color:#0f3f3a">Не удалось привязать карту</div>
+          <div style="font-size:13px;font-weight:500;color:#6b8580;line-height:1.5">Банк отклонил операцию. Проверьте данные карты или попробуйте другую.</div>
+          <button onClick="{{ closeDeclined }}" style="width:100%;height:50px;border:none;border-radius:25px;background:#0f766e;color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px">Попробовать снова</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showSuccess }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:sq-fade 0.3s ease-out;z-index:60">
+        <div style="width:64px;height:64px;border-radius:50%;background:#0f766e;display:flex;align-items:center;justify-content:center">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-size:18px;font-weight:800;color:#0f3f3a">Карта привязана</div>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = { number: '', expiry: '', cvc: '', name: '', formError: '', showDeclined: false, showSuccess: false };
+  renderVals() {
+    const s = this.state;
+    const groupNumber = (digits) => digits.match(/.{1,4}/g)?.join(' ') || '';
+    return {
+      numberFormatted: groupNumber(s.number),
+      numberDisplay: s.number ? groupNumber(s.number.padEnd(16, '•')) : '•••• •••• •••• ••••',
+      expiryFormatted: s.expiry,
+      expiryDisplay: s.expiry || 'ММ/ГГ',
+      nameDisplay: s.name || 'ИМЯ ФАМИЛИЯ',
+      cvc: s.cvc,
+      name: s.name,
+      brand: s.number.startsWith('4') ? 'VISA' : s.number.startsWith('5') ? 'MASTERCARD' : 'КАРТА',
+      formError: s.formError,
+      showDeclined: s.showDeclined,
+      showSuccess: s.showSuccess,
+      onNumberChange: (e) => this.setState({ number: e.target.value.replace(/\D/g, '').slice(0, 16), formError: '' }),
+      onExpiryChange: (e) => {
+        let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+        if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+        this.setState({ expiry: v, formError: '' });
+      },
+      onCvcChange: (e) => this.setState({ cvc: e.target.value.replace(/\D/g, '').slice(0, 3), formError: '' }),
+      onNameChange: (e) => this.setState({ name: e.target.value.toUpperCase(), formError: '' }),
+      onBack: () => { window.location.href = './SmartQoldau - Способы оплаты.dc.html'; },
+      closeDeclined: () => this.setState({ showDeclined: false }),
+      onSubmit: () => {
+        if (s.number.length < 16 || s.expiry.length < 5 || s.cvc.length < 3 || !s.name.trim()) {
+          this.setState({ formError: 'Заполните все поля корректно' });
+          return;
+        }
+        if (s.number.endsWith('0000')) {
+          this.setState({ showDeclined: true });
+          return;
+        }
+        let cards = [];
+        try { cards = JSON.parse(localStorage.getItem('sq_cards') || '[]'); } catch (e) {}
+        cards.push({ brand: s.number.startsWith('4') ? 'Visa' : s.number.startsWith('5') ? 'Mastercard' : 'Карта', last4: s.number.slice(-4), expiry: s.expiry });
+        localStorage.setItem('sq_cards', JSON.stringify(cards));
+        this.setState({ showSuccess: true });
+        setTimeout(() => { window.location.href = './SmartQoldau - Способы оплаты.dc.html'; }, 1200);
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>
