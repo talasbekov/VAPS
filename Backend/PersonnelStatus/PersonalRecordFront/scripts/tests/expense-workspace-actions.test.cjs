@@ -63,6 +63,7 @@ function render(snapshot = state(), query = 'businessDate=2026-10-20&search=reta
     '@/features/daily-expense/ui/SummaryActionBar': { SUMMARY_ACTION_ANCHOR: 'summary-action' },
     '@/hooks/use-department-requests': { useDepartmentRequests: () => ({ data: { results: [] }, isPending: false, isError: false }) },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => snapshot.access },
+    '@/entities/portal-access': load('entities/portal-access/index.ts'),
     '@/shared/lib/date': { formatIsoDate: date => date.split('-').reverse().join('.'), formatIsoDateTime: date => date },
     '../model/workspace': model,
     '../model/daily-action-queue': { useDailyActionQueue: () => snapshot },
@@ -103,6 +104,17 @@ test('a retained expense role cannot reveal the queue after status access is rev
   const html = render(snapshot, 'view=daily&businessDate=2026-10-20');
   assert.match(html, /Недостаточно прав/);
   assert.doesNotMatch(html, /Первое управление|Начальник первого|Требует моего действия|Existing department daily form/);
+});
+
+test('daily-only responsibility retains its missing-submission queue without force allocation', () => {
+  const snapshot = state();
+  const permissions = ['status.view', 'daily_report.generate'];
+  snapshot.access.permissions = new Set(permissions);
+  snapshot.access.hasPermission = code => permissions.includes(code);
+  const html = render(snapshot);
+  assert.match(html, /Первое управление/);
+  assert.match(html, /Не сдали[^<]*2/);
+  assert.doesNotMatch(html, /Недостаточно прав/);
 });
 
 test('permission loading hides cached source names and is not presented as a forbidden read', () => {

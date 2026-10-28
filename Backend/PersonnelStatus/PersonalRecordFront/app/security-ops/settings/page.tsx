@@ -6,6 +6,7 @@
 // экранах: режим отдыха читает планирование дежурств, интервалы свежести —
 // реестр объектов.
 import { useState } from "react";
+import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -37,9 +38,10 @@ import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { formatIsoDateTime } from "@/shared/lib/date";
+import { SystemDiagnostics } from "@/features/system-diagnostics/SystemDiagnostics";
 
 export default function OpsSettingsPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const { hasPermission, hasGlobalPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useOpsSettings();
   const changeLog = useSettingChangeLog();
   const [editing, setEditing] = useState<PolicySetting | null>(null);
@@ -60,6 +62,15 @@ export default function OpsSettingsPage() {
           title="Администрирование"
           description="Политики, которые читают другие разделы — правка меняет исход операций, а не окраску экрана"
         />
+
+        {hasGlobalPermission("settings.manage") && (
+          <Card><CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <p className="text-sm text-muted-foreground">Адрес сервера, модель и ключ ИИ-помощника</p>
+            <Button asChild variant="outline"><Link href="/settings/ai/">Подключение ИИ</Link></Button>
+          </CardContent></Card>
+        )}
+
+        <SystemDiagnostics />
 
         {query.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка настроек…</p>

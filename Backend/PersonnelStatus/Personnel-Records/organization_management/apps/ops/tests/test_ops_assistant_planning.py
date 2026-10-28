@@ -76,6 +76,7 @@ def test_missing_bulletin_facts_are_questions_not_fabricated_defaults():
 
 
 @override_settings(OPS_ASSISTANT_PROVIDER="disabled")
+@pytest.mark.django_db
 def test_disabled_provider_is_explicit_and_never_calls_network(monkeypatch):
     monkeypatch.setattr(provider, "urlopen", lambda *_a, **_k: pytest.fail("network called"))
     with pytest.raises(provider.ProviderUnavailable):
@@ -83,6 +84,7 @@ def test_disabled_provider_is_explicit_and_never_calls_network(monkeypatch):
 
 
 @override_settings(OPS_ASSISTANT_PROVIDER="ollama", OPS_ASSISTANT_OLLAMA_URL="http://127.0.0.1:11434", OPS_ASSISTANT_MODEL="qwen2.5:7b")
+@pytest.mark.django_db
 def test_local_provider_uses_bounded_structured_output_and_business_clock(monkeypatch):
     captured = {}
     def respond(request, timeout):
@@ -101,6 +103,7 @@ def test_local_provider_uses_bounded_structured_output_and_business_clock(monkey
 
 
 @override_settings(OPS_ASSISTANT_PROVIDER="ollama", OPS_ASSISTANT_OLLAMA_URL="http://127.0.0.1:11434")
+@pytest.mark.django_db
 def test_network_or_malformed_model_response_is_a_safe_provider_error(monkeypatch):
     def broken(*_args, **_kwargs):
         raise URLError("private transport detail")

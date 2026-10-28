@@ -33,6 +33,14 @@ test('combined department and headquarters grants retain distinct work entries',
   assert.ok(all.some(task=>task.id==='headquarters'&&task.href.includes('tab=collections')));
   assert.ok(result.primary.length<=3);
 });
+
+test('bulletin-only author sees assistant work without gaining the event registry or headquarters',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  const result=portalWorkspace(access(['event.bulletin']));
+  const all=[...result.primary,...result.more];
+  assert.ok(all.some(task=>task.id==='assistant'));
+  assert.equal(all.some(task=>['events','headquarters','department-forces'].includes(task.id)),false);
+});
 test('global access administrator has account management first; scoped admin grant cannot open it',()=>{
   const {portalWorkspace}=load('@/features/portal-workspace/model');
   const global=portalWorkspace(access(['admin.roles','audit.view']));
@@ -91,4 +99,37 @@ test('both permitted report sources retain one active shared report action',()=>
   for(const path of ['/reports/','/reports/history/','/security-ops/service-reports/','/security-ops/service-reports/history/']) {
     assert.equal(activePortalTask(all,path,new URLSearchParams()),'reports');
   }
+});
+
+test('daily report responsibilities open their workspace without force allocation',()=>{
+  const {portalWorkspace,activePortalTask}=load('@/features/portal-workspace/model');
+  const {moduleOpenFor}=load('@/entities/portal-access');
+  for(const permission of ['daily_report.mark_update','daily_report.generate','daily_report.correct']) {
+    const a=access(['status.view',permission]);
+    const result=portalWorkspace(a),all=[...result.primary,...result.more];
+    assert.equal(moduleOpenFor('/daily-expense',a.hasPermission),true);
+    assert.equal(moduleOpenFor('/employees',a.hasPermission),false);
+    assert.equal(all.find(task=>task.id==='daily')?.href,'/daily-expense');
+    assert.equal(activePortalTask(all,'/daily-expense/',new URLSearchParams()),'daily');
+    assert.ok(!all.some(task=>['department-forces','headquarters'].includes(task.id)));
+  }
+});
+
+test('daily workspace requires both a daily responsibility and status read authority',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  const {moduleOpenFor}=load('@/entities/portal-access');
+  for(const codes of [[],['status.view'],['daily_report.generate'],['daily_report.mark_update'],['daily_report.correct'],['forces.allocate','status.view']]) {
+    const a=access(codes),result=portalWorkspace(a);
+    assert.equal(moduleOpenFor('/daily-expense',a.hasPermission),false,JSON.stringify(codes));
+    assert.ok(![...result.primary,...result.more].some(task=>task.id==='daily'));
+  }
+});
+
+test('switching into daily work preserves date filters and clears force targets',()=>{
+  const {portalWorkspace,portalTaskHref}=load('@/features/portal-workspace/model');
+  const result=portalWorkspace(access(['status.view','daily_report.generate']));
+  const entry=[...result.primary,...result.more].find(task=>task.id==='daily');
+  assert.ok(entry,'daily responsibility needs a task');
+  const href=portalTaskHref(entry,new URLSearchParams('businessDate=2026-10-27&dateFrom=2026-10-20&dateTo=2026-10-27&request=4&collection=6&campaign=8&tab=requests&view=forces&employee=9'));
+  assert.equal(href,'/daily-expense?businessDate=2026-10-27&dateFrom=2026-10-20&dateTo=2026-10-27');
 });

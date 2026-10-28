@@ -28,15 +28,15 @@ BUNDLE_FILES = (
     "prepare-assets.py", "ui-assets.lock.json", "redoc.html", "INSTALL-RU.md",
     "UPDATE-RU.md", "update.py", "update-offline.py", "update-app-only.py", "obnovit-bez-bazy.py",
     "cleanup-old-releases.py",
-    "update-with-migrations.py", "schema-transition-checks.py", "import-smart-data.py",
-    "SCHEMA-TRANSITION-RU.md", "SMART-UPDATE-RU.md",
+    "update-with-migrations.py", "schema-transition-checks.py", "compose-network-transition.py", "import-smart-data.py",
+    "SCHEMA-TRANSITION-RU.md", "SMART-UPDATE-RU.md", "PROD-UPDATE-RU.md",
     "build.py", "build.sh",
 )
 APPLICATION_FILES = (
     "application-images.tar", "source-revision.txt", "update.py", "update-offline.py",
     "update-app-only.py", "obnovit-bez-bazy.py", "cleanup-old-releases.py", "UPDATE-RU.md",
-    "update-with-migrations.py", "schema-transition-checks.py", "schema-transition.json",
-    "migration-graph.json", "SCHEMA-TRANSITION-RU.md", "SMART-UPDATE-RU.md", "import-smart-data.py",
+    "update-with-migrations.py", "schema-transition-checks.py", "compose-network-transition.py", "schema-transition.json",
+    "migration-graph.json", "SCHEMA-TRANSITION-RU.md", "PROD-UPDATE-RU.md",
 )
 
 
@@ -52,14 +52,14 @@ def write_application_manifest(output, revision, images, graph):
     transition = transition_module()
     transition.checks.require_graph(graph, graph)
     def save(name, value):
-        (output / name).write_text(json.dumps(value, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+        (output / name).write_bytes((json.dumps(value, sort_keys=True, indent=2) + '\n').encode('utf-8'))
     save('migration-graph.json', graph)
     selected = {key: images[key] for key in ('backend', 'frontend', 'proxy')}
     save('schema-transition.json', {
         'source_revision': revision, 'policy': transition.checks.RELEASE_POLICY, 'images': selected,
         'reviewed_migrations': [list(item) for item in transition.checks.APPROVED_PLAN],
         'graph_sha256': sha(output / 'migration-graph.json'),
-        'files': {name: sha(output / name) for name in ('update-with-migrations.py', 'schema-transition-checks.py')},
+        'files': {name: sha(output / name) for name in ('update-with-migrations.py', 'schema-transition-checks.py', 'compose-network-transition.py')},
     })
     release = {'source_revision': revision, 'compatibility_overlay': False,
                'images': selected, 'files': {name: sha(output / name) for name in APPLICATION_FILES}}

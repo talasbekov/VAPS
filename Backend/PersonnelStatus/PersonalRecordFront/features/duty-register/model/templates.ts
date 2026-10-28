@@ -6,6 +6,24 @@ export interface DutyTemplate {
   id: string; name: string; kind: string; start_time: string; duration_minutes: number;
   location_label: string; document_basis: string; note: string;
 }
+
+export interface ServerDutyTemplate extends DutyTemplate {
+  owner_division_id: number | null; owner_division_name: string; revision: number;
+  can_manage: boolean; time_zone: string;
+}
+export interface DutyTemplateList {
+  results: ServerDutyTemplate[]; owner_choices: { id: number; name: string }[];
+  can_create: boolean; time_zone: string;
+}
+
+/** Local rows are imported only through an explicit click; operational fields never travel. */
+export function serverTemplatePayload(row: DutyTemplate, owner: string | number | null, revision = 0) {
+  const ownerId = owner === null ? null : Number(owner);
+  if (!isTemplate(row) || (ownerId !== null && (!Number.isSafeInteger(ownerId) || ownerId <= 0)) || !Number.isInteger(revision) || revision < 0) return fail('Некорректные параметры шаблона.');
+  return { id: row.id, expected_revision: revision, owner_division_id: ownerId,
+    name: row.name, kind: row.kind, start_time: row.start_time, duration_minutes: row.duration_minutes,
+    location_label: row.location_label, document_basis: row.document_basis, note: row.note };
+}
 type TemplateStorage = Pick<Storage, 'getItem' | 'setItem'>;
 const MAX_TEMPLATES = 50;
 const MAX_MINUTES = 366 * 24 * 60;

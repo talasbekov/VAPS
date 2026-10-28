@@ -53,7 +53,7 @@ import { VersionSnapshot } from "./VersionSnapshot";
 // `apiClient.getOpsStatusesOn`, уже бьющий в `/api/operations/` напрямую с
 // этого экрана.
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { opsApiClient } from "@/lib/ops-api";
@@ -437,16 +437,14 @@ function SummaryVersionsContext({
 }: SummaryVersionsContextProps) {
   const [openId, setOpenId] = useState<number | null>(null);
 
-  const query = useQuery({
+  const query = useDailyExpenseRead("summaries", [businessDate, summaryDivisionId], (_signal, authorize) =>
     // `summaryDivisionId` — ЧАСТЬ КЛЮЧА: он стоит в URL запроса, и без него
     // ответы для разных узлов свода легли бы в одну ячейку кэша (находка ревью
     // ветки 22.08). Узел выводится из дерева и на другой инсталляции/области
     // актора будет другим.
-    queryKey: ["daily-expense-board", "summaries", businessDate, summaryDivisionId],
-    queryFn: () =>
       opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${summaryDivisionId}&business_date=${encodeURIComponent(businessDate)}`
-      ),
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${summaryDivisionId}&business_date=${encodeURIComponent(businessDate)}`, authorize
+      ), {
     // Гейт на `resolved`, а не только на дату: узел не определён — запрос не
     // уходит вовсе, а не уходит с бессмысленным division_id.
     enabled: resolved,
@@ -666,6 +664,7 @@ function SummaryVersionsContext({
           {resolved && !query.isPending && query.isError && (
             <p role="alert" className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Не удалось узнать, собирался ли свод
+              {" "}<Button variant="link" size="sm" onClick={() => void query.refetch()}>Повторить загрузку</Button>
             </p>
           )}
           {resolved && !query.isPending && !query.isError && versions.length === 0 && (

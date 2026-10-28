@@ -9,14 +9,14 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.api.permissions import RequirePermissionMixin, effective_permissions, resolve_actor_id
 from organization_management.apps.operations.models_assistant import OpsAssistantTask
 from organization_management.apps.operations.models_object import OpsSecurityObject
-from organization_management.apps.ops.assistant import access, execution, planning, provider
+from organization_management.apps.ops.assistant import access, execution, planning, provider, dialogue
 
 
-CAPABILITIES = ("event.create", "event.manage", "forces.command")
+CAPABILITIES = ("event.create", "event.manage", "event.bulletin", "forces.command")
 
 
 class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    permission_map = {name: CAPABILITIES for name in ("list", "retrieve", "create", "continue_work", "configuration", "catalogs")}
+    permission_map = {name: CAPABILITIES for name in ("list", "retrieve", "create", "continue_work", "configuration", "catalogs", "messages", "retry")}
     http_method_names = ["get", "post", "options"]
 
     def list(self, request):
@@ -59,21 +59,10 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 return Response(execution.serialize_task(request, existing))
             except execution.ManualActionFailed as error:
                 return error.response
-        proposal, notice, review_total = {}, None, False
-        if data.get("interpret", not data.get("fields")):
-            try:
-                proposal = planning.ground_proposal(message, provider.interpret(message))
-            except provider.ProviderUnavailable as error:
-                notice = str(error)
-            except ValueError as error:
-                execution.invalid(str(error), "message")
-            perms = effective_permissions(request)
-            object_names = list(OpsSecurityObject.objects.values_list("name", flat=True)) if perms & {"*", "event.create", "event.manage", "gvo.manage"} else []
-            proposal = planning.complete_explicit_proposal(message, proposal, object_names=object_names)
-            review_total = "personnelTotal" not in patch.get("proposal", {}) and planning.personnel_total_requires_review(message)
-        plan = execution.make_plan(proposal, patch, actor_id=actor, notice=notice)
-        if review_total:
-            plan["questions"].append(planning.question("personnelTotal", "Уточните общее количество людей по поручению или очистите поле, если оно пока неизвестно."))
+        interpret = data.get("interpret", not data.get("fields"))
+        if interpret and not message.strip():
+            execution.invalid("Опишите задачу текстом.", "message")
+        plan = execution.make_plan({}, patch, actor_id=actor)
         # get_or_create's unique actor/key constraint arbitrates concurrent retries.
         with transaction.atomic():
             task, created = OpsAssistantTask.objects.get_or_create(
@@ -82,9 +71,14 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
             if task.request_hash != request_hash:
                 execution.conflict()
-        try:
             if created:
+                dialogue.ensure_initial_message(task)
+                if interpret:
+                    dialogue.queue_task(task, patch=patch)
+        try:
+            if created and not interpret:
                 task = execution.continue_task(request, task.pk)
+            task.refresh_from_db()
             return Response(execution.serialize_task(request, task), status=201 if created else 200)
         except execution.ManualActionFailed as error:
             return error.response
@@ -101,6 +95,18 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return Response(execution.serialize_task(request, task))
         except execution.ManualActionFailed as error:
             return error.response
+
+    @action(detail=True, methods=["post"], url_path="messages")
+    def messages(self, request, pk=None):
+        task, created = dialogue.add_message(request, pk, request.data)
+        task.refresh_from_db()
+        return Response(execution.serialize_task(request, task), status=202 if created else 200)
+
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        task, created = dialogue.retry_task(request, pk, request.data)
+        task.refresh_from_db()
+        return Response(execution.serialize_task(request, task), status=202 if created else 200)
 
     @action(detail=False, methods=["get"], url_path="configuration")
     def configuration(self, request):

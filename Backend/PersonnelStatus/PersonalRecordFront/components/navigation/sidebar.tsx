@@ -115,6 +115,7 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { name: "Обзор", href: "/dashboard", icon: BarChart3 },
       { name: "Статусы сотрудников", href: "/statuses", icon: Shield },
+      { name: "Ежедневный расход", href: "/daily-expense", icon: ClipboardCheck },
       // Workspace and status-read permissions are checked by the same gate
       // as the page; role names do not authorize access.
       { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
@@ -435,12 +436,14 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
     ? "/reports" : "/security-ops/service-reports";
   const work = portalWorkspace(access);
   const allTasks = [...work.primary, ...work.more];
-  const taskHref = (task: (typeof allTasks)[number]) => portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams());
+  const dailyTask = allTasks.find(task => task.id === 'daily');
+  const taskHref = (task: (typeof allTasks)[number]) => portalTaskHref(task, ['/employees', '/daily-expense'].includes(pathname) ? query : new URLSearchParams());
   const categories = CATEGORIES.map(category => ({ ...category,
     items: category.items
       .flatMap<NavItem>(item => item.href === '/employees' && allTasks.some(task => task.accessHref === '/employees')
         ? allTasks.filter(task => task.accessHref === '/employees').map(task => ({ name: task.title, href: taskHref(task), icon: Users })) : [item])
-      .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item)
+      .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item.href === '/daily-expense' && dailyTask
+        ? { ...item, href: taskHref(dailyTask) } : item)
       .filter(itemOpen),
   })).filter(category => category.items.length > 0);
   const activeTaskId = activePortalTask([...work.primary, ...work.more], pathname, query);
@@ -625,7 +628,7 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
           {navigationReady && <section aria-label="Моя работа" className="mb-5">
             <ul className="space-y-1">
               <li><NavLink href={PORTAL_HOME_PATH} name="Моя работа" icon={House} active={pathname === PORTAL_HOME_PATH} /></li>
-              {primaryTasks.map(task => <li key={task.id}><NavLink href={portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams())} name={task.title}
+              {primaryTasks.map(task => <li key={task.id}><NavLink href={taskHref(task)} name={task.title}
                 icon={task.id === 'assistant' ? Sparkles : task.id === 'users' || task.id === 'department-forces' || task.id === 'headquarters' ? Users : task.id === 'roles' ? KeyRound : task.id === 'personal' ? UserRound : ClipboardCheck}
                 active={activeTaskId === task.id} /></li>)}
             </ul>

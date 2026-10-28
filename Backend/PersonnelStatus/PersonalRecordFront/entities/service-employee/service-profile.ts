@@ -12,7 +12,7 @@ export interface EmployeeServiceProfile {
   weight_kg: number | null;
   updated_at: string | null;
 }
-export interface ServiceProfileResponse { profile: EmployeeServiceProfile; revision: number; can_edit: boolean }
+export interface ServiceProfileResponse { profile: EmployeeServiceProfile; revision: number; can_edit: boolean; verified_skills?: SkillKey[] }
 export interface ServiceProfileDraft {
   inventoryKnown: boolean;
   inventory: { category: InventoryCategory; name: string; quantity: string }[];

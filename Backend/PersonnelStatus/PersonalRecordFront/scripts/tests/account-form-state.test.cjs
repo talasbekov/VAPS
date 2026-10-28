@@ -80,6 +80,41 @@ test('pending employee-link save protects the submitted selection from further e
   assert.equal(nodes.find(node => node.type === 'Input').props.disabled, true);
 });
 
+test('employee search explains loading and an empty result instead of a silent dropdown', () => {
+  const subject = employeeLink();
+  subject.choices.data = undefined;
+  subject.choices.isLoading = true;
+  let nodes = subject.render();
+  assert.ok(nodes.some(node => node.props?.role === 'status' && String(node.props.children).includes('Поиск сотрудников')));
+  subject.choices.isLoading = false;
+  subject.choices.data = { count: 0, results: [] };
+  nodes = subject.render();
+  assert.ok(nodes.some(node => node.props?.role === 'status' && String(node.props.children).includes('Сотрудники не найдены')));
+});
+
+test('failed employee search hides cached matches and blocks saving a stale selection', () => {
+  const subject = employeeLink();
+  subject.render().find(node => node.type === 'select').props.onChange({ target: { value: '7' } });
+  subject.choices.isError = true;
+  const nodes = subject.render();
+  assert.ok(nodes.some(node => node.props?.role === 'alert' && String(node.props.children).includes('Не удалось')));
+  assert.equal(nodes.some(node => node.type === 'option' && String(node.props.value) === '7'), false);
+  assert.equal(nodes.find(node => node.type === 'Button' && node.props.children === 'Сохранить связь').props.disabled, true);
+});
+
+test('employee search makes matching results explicit and points to the choice list', () => {
+  const nodes = employeeLink().render();
+  assert.ok(nodes.some(node => node.props?.role === 'status' && String(node.props.children).includes('Найдено сотрудников')));
+});
+
+test('account search results show the linked employee name when login profile has no name', () => {
+  const render = component('app/settings/users/page.tsx', 'AccountRow', {
+    '@/entities/portal-access': { MODULE_PERMISSION: { '/settings/users': 'admin.roles' } },
+  });
+  const nodes = render({ account: { id: 42, username: 'imported_42', full_name: null, employee_name: 'Мейрам Еламан', is_active: true }, isSelected: false, onSelect() {} });
+  assert.ok(nodes.some(node => node.props?.children === 'Мейрам Еламан'));
+});
+
 test('selected account remains editable when server search excludes it', () => {
   const account = { id: 42, username: 'selected', employee_id: null };
   const render = component('app/settings/users/page.tsx', 'AccessUsersScreen', {

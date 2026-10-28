@@ -1583,5 +1583,72 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path, 
     assert retry["reused"] is True
     assert len(events(action=audit_service.SECURITY_OBJECT_CATALOG_IMPORTED)) == 1
 
+    _exercise_non_om_audit_actions(home, coverage_object)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS
+
+
+def _exercise_non_om_audit_actions(division, security_object):
+    """Emit new events through authenticated mutations, never the audit writer itself."""
+    from uuid import uuid4
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+    from organization_management.apps.operations.tests.support import client_for
+
+    api, user = client_for(
+        "non-om-audit-coverage", "NON_OM_AUDIT_COVERAGE",
+        ("duty.manage", "personnel.view", "orgstructure.manage", "admin.roles", "object.view", "object.manage"),
+    )
+    OpsDictionaryEntry.objects.get_or_create(
+        dictionary_code="SERVICE_DUTY_KINDS", code="GBR", defaults={"label": "ГБР", "is_active": True},
+    )
+    template_id = str(uuid4())
+    created = api.post("/api/ops/duty-templates/", {
+        "id": template_id, "expected_revision": 0, "owner_division_id": division.pk,
+        "name": "Покрытие журнала", "kind": "GBR", "start_time": "08:00", "duration_minutes": 180,
+        "location_label": "Учебное место", "document_basis": "Проверка журнала", "note": "",
+    }, format="json")
+    assert created.status_code == 201, created.content
+    removed = api.post(f"/api/ops/duty-templates/{template_id}/remove/", {"expected_revision": 1}, format="json")
+    assert removed.status_code == 200, removed.content
+
+    person = employee_in(division)
+    with clock.override(TODAY):
+        qualification = api.post(f"/api/core/service-employees/{person.pk}/qualifications/", {
+            "revision": 0, "request_key": "audit-qualification", "skill": "shooting", "score": 4,
+            "assessed_on": TODAY.isoformat(), "valid_until": (TODAY + timedelta(days=365)).isoformat(),
+            "basis": "Учебная проверка покрытия журнала",
+        }, format="json")
+        assert qualification.status_code == 201, qualification.content
+
+        inspection = api.post("/api/ops/object-inspections/", {
+            "objectId": str(security_object.pk), "inspectedOn": TODAY.isoformat(), "requestKey": "audit-inspection",
+            "items": [{"id": "question-1", "question": "Документы актуальны?", "answer": "no",
+                       "finding": "Требуется актуализация", "responsibleUsername": user.username,
+                       "dueOn": (TODAY + timedelta(days=7)).isoformat()}],
+        }, format="json")
+        assert inspection.status_code == 201, inspection.content
+        inspection_url = f'/api/ops/object-inspections/{inspection.json()["id"]}/'
+        completed = api.post(inspection_url + "complete/", {"revision": 1}, format="json")
+        assert completed.status_code == 200, completed.content
+        resolved = api.post(inspection_url + "resolve/", {
+            "revision": 2, "itemId": "question-1", "resolution": "Актуализировано по результатам проверки",
+        }, format="json")
+        assert resolved.status_code == 200, resolved.content
+    return user
+
+
+def test_non_om_mutations_write_attributed_audit_events(home):
+    from organization_management.apps.ops.tests.test_ops_objects_passport_api import make_object
+
+    security_object = make_object("AUDIT-NON-OM", "Объект проверки журнала")
+    user = _exercise_non_om_audit_actions(home, security_object)
+    declared = {
+        audit_service.DUTY_TEMPLATE_SAVED, audit_service.DUTY_TEMPLATE_REMOVED,
+        audit_service.EMPLOYEE_QUALIFICATION_RECORDED, audit_service.OBJECT_INSPECTION_SAVED,
+        audit_service.OBJECT_INSPECTION_COMPLETED, audit_service.OBJECT_INSPECTION_FINDING_RESOLVED,
+    }
+    rows = list(OpsAuditLog.objects.filter(action__in=declared))
+    assert len(rows) == len(declared)
+    assert {row.action for row in rows} == declared
+    assert {row.actor_user_id for row in rows} == {str(user.pk)}

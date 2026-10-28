@@ -61,6 +61,7 @@ export default function ReportsPage() {
   const reportSnapshot = useOpsReadSnapshot<StrengthReport | null>(reportAccess, null);
   const report = reportSnapshot.value;
   const [reportError, setReportError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Выгрузка идёт по одному подразделению, поэтому «занято» держим на строке,
   // а не одним флагом на всю карточку: общий флаг гасил бы кнопки всех строк.
@@ -74,6 +75,7 @@ export default function ReportsPage() {
     setExportingIds(new Set());
     setLoading(false);
     setReportError(null);
+    setLoadedAt(null);
     return () => { requestVersion.current += 1; };
   }, [reportAccess.scope, reportAccess.allowed]);
 
@@ -98,7 +100,10 @@ export default function ReportsPage() {
       setLoading(true);
       setReportError(null);
       const result = await apiClient.getStrengthReport({ businessDate: dateStr });
-      if (version === requestVersion.current && reportSnapshot.isCurrent()) reportSnapshot.setValue(result);
+      if (version === requestVersion.current && reportSnapshot.isCurrent()) {
+        reportSnapshot.setValue(result);
+        setLoadedAt(new Date().toISOString());
+      }
     } catch (error) {
       if (version !== requestVersion.current || !reportSnapshot.isCurrent()) return;
       reportSnapshot.setValue(null);
@@ -239,6 +244,8 @@ export default function ReportsPage() {
               {report && (
                 <p role="status" className="text-sm text-muted-foreground">
                   Текущий расход на {report.business_date}. Выгрузка — снимок сдачи за эту дату.
+                  {" "}Показаны подразделения в пределах ваших прав.
+                  {loadedAt && ` Загружено: ${new Date(loadedAt).toLocaleString("ru-RU")}.`}
                   {dateStr !== report.business_date && " Дата в фильтре изменена: нажмите «Показать расход», чтобы обновить таблицу."}
                 </p>
               )}

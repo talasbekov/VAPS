@@ -62,6 +62,6 @@ Consumes profile/new permission codes and list API. Introduce resources workdesk
 - [x] Freeze source and run gate:front, full PostgreSQL pytest and migration check with isolated test DB.
 - [x] Build offline images; rehearse additive migration on local clone with backup, compare preserved business tables/role assignments.
 - [x] Install accepted local version with backup; verify HTTP and role paths without changing existing operational data.
-- [ ] Update canonical notes/status/access instructions; bounded VAPS publication under prior authorization only after acceptance, preserving unrelated files. Report exact remaining constraints and no production claim.
+- [x] Update canonical notes/status/access instructions; bounded VAPS publication under prior authorization only after acceptance, preserving unrelated files. Report exact remaining constraints and no production claim.
 
-Local acceptance complete: fresh backend 7722 passed / 1 skipped, migration check, frontend 945/945 and production build45; production browser29/29, native15/15 on each local stack. Existing data and role assignments preserved; one additive calculation table and narrowly enumerated metadata only. Source f1092e93, frozen final4. VAPS publication remains the final delivery step; production/DT unchanged.
+Local acceptance complete: fresh backend 7722 passed / 1 skipped, migration check, frontend 945/945 and production build45; production browser29/29, native15/15 on each local stack. Existing data and role assignments preserved; one additive calculation table and narrowly enumerated metadata only. Source f1092e93, frozen final4. VAPS PR27 merged as68bdbe57 (export51c16607, source5340838c), CI155 success; treeafd99c79 matches independent candidate review. Production/DT unchanged.

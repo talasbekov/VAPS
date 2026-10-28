@@ -25,6 +25,7 @@ function setup() {
     './VersionSnapshot': { VersionSnapshot: 'VersionSnapshot' },
     react: { ...require('react'), useMemo: callback => callback(), useState: () => [states[stateIndex++], () => {}] },
     '@tanstack/react-query': { useQuery: () => query },
+    '@/hooks/use-daily-expense-read': { useDailyExpenseRead: () => query },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => access },
     '@/hooks/use-strength-report': { useTrafficLightTree: () => ({}) },
     '@/hooks/use-daily-summary-write': { SUMMARY_ASSEMBLE_PERMISSION: 'daily_report.generate', useAssembleSummary: () => assemble, useSendSummary: () => mutation },

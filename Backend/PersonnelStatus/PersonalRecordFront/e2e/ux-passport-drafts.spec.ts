@@ -61,7 +61,7 @@ test('a publication draft survives checking posts and general data without chang
   await page.goto(target + '&tab=history');
   await page.getByLabel('Действует с *', { exact: true }).fill('2026-10-14');
   await page.getByLabel('Примечание к публикации', { exact: true }).fill('Проверить состав постов');
-  for (const tab of ['Посты и секторы', 'Общие данные', 'Инфраструктура', 'История']) await page.getByRole('tab', { name: tab, exact: true }).click();
+  for (const tab of ['Посты и секторы', 'Общие данные', 'Обследования', 'История']) await page.getByRole('tab', { name: tab, exact: true }).click();
   await expect(page.getByLabel('Действует с *', { exact: true })).toHaveValue('2026-10-14');
   await expect(page.getByLabel('Примечание к публикации', { exact: true })).toHaveValue('Проверить состав постов');
   expect(new URL(page.url()).searchParams.get('back')).toBe('ownership=OWN&search=UX');

@@ -9,6 +9,7 @@ import { DAILY_DIVISIONS_PATH, DAILY_SUBMISSIONS_PATH, parseSubmissionList } fro
 import { useBusinessDate } from '@/features/daily-expense/model/business-date'
 import { groupDirectorates, type ResponsibleDivision } from '@/features/daily-expense/model/directorate-summary'
 import { responsibleDepartmentScope } from './workspace'
+import { moduleOpenFor } from '@/entities/portal-access'
 
 /** One complete snapshot, isolated from the date-only caches of the daily form. */
 export function useDailyActionQueue(selectedDate?: string) {
@@ -16,7 +17,7 @@ export function useDailyActionQueue(selectedDate?: string) {
   const { user } = useAuth()
   const scopeId = responsibleDepartmentScope(access.roles)
   const allowed = Boolean(user) && !access.isLoading && !access.error && access.permissions !== undefined &&
-    access.hasPermission('status.view') && access.hasPermission('forces.allocate') &&
+    access.hasPermission('status.view') && (access.hasPermission('forces.allocate') || moduleOpenFor('/daily-expense', access.hasPermission)) &&
     !access.globalPermissions?.has('*') && scopeId !== null
   const { businessDate, dateError, retryDate } = useBusinessDate(selectedDate, allowed)
   // A successful permission refresh can change scope without changing account or date.

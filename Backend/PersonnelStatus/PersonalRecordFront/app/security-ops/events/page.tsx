@@ -235,7 +235,7 @@ function SecurityEventsScreen() {
         <PageHeader
           eyebrow="Охранные мероприятия"
           title="Реестр ОМ"
-          description="Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива"
+          description="Общий реестр мероприятий службы. Действия в карточке зависят от прав, этапа и назначений."
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {!permissionsLoading && hasPermission("event.create") && (

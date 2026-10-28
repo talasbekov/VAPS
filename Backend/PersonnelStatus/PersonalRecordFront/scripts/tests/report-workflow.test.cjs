@@ -187,6 +187,7 @@ test('row export uses the date of the displayed report after the date picker cha
 test('incomplete summary has one send action beside its required reason', () => {
   const subject = load('features/daily-expense/ui/SummaryActionBar.tsx', {
     '@tanstack/react-query': { useQuery: () => ({ isSuccess: true, data: {} }) },
+    '@/hooks/use-daily-expense-read': { useDailyExpenseRead: () => ({ isSuccess: true, data: {} }) },
     '@/entities/daily-grid': { DAILY_SUBMISSIONS_PATH: '/daily', parseSubmissionList: () => [{ is_current: true, sent_at: null, version: 1 }] },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => ({ hasPermission: () => true, isLoading: false }) },
     '@/hooks/use-daily-summary-write': {
@@ -212,6 +213,7 @@ for (const scenario of ['permission revoked', 'permission refresh failed', 'perm
     let sends = 0;
     const subject = load('features/daily-expense/ui/SummaryActionBar.tsx', {
       '@tanstack/react-query': { useQuery: () => query },
+      '@/hooks/use-daily-expense-read': { useDailyExpenseRead: () => query },
       '@/entities/daily-grid': { DAILY_SUBMISSIONS_PATH: '/daily', parseSubmissionList: () => rows },
       '@/shared/lib/date': { formatIsoDateTime: value => value },
       '@/hooks/use-ops-permissions': { useOpsPermissions: () => access },

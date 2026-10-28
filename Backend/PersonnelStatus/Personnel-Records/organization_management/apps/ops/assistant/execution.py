@@ -13,7 +13,7 @@ from django.http import HttpRequest
 from rest_framework.exceptions import PermissionDenied
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.operations.api.permissions import resolve_actor_id
+from organization_management.apps.operations.api.permissions import resolve_actor_id, effective_permissions
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_assistant import OpsAssistantReceipt
 from organization_management.apps.operations.models_audit import OpsAuditLog
@@ -117,17 +117,22 @@ def make_plan(proposal, patch, *, actor_id, notice=None):
             plan["questions"] = [q for q in plan["questions"] if q["field"] != "allocations"]
     plan["proposal"] = source
     plan["interpretationNotice"] = notice
+    planning.check_total(plan)
     return plan
 
 
-def call_manual(request, action, *, payload=None, event_id=None):
-    from organization_management.apps.ops.api.views import SecurityEventViewSet
-    actions = {"create": "POST", "retrieve": "GET", "forces_split": "POST"}
+def call_manual(request, action, *, payload=None, event_id=None, visit_object_id=None):
+    from organization_management.apps.ops.api.views import SecurityEventViewSet, OpsProtectedPersonsViewSet
+    actions = {"create": "POST", "retrieve": "GET", "forces_split": "POST",
+               "visit_object_add": "POST", "visit_object_chief": "POST", "recon": "PATCH",
+               "protected_person_create": "POST"}
     if action not in actions:
         raise ValueError("Unsupported assistant operation")
     raw = HttpRequest()
     raw.method = actions[action]
     raw.path = "/api/ops/security-events/" + (f"{event_id}/" if event_id else "")
+    if action == "protected_person_create":
+        raw.path = "/api/ops/protected-persons/"
     raw.path_info = raw.path
     raw.META = request._request.META.copy()
     raw.META["REQUEST_METHOD"] = raw.method
@@ -143,8 +148,12 @@ def call_manual(request, action, *, payload=None, event_id=None):
     raw._body = body
     raw._stream = BytesIO(body)
     raw._read_started = False
-    view = SecurityEventViewSet.as_view({raw.method.lower(): action})
-    response = view(raw, **({"pk": str(event_id)} if event_id else {}))
+    view_class = OpsProtectedPersonsViewSet if action == "protected_person_create" else SecurityEventViewSet
+    view = view_class.as_view({raw.method.lower(): "create" if action == "protected_person_create" else action})
+    kwargs = {"pk": str(event_id)} if event_id else {}
+    if visit_object_id is not None:
+        kwargs["visit_object_id"] = str(visit_object_id)
+    response = view(raw, **kwargs)
     if response.status_code >= 400:
         raise ManualActionFailed(response)
     return response.data
@@ -170,12 +179,12 @@ def _task_questions(task):
 
 
 def live_status(task, event):
-    if event is None and task.plan.get("eventId"):
+    if event is None and task.plan.get("eventId") and (not task.processing or task.event_id or task.receipts.exists()):
         return "event_unavailable"
     if _task_questions(task):
         return "needs_information"
     if event is None:
-        return "needs_information"
+        return "prepared" if task.processing.get("state") == "ready" else "needs_information"
     if task.plan.get("intent") == "send" and not task.receipts.filter(operation_key="send_allocations").exists():
         if event.get("stage") == "CLOSED":
             return "event_unavailable"
@@ -200,6 +209,10 @@ def live_status(task, event):
 @transaction.atomic
 def continue_task(request, pk, *, fields=None, revision=None):
     task = access.lock_task(request, pk)
+    from .dialogue import processing_state
+    processing = processing_state(task)
+    if processing["state"] in {"queued", "running"} or (processing["state"] == "failed" and not fields):
+        conflict()
     actor = resolve_actor_id(request)
     patch = validate_fields(fields) if fields else None
     if revision is not None and (type(revision) is not int or revision != task.revision):
@@ -219,7 +232,8 @@ def continue_task(request, pk, *, fields=None, revision=None):
         if task.receipts.filter(operation_key="create_bulletin").exists():
             immutable = {"title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectId", "eventId"}
             normalized = {**patch.get("proposal", {}), **{key: patch[key] for key in ("eventId", "objectId") if key in patch}}
-            if any(key in normalized and normalized[key] != old.get(key) for key in immutable):
+            committed = old.get("committedProposal", old)
+            if any(key in normalized and normalized[key] != committed.get(key) for key in immutable):
                 conflict()
         if task.receipts.filter(operation_key="send_allocations").exists() and any(key in fields for key in {"allocations", "intent", "personnelTotal"}):
             conflict()
@@ -227,8 +241,19 @@ def continue_task(request, pk, *, fields=None, revision=None):
         if not any(q["field"] == "allocations" for q in old.get("questions", [])):
             preserved["allocations"] = old.get("allocations", [])
         task.plan = make_plan(old.get("proposal", {}), {**preserved, **patch}, actor_id=actor)
-        if "personnelTotal" not in patch.get("proposal", {}):
-            task.plan["questions"].extend(row for row in old.get("questions", []) if row["field"] == "personnelTotal")
+        for row in old.get("dialogueQuestions", []):
+            if row["field"] not in fields:
+                task.plan["questions"].append(row)
+        task.plan["dialogueQuestions"] = [row for row in old.get("dialogueQuestions", []) if row["field"] not in fields]
+        if old.get("committedProposal") is not None:
+            task.plan["committedProposal"] = old["committedProposal"]
+        for key in ("committedBriefing", "briefingPending"):
+            if key in old:
+                task.plan[key] = old[key]
+        from .guided_answers import remember
+        remember(task.plan, {'deferred': old.get('guidedDeferred', [])})
+        planning.protect_committed_plan(task, task.plan)
+        task.processing = {**task.processing, "state": "ready", "error": None}
         task.revision += 1
     plan = task.plan
     if not task.event_id and plan.get("eventId") and task.receipts.exists():
@@ -251,11 +276,25 @@ def continue_task(request, pk, *, fields=None, revision=None):
         if prior is not None:
             invalid("Сохранённый бюллетень больше недоступен. Выберите другое мероприятие.", "eventId")
         payload = {key: plan.get(key) for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectId") if plan.get(key) is not None}
-        event = call_manual(request, "create", payload=payload)
-        task.event_id = int(event["id"])
-        plan["eventId"] = str(event["id"])
-        _save_receipt(task, "create_bulletin", payload, {"eventId": str(event["id"]), "code": event["code"]}, request)
+        if plan.get("briefing"):
+            from .briefing_execution import prepare_creation
+            payload = prepare_creation(request, task, payload)
+        if payload is not None:
+            event = call_manual(request, "create", payload=payload)
+            task.event_id = int(event["id"])
+            plan["eventId"] = str(event["id"])
+            _save_receipt(task, "create_bulletin", payload, {"eventId": str(event["id"]), "code": event["code"], "briefing": bool(plan.get("briefing"))}, request)
     event = _live_event(request, task)
+    # Compare the accepted facts to the live record before sending anything.
+    # A manual change elsewhere must not turn an old proposal into a new order.
+    if event and not task.receipts.filter(operation_key="send_allocations").exists():
+        facts = task.plan.get("committedProposal", task.plan.get("proposal", {}))
+        if any(facts.get(key) is not None and facts[key] != event.get(key)
+               for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind")):
+            plan["questions"] = [*plan.get("questions", []), planning.question("event", "Мероприятие изменено после подготовки поручения. Проверьте актуальные сведения в карточке ОМ.")]
+    if event and plan.get("briefing") and not plan.get("questions"):
+        from .briefing_execution import apply_briefing
+        event = apply_briefing(request, task, event)
     task.delegated = bool(task.event_id and plan.get("intent") == "send" and not access.is_headquarters(request)) or task.delegated
     if event and not plan.get("questions") and plan.get("intent") == "send" and event.get("reconForceRequestedAt"):
         if not plan.get("allocations"):
@@ -290,9 +329,16 @@ def continue_task(request, pk, *, fields=None, revision=None):
                 result = {"eventId": str(task.event_id), "requests": [{key: row.get(key) for key in ("id", "departmentId", "need", "sentAt")} for row in event.get("forceAllocation", []) if row.get("sentAt") and not row.get("topUpOf") and str(row.get("departmentId")) in targets],
                           "delivery": {"known": bool(report), **{key: value[key] for key in ("notifiedOfficers", "unaddressed", "undelivered") if key in value}}}
                 _save_receipt(task, "send_allocations", payload, result, request)
+                if "committedProposal" in plan:
+                    # Quantities remain editable until this authenticated send.
+                    # Freeze the values actually confirmed with this receipt.
+                    plan["committedProposal"] = {**plan["committedProposal"], **{
+                        key: plan.get("proposal", {}).get(key)
+                        for key in ("allocations", "intent", "personnelTotal")
+                    }}
     task.status = live_status(task, event)
     task.plan = plan
-    task.save(update_fields=["event", "plan", "status", "delegated", "revision", "updated_at"])
+    task.save(update_fields=["event", "plan", "status", "delegated", "revision", "processing", "updated_at"])
     return task
 
 
@@ -309,6 +355,9 @@ def _gathering_context(request, task, event, *, collection_eligible):
 
 
 def serialize_task(request, task):
+    from .dialogue import processing_state, within_limit
+    from .guided_questions import public_guidance
+    processing = processing_state(task)
     unavailable = False
     try:
         event = _live_event(request, task)
@@ -317,22 +366,40 @@ def serialize_task(request, task):
             raise
         event, unavailable = None, True
     status = "event_unavailable" if unavailable else live_status(task, event)
-    plan = {key: task.plan.get(key) for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectId", "objectName", "eventId", "intent", "allocations", "personnelTotal")}
+    plan = {key: task.plan.get(key) for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectId", "objectName", "eventId", "intent", "allocations", "personnelTotal", "briefing", "briefingPending")}
     if event:
-        plan.update({key: event.get(key) for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind")})
+        plan.update({key: event.get(key) for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind") if plan.get(key) is None})
     if unavailable:
         plan = {"intent": "prepare", "allocations": []}
     from organization_management.apps.ops.security_events import can_collect_forces
     collection_eligible = bool(event and task.event and not task.event.force_handover and can_collect_forces(task.event))
     questions = _task_questions(task)
+    may_create = bool(effective_permissions(request) & {"*", "event.create"})
     can_continue = bool(not unavailable and event and event.get("reconForceRequestedAt")
                         and collection_eligible and not questions and task.plan.get("allocations")
                         and task.plan.get("intent") == "send" and access.is_headquarters(request)
                         and not task.receipts.filter(operation_key="send_allocations").exists())
+    from .briefing_execution import can_resume_briefing
+    can_continue = can_continue or bool(task.initiated_by == resolve_actor_id(request)
+                                       and can_resume_briefing(event, task.plan.get("briefingPending")))
+    can_continue = bool(processing["state"] == "ready" and not questions and not unavailable and status != "event_unavailable" and
+                        (can_continue or (not task.event_id and may_create and task.initiated_by == resolve_actor_id(request))))
+    creation_notice = ("Диалог доступен. Для создания нового мероприятия нужно отдельное право «Создание ОМ»; право заполнения бюллетеня его не заменяет."
+                       if not task.event_id and not may_create else None)
+    messages = [{"id": str(row.pk), "role": row.role, "text": row.text, "requestKey": row.request_key,
+                 "createdAt": row.created_at.isoformat()} for row in task.messages.all()]
+    if not messages and task.message:
+        messages = [{"id": "initial", "role": "user", "text": task.message, "requestKey": task.request_key,
+                     "createdAt": task.created_at.isoformat()}]
     return {"id": str(task.pk), "initiatedBy": task.initiated_by, "message": task.message, "revision": task.revision,
+            "messages": messages, "processing": processing,
+            "guidance": public_guidance(task.plan, blocking=questions,
+                                        enabled=bool(processing['state'] == 'ready' and not unavailable and status != 'event_unavailable'
+                                                     and task.initiated_by == resolve_actor_id(request))),
+            "canMessage": bool(not unavailable and task.initiated_by == resolve_actor_id(request) and processing["state"] not in {"queued", "running"} and within_limit(task)),
             "status": status, "delegated": task.delegated, "canEdit": not unavailable and task.initiated_by == resolve_actor_id(request), "canContinue": can_continue,
             "gathering": _gathering_context(request, task, event, collection_eligible=collection_eligible),
-            "questions": questions, "interpretationNotice": task.plan.get("interpretationNotice"), "plan": plan,
+            "questions": questions, "interpretationNotice": processing.get("error") or task.plan.get("interpretationNotice") or creation_notice, "plan": plan,
             "event": ({"id": str(event["id"]), "code": event["code"], "title": event["title"], "stage": event["stage"], "forceDemandTotal": event.get("forceDemandTotal"), "requested": sum(int(row.get("need") or 0) for row in event.get("forceAllocation", []) if row.get("sentAt")), "rosterCount": len(event.get("forceRoster", [])), "progress": assignment_progress(event, handed_over=bool(task.event and task.event.force_handover)), "href": f"/security-ops/events/{event['id']}/"} if event else None),
             "receipts": [] if unavailable else [{"operation": receipt.operation_key, "executedBy": receipt.executed_by, "createdAt": receipt.created_at.isoformat(), "result": receipt.result} for receipt in task.receipts.order_by("id")],
             "updatedAt": task.updated_at.isoformat()}

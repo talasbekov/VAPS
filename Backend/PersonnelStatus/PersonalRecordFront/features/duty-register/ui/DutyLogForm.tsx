@@ -191,7 +191,7 @@ export function DutyLogForm({ actor, scope, allowed, zone, defaultDate, initialD
         <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={pending || !canEdit} onClick={() => acceptRevision(true)}>Загрузить актуальную редакцию</Button><Button type="button" variant="outline" disabled={pending || !canEdit} onClick={() => acceptRevision(false)}>Продолжить с моим черновиком</Button></div>
       </section>}
       {(!record || latest) && sameAttemptContext && <>
-      <form className="space-y-4" onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={pending}>
+      <form className="min-w-0 space-y-4" onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={pending}>
         <fieldset disabled={pending || Boolean(saved) || Boolean(attempt) || confirmed} className="min-w-0 space-y-4">
           {!record && <>
             <DutyTemplates actor={actor} scope={scope} zone={zone} defaultDate={defaultDate} enabled={writable && !pending && !saved && !confirmed} kinds={activeKinds}

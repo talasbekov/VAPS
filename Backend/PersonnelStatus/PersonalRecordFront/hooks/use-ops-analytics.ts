@@ -74,11 +74,14 @@ export function useAttentionItems(period: AnalyticsPeriodRequest | null) {
       ), { enabled: period !== null });
 }
 
-/** §22.9: периодом владеет политика — параметров запроса нет. */
-export function useLoadAnalytics() {
+/** Legacy estimates keep the policy window; factual source coverage has its own period. */
+export function useLoadAnalytics(coverage?: { from: string; to: string } | null) {
   const access = useOpsReadAccess("analytics.view");
-  return useOpsProtectedRead(["ops-analytics", "load"], [], access,
-    () => opsApiClient.get<LoadAnalyticsResponse>(LOAD_ANALYTICS_PATH));
+  return useOpsProtectedRead(["ops-analytics", "load"], [coverage?.from ?? "", coverage?.to ?? ""], access,
+    () => {
+      const params = coverage ? new URLSearchParams({ coverage_from: coverage.from, coverage_to: coverage.to }) : null;
+      return opsApiClient.get<LoadAnalyticsResponse>(`${LOAD_ANALYTICS_PATH}${params ? `?${params}` : ""}`);
+    });
 }
 
 /** §22.13-22.15: уровень и цель — в ключе кэша целиком. */

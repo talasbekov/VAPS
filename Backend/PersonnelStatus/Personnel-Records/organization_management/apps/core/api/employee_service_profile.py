@@ -12,6 +12,14 @@ from organization_management.apps.employees.models import Employee, EmployeeServ
 from organization_management.apps.employees.service_profile import normalize_profile, profile_payload
 from organization_management.apps.operations.api.permissions import resolve_actor_id
 from organization_management.apps.operations.services import PermissionService
+from organization_management.apps.operations.models_employee_qualification import OpsEmployeeQualification
+
+
+def _verified_scores(employee_id):
+    records = OpsEmployeeQualification.objects.filter(employee_id=employee_id).order_by(
+        "skill", "-assessed_on", "-created_at", "-id",
+    ).distinct("skill")
+    return {row.skill: row.score for row in records}
 
 
 def can_edit_profile(request, employee):
@@ -31,6 +39,7 @@ def _envelope(profile, can_edit):
         "profile": profile_payload(profile),
         "revision": profile.revision if profile else 0,
         "can_edit": can_edit,
+        "verified_skills": sorted(_verified_scores(profile.employee_id)) if profile else [],
     }
 
 
@@ -63,6 +72,11 @@ def employee_service_profile(request, pk):
         current_revision = profile.revision if profile else 0
         if revision != current_revision:
             return Response({"detail": "Профиль уже изменён. Обновите карточку перед сохранением."}, status=409)
+        explicit_skills = body["profile"].get("skills") or {}
+        for skill, verified_score in _verified_scores(employee.pk).items():
+            if skill in explicit_skills and explicit_skills[skill] != verified_score:
+                raise ValidationError({"skills": "Оценка с историей проверок изменяется только новой записью о проверке."})
+            data["skills"][skill] = verified_score
         if profile is None:
             profile = EmployeeServiceProfile(employee=employee)
         profile.data = data

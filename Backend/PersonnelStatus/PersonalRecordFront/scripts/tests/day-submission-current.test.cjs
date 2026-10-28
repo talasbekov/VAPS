@@ -36,6 +36,7 @@ function render({ submission = null, submitted = null, amended = null, confirmin
     react: { ...require('react'), useState: () => [state.shift(), () => {}],
       useMemo: fn => fn(), useEffect: () => {} },
     '@tanstack/react-query': { useQuery: () => ({}), useQueryClient: () => ({}) },
+    '@/hooks/use-daily-expense-read': { useDailyExpenseRead: () => ({}) },
     '@/lib/ops-api': { opsApiClient: {} },
     '@/lib/ops-errors': load('lib/ops-errors.ts'),
     '@/hooks/use-ops-mutation': { useOpsMutation: () => ({ error: null, isPending: false }) },

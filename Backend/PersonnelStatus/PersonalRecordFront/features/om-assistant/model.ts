@@ -1,7 +1,7 @@
 import { dutyTimestampForInput, dutyTimestampForSave } from "@/features/employee-status-update/model/duty-intervals";
 import { STAGE_ORDER } from "@/entities/security-event/model/stage-meta";
 
-export const ASSISTANT_PERMISSIONS = ["event.create", "event.manage", "forces.command"] as const;
+export const ASSISTANT_PERMISSIONS = ["event.create", "event.bulletin", "event.manage", "forces.command"] as const;
 export const ASSISTANT_PATH = "/security-ops/assistant";
 export const ASSISTANT_GROUP = "ops-assistant";
 
@@ -11,19 +11,65 @@ export interface AssistantFields {
   eventTime?: string | null; kind?: "INTERNAL" | "FOREIGN" | null; objectId?: string | null;
   eventId?: string | null; personnelTotal?: number | null; intent?: "prepare" | "send"; allocations?: AssistantAllocation[];
 }
-export interface AssistantPlan extends AssistantFields { objectName?: string | null }
+export interface AssistantBriefingPost {
+  number: number; subpostCount?: number | null; need?: number | null;
+  subposts?: { number: number; need?: number | null }[];
+}
+export interface AssistantBriefingObject {
+  name: string; objectId?: string | null; chiefName?: string | null; chiefEmployeeId?: string | null;
+  sectorCount?: number | null;
+  sectors: { number: number; postCount?: number | null; posts: AssistantBriefingPost[] }[];
+  personnelNeed?: number | null; needStatus: "known" | "unknown"; checklistChecked?: boolean | null;
+  checklistResults?: { id: string; state: "NORMAL" | "REMARK" | "UNCHECKED"; comment?: string | null }[];
+}
+export interface AssistantBriefing {
+  objects: AssistantBriefingObject[];
+  protectedPersons: { code?: string | null; name?: string | null; country?: string | null;
+    createIfMissing?: boolean; personId?: string | null }[];
+  issues?: { field: string; text: string }[];
+}
+export interface AssistantBriefingPending { objectId?: string | null; objectName?: string | null; action: string; reason: string }
+export interface AssistantPlan extends AssistantFields {
+  objectName?: string | null; briefing?: AssistantBriefing | null; briefingPending?: AssistantBriefingPending[] | null;
+}
 export interface AssistantReceipt {
   operation: string; executedBy: string; createdAt: string;
   result: { delivery?: { known: boolean; notifiedOfficers?: number; unaddressed?: unknown[] | number; undelivered?: unknown[] | number }; [key: string]: unknown };
 }
+export interface AssistantGuidanceQuestion {
+  id: string; field: string; text: string; placeholder?: string;
+  choices?: { label: string; value: string }[]; canDefer?: boolean;
+}
+export interface AssistantGuidance {
+  current: AssistantGuidanceQuestion | null; remaining: number; deferred: number; feedback?: string;
+}
 export interface AssistantTask {
+  messages?: { id: string; role: "user" | "assistant"; text: string; requestKey: string; createdAt: string }[];
+  processing?: { state: "queued" | "running" | "ready" | "failed"; attempt: number; error: string | null; retryable: boolean };
+  canMessage?: boolean;
   id: string; initiatedBy: string; message: string; revision: number; status: string; delegated: boolean; canEdit: boolean; canContinue?: boolean;
   questions: { field: string; text: string }[]; interpretationNotice: string | null; plan: AssistantPlan;
+  guidance?: AssistantGuidance;
   gathering?: { state: "missing" | "ready" | "ambiguous"; campaignId: string | null } | null;
   event: { id: string; code: string; title: string; stage: string; forceDemandTotal: number | null; requested: number; rosterCount: number;
     progress?: { collectionClosed?: boolean; need: number | null; collected: number; remaining: number | null;
       departments: { id: string; name: string; requested: number; responded: number | null; status: string; overdue: boolean }[] } } | null;
   receipts: AssistantReceipt[]; updatedAt: string;
+}
+export function assistantProcessingBusy(task: AssistantTask | undefined): boolean {
+  return task?.processing?.state === "queued" || task?.processing?.state === "running";
+}
+export function assistantGuidance(task: AssistantTask): AssistantGuidance {
+  const legacy = task.questions[0];
+  return {
+    // A null server question means the remaining questions are deferred. Do not
+    // substitute the first blocker or revive an old question during processing.
+    current: assistantProcessingBusy(task) || task.processing?.state === "failed" ? null
+      : task.guidance ? task.guidance.current : legacy ? { ...legacy, id: `legacy:${legacy.field}` } : null,
+    remaining: Math.max(task.questions.length, task.guidance?.remaining ?? 0),
+    deferred: task.guidance?.deferred ?? 0,
+    feedback: task.processing?.state === "ready" ? task.guidance?.feedback : undefined,
+  };
 }
 export interface AssistantCatalogs { objects: { id: string; name: string }[]; departments: { id: string; name: string }[] }
 export interface AssistantConfiguration { enabled: boolean; provider: string | null; model: string | null; isHeadquarters: boolean }
@@ -129,15 +175,26 @@ const CLARIFICATION_FIELDS: Record<string, string> = {
   title: "название", kind: "вид ОМ", businessDate: "дату начала", businessDateEnd: "дату окончания",
   eventTime: "время", objectId: "объект", eventId: "существующее ОМ", personnelTotal: "число людей",
   allocations: "количества по департаментам", intent: "действие с запросами",
+  briefing: "сведения об объектах и охраняемых лицах",
 };
 export function taskNextAction(task: AssistantTask): { title: string; owner: string; description: string; canCorrect: boolean } {
   const presentation = taskPresentation(task);
+  if (assistantProcessingBusy(task)) return { title: "Обработка сообщения", owner: "Помощник", description: "Сообщение сохранено. Можно закрыть страницу и вернуться к результату позже.", canCorrect: false };
+  if (task.processing?.state === "failed") return { title: "Повторить обработку или уточнить вручную", owner: "Инициатор поручения", description: "Прежний план сохранён. Повторите обработку сообщения или проверьте сведения вручную.", canCorrect: task.canEdit && !requestsSent(task) };
+  const guidance = assistantGuidance(task);
+  if (task.processing?.state === "ready" && !task.event && task.canContinue && !guidance.remaining) return { title: "Создать ОМ по распознанным сведениям", owner: "Инициатор поручения", description: "Проверьте проект и нажмите «Создать ОМ от своего имени». Сообщения ещё не создали мероприятие и не отправили запросы.", canCorrect: task.canEdit };
+  if (task.guidance && guidance.remaining > 0 && task.canEdit && task.canMessage !== true && !requestsSent(task)) return {
+    title: "Уточните сведения вручную", owner: "Инициатор поручения", description: "Новые сообщения недоступны. Сведения сохранены; проверьте состояние поручения или уточните их вручную.", canCorrect: true,
+  };
+  if (task.guidance && guidance.remaining > 0 && !requestsSent(task)) return task.canEdit
+    ? { title: guidance.current ? "Ответьте на вопрос помощника" : "Вернитесь к отложенным вопросам", owner: "Инициатор поручения", description: "Остальные сведения сохранены. Продолжите диалог сообщением; неизвестные сведения ещё требуют уточнения.", canCorrect: false }
+    : { title: "Инициатор уточняет сведения", owner: "Инициатор поручения", description: "Для продолжения нужны ответы на оставшиеся вопросы. После уточнения обновите состояние поручения.", canCorrect: false };
   const hasQuestions = task.questions.length > 0 && !requestsSent(task);
   if (hasQuestions) {
     const names = [...new Set(task.questions.map(question => CLARIFICATION_FIELDS[question.field.split(/[.\[]/)[0]] ?? "сведения поручения"))];
     const fields = names.length < 2 ? names[0] : `${names.slice(0, -1).join(", ")} и ${names[names.length - 1]}`;
     return task.canEdit
-      ? { title: `Уточните ${fields}`, owner: "Инициатор поручения", description: "Остальные сведения уже сохранены. Дополните форму ниже и продолжите подготовку.", canCorrect: true }
+      ? { title: `Уточните ${fields}`, owner: "Инициатор поручения", description: task.processing ? "Остальные сведения уже сохранены. Ответьте сообщением в диалоге или уточните их вручную." : "Остальные сведения уже сохранены. Дополните форму ниже и продолжите подготовку.", canCorrect: true }
       : { title: "Инициатор уточняет сведения", owner: "Инициатор поручения", description: `Нужно уточнить ${fields}. После уточнения обновите состояние поручения.`, canCorrect: false };
   }
   const titles: Record<string, string> = {

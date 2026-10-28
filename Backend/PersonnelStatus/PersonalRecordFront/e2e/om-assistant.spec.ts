@@ -465,3 +465,84 @@ test('an explicit headcount question remains visible and can clear a suggestion 
     businessDateEnd: null, eventTime: null, objectId: '30', personnelTotal: null, intent: 'prepare', allocations: [] } });
   expect(businessWrites).toEqual([]);
 });
+
+const dialogueTask = (patch: Partial<AssistantTask> = {}) => makeTask({ event: null, gathering: null,
+  status: 'needs_information', canMessage: true, canContinue: false,
+  processing: { state: 'ready', attempt: 1, error: null, retryable: false },
+  messages: [{ id: 'initial', role: 'user', text: 'На Аккорду 30 октября нужно 200 человек', requestKey: 'initial-key', createdAt: '2026-10-27T10:00:00Z' }],
+  plan: { businessDate: '2026-10-30', objectId: '30', objectName: 'Аккорда', personnelTotal: 200, allocations: [] }, ...patch });
+
+for (const width of [320, 1440]) test(`five dialogue turns keep one saved task and show conflicting counts at ${width}px`, async ({ page, businessWrites }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = { task: dialogueTask() }; const messages: Array<{ requestKey: string; message: string; revision: number }> = [];
+  await mockReads(page, ['event.create'], state);
+  await page.route('**/api/ops/assistant/tasks/*/messages/', route => {
+    const body = route.request().postDataJSON(); messages.push(body);
+    expect(new URL(route.request().url()).pathname).toBe(`${endpoint}${id}/messages/`);
+    expect(body.revision).toBe(state.task.revision);
+    const turn = messages.length;
+    state.task = { ...state.task, revision: state.task.revision + 1,
+      plan: { ...state.task.plan, personnelTotal: turn >= 3 ? 180 : 200 },
+      questions: turn === 3 ? [{ field: 'allocations', text: 'Сумма по департаментам 200, всего указано 180. Уточните распределение.' }] : [],
+      messages: [...state.task.messages!, { id: `u${turn}`, role: 'user', text: body.message, requestKey: body.requestKey, createdAt: '2026-10-27T10:01:00Z' },
+        { id: `a${turn}`, role: 'assistant', text: `Уточнение ${turn} сохранено`, requestKey: body.requestKey, createdAt: '2026-10-27T10:01:01Z' }] };
+    return route.fulfill({ status: 202, json: state.task });
+  });
+  await signIn(page); await page.goto('/security-ops/assistant?task=' + id);
+  const chat = page.getByRole('region', { name: 'Переписка по поручению' });
+  for (const text of ['Внутреннее мероприятие, встреча', 'Второй департамент 80, шестой 120', 'Всего нужно 180', 'У шестого оставь 100', 'Дата остаётся 30 октября']) {
+    await chat.getByLabel('Сообщение помощнику').fill(text);
+    await chat.getByRole('button', { name: 'Отправить сообщение', exact: true }).click();
+    await expect(chat.getByLabel('Сообщение помощнику')).toHaveValue('');
+    await expect(chat.getByText(text, { exact: true })).toBeVisible();
+    if (messages.length === 3) await expect(chat).toContainText('Сумма по департаментам 200, всего указано 180');
+  }
+  expect(messages).toHaveLength(5); expect(new Set(messages.map(row => row.requestKey)).size).toBe(5);
+  await page.reload(); await expect(chat.getByRole('list', { name: 'История сообщений' }).getByRole('listitem')).toHaveCount(11);
+  await expect(page).toHaveURL(new RegExp(`task=${id}`));
+  const card = page.getByRole('region', { name: 'Состояние поручения' });
+  await expect(card).toContainText('30.10.2026'); await expect(card).toContainText('Аккорда'); await expect(card).toContainText('180');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  expect(businessWrites).toEqual([]);
+});
+
+test('dialogue retains draft on lost response and retries one saved turn with the same key', async ({ page, businessWrites }) => {
+  const state = { task: dialogueTask() }; const attempts: unknown[] = [];
+  await page.addInitScript(() => { Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true }); });
+  await mockReads(page, ['event.create'], state);
+  await page.route('**/api/ops/assistant/tasks/*/messages/', route => {
+    const body = route.request().postDataJSON(); attempts.push(body);
+    if (attempts.length === 1) {
+      state.task = { ...state.task, revision: 2, canMessage: false, processing: { state: 'queued', attempt: 1, retryable: false, error: null },
+        messages: [...state.task.messages!, { id: 'saved', role: 'user', text: body.message, requestKey: body.requestKey, createdAt: '2026-10-27T10:01:00Z' }] };
+      return route.abort('connectionfailed');
+    }
+    return route.fulfill({ status: 202, json: state.task });
+  });
+  await signIn(page); await page.goto('/security-ops/assistant?task=' + id);
+  const input = page.getByLabel('Сообщение помощнику'); await input.fill('Всего 180');
+  await page.getByRole('button', { name: 'Отправить сообщение', exact: true }).click();
+  await expect(input).toHaveValue('Всего 180');
+  await page.getByRole('button', { name: 'Обновить состояние', exact: true }).click();
+  await page.getByRole('button', { name: 'Повторить сохранение', exact: true }).click();
+  await expect(input).toHaveValue(''); expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]);
+  await page.reload(); await expect(page.getByText('Сообщение сохранено. Ожидает обработки.', { exact: true })).toBeVisible();
+  await expect(input).toBeDisabled(); await expect(page.getByRole('list', { name: 'История сообщений' }).getByRole('listitem')).toHaveCount(2);
+  state.task = { ...state.task, canMessage: true, processing: { state: 'failed', attempt: 1, retryable: true, error: 'Модель недоступна' } };
+  await page.getByRole('button', { name: 'Обновить состояние', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Повторить обработку', exact: true })).toBeVisible();
+  expect(businessWrites).toEqual([]);
+});
+
+test('task switching clears the local dialogue draft and revoked access hides persisted history', async ({ page, businessWrites }) => {
+  const state = { task: dialogueTask(), denied: false }; await mockReads(page, ['event.create'], state);
+  await signIn(page); await page.goto('/security-ops/assistant?task=' + id);
+  await page.getByLabel('Сообщение помощнику').fill('Черновик первой задачи');
+  const secondId = '4733240a-32a0-46cd-9ad9-5127665c29e8'; state.task = dialogueTask({ id: secondId });
+  await page.goto('/security-ops/assistant?task=' + secondId);
+  await expect(page.getByLabel('Сообщение помощнику')).toHaveValue('');
+  state.denied = true; await page.getByRole('button', { name: 'Обновить состояние', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Переписка по поручению' })).toHaveCount(0);
+  await expect(page.getByText('Поручение недоступно для текущего пользователя.', { exact: true })).toBeVisible();
+  expect(businessWrites).toEqual([]);
+});

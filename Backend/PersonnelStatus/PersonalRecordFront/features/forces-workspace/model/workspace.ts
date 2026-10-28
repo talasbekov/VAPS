@@ -71,6 +71,20 @@ export function workspaceHref(query: URLSearchParams, view: WorkspaceView, targe
   return `/employees${suffix ? `?${suffix}` : ''}`
 }
 
+export function dailyExpenseHref(query: URLSearchParams): string {
+  const next = new URLSearchParams(query)
+  for (const key of ['employee', 'request', 'collection', 'campaign', 'tab', 'view']) next.delete(key)
+  const suffix = next.toString()
+  return `/daily-expense${suffix ? `?${suffix}` : ''}`
+}
+
+/** Explicit force targets retain priority over an old daily view parameter. */
+export function legacyDailyExpenseHref(query: URLSearchParams): string | null {
+  if (query.get('request') || query.get('collection') || query.get('campaign') ||
+    ['collections', 'requests'].includes(query.get('tab') ?? '')) return null
+  return ['daily', 'department-summary'].includes(query.get('view') ?? '') ? dailyExpenseHref(query) : null
+}
+
 export function activeRequests(rows: DepartmentRequestRow[]) {
   return rows.filter(row => !['SUBMITTED', 'ACCEPTED', 'DECLINED'].includes(row.status))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue) ||

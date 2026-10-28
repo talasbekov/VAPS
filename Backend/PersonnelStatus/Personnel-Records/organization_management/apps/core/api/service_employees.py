@@ -130,6 +130,12 @@ class ServiceEmployeeViewSet(viewsets.ViewSet):
         from .employee_service_profile import employee_service_profile
         return employee_service_profile(request, pk)
 
+    @extend_schema(responses={200: dict, 201: dict})
+    @action(detail=True, methods=['get', 'post'], url_path='qualifications')
+    def qualifications(self, request, pk=None):
+        from .employee_qualifications import employee_qualifications
+        return employee_qualifications(request, pk)
+
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if resolve_actor_id(request) is None:

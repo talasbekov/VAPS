@@ -12,6 +12,21 @@ const { resolveWorkspaceRole, resolveWorkspaceView, responsibleDepartmentScope, 
 const role = (code, scope_division_id = 2) => ({ code, scope_division_id });
 const access = (roles, permissions) => ({ roles, permissions, isLoading: false, error: null, hasPermission: code => permissions.includes('*') || permissions.includes(code) });
 
+test('legacy daily entry preserves dates while removing force targets from the destination', () => {
+  assert.equal(typeof moduleExports.legacyDailyExpenseHref, 'function');
+  for (const view of ['daily', 'department-summary']) {
+    assert.equal(moduleExports.legacyDailyExpenseHref(new URLSearchParams(`view=${view}&businessDate=2026-10-27&dateFrom=2026-10-20&dateTo=2026-10-27&search=kept`)),
+      '/daily-expense?businessDate=2026-10-27&dateFrom=2026-10-20&dateTo=2026-10-27&search=kept');
+  }
+});
+
+test('force targets never become daily work merely because an older view parameter remains', () => {
+  assert.equal(typeof moduleExports.legacyDailyExpenseHref, 'function');
+  for (const query of ['', 'view=forces', 'view=daily&request=7', 'view=daily&collection=8', 'view=department-summary&campaign=4', 'view=daily&tab=collections', 'view=daily&tab=requests']) {
+    assert.equal(moduleExports.legacyDailyExpenseHref(new URLSearchParams(query)), null, query);
+  }
+});
+
 test('canonical expense role opens daily workflow with existing module permissions', () => {
   const result = resolveWorkspaceRole(access([role('DEPARTMENT_EXPENSE_OFFICER')], ['status.view', 'daily_report.generate', 'forces.allocate']));
   assert.equal(result, 'expense');

@@ -4,7 +4,8 @@
 // подтверждением, живая сдача и amendment-флоу. Кнопка «Сдать день» живёт
 // ЗДЕСЬ: кнопка грида шлёт дельты статусов и день НЕ сдаёт.
 import { useEffect, useId, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { opsApiClient } from "@/lib/ops-api";
 import { OpsApiError } from "@/lib/ops-errors";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
@@ -73,8 +74,8 @@ export function DaySubmissionPanel({
   localDrift,
   submission,
   submissions,
-  isLoading,
-  isError,
+  isLoading: parentLoading,
+  isError: parentError,
   canCorrect,
   embedded = false,
 }: DaySubmissionPanelProps) {
@@ -93,16 +94,14 @@ export function DaySubmissionPanel({
   /** История сдач ПОДРАЗДЕЛЕНИЯ (без фильтра по дате) — предпросмотру нужно
    * знать, была ли предыдущая сдача: при previous === null сервер всегда даёт
    * CHANGED. */
-  const historyQuery = useQuery({
-    queryKey: ["ops-daily", "division-submissions", divisionId],
-    staleTime: 0,
-    queryFn: () =>
+  const historyQuery = useDailyExpenseRead("division-history", [divisionId], (_signal, authorize) =>
       opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(divisionId as string)}&limit=200`
-      ),
-    enabled: divisionId !== null && dateValid && !isLoading && !isError,
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(divisionId as string)}&limit=200`, authorize
+      ), {
+    enabled: divisionId !== null && dateValid && !parentLoading && !parentError,
     refetchOnWindowFocus: false,
   });
+  const isLoading = parentLoading || historyQuery.isPending;
 
   const previous = useMemo(
     () => previousSubmission(parseSubmissionList(historyQuery.data), businessDate),
@@ -115,6 +114,7 @@ export function DaySubmissionPanel({
     onSuccess: (data) => {
       setSubmitted(data);
       setConfirming(false);
+      void queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] });
       void queryClient.invalidateQueries({
         queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
       });
@@ -142,16 +142,16 @@ export function DaySubmissionPanel({
   );
   const hasCorrectionPermission = !access.isLoading && !access.error &&
     access.hasPermission("daily_report.correct");
-  const correctionScope = useQuery({
-    queryKey: ["ops-daily", "submission-divisions", businessDate],
+  const correctionScope = useDailyExpenseRead("correction-divisions", [businessDate], (_signal, authorize) =>
+    opsApiClient.get<{ results: { id: string; can_correct?: boolean }[] }>(
+      `${DAILY_DIVISIONS_PATH}?business_date=${encodeURIComponent(businessDate)}`, authorize), {
     enabled: canCorrect === undefined && hasCorrectionPermission && current !== null &&
       divisionId !== null && dateValid,
     staleTime: 0,
-    refetchOnWindowFocus: "always",
-    queryFn: () => opsApiClient.get<{ results: { id: string; can_correct?: boolean }[] }>(
-      `${DAILY_DIVISIONS_PATH}?business_date=${encodeURIComponent(businessDate)}`
-    ),
+    refetchOnWindowFocus: true,
   });
+  const isError = parentError || historyQuery.isError || correctionScope.readAccessBlocked ||
+    (canCorrect === undefined && hasCorrectionPermission && correctionScope.isError);
   const correctionAllowed = canCorrect !== undefined ? canCorrect === true :
     correctionScope.isSuccess && !correctionScope.isFetching &&
     correctionScope.data.results.some(row => String(row.id) === divisionId && row.can_correct === true);
@@ -168,6 +168,7 @@ export function DaySubmissionPanel({
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["ops-me"] }),
             queryClient.invalidateQueries({ queryKey: ["ops-daily", "submission-divisions", businessDate] }),
+            queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] }),
           ]);
         }
         throw error;
@@ -176,6 +177,7 @@ export function DaySubmissionPanel({
     onSuccess: (data) => {
       setAmended(data);
       setAmending(false);
+      void queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] });
       void queryClient.invalidateQueries({
         queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
       });
@@ -194,6 +196,7 @@ export function DaySubmissionPanel({
     amendFailure?.kind === "conflict" || amendFailure?.kind === "not-found";
   useEffect(() => {
     if (!amendStale) return;
+    void queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] });
     void queryClient.invalidateQueries({
       queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
     });
@@ -223,6 +226,7 @@ export function DaySubmissionPanel({
   const alreadySubmitted = failure?.kind === "already-submitted";
   useEffect(() => {
     if (!alreadySubmitted) return;
+    void queryClient.invalidateQueries({ queryKey: ["daily-expense-board"] });
     void queryClient.invalidateQueries({
       queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
     });
@@ -300,6 +304,8 @@ export function DaySubmissionPanel({
           // кнопку сдачи там, где читать нельзя вовсе.
           <p role="alert" className="text-sm text-destructive-ink">
             Не удалось прочитать состояние дня.
+            {" "}<button type="button" className="underline underline-offset-2" disabled={historyQuery.isFetching}
+              onClick={() => void historyQuery.refetch()}>Повторить загрузку</button>
           </p>
         )}
 

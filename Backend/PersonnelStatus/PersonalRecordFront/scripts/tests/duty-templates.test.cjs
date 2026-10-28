@@ -13,6 +13,19 @@ const draft = { service_duty_code: 'GBR', planned_start: '2026-12-31T20:00', pla
 function storage() { const data = new Map(); return { data, getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) }; }
 function template(name = 'Ночная ГБР', id = 'first') { return api.templateFromDraft(id, name, draft); }
 
+test('server writes allowlist reusable fields and preserve the same retry id', () => {
+  assert.equal(typeof api.serverTemplatePayload, 'function');
+  const row = { ...template(), employee_id: '999', can_manage: true, revision: 9 };
+  const payload = api.serverTemplatePayload(row, null, 0);
+  assert.equal(payload.id, 'first');
+  assert.equal(payload.expected_revision, 0);
+  assert.equal(payload.owner_division_id, null);
+  assert.equal(payload.employee_id, undefined);
+  assert.equal(payload.revision, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(api.serverTemplatePayload(row, '692', 9))), { ...JSON.parse(JSON.stringify(payload)), expected_revision: 9, owner_division_id: 692 });
+  assert.throws(() => api.serverTemplatePayload(row, 'not-a-division', 0));
+});
+
 test('a template contains only reusable planning fields', () => {
   assert.equal(typeof api.templateFromDraft, 'function', 'template creation is missing');
   const row = template();

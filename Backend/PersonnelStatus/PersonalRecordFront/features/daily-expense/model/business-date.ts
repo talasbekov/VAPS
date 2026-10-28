@@ -7,15 +7,14 @@
 // что у `useStrengthReport`). Выбор пользователя (адрес `?businessDate=`)
 // имеет приоритет над умолчанием, но подставляется только если прошёл
 // формат — чужая/битая ссылка не должна отправлять запросы битой датой.
-import { useQuery } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { apiClient } from "@/lib/api";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function useBusinessDate(selected: string | undefined, enabled = true) {
-  const defaultQuery = useQuery({
-    queryKey: ["daily-expense-board", "default-business-date"],
-    queryFn: () => apiClient.getTomorrowBlockState({}),
+  const defaultQuery = useDailyExpenseRead("default-business-date", [],
+    () => apiClient.getTomorrowBlockState({}), {
     staleTime: 5 * 60_000,
     enabled,
   });
@@ -32,6 +31,7 @@ export function useBusinessDate(selected: string | undefined, enabled = true) {
   const defaultLaggards = defaultQuery.data?.laggards ?? [];
 
   return {
+    clock: defaultQuery,
     businessDate,
     isResolving: businessDate === null,
     isOverridden,

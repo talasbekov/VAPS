@@ -1,5 +1,6 @@
 """Current releases must prove their migration graph and update the ingress image."""
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -15,9 +16,20 @@ def load(name):
     return value
 
 
+GUIDED_DELTA = (
+    ('operations', '0149_duty_templates'),
+    ('operations', '0150_employee_qualifications'),
+    ('operations', '0151_object_inspections'),
+    ('operations', '0152_assistant_dialogue'),
+    ('operations', '0153_assistant_connection_check'),
+    ('operations', '0154_assistant_credential_format'),
+)
+
+
 REVIEWED = (
     ('employees', '0006_iin_format_validation'),
     ('employees', '0007_employee_service_profile'),
+    ('employees', '0008_employee_service_profile_verbose_names'),
     ('operations', '0132_group_evaluation_targets'),
     ('operations', '0133_recon_materials'),
     ('operations', '0134_duty_status_variants'),
@@ -32,6 +44,10 @@ REVIEWED = (
     ('operations', '0143_duty_creation_closure'),
     ('operations', '0144_workspace_and_digital_twin_access'),
     ('operations', '0145_personnel_duty_execution'),
+    ('operations', '0146_om_assistant_tasks'),
+    ('operations', '0147_resource_calculation'),
+    ('operations', '0148_assistant_connection'),
+    *GUIDED_DELTA,
     ('statuses', '0005_employeestatus_duty_assignment'),
 )
 
@@ -42,18 +58,82 @@ def graph():
         {'app': app, 'name': name, 'sha256': 'a' * 64, 'dependencies': []}
         for app, name in order],
         'order': [list(item) for item in order],
-        'leaves': [['employees', '0007_employee_service_profile'],
-                   ['operations', '0145_personnel_duty_execution'],
+        'leaves': [['employees', '0008_employee_service_profile_verbose_names'],
+                   ['operations', '0154_assistant_credential_format'],
                    ['statuses', '0005_employeestatus_duty_assignment']]}
 
 
 class CurrentPlanTests(unittest.TestCase):
-    def test_current_delta_includes_both_new_migrations_and_accepts_partial_installations(self):
+    def test_october27_accepts_assistant_and_resource_transition_without_other_steps(self):
+        checks = load('schema-transition-checks')
+        self.assertEqual(checks.RELEASE_POLICY, 'smart-20261027-guided-v1')
+        new = [('employees', '0008_employee_service_profile_verbose_names'), ('operations', '0146_om_assistant_tasks'), ('operations', '0147_resource_calculation'), ('operations', '0148_assistant_connection')]
+        for pending in (new, new[1:], []):
+            checks.require_plan(pending, graph())
+        for pending in (new[::-1], new + [new[-1]], new + [('operations', '0148_unknown')]):
+            with self.assertRaises(RuntimeError):
+                checks.require_plan(pending, graph())
+        for missing in new:
+            incomplete = graph()
+            incomplete['nodes'] = [row for row in incomplete['nodes'] if (row['app'], row['name']) != missing]
+            incomplete['order'] = [row for row in incomplete['order'] if tuple(row) != missing]
+            with self.assertRaises(RuntimeError):
+                checks.require_graph(incomplete, incomplete)
+
+    def test_current_delta_accepts_partial_installations(self):
         checks = load('schema-transition-checks')
         for plan in (REVIEWED, REVIEWED[1:], REVIEWED[-3:], (REVIEWED[1], REVIEWED[-2]),
                      (REVIEWED[-2],), ()):
             with self.subTest(plan=plan):
                 checks.require_plan([list(item) for item in plan], graph())
+
+    def test_october27_accepts_each_remaining_new_migration_suffix(self):
+        checks = load('schema-transition-checks')
+        for start in range(len(GUIDED_DELTA)):
+            with self.subTest(first_pending=GUIDED_DELTA[start]):
+                checks.require_plan(GUIDED_DELTA[start:])
+                checks.require_plan(GUIDED_DELTA[start:], graph())
+                checks.require_plan([GUIDED_DELTA[start]], graph())
+
+    def test_new_migrations_do_not_allow_unknown_duplicate_or_reordered_steps(self):
+        checks = load('schema-transition-checks')
+        unknown = ('operations', '0155_unreviewed_cleanup')
+        future_graph = graph()
+        future_graph['nodes'].append({'app': unknown[0], 'name': unknown[1],
+                                      'sha256': 'b' * 64, 'dependencies': [list(GUIDED_DELTA[-1])]})
+        future_graph['order'].append(list(unknown))
+        for plan in (GUIDED_DELTA + (unknown,), (unknown,), GUIDED_DELTA + (GUIDED_DELTA[-1],),
+                     tuple(reversed(GUIDED_DELTA)), (GUIDED_DELTA[-1], GUIDED_DELTA[0])):
+            with self.subTest(plan=plan), self.assertRaises(RuntimeError):
+                checks.require_plan(plan, future_graph)
+
+    def test_each_new_migration_must_be_present_in_the_reviewed_graph(self):
+        checks = load('schema-transition-checks')
+        for missing in GUIDED_DELTA:
+            incomplete = graph()
+            incomplete['nodes'] = [row for row in incomplete['nodes'] if (row['app'], row['name']) != missing]
+            incomplete['order'] = [row for row in incomplete['order'] if tuple(row) != missing]
+            with self.subTest(missing=missing), self.assertRaises(RuntimeError):
+                checks.require_graph(incomplete, incomplete)
+
+    def test_new_migration_file_replaced_with_destructive_source_is_refused(self):
+        checks = load('schema-transition-checks')
+        for changed in GUIDED_DELTA:
+            actual = graph()
+            node = next(row for row in actual['nodes'] if (row['app'], row['name']) == changed)
+            # The graph fingerprints source bytes, including a destructive replacement.
+            node['sha256'] = hashlib.sha256(b"migrations.DeleteModel(name='OpsAssistantTask')\n").hexdigest()
+            with self.subTest(changed=changed), self.assertRaises(RuntimeError):
+                checks.require_graph(actual, graph())
+
+    def test_forward_or_missing_dependency_is_refused_even_in_matching_graphs(self):
+        checks = load('schema-transition-checks')
+        for parent in (GUIDED_DELTA[-1], ('operations', '0155_unreviewed_cleanup')):
+            invalid = graph()
+            node = next(row for row in invalid['nodes'] if row['name'] == GUIDED_DELTA[0][1])
+            node['dependencies'] = [list(parent)]
+            with self.subTest(parent=parent), self.assertRaises(RuntimeError):
+                checks.require_graph(invalid, invalid)
 
     def test_old_unknown_duplicate_and_reordered_plans_are_refused(self):
         checks = load('schema-transition-checks')
@@ -97,14 +177,17 @@ class ReleaseArtifactTests(unittest.TestCase):
             release = json.loads((output / 'release.json').read_text())
             transition = json.loads((output / 'schema-transition.json').read_text())
             self.assertEqual(set(release['images']), {'backend', 'frontend', 'proxy'})
+            self.assertNotIn('import-smart-data.py', release['files'])
             self.assertEqual(transition['images'], release['images'])
             self.assertEqual(release['source_revision'], 'f' * 40)
             self.assertEqual(transition['source_revision'], 'f' * 40)
             self.assertEqual(json.loads((output / 'migration-graph.json').read_text()), graph())
             self.assertEqual(transition['graph_sha256'], build.sha(output / 'migration-graph.json'))
             for name in ('update-with-migrations.py', 'schema-transition-checks.py',
-                         'schema-transition.json', 'migration-graph.json'):
+                         'compose-network-transition.py', 'schema-transition.json', 'migration-graph.json'):
                 self.assertEqual(release['files'][name], build.sha(output / name))
+            for name in ('update-with-migrations.py', 'schema-transition-checks.py', 'compose-network-transition.py'):
+                self.assertEqual(transition['files'][name], build.sha(output / name))
 
 
 class ProxyUpdateTests(unittest.TestCase):

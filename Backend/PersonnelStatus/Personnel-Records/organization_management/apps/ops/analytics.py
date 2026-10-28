@@ -1113,11 +1113,13 @@ def attention(request, *, actor):
 # ── Нагрузка (§22.9) ────────────────────────────────────────────────────────
 
 
-def load_analytics(perms, *, actor):
+def load_analytics(perms, *, actor, coverage_request=None):
     """ДВЕ СУММЫ, КОТОРЫЕ НЕ СМЕШИВАЮТСЯ (§22.9): план — по назначениям, факт
     — по подтверждённому участию; `loadState` красится ТОЛЬКО по плановой."""
     generated_at = Clock.now()
     business_date = Clock.to_local(generated_at).date()
+    from organization_management.apps.ops.workload_coverage import workload_coverage
+    coverage = workload_coverage(coverage_request, actor=actor, now=generated_at)
     source = read_source(actor=actor)
     personal_scope = (
         _division_scope(actor, PERSONAL_DETAIL_PERMISSION)
@@ -1247,6 +1249,7 @@ def load_analytics(perms, *, actor):
             "personalDetailReason": None if personal else _PERSONAL_DETAIL_REASON,
         },
         "unavailable": LOAD_UNAVAILABLE,
+        "coverage": coverage,
     }
 
 

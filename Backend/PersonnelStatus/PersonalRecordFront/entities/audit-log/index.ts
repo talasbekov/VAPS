@@ -36,6 +36,12 @@ export interface ListOpsAuditLogsResponse {
  * в ленте её читают вслух при разбирательстве.
  */
 export const AUDIT_ACTION_LABEL: Record<string, string> = {
+  EMPLOYEE_QUALIFICATION_RECORDED: "Проверка навыка сотрудника записана",
+  DUTY_TEMPLATE_SAVED: "Шаблон дежурства сохранён",
+  DUTY_TEMPLATE_REMOVED: "Шаблон дежурства удалён",
+  OBJECT_INSPECTION_SAVED: "Обследование объекта сохранено",
+  OBJECT_INSPECTION_COMPLETED: "Обследование объекта завершено",
+  OBJECT_INSPECTION_FINDING_RESOLVED: "Замечание обследования устранено",
   RESOURCE_CALCULATION_SAVED: "Расчёт сил и средств сохранён",
   STATUS_CREATED: "Статус заведён",
   STATUS_UPDATED: "Статус изменён",
@@ -157,6 +163,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
  * читать её вслух на разбирательстве было нечем.
  */
 export const AUDIT_ENTITY_LABEL: Record<string, string> = {
+  duty_template: "Шаблон дежурства",
   employee_status: "Статус сотрудника",
   secondment: "Прикомандирование",
   employee: "Сотрудник",
@@ -173,6 +180,7 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   legal_document: "Нормативный документ",
   duty_dispatch_config: "Приём дежурных",
   policy_setting: "Правило настроек",
+  assistant_connection: "Подключение Smart AI",
   dictionary_entry: "Значение справочника",
   position: "Должность",
   rank: "Звание",

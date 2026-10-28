@@ -37,31 +37,38 @@ export function AccountEmployeeLink({ account }: { account: AccessAccount }) {
       void client.invalidateQueries({ queryKey: ["ops-my-employee"] });
     },
   });
+  const searching = options.isLoading || options.isFetching;
+  const choices = options.isError || options.isLoading ? [] : options.data?.results ?? [];
   return (
     <div className="space-y-2 border-t pt-3">
       <Label htmlFor="account-employee">Сотрудник</Label>
       <p className="text-xs text-muted-foreground">{account.employee_name ?? "Учётная запись не связана с сотрудником"}. Связь нужна для профиля и личных действий сотрудника; область доступа задаётся ролью.</p>
       <Input aria-label="Поиск сотрудника для учётной записи" placeholder="ФИО или табельный номер" value={search} disabled={save.isPending} onChange={(event) => setSearch(event.target.value)} />
-      <select id="account-employee" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={employeeId} disabled={save.isPending} onChange={(event) => {
+      {searching ? <p role="status" className="text-xs text-muted-foreground">Поиск сотрудников…</p>
+        : options.isError ? <p role="alert" className="text-xs text-destructive">Не удалось найти сотрудников. Повторите загрузку.</p>
+        : options.data && <p role="status" className="text-xs text-muted-foreground">{options.data.count === 0
+          ? "Сотрудники не найдены. Проверьте ФИО или табельный номер."
+          : `Найдено сотрудников: ${options.data.count}. Выберите сотрудника в списке ниже.`}</p>}
+      <select id="account-employee" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={employeeId} disabled={save.isPending || searching || options.isError} onChange={(event) => {
         setEmployeeId(event.target.value);
-        setSelectedEmployee(options.data?.results.find((row) => String(row.id) === event.target.value) ?? null);
+        setSelectedEmployee(choices.find((row) => String(row.id) === event.target.value) ?? null);
       }}>
         <option value="">Без сотрудника</option>
-        {account.employee_id && !options.data?.results.some((row) => row.id === account.employee_id) && (
+        {account.employee_id && !choices.some((row) => row.id === account.employee_id) && (
           <option value={account.employee_id}>{account.employee_name}</option>
         )}
-        {selectedEmployee && String(selectedEmployee.id) === employeeId && selectedEmployee.id !== account.employee_id && !options.data?.results.some((row) => row.id === selectedEmployee.id) && (
+        {!options.isError && selectedEmployee && String(selectedEmployee.id) === employeeId && selectedEmployee.id !== account.employee_id && !choices.some((row) => row.id === selectedEmployee.id) && (
           <option value={selectedEmployee.id}>{selectedEmployee.name} · {selectedEmployee.personnel_number}</option>
         )}
-        {options.data?.results.map((row) => (
+        {choices.map((row) => (
           <option key={row.id} value={row.id} disabled={row.user_id !== null && row.user_id !== account.id}>
             {row.name} · {row.personnel_number}{row.user_id !== null && row.user_id !== account.id ? " (уже связан)" : ""}
           </option>
         ))}
       </select>
-      {options.data && options.data.count > options.data.results.length && <p className="text-xs text-muted-foreground">Уточните поиск, чтобы найти сотрудника среди {options.data.count} записей.</p>}
-      {options.isError && <Button variant="outline" onClick={() => void options.refetch()}>Повторить загрузку сотрудников</Button>}
-      <Button size="sm" disabled={save.isPending || options.isLoading || employeeId === String(account.employee_id ?? "")} onClick={() => save.mutate({ employee_id: employeeId ? Number(employeeId) : null })}>Сохранить связь</Button>
+      {!options.isError && options.data && options.data.count > options.data.results.length && <p className="text-xs text-muted-foreground">Уточните поиск, чтобы найти сотрудника среди {options.data.count} записей.</p>}
+      {options.isError && <Button type="button" variant="outline" onClick={() => void options.refetch()}>Повторить загрузку сотрудников</Button>}
+      <Button type="button" size="sm" disabled={save.isPending || searching || options.isError || employeeId === String(account.employee_id ?? "")} onClick={() => save.mutate({ employee_id: employeeId ? Number(employeeId) : null })}>Сохранить связь</Button>
       {save.error && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
     </div>
   );

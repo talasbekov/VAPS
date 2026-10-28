@@ -104,6 +104,7 @@ MODEL_CATEGORY: dict[str, str] = {
         "Служебное", "operations",
         "OpsAuditLog", "OpsRatingAuditEntry", "OpsNotification",
         "OpsRatingNotification", "OpsRatingIdempotencyRecord",
+        "OpsAssistantMessage", "OpsAssistantReceipt", "OpsAssistantConnectionCheck",
     ),
     **_spread(
         "Охранные мероприятия", "operations",

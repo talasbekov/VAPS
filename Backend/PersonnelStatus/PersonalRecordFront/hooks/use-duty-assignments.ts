@@ -5,6 +5,7 @@ import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useAuth } from "@/lib/auth";
 import type { ServerDutyAssignment, DutyForcesDepartment, DutyAssignment } from "@/entities/duty-assignment";
 import { dutyIntervalsOnDate } from "@/features/employee-status-update/model/duty-intervals";
 
@@ -17,11 +18,19 @@ export function invalidateDutyViews(client: QueryClient) {
 
 function useDutyAssignments(filters: { object_id?: string; employee_id?: number; date: string }, enabled: boolean, employeeReadOnly = false) {
   const permissions = useOpsPermissions();
+  const { user, isLoading: identityLoading, sessionExpired } = useAuth();
+  const authority = JSON.stringify({
+    actor: user?.id,
+    permissions: Array.from(permissions.permissions ?? []).sort(),
+    globalPermissions: Array.from(permissions.globalPermissions ?? []).sort(),
+    scopes: permissions.roles.map(role => [role.code, role.scope_division_id])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  });
   // Scoped employee reads do not grant access to the object catalog or legacy editor.
-  const allowed = !permissions.isLoading && permissions.hasPermission("status.view") &&
+  const allowed = !identityLoading && !sessionExpired && user !== null && !permissions.isLoading && permissions.hasPermission("status.view") &&
     (employeeReadOnly || permissions.hasPermission("object.view"));
   const query = useQuery<{ results: ServerDutyAssignment[] }, OpsApiFailure>({
-    queryKey: [...DUTY_ASSIGNMENTS_QUERY_KEY, filters],
+    queryKey: [...DUTY_ASSIGNMENTS_QUERY_KEY, authority, filters],
     queryFn: () => {
       const params = new URLSearchParams({ date: filters.date });
       if (filters.object_id) params.set("object_id", filters.object_id);
@@ -34,7 +43,7 @@ function useDutyAssignments(filters: { object_id?: string; employee_id?: number;
     retry: false,
   });
   // Cached data is not authority after permissions are lost.
-  return { ...query, data: allowed ? query.data : undefined, allowed, permissionsLoading: permissions.isLoading };
+  return { ...query, data: allowed ? query.data : undefined, allowed, permissionsLoading: identityLoading || permissions.isLoading };
 }
 
 export function useDutyAssignment(employeeId: number | null, date: string, enabled = true) {

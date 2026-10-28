@@ -310,8 +310,13 @@ from organization_management.apps.operations.models_duty_dispatch import (  # no
     OpsDutyDispatchConfig, OpsDutyDispatchAssignment,
 )
 from organization_management.apps.operations.models_assistant import (  # noqa: E402,F401
-    OpsAssistantTask, OpsAssistantReceipt,
+    OpsAssistantTask, OpsAssistantReceipt, OpsAssistantMessage,
 )
+from organization_management.apps.operations.models_assistant_connection import OpsAssistantConnection  # noqa: E402,F401
+from organization_management.apps.operations.models_assistant_connection_check import OpsAssistantConnectionCheck  # noqa: E402,F401
+from organization_management.apps.operations.models_duty_template import OpsDutyTemplate  # noqa: E402,F401
+from organization_management.apps.operations.models_employee_qualification import OpsEmployeeQualification  # noqa: E402,F401
+from organization_management.apps.operations.models_object_inspection import OpsObjectInspection  # noqa: E402,F401
 from organization_management.apps.operations.models_resource_calculation import (  # noqa: E402,F401
     OpsResourceCalculation,
 )

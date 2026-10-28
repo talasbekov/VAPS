@@ -6,29 +6,32 @@ const api = '/api/ops/duty-register/';
 const period = { from: '2026-10-13', to: '2026-10-13' };
 
 test('personal duty templates persist, apply a night interval and never submit a duty on Enter', async ({ page, businessWrites }) => {
+  const longNote = 'Проверить связь ' + 'П'.repeat(180);
   await boot(page);
   await page.getByRole('button', { name: 'Добавить запись', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.locator('summary').filter({ hasText: 'Личные шаблоны дежурств' }).click();
+  await dialog.locator('summary').filter({ hasText: /^Шаблоны дежурств/ }).click();
   await dialog.getByRole('combobox', { name: 'Вид дежурства', exact: true }).selectOption('GBR');
   await dialog.getByLabel('Плановое начало', { exact: true }).fill('2026-12-31T20:00');
   await dialog.getByLabel('Плановое завершение', { exact: true }).fill('2027-01-01T08:00');
   await dialog.getByLabel('Место', { exact: true }).fill('Объект · ночной пост');
   await dialog.getByLabel('Основание', { exact: true }).fill('Приказ 12');
-  await dialog.getByLabel('Примечание', { exact: true }).fill('Проверить связь');
+  await dialog.getByRole('textbox', { name: 'Примечание', exact: true }).fill(longNote);
   await dialog.getByRole('button', { name: /Учётный сотрудник/ }).click();
   await dialog.getByLabel('Название нового шаблона', { exact: true }).fill('ГБР · ночная смена');
   await dialog.getByLabel('Название нового шаблона', { exact: true }).press('Enter');
-  await expect(dialog.getByText('Шаблон сохранён.', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('Шаблон сохранён на сервере', { exact: false })).toBeVisible();
   expect(businessWrites).toEqual([]);
   await page.reload();
   await page.getByRole('button', { name: 'Добавить запись', exact: true }).click();
-  await dialog.getByRole('combobox', { name: 'Сохранённый шаблон', exact: true }).selectOption({ label: 'ГБР · ночная смена' });
+  await dialog.locator('summary').filter({ hasText: /^Шаблоны дежурств/ }).click();
+  await dialog.getByRole('combobox', { name: 'Сохранённый шаблон', exact: true }).selectOption({ label: 'ГБР · ночная смена · Личный' });
   await dialog.getByLabel('Дата смены по шаблону', { exact: true }).fill('2026-02-28');
   await dialog.getByRole('button', { name: 'Подставить в запись', exact: true }).click();
   await expect(dialog.getByLabel('Плановое начало', { exact: true })).toHaveValue('2026-02-28T20:00');
   await expect(dialog.getByLabel('Плановое завершение', { exact: true })).toHaveValue('2026-03-01T08:00');
   await expect(dialog.getByLabel('Место', { exact: true })).toHaveValue('Объект · ночной пост');
+  await expect(dialog.getByRole('textbox', { name: 'Примечание', exact: true })).toHaveValue(longNote);
   await expect(dialog.getByRole('button', { name: /Учётный сотрудник/ })).toHaveAttribute('aria-pressed', 'false');
   await dialog.getByRole('button', { name: /Учётный сотрудник/ }).click();
   await dialog.getByRole('button', { name: 'Подставить в запись', exact: true }).click();
@@ -89,6 +92,19 @@ function snapshot(extra: Record<string, unknown> = {}) {
 }
 async function boot(page: Page, data = snapshot(), permissions = ['duty.view', 'duty.manage', 'dictionary.view']) {
   await signIn(page);
+  let templates: Array<Record<string, unknown>> = [];
+  await page.route('**/api/ops/duty-templates/**', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET') return route.fulfill({ json: { results: templates, can_create: true, owner_choices: [{ id: 4, name: 'Первое подразделение' }], time_zone: 'Asia/Qyzylorda' } });
+    const payload = request.postDataJSON();
+    expect(payload.employee_id).toBeUndefined();
+    expect(payload.actual_start).toBeUndefined();
+    if (url.pathname.endsWith('/remove/')) { templates = templates.filter(row => !url.pathname.includes(String(row.id))); return route.fulfill({ json: { removed: true } }); }
+    const row = { ...payload, owner_division_name: payload.owner_division_id ? 'Первое подразделение' : '', revision: payload.expected_revision + 1, can_manage: true, time_zone: 'Asia/Qyzylorda' };
+    templates = [...templates.filter(item => item.id !== row.id), row];
+    return route.fulfill({ status: request.method() === 'POST' ? 201 : 200, json: row });
+  });
   await page.route('**/api/operations/my-permissions/', route => route.fulfill({ json: { permissions, roles: [] } }));
   await page.route('**/api/ops/duty-register/**', route => {
     const url = new URL(route.request().url());
@@ -218,10 +234,15 @@ test('journal keeps applied filters and print without CSV controls', async ({ pa
 test('journal and detail fit a 320px viewport', async ({ page, businessWrites }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await boot(page);
+  const longNote = 'Примечание ' + 'Ж'.repeat(180);
+  await page.route('**/api/ops/duty-register/LOG:17/', route => route.fulfill({ json: record({ note: longNote }) }));
   await expect(page.getByRole('heading', { name: 'Журнал дежурств', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await page.getByRole('button', { name: /Открыть запись/ }).first().click();
-  await expect(page.getByRole('dialog', { name: 'Запись дежурства' })).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'Запись дежурства' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(longNote, { exact: true })).toBeVisible();
+  expect(await dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   expect(businessWrites).toEqual([]);
 });
@@ -243,6 +264,8 @@ test('detail records acknowledgement, actual start and completion as separate st
   await page.getByRole('button', { name: /Открыть запись/ }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Запись дежурства' });
   await dialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Время отметки', exact: true })).toHaveCount(0);
+  await expect(dialog.getByText('Подтверждение будет сохранено текущим временем сервера.', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Сохранить отметку' }).click();
   await dialog.getByRole('button', { name: 'Отметить начало', exact: true }).click();
   await dialog.getByRole('combobox', { name: 'Время отметки', exact: true }).selectOption('RECORDED');

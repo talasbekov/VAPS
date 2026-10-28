@@ -96,6 +96,26 @@ test('an ordinary role requires an explicit scope and cannot submit the initial 
   assert.equal(form.calls.length, 0);
 });
 
+test('role assignment explains shared OM authority before a narrow scope is granted', () => {
+  const form = accountForm();
+  form.roles.data.results.push(
+    {...ordinaryRole('EVENT_READER'), permissions:['event.view']},
+    {...ordinaryRole('EVENT_MANAGER'), permissions:['event.manage']},
+  );
+  form.selectRole('EVENT_READER');
+  form.selectScope('7');
+  assert.match(form.text(), /общий реестр ОМ/);
+  assert.doesNotMatch(form.text(), /широкие полномочия над мероприятиями/);
+  assert.equal(form.calls.length, 0);
+  form.selectRole('EVENT_MANAGER');
+  assert.match(form.text(), /широкие полномочия над мероприятиями/);
+  form.selectRole('READER');
+  assert.doesNotMatch(form.text(), /общий реестр ОМ|широкие полномочия над мероприятиями/);
+  form.selectRole('ADMIN');
+  assert.match(form.text(), /общий реестр ОМ/);
+  assert.match(form.text(), /широкие полномочия над мероприятиями/);
+});
+
 test('explicit subdivision and whole-service choices preserve numeric and null payloads', () => {
   const form = accountForm();
   form.selectRole('READER');

@@ -73,14 +73,15 @@ test('calculation queue distinguishes true emptiness from a failed or paginated 
   }
 });
 test('all authorized employee work modes stay reachable without duplicate destinations',()=>{
-  for(const codes of [['*'],['forces.allocate','forces.command','status.view']]) for(const query of ['', 'view=forces&tab=collections', 'view=daily&businessDate=2026-10-23']) {
-    const f=fixture(codes, query ? '/employees' : '/workspace', {query});try {
+  for(const codes of [['*'],['forces.allocate','forces.command','status.view','daily_report.generate']]) for(const query of ['', 'view=forces&tab=collections', 'view=daily&businessDate=2026-10-23']) {
+    const f=fixture(codes, query.startsWith('view=daily') ? '/daily-expense' : query ? '/employees' : '/workspace', {query});try {
       const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
       const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
       const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1].replaceAll('&amp;','&'));
-      for(const wanted of [{view:'forces',tab:'requests'},{view:'forces',tab:'collections'},{view:'daily'}]) {
+      for(const wanted of [{view:'forces',tab:'requests'},{view:'forces',tab:'collections'}]) {
         assert.equal(hrefs.filter(href=>{const [path,search]=href.split('?'); const params=new URLSearchParams(search); return path==='/employees' && Object.entries(wanted).every(([key,value])=>params.get(key)===value);}).length,1,JSON.stringify(wanted));
       }
+      assert.equal(hrefs.filter(href=>href.split('?')[0]==='/daily-expense').length,1);
       assert.equal(new Set(hrefs).size,hrefs.length);
       assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
     }finally{f.client.clear();}
@@ -90,6 +91,17 @@ test('home never renders protected task links from retained permissions after a 
   const f=fixture(['*'],'/workspace',{error:Error('offline')});try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/workspace').PortalWorkspace));
     assert.match(html,/role="alert"/);assert.doesNotMatch(html,/href=/);
+  }finally{f.client.clear();}
+});
+
+test('daily-only navigation has one expense destination and never offers force collection',()=>{
+  const f=fixture(['status.view','daily_report.generate'],'/daily-expense',{query:'businessDate=2026-10-27'});try {
+    const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
+    const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
+    const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1].replaceAll('&amp;','&'));
+    assert.deepEqual(hrefs.filter(href=>href.startsWith('/daily-expense')),['/daily-expense?businessDate=2026-10-27']);
+    assert.ok(!hrefs.some(href=>href.startsWith('/employees')));
+    assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
   }finally{f.client.clear();}
 });
 test('sidebar initially has only home and three work links; all remaining modules are still rendered in disclosure',()=>{
