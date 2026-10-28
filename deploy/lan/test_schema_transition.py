@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 import tempfile
 import hashlib
 import json
+import re
+import sys
+from types import SimpleNamespace
 
 
 def load(name):
@@ -81,6 +84,48 @@ class CheckRoundtripTests(unittest.TestCase):
                 self.assertEqual(self.checks.canonical_constraint(table, name, definition), definition)
 
 
+class CurrentSchemaRoundtripTests(unittest.TestCase):
+    def setUp(self):
+        self.checks = load('schema-transition-checks')
+        self.rows = json.loads((Path(__file__).parent / 'testdata/schema-cast-roundtrip.json').read_text())['rows']
+
+    def test_all_observed_current_schema_forms_survive_postgresql_roundtrip(self):
+        self.assertEqual(len(self.rows), 40)
+        for row in self.rows:
+            with self.subTest(kind=row['kind'], table=row['table'], name=row['name']):
+                self.assertNotEqual(row['original'], row['restored'])
+                self.assertEqual(self.checks.canonical_constraint(row['table'], row['name'], row['original']), row['restored'])
+                self.assertEqual(self.checks.canonical_constraint(row['table'], row['name'], row['restored']), row['restored'])
+
+    def test_actual_values_operators_and_predicates_remain_protected(self):
+        for row in self.rows:
+            original = row['original']
+            canonical = self.checks.canonical_constraint(row['table'], row['name'], original)
+            first = re.search(r"'[A-Z][A-Z0-9_]*'", original).group()
+            for changed in (original.replace(first, "'UNEXPECTED_VALUE'", 1), original.replace(' = ANY ', ' <> ANY '),
+                    original.replace(' = ANY ', ' = ALL '), original.replace('character varying', 'character varying(3)'),
+                    original.replace('IS NULL', 'IS NOT NULL'), original.replace('period WITH &&', 'period WITH =')):
+                if changed == original:
+                    continue
+                with self.subTest(kind=row['kind'], table=row['table'], changed=changed):
+                    self.assertNotEqual(canonical, self.checks.canonical_constraint(row['table'], row['name'], changed))
+            for table, name in (('unreviewed_table', row['name']), (row['table'], 'unreviewed_definition')):
+                self.assertEqual(self.checks.canonical_constraint(table, name, original), original)
+
+    def test_catalog_capture_normalizes_the_supporting_exclusion_index_too(self):
+        row = next(row for row in self.rows if row['kind'] == 'indexes')
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, *_):
+                self.values = [(row['table'], row['name'], row['original'])] if 'FROM pg_indexes' in sql else []
+            def fetchall(self): return self.values
+        connection = SimpleNamespace(cursor=Cursor, ops=SimpleNamespace(quote_name=lambda name: '"' + name + '"'))
+        with patch.dict(sys.modules, {'django.db': SimpleNamespace(connection=connection)}):
+            captured = self.checks.capture()
+        self.assertEqual(captured['schema']['indexes'], [[row['table'], row['name'], row['restored']]])
+
+
 class PreservationTests(unittest.TestCase):
     def setUp(self):
         self.checks = load('schema-transition-checks')
@@ -118,6 +163,25 @@ class PreservationTests(unittest.TestCase):
             after['sequences']['employees_id_seq'][key] = value
             with self.assertRaises(RuntimeError):
                 self.checks.require_preserved(self.before, after)
+
+    def test_added_assistant_fields_cannot_exempt_existing_keys_tasks_or_assignments(self):
+        before = {'tables': {
+            'ops_assistant_connection': {'columns': ['id', 'api_key'], 'rows': 1, 'sha256': 'original-key'},
+            'ops_assistant_tasks': {'columns': ['id', 'payload'], 'rows': 1, 'sha256': 'original-task'},
+            'ops_user_roles': {'columns': ['id', 'user_id', 'role_id'], 'rows': 1, 'sha256': 'original-assignment'},
+        }, 'seed_keys': {}, 'sequences': {}}
+        self.checks.require_preserved(before, copy.deepcopy(before))
+        for table in before['tables']:
+            for change in ('changed-row', 'removed-row', 'removed-column'):
+                projected = copy.deepcopy(before)
+                if change == 'changed-row':
+                    projected['tables'][table]['sha256'] = 'changed'
+                elif change == 'removed-row':
+                    projected['tables'][table]['rows'] = 0
+                else:
+                    projected['tables'][table]['columns'].pop()
+                with self.subTest(table=table, change=change), self.assertRaises(RuntimeError):
+                    self.checks.require_preserved(before, projected)
 
 
 class ApprovedPlanTests(unittest.TestCase):
@@ -278,7 +342,7 @@ class PackageIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             names = ('application-images.tar', 'update.py', 'update-app-only.py', 'update-offline.py',
-                     'update-with-migrations.py', 'schema-transition-checks.py')
+                     'update-with-migrations.py', 'schema-transition-checks.py', 'compose-network-transition.py')
             for name in names:
                 (root / name).write_text('reviewed ' + name, encoding='utf-8')
             images = {key: {'tag': 'smart/' + key, 'id': 'sha256:' + key, 'os': 'linux', 'architecture': 'amd64'}
@@ -293,9 +357,12 @@ class PackageIntegrityTests(unittest.TestCase):
                           'reviewed_migrations': [list(item) for item in updater.checks.APPROVED_PLAN],
                           'graph_sha256': hashlib.sha256((root / 'migration-graph.json').read_bytes()).hexdigest(),
                           'files': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-                                    for name in ('update-with-migrations.py', 'schema-transition-checks.py')}}
+                                    for name in ('update-with-migrations.py', 'schema-transition-checks.py',
+                                                 'compose-network-transition.py')}}
             if change == 'old-plan':
                 transition['reviewed_migrations'] = [list(item) for item in updater.checks.APPROVED_PLAN[:-1]]
+            if change == 'old-policy':
+                transition['policy'] = 'smart-20261024-ai-v2'
             if change == 'foreign-images':
                 transition['images']['backend']['id'] = 'sha256:another-image'
             (root / 'schema-transition.json').write_text(json.dumps(transition), encoding='utf-8')
@@ -303,6 +370,7 @@ class PackageIntegrityTests(unittest.TestCase):
             obj.manifest = {'source_revision': 'c' * 40, 'images': images,
                             'files': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.iterdir()}}
             obj.new_backend = 'smart/backend'
+            obj.prepare_network_transition = Mock()
             obj.new_proxy, obj.base = 'smart/proxy', ['docker', 'compose']
             obj.services = {'proxy': {'volumes': [
                 {'type': 'volume', 'source': name, 'target': '/data/' + name, 'read_only': True}
@@ -329,7 +397,7 @@ class PackageIntegrityTests(unittest.TestCase):
         self.exercise()
 
     def test_mixed_or_tampered_patch_is_refused_before_loading_images(self):
-        for change in ('old-source', 'old-plan', 'foreign-images', 'tampered-script', 'missing-transition-checksum'):
+        for change in ('old-source', 'old-plan', 'old-policy', 'foreign-images', 'tampered-script', 'missing-transition-checksum'):
             with self.subTest(change=change):
                 self.exercise(change)
 

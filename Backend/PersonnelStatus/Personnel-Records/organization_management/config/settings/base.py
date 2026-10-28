@@ -7,6 +7,8 @@ import os
 OPS_ASSISTANT_PROVIDER = os.environ.get("OPS_ASSISTANT_PROVIDER", "disabled")
 OPS_ASSISTANT_OLLAMA_URL = os.environ.get("OPS_ASSISTANT_OLLAMA_URL", "http://127.0.0.1:11434")
 OPS_ASSISTANT_MODEL = os.environ.get("OPS_ASSISTANT_MODEL", "qwen2.5:7b")
+# Optional dedicated Fernet key ring: current key first, then retained old keys.
+OPS_ASSISTANT_CREDENTIAL_KEYS = os.environ.get("OPS_ASSISTANT_CREDENTIAL_KEYS", "")
 from pathlib import Path
 from datetime import timedelta
 
@@ -24,6 +26,7 @@ SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "django-insecure-^18w8^kyktt4q14w%c4tci%w(8po97jj2pd&3(#hv(dyn3hznv",
 )
+SECRET_KEY_FALLBACKS = [key.strip() for key in os.environ.get("DJANGO_SECRET_KEY_FALLBACKS", "").split(",") if key.strip()]
 
 # Django behavior settings
 APPEND_SLASH = False  # Allow URLs without trailing slash for API compatibility

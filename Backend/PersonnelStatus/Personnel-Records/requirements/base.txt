@@ -14,6 +14,8 @@ openpyxl>=3.1.2
 django-redis>=5.4.0
 python-docx>=1.1.0
 reportlab>=4.0.0
+# Direct runtime dependency for encrypted AI credentials; matches requirements.txt.
+cryptography==50.0.1
 # 🔴 БОЕВАЯ, А НЕ ТЕСТОВАЯ (Plane №492/№639). Водяной знак «ПРОЕКТ» на
 # несогласованной расстановке (`[СОГ-03]`, Plane №430) накладывается на ГОТОВЫЙ
 # PDF, и `stamp_draft` читает его через pypdf. Пакет был объявлен только в

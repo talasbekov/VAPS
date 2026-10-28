@@ -5075,7 +5075,8 @@ class LoadAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_bypass_map = {"list": analytics_service.PERSONAL_DETAIL_PERMISSION}
 
     def list(self, request):
-        return Response(analytics_service.load_analytics(effective_permissions(request), actor=resolve_actor_id(request)))
+        return Response(analytics_service.load_analytics(effective_permissions(request),
+            actor=resolve_actor_id(request), coverage_request=request.query_params))
 
 
 class OperationsAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -5469,7 +5470,9 @@ class OpsDailyEmployeesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Проверьте параметры запроса.",
             )
         for division_id in division_ids:
-            _resolve_division_scope(request, division_id, _DAILY_READ_PERMISSION)
+            # employee_rows reads the exact requested nodes, not their subtree.
+            # An ancestor whose subtree intersects a grant is not itself visible.
+            require_scoped_permission(request, _DAILY_READ_PERMISSION, division_id)
         results = daily_service.employee_rows(division_ids)
         return Response(
             {

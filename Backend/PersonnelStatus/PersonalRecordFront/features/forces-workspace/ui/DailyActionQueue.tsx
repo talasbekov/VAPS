@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { formatIsoDate } from '@/shared/lib/date'
 import { SUMMARY_ACTION_ANCHOR } from '@/features/daily-expense/ui/SummaryActionBar'
 import { useDailyActionQueue } from '../model/daily-action-queue'
-import { workspaceHref } from '../model/workspace'
+import { dailyExpenseHref, workspaceHref } from '../model/workspace'
+import { moduleOpenFor } from '@/entities/portal-access'
 import styles from './workspace.module.css'
 
 export function DailyActionQueue({ query, standalone = false }: { query: URLSearchParams; standalone?: boolean }) {
@@ -16,7 +17,8 @@ export function DailyActionQueue({ query, standalone = false }: { query: URLSear
   let content
   if (!access.error && (access.isLoading || access.permissions === undefined)) {
     content = <p role="status" className={styles.pending}>Загрузка очереди расхода…</p>
-  } else if (access.error || !access.hasPermission('status.view') || !access.hasPermission('forces.allocate')) {
+  } else if (access.error || !access.hasPermission('status.view') ||
+    (!access.hasPermission('forces.allocate') && !moduleOpenFor('/daily-expense', access.hasPermission))) {
     content = <p role="alert" className={styles.pending}>Недостаточно прав для просмотра очереди расхода.</p>
   } else if (scopeId === null || access.globalPermissions?.has('*')) {
     content = <p className={styles.pending}>Для очереди нужен единственный департамент роли. Выберите департамент в своде.</p>
@@ -30,7 +32,7 @@ export function DailyActionQueue({ query, standalone = false }: { query: URLSear
     const missing = data.sources.filter(row => !row.submission)
     const next = new URLSearchParams(query)
     next.set('businessDate', businessDate)
-    const summaryHref = `${workspaceHref(next, 'daily')}#${SUMMARY_ACTION_ANCHOR}`
+    const summaryHref = `${moduleOpenFor('/daily-expense', access.hasPermission) ? dailyExpenseHref(next) : workspaceHref(next, 'daily')}#${SUMMARY_ACTION_ANCHOR}`
     content = <>
       {missing.length > 0 ? <>
         <p className={styles.queueSummary}><strong>Не сдали: {missing.length}</strong> · сдали {data.sources.length - missing.length} из {data.sources.length}</p>

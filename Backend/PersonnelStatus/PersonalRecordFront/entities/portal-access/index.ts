@@ -63,12 +63,15 @@ export const MODULE_PERMISSION = {
   // «Статусах сотрудников» (`[СБС-30]`: «отдельной страницы нет»); само право
   // `personnel.view` у ролей осталось — им живут поиск и карточка сотрудника.
   "/employees": ["forces.command", "forces.allocate", "forces.select"],
+  // Daily work uses its existing read/write responsibilities independently
+  // from force allocation. Reading statuses alone does not open this workspace.
+  "/daily-expense": ["daily_report.mark_update", "daily_report.generate", "daily_report.correct"],
   "/reports": "daily_report.generate",
   "/security-ops/command-center": "event.view",
   "/security-ops/analytics": "analytics.view",
   "/security-ops/objects": "object.view",
   "/security-ops/events": "event.view",
-  "/security-ops/assistant": ["event.create", "event.manage", "forces.command"],
+  "/security-ops/assistant": ["event.create", "event.manage", "event.bulletin", "forces.command"],
   // Страница визита иностранного ОЛ (`[ГВО-01]`, Plane №436) — та же мерка,
   // что у реестра: визит показывает то же, что карточка ОМ.
   "/security-ops/visits": "event.view",
@@ -103,6 +106,7 @@ export const MODULE_PERMISSION = {
 /** Additional conjunctive permissions; MODULE_PERMISSION arrays retain OR semantics. */
 export const MODULE_REQUIRED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   "/statuses": ["status.workspace"],
+  "/daily-expense": ["status.view"],
   "/security-ops/service-summary": ["service_summary.view"],
 };
 export const MODULE_ROLE: Readonly<Record<string, string | readonly string[]>> = {};
@@ -117,6 +121,7 @@ export type ModuleHref = keyof typeof MODULE_PERMISSION;
  */
 const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
   "/employees",
+  "/daily-expense",
   "/statuses",
   "/security-ops/duty-register",
   "/security-ops/objects",

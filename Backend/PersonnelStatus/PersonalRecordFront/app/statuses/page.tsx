@@ -21,7 +21,6 @@ import { moduleOpenFor } from "@/entities/portal-access";
 import { ForcesRequestBanner } from "@/features/forces-request-banner/ui/ForcesRequestBanner";
 import { StatusDayClose } from "@/features/ops-daily/status-day-close";
 import { OpsPermissionBoundary } from "@/components/ops-permission-boundary";
-import { AssistantHomeEntry } from "@/features/om-assistant/home-entry";
 
 export default function StatusesPage() {
   return <OpsPermissionBoundary><Suspense fallback={<p role="status">Загрузка статусов…</p>}><StatusesScreen /></Suspense></OpsPermissionBoundary>
@@ -154,7 +153,7 @@ function StatusesScreen() {
             : "Просмотр текущих и запланированных статусов сотрудников вашего подразделения."}
           actions={
             <div className="flex flex-wrap items-center gap-3">
-              <AssistantHomeEntry compact accessReady={!opsPermissionsLoading && !permissionsError} hasPermission={hasOpsPermission} />
+              {hasOpsPermission("daily_report.mark_update") && <Button asChild variant="outline" size="sm"><a href="#daily-submission">Проверить расход и сдать день</a></Button>}
               <span className="text-xs text-muted-foreground">
                 Обновлено: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
               </span>
@@ -186,7 +185,6 @@ function StatusesScreen() {
             статусы и на той же странице выбирает дату и сдаёт день. Блок
             рисуется только тому, у кого есть право сдачи
             (`daily_report.mark_update`) — внутри компонента. */}
-        <StatusDayClose employeeCount={stats.totalEmployees ?? 0} />
 
         <dl aria-label="Сводка статусов" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           {[
@@ -203,7 +201,7 @@ function StatusesScreen() {
         </dl>
 
         {/* Main Content */}
-        <Tabs value={view} onValueChange={changeView} className="space-y-4">
+        <Tabs id="employee-status-list" value={view} onValueChange={changeView} className="scroll-mt-6 space-y-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-fit">
               <TabsTrigger className="min-h-12 whitespace-normal sm:min-h-8 sm:whitespace-nowrap" value="table">Таблица сотрудников</TabsTrigger>
@@ -241,6 +239,9 @@ function StatusesScreen() {
           </TabsContent>
 
         </Tabs>
+        <div id="daily-submission" className="scroll-mt-6">
+          <StatusDayClose employeeCount={stats.totalEmployees ?? 0} />
+        </div>
       </div>
     </DashboardLayout>
   )

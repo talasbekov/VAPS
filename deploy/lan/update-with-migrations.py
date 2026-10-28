@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reviewed schema transition for the complete 20 October application package."""
+"""Reviewed schema and network transition for the complete 27 October package."""
 import argparse
 import importlib.util
 import json
@@ -26,6 +26,7 @@ def module(name):
 app = module('update-app-only')
 base = app.base
 checks = module('schema-transition-checks')
+networks = module('compose-network-transition')
 CHECK_SOURCE = (HERE / 'schema-transition-checks.py').read_text(encoding='utf-8')
 BOOTSTRAP = '''import json,sys,django
 payload=json.load(sys.stdin)
@@ -99,13 +100,15 @@ class TransitionUpdate(app.ApplicationUpdate):
                 transition.get('images') != self.manifest.get('images') or
                 transition.get('reviewed_migrations') != [list(item) for item in checks.APPROVED_PLAN] or
                 transition.get('graph_sha256') != base.sha(HERE / 'migration-graph.json') or
-                set(transition.get('files', {})) != {'update-with-migrations.py', 'schema-transition-checks.py'}):
+                set(transition.get('files', {})) != {'update-with-migrations.py', 'schema-transition-checks.py',
+                                                    'compose-network-transition.py'}):
             raise RuntimeError('Incomplete or mismatched current schema release')
         for name, digest in transition['files'].items():
             if base.sha(HERE / name) != digest:
                 raise RuntimeError('Schema patch checksum mismatch: ' + name)
         required = {'application-images.tar', 'update.py', 'update-app-only.py', 'update-offline.py',
                     'update-with-migrations.py', 'schema-transition-checks.py', 'schema-transition.json',
+                    'compose-network-transition.py',
                     'migration-graph.json', 'source-revision.txt'}
         if not required.issubset(self.manifest.get('files', {})) or set(self.manifest.get('images', {})) != {'backend', 'frontend', 'proxy'}:
             raise RuntimeError('Complete application and reviewed transition package required')
@@ -117,6 +120,7 @@ class TransitionUpdate(app.ApplicationUpdate):
             raise RuntimeError('Source revision file differs from the release manifest')
         self.graph = json.loads((HERE / 'migration-graph.json').read_text(encoding='utf-8'))
         checks.require_graph(self.graph, self.graph)
+        self.prepare_network_transition()
         configs = base.exported_config_ids(HERE / 'application-images.tar', self.manifest['images'])
         try:
             for key, image in self.manifest['images'].items():
@@ -127,6 +131,28 @@ class TransitionUpdate(app.ApplicationUpdate):
             print('Package verified; reviewed application images are already loaded.', flush=True)
             self.verify_proxy_configuration()
         checks.require_graph(run_json(graph_command(self.new_backend), 'graph'), self.graph)
+
+    def render_compose_source(self, source):
+        if self.base[-2:] != ['-f', str(self.stack / 'docker-compose.yml')]:
+            raise RuntimeError('Expected the single installed Compose file for network preflight')
+        # --project-directory remains the installed stack, so relative mounts and
+        # env_file paths resolve exactly as they do for the on-disk Compose file.
+        with tempfile.TemporaryFile() as stream:
+            stream.write(source)
+            stream.seek(0)
+            try:
+                return json.loads(base.run(self.base[:-2] + ['-f', '-', 'config', '--format', 'json'], stdin=stream))
+            except (RuntimeError, ValueError):
+                # Compose diagnostics can contain interpolated server secrets.
+                raise RuntimeError('Compose network candidate could not be validated') from None
+
+    def prepare_network_transition(self):
+        self.network_transition = networks.NetworkTransition(
+            self.stack / 'docker-compose.yml', self.config, self.render_compose_source)
+        changed = self.network_transition.changed
+        print('Compose network preflight passed: ' + (
+            'will add persistent ingress to ' + ', '.join(changed) if changed else
+            'backend and worker already use default/ingress') + '.', flush=True)
 
     def require_transition(self):
         backend = self.services.get('backend', {})
@@ -230,6 +256,7 @@ class TransitionUpdate(app.ApplicationUpdate):
         plan = self.require_transition()
         if not plan:
             return self.apply_without_database_changes(folder)
+        self.verify_network_transition()
         self.check_space(folder)
         new_backend = self.wrap_image(self.new_backend)
         rollback_backend = self.wrap_image(self.old_backend)
@@ -254,6 +281,7 @@ class TransitionUpdate(app.ApplicationUpdate):
             if self.database_snapshot() != before or self.upload_snapshot() != uploads:
                 raise RuntimeError('Data changed during maintenance; inspect external writers')
             self.verify_database_identity()
+            self.apply_network_transition(folder)
             print('Applying the rehearsed ' + str(len(plan)) + ' migrations in one guarded PostgreSQL transaction...', flush=True)
             self.live_migration_container = 'sj-schema-live-' + uuid.uuid4().hex
             base.save_json(folder / 'live-migration.json', {'container': self.live_migration_container,
@@ -294,6 +322,7 @@ class TransitionUpdate(app.ApplicationUpdate):
                             uploads is not None and self.upload_snapshot() != uploads):
                         raise RuntimeError('Recovery review required; data retained, application remains closed')
                     (self.stack / 'images.env').write_bytes(old_images)
+                    self.rollback_network_transition()
                     self.set_images(rollback_backend, self.old_frontend, self.old_proxy)
                     self.start_application()
                     if before is not None and self.database_snapshot() != before:

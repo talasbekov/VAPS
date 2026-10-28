@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from '@tanstack/react-query'
-import { apiClient, type StrengthReportRow, type OpsEmployeeStatusRow, type OpsStatusType } from '@/lib/api'
+import { type StrengthReportRow, type OpsEmployeeStatusRow, type OpsStatusType } from '@/lib/api'
+import { useDailyExpenseRead } from '@/hooks/use-daily-expense-read'
 import { opsApiClient } from '@/lib/ops-api'
 import { useOpsPermissions } from '@/hooks/use-ops-permissions'
 import { useStrengthReport } from '@/hooks/use-strength-report'
@@ -82,24 +82,21 @@ export function groupDirectorates(divisions: ResponsibleDivision[], rows: Streng
 export function useResponsibleDaily(selectedDate?: string) {
   const access = useOpsPermissions()
   const scopeId = responsibleDepartmentScope(access.roles)
-  const { businessDate } = useBusinessDate(selectedDate)
-  const clock = useQuery({ queryKey: ['daily-expense-board', 'default-business-date'], queryFn: () => apiClient.getTomorrowBlockState({}), staleTime: 300_000 })
+  const { businessDate, clock } = useBusinessDate(selectedDate)
   const enabled = businessDate !== null && scopeId !== null && !access.isLoading && !access.error && access.hasPermission('status.view')
   const report = useStrengthReport(enabled, businessDate ?? undefined)
   const catalog = useOpsStatusTypes(enabled)
-  const divisions = useQuery({ queryKey: ['daily-expense-board', 'responsible-divisions', businessDate], enabled,
-    queryFn: async () => {
-      const response = await opsApiClient.get<{ results: ResponsibleDivision[] }>(`${DAILY_DIVISIONS_PATH}?business_date=${businessDate}`)
+  const divisions = useDailyExpenseRead('responsible-divisions', [businessDate], async (_signal, authorize) => {
+      const response = await opsApiClient.get<{ results: ResponsibleDivision[] }>(`${DAILY_DIVISIONS_PATH}?business_date=${businessDate}`, authorize)
       if (!Array.isArray(response.results) || response.results.some(row => typeof row.id !== 'string' || !(row.parent_id === null || typeof row.parent_id === 'string') || typeof row.without_status !== 'number' || !row.division_type)) throw new Error('Неполная структура подразделений')
       return response.results
-    } })
-  const submissions = useQuery({ queryKey: ['daily-expense-board', 'responsible-submissions', businessDate], enabled,
-    queryFn: async () => {
-      const response = await opsApiClient.get<{ results: unknown[] }>(`${DAILY_SUBMISSIONS_PATH}?business_date=${businessDate}`)
+    }, { enabled })
+  const submissions = useDailyExpenseRead('responsible-submissions', [businessDate], async (_signal, authorize) => {
+      const response = await opsApiClient.get<{ results: unknown[] }>(`${DAILY_SUBMISSIONS_PATH}?business_date=${businessDate}`, authorize)
       const parsed = parseSubmissionList(response)
       if (!Array.isArray(response.results) || parsed.length !== response.results.length) throw new Error('Некорректный ответ сдач')
       return parsed.filter(row => row.business_date === businessDate)
-    } })
+    }, { enabled })
   let data: ReturnType<typeof groupDirectorates> | null = null
   let structureError: string | null = null
   if (!access.isLoading && scopeId == null) structureError = 'Не определён единственный департамент роли'

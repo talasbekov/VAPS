@@ -1,8 +1,12 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
 from django.urls import path
+from organization_management.apps.ops.api.views_system_diagnostics import OpsSystemDiagnosticsView
+from organization_management.apps.ops.api.views_duty_templates import DutyTemplateViewSet
+from organization_management.apps.ops.api.views_object_inspections import ObjectInspectionViewSet
 from organization_management.apps.ops.api.views_resource_calculation import ResourceCalculationViewSet
 from rest_framework.routers import DefaultRouter
 from organization_management.apps.ops.api.views_assistant import OpsAssistantTaskViewSet
+from organization_management.apps.ops.api.views_assistant_settings import OpsAssistantSettingsView, OpsAssistantSettingsCheckView
 from organization_management.apps.ops.api.views_recon_materials import ReconMaterialsViewSet
 
 from organization_management.apps.ops.api.views_status_calendar import (
@@ -70,6 +74,8 @@ from organization_management.apps.ops.api.views import (
 )
 
 router = DefaultRouter()
+router.register('duty-templates', DutyTemplateViewSet, basename='ops-duty-templates')
+router.register('object-inspections', ObjectInspectionViewSet, basename='ops-object-inspections')
 router.register("assistant/tasks", OpsAssistantTaskViewSet, basename="ops-assistant-tasks")
 router.register("personal-duty", PersonalDutyViewSet, basename="ops-personal-duty")
 router.register("duty-register", DutyRegisterViewSet, basename="ops-duty-register")
@@ -274,6 +280,9 @@ router.register(
 # PUT /approval-route/ — замена маршрута целиком: роутер у коллекции знает
 # только GET/POST, поэтому явный путь стоит ПЕРЕД маршрутами роутера.
 urlpatterns = [
+    path('system-diagnostics/', OpsSystemDiagnosticsView.as_view()),
+    path("assistant-settings/", OpsAssistantSettingsView.as_view(), name="ops-assistant-settings"),
+    path("assistant-settings/check/", OpsAssistantSettingsCheckView.as_view(), name="ops-assistant-settings-check"),
     path("resource-calculations/", ResourceCalculationViewSet.as_view({"get": "list"}), name="ops-resource-calculations"),
     path("security-events/<str:event_id>/resource-calculation/", ResourceCalculationViewSet.as_view({"get": "retrieve", "put": "replace"}), name="ops-resource-calculation"),
     path("security-events/<str:event_id>/resource-calculation/export/", ResourceCalculationViewSet.as_view({"get": "export"}), name="ops-resource-calculation-export"),

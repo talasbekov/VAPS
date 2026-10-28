@@ -1,0 +1,326 @@
+{
+  "format": 1,
+  "postgresMajor": 16,
+  "rows": [
+    {
+      "kind": "constraints",
+      "table": "operations_opsforeignvisit",
+      "name": "chk_ops_foreign_visit_status",
+      "column": "status",
+      "original": "CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'READY'::character varying, 'APPROVED'::character varying])::text[])))",
+      "restored": "CHECK (((status)::text = ANY (ARRAY[('DRAFT'::character varying)::text, ('READY'::character varying)::text, ('APPROVED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "operations_opslegaldocument",
+      "name": "chk_ops_legal_document_kind",
+      "column": "kind",
+      "original": "CHECK (((kind)::text = ANY ((ARRAY['LAW'::character varying, 'ORDER'::character varying, 'REGULATION'::character varying, 'INSTRUCTION'::character varying])::text[])))",
+      "restored": "CHECK (((kind)::text = ANY (ARRAY[('LAW'::character varying)::text, ('ORDER'::character varying)::text, ('REGULATION'::character varying)::text, ('INSTRUCTION'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "operations_opslegaldocument",
+      "name": "chk_ops_legal_document_status",
+      "column": "status",
+      "original": "CHECK (((status)::text = ANY ((ARRAY['IN_FORCE'::character varying, 'UNDER_REVIEW'::character varying])::text[])))",
+      "restored": "CHECK (((status)::text = ANY (ARRAY[('IN_FORCE'::character varying)::text, ('UNDER_REVIEW'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "operations_opsprotectedperson",
+      "name": "chk_ops_protected_person_category",
+      "column": "category",
+      "original": "CHECK (((category)::text = ANY ((ARRAY['OURS'::character varying, 'FOREIGN'::character varying])::text[])))",
+      "restored": "CHECK (((category)::text = ANY (ARRAY[('OURS'::character varying)::text, ('FOREIGN'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_analytics_metric_definitions",
+      "name": "chk_ops_metric_unit",
+      "column": "unit",
+      "original": "CHECK (((unit)::text = ANY ((ARRAY['COUNT'::character varying, 'PERCENT'::character varying, 'MINUTES'::character varying, 'HOURS'::character varying])::text[])))",
+      "restored": "CHECK (((unit)::text = ANY (ARRAY[('COUNT'::character varying)::text, ('PERCENT'::character varying)::text, ('MINUTES'::character varying)::text, ('HOURS'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_attention_detectors",
+      "name": "chk_ops_detector_measure",
+      "column": "measure",
+      "original": "CHECK (((measure)::text = ANY ((ARRAY['ACKNOWLEDGEMENT_MISSING'::character varying, 'CONFLICT_SHARE'::character varying, 'UNFINISHED_OVERDUE'::character varying, 'UNCONFIRMED_OVERDUE'::character varying, 'SOURCE_AGE'::character varying])::text[])))",
+      "restored": "CHECK (((measure)::text = ANY (ARRAY[('ACKNOWLEDGEMENT_MISSING'::character varying)::text, ('CONFLICT_SHARE'::character varying)::text, ('UNFINISHED_OVERDUE'::character varying)::text, ('UNCONFIRMED_OVERDUE'::character varying)::text, ('SOURCE_AGE'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_attention_detectors",
+      "name": "chk_ops_detector_severity",
+      "column": "base_severity",
+      "original": "CHECK (((base_severity)::text = ANY ((ARRAY['CRITICAL'::character varying, 'WARNING'::character varying, 'INFO'::character varying])::text[])))",
+      "restored": "CHECK (((base_severity)::text = ANY (ARRAY[('CRITICAL'::character varying)::text, ('WARNING'::character varying)::text, ('INFO'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_attention_detectors",
+      "name": "chk_ops_detector_title",
+      "column": "title_code",
+      "original": "CHECK (((title_code)::text = ANY ((ARRAY['VERIFICATION_REQUIRED'::character varying, 'DATA_UNCONFIRMED'::character varying, 'THRESHOLD_EXCEEDED'::character varying, 'UNFINISHED_PROCESSES'::character varying, 'SOURCE_NOT_UPDATED'::character varying])::text[])))",
+      "restored": "CHECK (((title_code)::text = ANY (ARRAY[('VERIFICATION_REQUIRED'::character varying)::text, ('DATA_UNCONFIRMED'::character varying)::text, ('THRESHOLD_EXCEEDED'::character varying)::text, ('UNFINISHED_PROCESSES'::character varying)::text, ('SOURCE_NOT_UPDATED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_daily_submissions",
+      "name": "chk_ops_submission_event",
+      "column": "event",
+      "original": "CHECK (((event)::text = ANY ((ARRAY['CONFIRMED_NO_CHANGES'::character varying, 'CHANGED'::character varying, 'AMENDED'::character varying])::text[])))",
+      "restored": "CHECK (((event)::text = ANY (ARRAY[('CONFIRMED_NO_CHANGES'::character varying)::text, ('CHANGED'::character varying)::text, ('AMENDED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_duty_conflict_policy",
+      "name": "chk_ops_duty_policy_mode",
+      "column": "rest_after_duty_mode",
+      "original": "CHECK (((rest_after_duty_mode)::text = ANY ((ARRAY['HARD_BLOCK'::character varying, 'SOFT_OVERRIDE'::character varying])::text[])))",
+      "restored": "CHECK (((rest_after_duty_mode)::text = ANY (ARRAY[('HARD_BLOCK'::character varying)::text, ('SOFT_OVERRIDE'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_duty_monthly_plans",
+      "name": "chk_ops_duty_plan_state",
+      "column": "state_code",
+      "original": "CHECK (((state_code)::text = ANY ((ARRAY['DRAFT'::character varying, 'APPROVED'::character varying])::text[])))",
+      "restored": "CHECK (((state_code)::text = ANY (ARRAY[('DRAFT'::character varying)::text, ('APPROVED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_duty_shifts",
+      "name": "chk_ops_duty_shift_state",
+      "column": "state_code",
+      "original": "CHECK (((state_code)::text = ANY ((ARRAY['PLANNED'::character varying, 'ACKNOWLEDGED'::character varying, 'ACTIVE'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying])::text[])))",
+      "restored": "CHECK (((state_code)::text = ANY (ARRAY[('PLANNED'::character varying)::text, ('ACKNOWLEDGED'::character varying)::text, ('ACTIVE'::character varying)::text, ('COMPLETED'::character varying)::text, ('CANCELLED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_duty_types",
+      "name": "chk_ops_duty_type_target",
+      "column": "target_type",
+      "original": "CHECK (((target_type)::text = ANY ((ARRAY['OWN_OBJECT'::character varying, 'PROTECTED_OBJECT'::character varying])::text[])))",
+      "restored": "CHECK (((target_type)::text = ANY (ARRAY[('OWN_OBJECT'::character varying)::text, ('PROTECTED_OBJECT'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_employee_statuses",
+      "name": "excl_hard_status_overlap",
+      "column": "status_type_code",
+      "original": "EXCLUDE USING gist (employee_id WITH =, period WITH &&) WHERE ((((status_type_code)::text = ANY ((ARRAY['SICK_LEAVE'::character varying, 'LEAVE_BY_REPORT'::character varying, 'VACATION'::character varying, 'COMMAND'::character varying])::text[])) AND (cancelled_at IS NULL)))",
+      "restored": "EXCLUDE USING gist (employee_id WITH =, period WITH &&) WHERE ((((status_type_code)::text = ANY (ARRAY[('SICK_LEAVE'::character varying)::text, ('LEAVE_BY_REPORT'::character varying)::text, ('VACATION'::character varying)::text, ('COMMAND'::character varying)::text])) AND (cancelled_at IS NULL)))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_evaluation_work_items",
+      "name": "chk_ops_work_item_direction",
+      "column": "evaluation_direction",
+      "original": "CHECK (((evaluation_direction)::text = ANY ((ARRAY['SENIOR_TO_EMPLOYEE'::character varying, 'SENIOR_TO_GROUP'::character varying, 'EMPLOYEE_TO_SENIOR'::character varying])::text[])))",
+      "restored": "CHECK (((evaluation_direction)::text = ANY (ARRAY[('SENIOR_TO_EMPLOYEE'::character varying)::text, ('SENIOR_TO_GROUP'::character varying)::text, ('EMPLOYEE_TO_SENIOR'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_evaluation_work_items",
+      "name": "chk_ops_work_item_status",
+      "column": "status",
+      "original": "CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUBMITTED'::character varying])::text[])))",
+      "restored": "CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('SUBMITTED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_event_evaluations",
+      "name": "chk_ops_evaluation_direction",
+      "column": "evaluation_direction",
+      "original": "CHECK (((evaluation_direction)::text = ANY ((ARRAY['SENIOR_TO_EMPLOYEE'::character varying, 'SENIOR_TO_GROUP'::character varying, 'EMPLOYEE_TO_SENIOR'::character varying])::text[])))",
+      "restored": "CHECK (((evaluation_direction)::text = ANY (ARRAY[('SENIOR_TO_EMPLOYEE'::character varying)::text, ('SENIOR_TO_GROUP'::character varying)::text, ('EMPLOYEE_TO_SENIOR'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_event_evaluations",
+      "name": "chk_ops_evaluation_method",
+      "column": "method",
+      "original": "CHECK (((method)::text = ANY ((ARRAY['MANUAL'::character varying, 'SYSTEM_DEFAULT'::character varying])::text[])))",
+      "restored": "CHECK (((method)::text = ANY (ARRAY[('MANUAL'::character varying)::text, ('SYSTEM_DEFAULT'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_issued_documents",
+      "name": "chk_ops_issued_document_status",
+      "column": "status",
+      "original": "CHECK (((status)::text = ANY ((ARRAY['ISSUED'::character varying, 'SUPERSEDED'::character varying])::text[])))",
+      "restored": "CHECK (((status)::text = ANY (ARRAY[('ISSUED'::character varying)::text, ('SUPERSEDED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_notifications",
+      "name": "chk_ops_notif_kind",
+      "column": "kind",
+      "original": "CHECK (((kind)::text = ANY ((ARRAY['SUBMISSION_LAGGING'::character varying, 'EVENT_ACKNOWLEDGEMENT'::character varying, 'FORCES_REQUEST'::character varying, 'FORCES_REQUEST_DEPARTMENT'::character varying, 'PLACEMENT_RETURNED'::character varying, 'ACKNOWLEDGEMENT_DUE_SOON'::character varying, 'FORCES_RESPONSE'::character varying, 'ASSIGNMENT_DECLINED'::character varying, 'FORCES_REQUEST_SENT'::character varying, 'SUMMARY_SENT'::character varying])::text[])))",
+      "restored": "CHECK (((kind)::text = ANY (ARRAY[('SUBMISSION_LAGGING'::character varying)::text, ('EVENT_ACKNOWLEDGEMENT'::character varying)::text, ('FORCES_REQUEST'::character varying)::text, ('FORCES_REQUEST_DEPARTMENT'::character varying)::text, ('PLACEMENT_RETURNED'::character varying)::text, ('ACKNOWLEDGEMENT_DUE_SOON'::character varying)::text, ('FORCES_RESPONSE'::character varying)::text, ('ASSIGNMENT_DECLINED'::character varying)::text, ('FORCES_REQUEST_SENT'::character varying)::text, ('SUMMARY_SENT'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_placement_document_versions",
+      "name": "chk_ops_placement_document_version_status",
+      "column": "status",
+      "original": "CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'SUBMITTED'::character varying, 'APPROVED'::character varying, 'RETURNED'::character varying])::text[])))",
+      "restored": "CHECK (((status)::text = ANY (ARRAY[('DRAFT'::character varying)::text, ('SUBMITTED'::character varying)::text, ('APPROVED'::character varying)::text, ('RETURNED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_policy_section_versions",
+      "name": "chk_ops_section_version_code",
+      "column": "section_code",
+      "original": "CHECK (((section_code)::text = ANY ((ARRAY['CONFLICT_RULES'::character varying, 'PASSPORT_FRESHNESS'::character varying, 'RATING_POLICY'::character varying, 'ANALYTICS_LIMITS'::character varying, 'LOAD_POLICY'::character varying, 'ATTENTION_POLICY'::character varying, 'REPORT_LIMITS'::character varying, 'APPROVAL_POLICY'::character varying])::text[])))",
+      "restored": "CHECK (((section_code)::text = ANY (ARRAY[('CONFLICT_RULES'::character varying)::text, ('PASSPORT_FRESHNESS'::character varying)::text, ('RATING_POLICY'::character varying)::text, ('ANALYTICS_LIMITS'::character varying)::text, ('LOAD_POLICY'::character varying)::text, ('ATTENTION_POLICY'::character varying)::text, ('REPORT_LIMITS'::character varying)::text, ('APPROVAL_POLICY'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_policy_settings",
+      "name": "chk_ops_setting_kind",
+      "column": "kind",
+      "original": "CHECK (((kind)::text = ANY ((ARRAY['NUMBER'::character varying, 'CHOICE'::character varying])::text[])))",
+      "restored": "CHECK (((kind)::text = ANY (ARRAY[('NUMBER'::character varying)::text, ('CHOICE'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_policy_settings",
+      "name": "chk_ops_setting_section",
+      "column": "section_code",
+      "original": "CHECK (((section_code)::text = ANY ((ARRAY['CONFLICT_RULES'::character varying, 'PASSPORT_FRESHNESS'::character varying, 'RATING_POLICY'::character varying, 'ANALYTICS_LIMITS'::character varying, 'LOAD_POLICY'::character varying, 'ATTENTION_POLICY'::character varying, 'REPORT_LIMITS'::character varying, 'APPROVAL_POLICY'::character varying])::text[])))",
+      "restored": "CHECK (((section_code)::text = ANY (ARRAY[('CONFLICT_RULES'::character varying)::text, ('PASSPORT_FRESHNESS'::character varying)::text, ('RATING_POLICY'::character varying)::text, ('ANALYTICS_LIMITS'::character varying)::text, ('LOAD_POLICY'::character varying)::text, ('ATTENTION_POLICY'::character varying)::text, ('REPORT_LIMITS'::character varying)::text, ('APPROVAL_POLICY'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_rating_audit_entries",
+      "name": "chk_ops_rating_audit_event_code",
+      "column": "event_code",
+      "original": "CHECK (((event_code)::text = ANY ((ARRAY['EVALUATION_SUBMITTED'::character varying, 'EVALUATION_SCORE_CHANGED_FROM_INITIAL'::character varying, 'EVALUATION_LOW_SCORE_WITHOUT_COMMENT'::character varying, 'EVALUATION_CORRECTED'::character varying, 'EVALUATION_CORRECTION_REJECTED'::character varying, 'EVALUATION_ACCESS_DENIED'::character varying, 'RATING_EXPORT_REQUESTED'::character varying, 'RATING_EXPORT_DOWNLOADED'::character varying, 'RATING_EXPORT_REJECTED'::character varying])::text[])))",
+      "restored": "CHECK (((event_code)::text = ANY (ARRAY[('EVALUATION_SUBMITTED'::character varying)::text, ('EVALUATION_SCORE_CHANGED_FROM_INITIAL'::character varying)::text, ('EVALUATION_LOW_SCORE_WITHOUT_COMMENT'::character varying)::text, ('EVALUATION_CORRECTED'::character varying)::text, ('EVALUATION_CORRECTION_REJECTED'::character varying)::text, ('EVALUATION_ACCESS_DENIED'::character varying)::text, ('RATING_EXPORT_REQUESTED'::character varying)::text, ('RATING_EXPORT_DOWNLOADED'::character varying)::text, ('RATING_EXPORT_REJECTED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_rating_audit_entries",
+      "name": "chk_ops_rating_audit_outcome",
+      "column": "outcome",
+      "original": "CHECK (((outcome)::text = ANY ((ARRAY['SUCCESS'::character varying, 'REJECTED'::character varying])::text[])))",
+      "restored": "CHECK (((outcome)::text = ANY (ARRAY[('SUCCESS'::character varying)::text, ('REJECTED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_rating_dynamics_points",
+      "name": "chk_ops_dynamics_data_state",
+      "column": "data_state",
+      "original": "CHECK (((data_state)::text = ANY ((ARRAY['READY'::character varying, 'INSUFFICIENT_DATA'::character varying, 'POLICY_UNDEFINED'::character varying, 'FEATURE_DISABLED'::character varying])::text[])))",
+      "restored": "CHECK (((data_state)::text = ANY (ARRAY[('READY'::character varying)::text, ('INSUFFICIENT_DATA'::character varying)::text, ('POLICY_UNDEFINED'::character varying)::text, ('FEATURE_DISABLED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_rating_export_jobs",
+      "name": "chk_ops_rating_export_scope",
+      "column": "scope",
+      "original": "CHECK (((scope)::text = ANY ((ARRAY['AGGREGATE'::character varying, 'INDIVIDUAL'::character varying])::text[])))",
+      "restored": "CHECK (((scope)::text = ANY (ARRAY[('AGGREGATE'::character varying)::text, ('INDIVIDUAL'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_rating_export_jobs",
+      "name": "chk_ops_rating_export_state",
+      "column": "state",
+      "original": "CHECK (((state)::text = ANY ((ARRAY['QUEUED'::character varying, 'GENERATING'::character varying, 'READY'::character varying, 'FAILED'::character varying, 'CANCELLED'::character varying])::text[])))",
+      "restored": "CHECK (((state)::text = ANY (ARRAY[('QUEUED'::character varying)::text, ('GENERATING'::character varying)::text, ('READY'::character varying)::text, ('FAILED'::character varying)::text, ('CANCELLED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_event_transitions",
+      "name": "chk_ops_event_transition_kind",
+      "column": "kind",
+      "original": "CHECK (((kind)::text = ANY ((ARRAY['FORWARD'::character varying, 'RETURN'::character varying])::text[])))",
+      "restored": "CHECK (((kind)::text = ANY (ARRAY[('FORWARD'::character varying)::text, ('RETURN'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_event_transitions",
+      "name": "chk_ops_event_transition_to_stage",
+      "column": "to_stage",
+      "original": "CHECK (((to_stage)::text = ANY ((ARRAY['BULLETIN'::character varying, 'RECON'::character varying, 'DEMAND'::character varying, 'FORCES'::character varying, 'PLACEMENT'::character varying, 'APPROVAL'::character varying, 'ACKNOWLEDGEMENT'::character varying, 'CONDUCT'::character varying, 'CLOSED'::character varying])::text[])))",
+      "restored": "CHECK (((to_stage)::text = ANY (ARRAY[('BULLETIN'::character varying)::text, ('RECON'::character varying)::text, ('DEMAND'::character varying)::text, ('FORCES'::character varying)::text, ('PLACEMENT'::character varying)::text, ('APPROVAL'::character varying)::text, ('ACKNOWLEDGEMENT'::character varying)::text, ('CONDUCT'::character varying)::text, ('CLOSED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_event_visit_objects",
+      "name": "chk_ops_event_visit_object_stage",
+      "column": "stage",
+      "original": "CHECK (((stage)::text = ANY ((ARRAY['BULLETIN'::character varying, 'RECON'::character varying, 'DEMAND'::character varying, 'FORCES'::character varying, 'PLACEMENT'::character varying, 'APPROVAL'::character varying, 'ACKNOWLEDGEMENT'::character varying, 'CONDUCT'::character varying, 'CLOSED'::character varying])::text[])))",
+      "restored": "CHECK (((stage)::text = ANY (ARRAY[('BULLETIN'::character varying)::text, ('RECON'::character varying)::text, ('DEMAND'::character varying)::text, ('FORCES'::character varying)::text, ('PLACEMENT'::character varying)::text, ('APPROVAL'::character varying)::text, ('ACKNOWLEDGEMENT'::character varying)::text, ('CONDUCT'::character varying)::text, ('CLOSED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_events",
+      "name": "chk_ops_security_event_approval",
+      "column": "approval_status",
+      "original": "CHECK (((approval_status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'RETURNED'::character varying])::text[])))",
+      "restored": "CHECK (((approval_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('APPROVED'::character varying)::text, ('RETURNED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_events",
+      "name": "chk_ops_security_event_kind",
+      "column": "kind",
+      "original": "CHECK ((((kind)::text = ANY ((ARRAY['INTERNAL'::character varying, 'FOREIGN'::character varying])::text[])) OR (kind IS NULL)))",
+      "restored": "CHECK ((((kind)::text = ANY (ARRAY[('INTERNAL'::character varying)::text, ('FOREIGN'::character varying)::text])) OR (kind IS NULL)))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_events",
+      "name": "chk_ops_security_event_stage",
+      "column": "stage",
+      "original": "CHECK (((stage)::text = ANY ((ARRAY['BULLETIN'::character varying, 'RECON'::character varying, 'DEMAND'::character varying, 'FORCES'::character varying, 'PLACEMENT'::character varying, 'APPROVAL'::character varying, 'ACKNOWLEDGEMENT'::character varying, 'CONDUCT'::character varying, 'CLOSED'::character varying])::text[])))",
+      "restored": "CHECK (((stage)::text = ANY (ARRAY[('BULLETIN'::character varying)::text, ('RECON'::character varying)::text, ('DEMAND'::character varying)::text, ('FORCES'::character varying)::text, ('PLACEMENT'::character varying)::text, ('APPROVAL'::character varying)::text, ('ACKNOWLEDGEMENT'::character varying)::text, ('CONDUCT'::character varying)::text, ('CLOSED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_objects",
+      "name": "chk_ops_security_object_ownership",
+      "column": "ownership",
+      "original": "CHECK (((ownership)::text = ANY ((ARRAY['OWN'::character varying, 'GUARDED'::character varying])::text[])))",
+      "restored": "CHECK (((ownership)::text = ANY (ARRAY[('OWN'::character varying)::text, ('GUARDED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_objects",
+      "name": "chk_ops_security_object_passport_state",
+      "column": "passport_state",
+      "original": "CHECK (((passport_state)::text = ANY ((ARRAY['RED'::character varying, 'YELLOW'::character varying, 'GREEN'::character varying])::text[])))",
+      "restored": "CHECK (((passport_state)::text = ANY (ARRAY[('RED'::character varying)::text, ('YELLOW'::character varying)::text, ('GREEN'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_security_objects",
+      "name": "chk_ops_security_object_state",
+      "column": "object_state",
+      "original": "CHECK (((object_state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'ARCHIVED'::character varying])::text[])))",
+      "restored": "CHECK (((object_state)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('ARCHIVED'::character varying)::text])))"
+    },
+    {
+      "kind": "constraints",
+      "table": "ops_service_report_jobs",
+      "name": "chk_ops_report_job_state",
+      "column": "state",
+      "original": "CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'PROCESSING'::character varying, 'COMPLETED'::character varying, 'FAILED'::character varying])::text[])))",
+      "restored": "CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('PROCESSING'::character varying)::text, ('COMPLETED'::character varying)::text, ('FAILED'::character varying)::text])))"
+    },
+    {
+      "kind": "indexes",
+      "table": "ops_employee_statuses",
+      "name": "excl_hard_status_overlap",
+      "column": "status_type_code",
+      "original": "CREATE INDEX excl_hard_status_overlap ON public.ops_employee_statuses USING gist (employee_id, period) WHERE (((status_type_code)::text = ANY ((ARRAY['SICK_LEAVE'::character varying, 'LEAVE_BY_REPORT'::character varying, 'VACATION'::character varying, 'COMMAND'::character varying])::text[])) AND (cancelled_at IS NULL))",
+      "restored": "CREATE INDEX excl_hard_status_overlap ON public.ops_employee_statuses USING gist (employee_id, period) WHERE (((status_type_code)::text = ANY (ARRAY[('SICK_LEAVE'::character varying)::text, ('LEAVE_BY_REPORT'::character varying)::text, ('VACATION'::character varying)::text, ('COMMAND'::character varying)::text])) AND (cancelled_at IS NULL))"
+    }
+  ]
+}

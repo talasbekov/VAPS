@@ -5,6 +5,8 @@ x-logging: &logging
 x-backend-env: &backend-env
   DJANGO_SETTINGS_MODULE: organization_management.config.settings.lan
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Run configure.py}
+  DJANGO_SECRET_KEY_FALLBACKS: ${DJANGO_SECRET_KEY_FALLBACKS:-}
+  OPS_ASSISTANT_CREDENTIAL_KEYS: ${OPS_ASSISTANT_CREDENTIAL_KEYS:-}
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Run configure.py}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Run configure.py}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Run configure.py}
@@ -66,6 +68,8 @@ services:
     logging: *logging
   backend:
     <<: *backend
+    # API connection checks need a route to the configured LAN model.
+    networks: [default, ingress]
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -77,6 +81,8 @@ services:
       start_period: 180s
   worker:
     <<: *backend
+    # Background assistant processing calls the same LAN model.
+    networks: [default, ingress]
     entrypoint: [celery]
     # Планировщик beat встроен в worker (-B): один сервер, один worker —
     # отдельный контейнер только ел 100 МБ. Расписание живёт в томе beat.
@@ -135,7 +141,7 @@ services:
     logging: *logging
 networks:
   default: {internal: true}
-  # Proxy uses the normal bridge only to publish the configured LAN ports.
+  # Normal bridge for published LAN ports and backend/worker model egress.
   ingress: {driver: bridge}
 volumes:
   postgres:

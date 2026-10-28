@@ -113,7 +113,7 @@ class PermissionService:
         return cls.scope_matches(scope_division_id, division_id)
 
     @classmethod
-    def _active_grants(cls, user_id) -> list:
+    def _active_grants(cls, user_id, *, at=None) -> list:
         """Пары (scope_division_id, role_code) из ОБОИХ источников грантов —
         активных назначений ролей и активных (по окну времени) временных
         дежурств. Единственное перечисление за effective_permissions И
@@ -124,7 +124,7 @@ class PermissionService:
             (ur.scope_division_id, ur.role_code_id)
             for ur in OpsUserRoleSelector.active_for_user(user_id)
         ]
-        now = Clock.now()
+        now = at if at is not None else Clock.now()
         active_duties = TemporaryDutyPermission.objects.filter(
             user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now,
             duty_role_code__in=Role.objects.filter(is_active=True).values('code'),

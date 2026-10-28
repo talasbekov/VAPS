@@ -16,6 +16,7 @@ import {
   type InventoryCategory, type SkillKey, type HealthKey, type ServiceProfileDraft, type ServiceProfileResponse,
 } from '@/entities/service-employee/service-profile';
 import { useServiceEmployeeAuthority } from '../use-service-employee-authority';
+import { EmployeeQualificationsPanel } from './EmployeeQualificationsPanel';
 
 const selectClass = 'min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm';
 const skillKeys = Object.keys(SKILL_LABELS) as SkillKey[];
@@ -51,6 +52,9 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
     try {
       const result = await opsApiClient.put<ServiceProfileResponse>(endpoint, { revision: editing.revision, profile });
       client.setQueryData(queryKey, result);
+      // Qualifications share this revision; finish their refresh before allowing
+      // another assessment, otherwise the next save would conflict with ourselves.
+      await client.invalidateQueries({ queryKey: ['employee-qualifications', authority.key, employeeId] });
       setEditing(null); setMessage('Профиль сохранён.');
     } catch (error) {
       if (error instanceof OpsApiError && error.status === 409) {
@@ -77,6 +81,7 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
         else void query.refetch();
       }} isRetrying={query.isFetching} />}
       {message && <p role="status" className="text-sm">{message}</p>}
+      {data && <EmployeeQualificationsPanel key={`${authority.key}-${employeeId}`} employeeId={employeeId} legacyScores={data.profile.skills} disabled={Boolean(editing)} />}
       {data && (editing && draft && editable ? <form onSubmit={event => { event.preventDefault(); void save(); }} className="space-y-5">
         <fieldset disabled={busy} className="space-y-5">
           <div className="space-y-3">
@@ -99,9 +104,10 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
               <Button className="min-h-11" type="button" variant="outline" disabled={draft.inventory.length >= 100} onClick={() => change({ inventory: [...draft.inventory, { category: 'weapon', name: '', quantity: '' }] })}>Добавить позицию</Button>
             </>}
           </div>
-          <div className="space-y-3"><h3 className="font-semibold">Навыки · оценка от 1 до 5</h3>
+          <div className="space-y-3"><h3 className="font-semibold">Оценки навыков · от 1 до 5</h3>
+            <p className="text-sm text-muted-foreground">Оценку с историей проверок можно изменить только через «Записать проверку». Для остальных навыков здесь хранятся прежние сведения без подтверждающей записи.</p>
             <div className="grid gap-3 sm:grid-cols-3">{skillKeys.map(key => <label key={key} className="space-y-1 text-sm"><span>{SKILL_LABELS[key]}</span>
-              <select className={selectClass} value={draft.skills[key]} onChange={event => change({ skills: { ...draft.skills, [key]: event.target.value } })}>
+              <select className={selectClass} disabled={data.verified_skills?.includes(key)} value={draft.skills[key]} onChange={event => change({ skills: { ...draft.skills, [key]: event.target.value } })}>
                 <option value="">Не оценено</option>{[1, 2, 3, 4, 5].map(score => <option key={score} value={score}>{score}</option>)}
               </select></label>)}</div>
           </div>
@@ -121,17 +127,17 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
           <Button className="min-h-11" type="button" variant="outline" disabled={busy} onClick={() => { setEditing(null); setMessage(''); setConflict(false); void query.refetch(); }}>Отменить правки и обновить</Button>
         </div>
       </form> : <div className="space-y-5">
-        <div className="space-y-2"><h3 className="font-semibold">Личное вооружение и снаряжение</h3>
+        <details className="space-y-2"><summary className="cursor-pointer font-semibold">Личное вооружение и снаряжение{data.profile.inventory === null ? ' · не указано' : ` · ${data.profile.inventory.length} позиций`}</summary>
           {data.profile.inventory === null ? <p className="text-sm text-muted-foreground">Состав не указан.</p> : data.profile.inventory.length === 0 ? <p className="text-sm">Состав указан как пустой.</p> :
             <ul className="space-y-2">{data.profile.inventory.map((item, index) => <li className="break-words rounded-md border p-3 text-sm" key={index}><span className="text-muted-foreground">{INVENTORY_LABELS[item.category]} · </span>{item.name}<strong> — {item.quantity} шт.</strong></li>)}</ul>}
-        </div>
-        <dl className="grid gap-3 sm:grid-cols-3">{skillKeys.map(key => <div key={key}><dt className="text-sm text-muted-foreground">{SKILL_LABELS[key]}</dt><dd>{data.profile.skills[key] === null ? 'Не оценено' : `${data.profile.skills[key]} / 5`}</dd></div>)}
+        </details>
+        <dl className="grid gap-3 sm:grid-cols-3">
           <div><dt className="text-sm text-muted-foreground">Рост</dt><dd>{data.profile.height_cm === null ? 'Не указан' : `${data.profile.height_cm} см`}</dd></div>
           <div><dt className="text-sm text-muted-foreground">Вес</dt><dd>{data.profile.weight_kg === null ? 'Не указан' : `${data.profile.weight_kg} кг`}</dd></div>
         </dl>
-        <div className="space-y-3"><h3 className="font-semibold">Сведения о здоровье</h3>
+        <details className="space-y-3"><summary className="cursor-pointer font-semibold">Сведения о здоровье</summary>
           <dl className="space-y-3">{healthKeys.map(key => <div key={key}><dt className="text-sm text-muted-foreground">{HEALTH_LABELS[key]}</dt><dd className="whitespace-pre-wrap break-words">{data.profile.health[key] || 'Не указано'}</dd></div>)}</dl>
-        </div>
+        </details>
         <p className="text-sm text-muted-foreground">{data.profile.updated_at ? `Обновлено ${formatIsoDateTime(data.profile.updated_at)}` : 'Профиль ещё не заполнен.'}</p>
         {editable && <Button className="min-h-11" type="button" variant="outline" disabled={query.isFetching} onClick={() => {
           setEditing({ revision: data.revision, draft: draftFromProfile(data.profile) }); setMessage(''); setConflict(false);

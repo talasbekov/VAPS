@@ -43,7 +43,7 @@ test('navigation map keeps global unknown-route compatibility plus existing OR a
 });
 
 test('OM assistant requires a real initiating or headquarters capability', () => {
-  for (const permission of ['event.create', 'event.manage', 'forces.command', '*']) {
+  for (const permission of ['event.create', 'event.manage', 'event.bulletin', 'forces.command', '*']) {
     assert.equal(moduleOpenFor('/security-ops/assistant', granted(permission)), true);
   }
   for (const permission of ['status.view', 'event.view', 'forces.allocate', 'forces.select']) {

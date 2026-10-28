@@ -28,7 +28,8 @@
 // ТОЛЬКО при раскрытии строки — при схлопывании её место занимает лёгкий
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { ChevronRight, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -109,6 +110,8 @@ export interface DivisionRowVM {
   /** Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №235). */
   path: string[];
   listTotal: number;
+  /** Submission saves this division and its descendants, unlike the direct row. */
+  submissionListTotal: number;
   columns: Record<string, number>;
   /** Сдаёт ли ДЕНЬ ЗА ЭТО управление тот, кто смотрит (область права сдачи с
    * бэка, а не догадка фронта). Только он вправе раскрыть список ДО сдачи —
@@ -125,6 +128,7 @@ export interface DivisionRowVM {
  * читатели (`LeadershipStrip`, аналитика) продолжают читать своё. */
 interface DailyDivisionRow {
   id: string;
+  parent_id?: string | null;
   name: string;
   division_type?: string | null;
   ancestors?: string[];
@@ -292,18 +296,15 @@ function DivisionGroup({
   // экрана). Совпадением ключа своя ленивая загрузка молча превратилась бы в
   // чужой уже тёплый кэш — раскрытие строки не делало бы запроса вовсе, и
   // фильтр `division_id` было бы нечем проверить.
-  const employees = useQuery<DailyEmployeesResponse>({
-    queryKey: ["daily-expense-board", "employees", row.id, businessDate],
-    queryFn: () =>
+  const employees = useDailyExpenseRead<DailyEmployeesResponse>("employees", [row.id, businessDate], (_signal, authorize) =>
       opsApiClient.get<DailyEmployeesResponse>(
-        `${DAILY_EMPLOYEES_PATH}?division_id=${row.id}&business_date=${businessDate}`
-      ),
+        `${DAILY_EMPLOYEES_PATH}?division_id=${row.id}&business_date=${businessDate}`, authorize
+      ), {
     enabled: open,
     staleTime: 5 * 60 * 1000,
   });
-  const statuses = useQuery<OpsEmployeeStatusRow[]>({
-    queryKey: ["daily-expense-board", "statuses", row.id, businessDate],
-    queryFn: () => apiClient.getOpsStatusesOn({ businessDate, divisionId: row.id }),
+  const statuses = useDailyExpenseRead<OpsEmployeeStatusRow[]>("statuses", [row.id, businessDate],
+    () => apiClient.getOpsStatusesOn({ businessDate, divisionId: row.id }), {
     enabled: open,
   });
 
@@ -423,7 +424,7 @@ function DivisionGroup({
             divisionId={String(row.id)}
             businessDate={businessDate}
             dateValid={true}
-            rowCount={row.listTotal}
+            rowCount={row.submissionListTotal}
             dirtyCount={0}
             localDrift={[]}
             submission={submissionsSummary.submission}
@@ -745,10 +746,9 @@ export function DailyExpenseBoard({
   // (`/api/ops/daily/divisions/`, Plane №235), а не полем строки расхода:
   // строка расхода собирается службой отчёта, которую читают ещё и выгрузки
   // DOCX/CSV/XLSX, и ради подписи на экране её контракт не трогаем.
-  const divisionsQuery = useQuery<{ results: DailyDivisionRow[] }>({
-    queryKey: ["daily-expense-board", "divisions"],
-    queryFn: () =>
-      opsApiClient.get<{ results: DailyDivisionRow[] }>(DAILY_DIVISIONS_PATH),
+  const divisionsQuery = useDailyExpenseRead("divisions", [resolvedBusinessDate], (_signal, authorize) =>
+      opsApiClient.get<{ results: DailyDivisionRow[] }>(`${DAILY_DIVISIONS_PATH}?business_date=${encodeURIComponent(resolvedBusinessDate ?? "")}`, authorize), {
+    enabled: gateAllowed && resolvedBusinessDate !== null,
     staleTime: 5 * 60_000,
   });
   // Один индекс на все поля строки подразделения, а не карта на поле: с
@@ -831,6 +831,21 @@ export function DailyExpenseBoard({
   // сужение non-null через замыкание `.map`, обращённое к полю объекта.
   const data = strength.data;
   const totals = data?.totals;
+  const submissionListTotals = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of data?.rows ?? []) {
+      let id: string | null = String(row.division_id);
+      const seen = new Set<string>();
+      // Report rows count direct staff. The saved submission includes the
+      // subtree, so contribute each exact row once to each of its ancestors.
+      while (id !== null && !seen.has(id)) {
+        seen.add(id);
+        counts.set(id, (counts.get(id) ?? 0) + row.list_total);
+        id = metaByDivision.get(id)?.parent_id ?? null;
+      }
+    }
+    return counts;
+  }, [data, metaByDivision]);
   // Cached values keep the same forms mounted during a read retry. They
   // never authorize writes until the date, figures and scope are current.
   const dateReady = resolvedBusinessDate !== null && !dateError &&
@@ -856,14 +871,12 @@ export function DailyExpenseBoard({
   // `division_id` — поддержан живой ручкой), раздавая срез каждой строке.
   const businessDate = data?.business_date ?? null;
   const dateValid = businessDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
-  const submissionsListQuery = useQuery({
-    queryKey: ["daily-expense-board", "submissions", businessDate],
-    queryFn: () =>
+  const submissionsListQuery = useDailyExpenseRead("submissions", [businessDate], (_signal, authorize) =>
       opsApiClient.get<unknown>(
         `${DAILY_SUBMISSIONS_PATH}?business_date=${encodeURIComponent(
           businessDate as string
-        )}&limit=200`
-      ),
+        )}&limit=200`, authorize
+      ), {
     // Гейт права — тот же, что у расхода выше: без `status.view` ручка
     // ответила бы 403, и сводка сдачи прочла бы отказ как «нечем посчитать».
     enabled: gateAllowed && dateValid,
@@ -886,7 +899,7 @@ export function DailyExpenseBoard({
       const key = event.query.queryKey;
       if (key[0] !== "ops-daily" || key[1] !== "division-submissions") return;
       void queryClient.invalidateQueries({
-        queryKey: ["daily-expense-board", "submissions", businessDate],
+        queryKey: ["daily-expense-board", "submissions"],
       });
     });
   }, [queryClient, businessDate]);
@@ -1117,6 +1130,7 @@ export function DailyExpenseBoard({
           {!listIsPending && listIsError && (
             <p role="alert" className="text-muted-foreground">
               Не удалось узнать, кто сдал день — сводка недоступна
+              {" "}<Button variant="link" size="sm" onClick={() => void submissionsListQuery.refetch()}>Повторить загрузку</Button>
             </p>
           )}
           {!listIsPending && !listIsError && (
@@ -1159,7 +1173,8 @@ export function DailyExpenseBoard({
         <p className="text-muted-foreground text-sm">Загрузка структуры для свода…</p>
       )}
       {data && divisionsQuery.isError && (
-        <p role="alert" className="text-destructive-ink text-sm">Не удалось загрузить структуру для свода. Повторите обновление.</p>
+        <p role="alert" className="text-destructive-ink text-sm">Не удалось загрузить структуру для свода.
+          {" "}<Button variant="link" size="sm" onClick={() => void divisionsQuery.refetch()}>Повторить загрузку</Button></p>
       )}
 
       {/* «Руководство департамента» — ПЕРВЫМ среди рядовых управлений,
@@ -1177,6 +1192,7 @@ export function DailyExpenseBoard({
               name: row.name,
               path: meta?.ancestors ?? [],
               listTotal: row.list_total,
+              submissionListTotal: submissionListTotals.get(String(row.division_id)) ?? row.list_total,
               columns: row.columns,
               // Пока список подразделений не ответил, право сдачи считается
               // ОТСУТСТВУЮЩИМ: «не знаем» здесь обязано читаться как «нельзя»,

@@ -8,11 +8,13 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { AssistantBrief } from "@/features/om-assistant/brief";
+import { AssistantBriefingSummary } from "@/features/om-assistant/briefing-summary";
+import { AssistantConversation } from "@/features/om-assistant/conversation";
 import { AssistantProgress } from "@/features/om-assistant/progress";
 import { STAGE_LABEL, STAGE_ORDER } from "@/entities/security-event/model/stage-meta";
 import { SECURITY_EVENT_KIND_LABEL } from "@/entities/security-event/model/types";
 import { useAssistantAccess, useAssistantCatalogs, useAssistantConfiguration, useAssistantTask, useAssistantTasks, useAssistantWriter } from "@/features/om-assistant/api";
-import { ASSISTANT_PATH, assistantDate, assistantTaskTitle, assistantListPage, assistantPageHref, assistantQueuePagination, assistantTaskHref, draftFromPlan, fieldsFromDraft, isTaskId, reconConfirmed, requestsSent, taskNextAction, taskPresentation, taskSteps,
+import { ASSISTANT_PATH, assistantDate, assistantTaskTitle, assistantListPage, assistantPageHref, assistantQueuePagination, assistantTaskHref, assistantGuidance, assistantProcessingBusy, draftFromPlan, fieldsFromDraft, isTaskId, reconConfirmed, requestsSent, taskNextAction, taskPresentation, taskSteps,
   type AssistantCatalogs, type AssistantDraft, type AssistantFields, type AssistantTask, type AssistantTaskList } from "@/features/om-assistant/model";
 
 const panel = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900";
@@ -51,6 +53,7 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
   const presentation = taskPresentation(task);
   const nextAction = taskNextAction(task);
   const sent = requestsSent(task);
+  const answerInDialogue = task.processing?.state === "ready" && task.canEdit && task.canMessage === true && assistantGuidance(task).remaining > 0 && !sent;
   const linkedStage = task.status === "event_unavailable" ? undefined : STAGE_ORDER.find(stage => stage === task.event?.stage);
   const departmentNames = new Map(departments.map(row => [row.id, row.name]));
   return <section className={panel} aria-label="Состояние поручения">
@@ -62,15 +65,18 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
     </div>
     <dl aria-label="Сведения поручения" className="mt-4 grid gap-3 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700 sm:grid-cols-3">
       <div><dt className="text-slate-500">Дата ОМ</dt><dd className="font-medium">{assistantDate(task.plan.businessDate)}{task.plan.businessDateEnd && task.plan.businessDateEnd !== task.plan.businessDate ? ` — ${assistantDate(task.plan.businessDateEnd)}` : ""}</dd></div>
-      <div><dt className="text-slate-500">Объект</dt><dd className="break-words font-medium">{task.plan.objectName || (task.plan.objectId ? "Объект выбран; название недоступно" : "Не указан")}</dd></div>
+      <div><dt className="text-slate-500">{task.plan.briefing?.objects.length ? "Объекты" : "Объект"}</dt><dd className="break-words font-medium">{task.plan.briefing?.objects.length ? `В поручении: ${task.plan.briefing.objects.length}; сведения ниже` : task.plan.objectName || (task.plan.objectId ? "Объект выбран; название недоступно" : "Не указан")}</dd></div>
       <div><dt className="text-slate-500">Людей по поручению</dt><dd className="font-medium">{task.plan.personnelTotal ?? "Не указано"}</dd></div>
     </dl>
+    <AssistantBriefingSummary briefing={task.plan.briefing} pending={task.plan.briefingPending} questions={task.questions} />
     <AssistantProgress task={task} />
     <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
       <h3 className="font-semibold">{nextAction.title}</h3>
       <p className="text-sm text-slate-500">Следующий шаг выполняет</p><p className="font-semibold">{nextAction.owner}</p>
       <p className="mt-1 text-sm leading-relaxed">{nextAction.description}</p>
-      {nextAction.canCorrect && <Button asChild variant="outline" className="mt-3"><a href="#assistant-correction" onClick={event => {
+      {answerInDialogue ? <Button asChild variant="outline" className="mt-3"><a href="#assistant-answer" onClick={event => {
+        event.currentTarget.ownerDocument.getElementById("assistant-answer")?.querySelector("textarea")?.focus();
+      }}>Продолжить диалог</a></Button> : nextAction.canCorrect && <Button asChild variant="outline" className="mt-3"><a href="#assistant-correction" onClick={event => {
         event.currentTarget.ownerDocument.getElementById("assistant-correction")?.setAttribute("open", "");
       }}>Уточнить сведения</a></Button>}
       {task.event && task.status !== "event_unavailable" && <p className="mt-2 text-sm">
@@ -242,8 +248,8 @@ function TaskCorrection({ task, acknowledged, catalogs, disabled, save }: { task
       }
     } catch (value) { setError(value instanceof Error ? value.message : "Проверьте сведения."); }
   };
-  return <details id="assistant-correction" tabIndex={-1} className={`${panel} scroll-mt-6`} open={task.questions.length > 0}>
-    <summary className="cursor-pointer font-semibold">{task.questions.length ? "Уточнить сведения" : "Изменить предложение запросов"}</summary>
+  return <details id="assistant-correction" tabIndex={-1} className={`${panel} scroll-mt-6`} open={!task.processing && task.questions.length > 0}>
+    <summary className="cursor-pointer font-semibold">{task.processing ? "Уточнить сведения вручную" : task.questions.length ? "Уточнить сведения" : "Изменить предложение запросов"}</summary>
     <div className="mt-4">
       {conflict && <div role="status" className="mb-4 space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
         <p><strong>Поручение изменилось.</strong> Ваш ввод остался в форме и ещё не отправлен. Проверьте обновлённую карточку выше. Можно загрузить сохранённые сведения или продолжить со своими правками — они заменят предложение инициатора.</p>
@@ -355,7 +361,9 @@ function AssistantAuthorizedWorkspace() {
         {taskId && !task && !selected.isError && <p className={panel} role="status">Загружаем поручение…</p>}
         {taskId && selected.isError && <div className={panel} role="alert"><p>{selected.readAccessBlocked ? "Поручение недоступно для текущего пользователя." : "Не удалось обновить поручение. Действия временно недоступны."}</p><Button className="mt-3" variant="outline" onClick={() => void selected.refetch()}>Обновить поручение</Button></div>}
         {task && <>
-          {task.interpretationNotice && <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" aria-label="Проверка распознанных сведений">
+          {task.processing && <AssistantConversation key={`${access.scope}-${task.id}`} task={task} acknowledged={acknowledged}
+            disabled={frozen || !selected.canAct} pending={writer.pending} send={writer.sendMessage} retry={writer.retryProcessing} />}
+          {task.interpretationNotice && !task.processing && <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" aria-label="Проверка распознанных сведений">
             <p role="status">Поручение сохранено, но автоматический разбор текста не завершён.</p>
             <p className="mt-2">{requestsSent(task)
               ? "Текущее состояние и результаты действий показаны в карточке ниже."
@@ -365,11 +373,11 @@ function AssistantAuthorizedWorkspace() {
             <details className="mt-3"><summary className="cursor-pointer">Подробности разбора</summary><p className="mt-2 break-words">{task.interpretationNotice}</p></details>
           </section>}
           <AssistantTaskCard task={task} canViewEvent={permissions.hasPermission("event.view")} canCommand={permissions.hasPermission("forces.command")} isHeadquarters={headquarters} departments={catalogs.data?.departments} />
-          {task.questions.length > 0 && (!task.canEdit || requestsSent(task)) && <section className={panel} aria-label="Нужны сведения"><h2 className="font-semibold">Что нужно уточнить</h2><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{task.questions.map((question, index) => <li key={`${question.field}-${index}`}>{question.text}</li>)}</ul>
+          {task.questions.length > 0 && !task.processing && (!task.canEdit || requestsSent(task)) && <section className={panel} aria-label="Нужны сведения"><h2 className="font-semibold">Что нужно уточнить</h2><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{task.questions.map((question, index) => <li key={`${question.field}-${index}`}>{question.text}</li>)}</ul>
             {!task.canEdit && <p className="mt-3 text-sm text-slate-500">Сведения уточняет инициатор поручения. Штаб продолжит работу после уточнения.</p>}</section>}
-          <TaskCorrection key={`${access.scope}-${task.id}`} task={task} acknowledged={acknowledged} catalogs={catalogs.data} disabled={frozen || !selected.canAct} save={(fields, revision) => writer.continueTask(fields, revision)} />
-          <div className="flex flex-wrap gap-2">{task.canContinue === true && <Button disabled={frozen || !selected.canAct || task.questions.length > 0 || task.status === "event_unavailable"} onClick={() => void writer.continueTask()}>{writer.pending ? "Отправляем запросы…" : "Выполнить отправку от своего имени"}</Button>}
-            <Button variant="outline" disabled={writer.pending || selected.isFetching} onClick={() => { writer.reset(); void selected.refetch(); void tasks.refetch(); }}>Обновить состояние</Button></div>
+          <TaskCorrection key={`${access.scope}-${task.id}`} task={task} acknowledged={acknowledged} catalogs={catalogs.data} disabled={frozen || !selected.canAct || assistantProcessingBusy(task)} save={(fields, revision) => writer.continueTask(fields, revision)} />
+          <div className="flex flex-wrap gap-2">{task.canContinue === true && <Button disabled={frozen || !selected.canAct || assistantProcessingBusy(task) || task.processing?.state === "failed" || assistantGuidance(task).remaining > 0 || task.status === "event_unavailable"} onClick={() => void writer.continueTask()}>{writer.pending ? "Выполняем действие…" : !task.event ? "Создать ОМ от своего имени" : "Выполнить отправку от своего имени"}</Button>}
+            <Button variant="outline" disabled={writer.pending || selected.isFetching} onClick={() => { if (!writer.retryable) writer.reset(); void selected.refetch(); void tasks.refetch(); }}>Обновить состояние</Button></div>
           {!task.canEdit && <p className="text-xs text-slate-500">Предложение редактирует инициатор поручения.</p>}
         </>}
         {(formError || writer.error) && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-950 dark:bg-red-950 dark:text-red-100" role="alert"><p>{formError ?? writer.error}</p>

@@ -4,10 +4,11 @@ No mutation or authorization is performed here. Callers must authorize catalog
 access before invoking this module; execution re-enters the manual API boundary.
 """
 import re
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models_object import OpsSecurityObject
+from . import briefing
 
 
 class ProposalError(ValueError):
@@ -15,7 +16,7 @@ class ProposalError(ValueError):
 
 
 TEXT_FIELDS = ("title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectName", "eventCode")
-ALLOWED_FIELDS = {*TEXT_FIELDS, "intent", "allocations", "personnelTotal"}
+ALLOWED_FIELDS = {*TEXT_FIELDS, "intent", "allocations", "personnelTotal", "briefing"}
 
 
 def _optional_text(value, limit=255):
@@ -30,6 +31,11 @@ def validate_proposal(value):
     if not isinstance(value, dict) or set(value) - ALLOWED_FIELDS:
         raise ProposalError("Неизвестная структура предложения.")
     result = {key: _optional_text(value.get(key)) for key in TEXT_FIELDS}
+    try:
+        if value.get("briefing") is not None:
+            result["briefing"] = briefing.validate_briefing(value["briefing"])
+    except ValueError as error:
+        raise ProposalError(str(error)) from error
     total = value.get("personnelTotal")
     if total is not None and (type(total) is not int or not 1 <= total <= 100000):
         raise ProposalError("Количество людей по поручению должно быть целым числом от1 до100000.")
@@ -123,7 +129,7 @@ _NUMBERED_DEPARTMENT = re.compile(
     + r"|" + _ORDINAL_WORD + r")(?![а-яa-z_])"
 )
 _BEFORE_QUANTITY = re.compile(r"(?<!\w)(?P<count>" + _COUNT + r")\s*(?:" + _PEOPLE + r"\s+)?(?:из|от|в|во|у|для)\s*$")
-_AFTER_QUANTITY = re.compile(r"^\s*(?:[,;:—–=\-]\s*)?(?:(?:нужно|нужны|надо|выделить|выдели|по)\s+)?(?P<count>" + _COUNT + r")")
+_AFTER_QUANTITY = re.compile(r"^\s*(?:[,;:—–=\-]\s*)?(?:(?:нужно|нужны|надо|выделить|выдели|оставь|оставить|по)\s+)?(?P<count>" + _COUNT + r")")
 _NOT_PERSONNEL = re.compile(r"^\s*(?:[./\-]\d|(?:пост|смен|час|дн|сут|департамент)\w*\b)")
 
 
@@ -242,10 +248,35 @@ def _day_of_month(message):
     return True, candidate.isoformat()
 
 
+def literal_date(message):
+    """A whole date answer is unambiguous even when supplied out of order."""
+    from organization_management.apps.operations.clock import Clock
+    source = message.strip().casefold().replace('ё', 'е').rstrip('.!')
+    if source in {'сегодня', 'завтра', 'послезавтра'}:
+        return (Clock.today_local() + timedelta(days={'сегодня': 0, 'завтра': 1, 'послезавтра': 2}[source])).isoformat()
+    for pattern in ('%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(source, pattern).date().isoformat()
+        except ValueError:
+            pass
+    if _CALENDAR_DAY.fullmatch(source):
+        return _day_of_month(source)[1]
+    return None
+
+
 def _personnel_total_evidence(message):
     """A standalone people count is not a department quota or a post quantity."""
     source = message.casefold().replace("ё", "е")
     candidates = []
+    explicit_positions = set()
+    for match in re.finditer(r"\b(?:всего|общее количество|общий итог)\s*(?:нужно\s+|надо\s+|требуется\s+)?[:=—]?\s*([+\-]?\d+(?:[.,]\d+)?)", source):
+        raw = match[1]
+        if not raw.isascii() or not raw.isdigit() or len(raw) > 6 or not 1 <= int(raw) <= 100000:
+            return None, True
+        if re.search(r"\b(?:не|или|либо|вместо)\b", source):
+            return None, True
+        explicit_positions.add(match.start(1))
+        candidates.append(int(raw))
     recipient_counts = set()
     for department in _NUMBERED_DEPARTMENT.finditer(source):
         before = _BEFORE_QUANTITY.search(source[:department.start()])
@@ -259,7 +290,7 @@ def _personnel_total_evidence(message):
         ends = [source.find(mark, match.end()) for mark in (",", ";", "\n")]
         end = min((pos for pos in ends if pos >= 0), default=len(source))
         clause = source[start:end]
-        if match.start(1) in recipient_counts:
+        if match.start(1) in recipient_counts or match.start(1) in explicit_positions:
             continue
         if re.search(r"\b(?:не|или|либо|вместо)\b", clause):
             return None, True
@@ -296,7 +327,7 @@ def _object_mentions(source, name):
     return matches
 
 
-def complete_explicit_proposal(message, proposal, *, object_names):
+def complete_explicit_proposal(message, proposal, *, object_names, previous_briefing=None):
     """Complete explicit initial-task facts without choosing authority or IDs.
 
     Catalog names are supplied by the caller's existing catalog policy. This
@@ -330,7 +361,20 @@ def complete_explicit_proposal(message, proposal, *, object_names):
     mentioned, day = _day_of_month(message)
     if mentioned:
         clean["businessDate"] = day
+    elif literal_date(message):
+        clean['businessDate'] = literal_date(message)
     clean["personnelTotal"] = _personnel_total(message)
+    try:
+        structured = briefing.extract_briefing(message, object_names=object_names, previous=previous_briefing)
+        if structured:
+            clean["briefing"] = structured
+    except ValueError as error:
+        raise ProposalError(str(error)) from error
+    if clean.get("briefing"):
+        clean["objectName"] = None
+        # Separate per-object amounts are not a declaration of one event total.
+        if clean["briefing"].get("objects"):
+            clean["personnelTotal"] = None
     return clean
 
 
@@ -342,6 +386,9 @@ def ground_proposal(message, proposal):
     """
     from organization_management.apps.operations.clock import Clock
     clean = validate_proposal(proposal)
+    # Model-supplied nested facts/IDs are never authoritative. The explicit text
+    # is grounded with the actor's object catalog in complete_explicit_proposal.
+    clean.pop("briefing", None)
     source = message.casefold().replace("ё", "е")
     normalized = normalized_name(message)
     if clean["title"] and normalized_name(clean["title"]) not in normalized:
@@ -393,6 +440,23 @@ def resolve_plan(proposal, *, actor_id):
     clean = validate_proposal(proposal)
     plan = {**clean, "objectId": None, "eventId": None, "questions": []}
     plan["allocations"] = []
+    if clean.get("briefing"):
+        from .briefing_execution import resolve_briefing_references
+        from organization_management.apps.operations.services import PermissionService
+        structured = clean["briefing"]
+        permissions = PermissionService.effective_permissions(actor_id)
+        objects = list(OpsSecurityObject.objects.all().only("id", "name")) if permissions & {"*", "event.create", "event.manage", "gvo.manage"} else []
+        for obj in structured.get("objects", []):
+            matches = [row for row in objects if normalized_name(row.name) == normalized_name(obj["name"])]
+            obj.pop("objectId", None)
+            if len(matches) == 1:
+                obj["objectId"] = str(matches[0].pk)
+            else:
+                plan["questions"].append(question("briefing", f"Уточните объект «{obj['name']}»: нет однозначной записи справочника."))
+        structured, reference_questions = resolve_briefing_references(structured, actor_id=actor_id)
+        plan["briefing"] = structured
+        plan["questions"].extend(reference_questions)
+        plan["questions"].extend(briefing.completeness_questions(structured))
     for key, text in (("title", "Как называется мероприятие?"), ("businessDate", "На какую дату нужен наряд?"), ("kind", "Мероприятие внутреннее или с участием иностранных лиц?")):
         if not clean[key] and not clean["eventCode"]:
             plan["questions"].append(question(key, text))
@@ -418,3 +482,116 @@ def resolve_plan(proposal, *, actor_id):
     if clean["intent"] == "send" and not clean["allocations"]:
         plan["questions"].append(question("allocations", "Уточните департаменты и количество людей для каждого: текст не даёт однозначного распределения."))
     return plan
+
+
+def check_total(plan):
+    total = plan.get("personnelTotal")
+    rows = plan.get("allocations", [])
+    if total is not None and rows and sum(row["need"] for row in rows) != total:
+        plan["questions"].append(question("personnelTotal", "Общее количество людей не совпадает с суммой по департаментам. Уточните итог или распределение перед продолжением."))
+
+
+def _correction_source(message, old):
+    source = message.casefold().replace("ё", "е")
+    known = {department_name_key(row["departmentName"]) for row in old.get("allocations", [])}
+    for stem, number in _ORDINALS.items():
+        if f"department:{number}" in known:
+            source = re.sub(r"\b(" + stem + r"(?:ого|его|ому|ему|ом|ем|ой|ый|ий))\b(?!\s+департамент)", r"\1 департамента", source)
+    return source
+
+
+def merge_dialogue_plan(message, proposal, old, *, actor_id, object_names, patch=None, guidance_binding=None):
+    from .execution import make_plan
+    from . import guided_answers
+    answer = guided_answers.prepare(message, old, guidance_binding)
+    if answer['handled']:
+        # A scoped count/name/result is not a new global model proposal.
+        message, proposal = '', {}
+    clean = complete_explicit_proposal(message, proposal, object_names=object_names, previous_briefing=old.get("briefing"))
+    source = dict(old.get("proposal", {}))
+    changes = {key: value for key, value in clean.items() if value is not None and key not in {"allocations", "intent"}}
+    if clean.get("briefing"):
+        changes["briefing"] = briefing.merge_briefing(old.get("briefing"), clean["briefing"])
+        source.pop("objectName", None)
+        changes.pop("objectName", None)
+        changes.pop("personnelTotal", None)
+    changes.update(answer['changes'])
+    if answer['changes'].get('briefing'):
+        source.pop('objectName', None)
+        changes.pop('objectName', None)
+        changes.pop('personnelTotal', None)
+    evidence = _correction_source(message, old)
+    rows = clean.get("allocations", [])
+    # Explicit short corrections can refer to a previously named department.
+    # Try only user-supplied integer counts, then require the same pair grounding.
+    if not rows and old.get("allocations"):
+        candidates = []
+        counts = {int(value) for value in re.findall(r"(?<!\w)\d{1,6}(?!\w)", message) if 1 <= int(value) <= 100000}
+        for row in old["allocations"]:
+            for count in counts:
+                candidate = {"departmentName": row["departmentName"], "need": count}
+                if grounded_allocations(evidence, [candidate]):
+                    candidates.append(candidate)
+        if len(candidates) == 1:
+            rows = candidates
+    if rows:
+        merged = {department_name_key(row["departmentName"]): row for row in source.get("allocations", [])}
+        for row in rows:
+            key = department_name_key(row["departmentName"])
+            merged[key] = {**merged.get(key, {}), **row}
+        changes["allocations"] = list(merged.values())
+    if re.search(r"\b(?:отправ|разошл|разосл|запрос|подготов)", message.casefold()):
+        changes["intent"] = clean["intent"]
+    preserved = {key: old[key] for key in ("eventId", "objectId") if old.get(key) is not None}
+    if changes.get("briefing"):
+        preserved.pop("objectId", None)
+    if "objectName" in changes:
+        preserved.pop("objectId", None)
+    if "eventCode" in changes:
+        preserved.pop("eventId", None)
+    if not rows and not any(q["field"] == "allocations" for q in old.get("questions", [])):
+        preserved["allocations"] = old.get("allocations", [])
+    plan = make_plan({**source, **changes}, {**preserved, **(patch or {})}, actor_id=actor_id)
+    unresolved = set()
+    if not plan.get("briefing") and personnel_total_requires_review(message) and "personnelTotal" not in (patch or {}).get("proposal", {}):
+        unresolved.add("personnelTotal")
+        plan["questions"].append(question("personnelTotal", "Уточните общее количество людей: сообщение содержит неоднозначные значения."))
+    if re.search(_DEPARTMENT_WORD, evidence) and not rows:
+        unresolved.add("allocations")
+        plan["questions"].append(question("allocations", "Уточните департамент и количество: изменение распределения неоднозначно."))
+    mentioned_day, day = _day_of_month(message)
+    if mentioned_day and day is None:
+        unresolved.add("businessDate")
+        plan["questions"].append(question("businessDate", "Уточните дату: сообщение содержит неоднозначные значения."))
+    # Do not silently remove an unresolved prior correction after an unrelated reply.
+    for row in old.get("dialogueQuestions", []):
+        field = row["field"]
+        if field not in changes and field not in unresolved:
+            plan["questions"].append(row)
+    plan["dialogueQuestions"] = [q for q in plan["questions"] if q["field"] in unresolved or q in old.get("dialogueQuestions", [])]
+    if old.get("committedProposal") is not None:
+        plan["committedProposal"] = old["committedProposal"]
+    if old.get("committedBriefing") is not None:
+        plan["committedBriefing"] = old["committedBriefing"]
+        plan["briefingPending"] = old.get("briefingPending", [])
+    guided_answers.remember(plan, answer)
+    if guidance_binding or answer['handled']:
+        changed = plan.get('proposal') != old.get('proposal')
+        outcome = answer['outcome'] if answer['handled'] else (None if changed else 'unread')
+        plan['guidedFeedback'] = {'deferred': 'Вопрос отложен. Он остаётся обязательным.',
+                                 'resumed': 'Вернулись к отложенным вопросам.',
+                                 'unread': 'Ответ не удалось однозначно понять. Уточните его по подсказке к вопросу.'}.get(outcome, 'Сведения сохранены.')
+    return plan
+
+
+def protect_committed_plan(task, plan):
+    if not task.event_id and not task.receipts.exists():
+        return
+    baseline = task.plan.get("committedProposal", {**task.plan.get("proposal", {}), "objectId": task.plan.get("objectId"), "eventId": task.plan.get("eventId")})
+    plan["committedProposal"] = baseline
+    fields = {"title", "businessDate", "businessDateEnd", "eventTime", "kind", "objectName", "eventCode", "objectId", "eventId", "briefing"}
+    if task.receipts.filter(operation_key="send_allocations").exists():
+        fields |= {"allocations", "intent", "personnelTotal"}
+    candidate = {**plan.get("proposal", {}), "objectId": plan.get("objectId"), "eventId": plan.get("eventId")}
+    if any(candidate.get(key) != baseline.get(key) for key in fields):
+        plan["questions"].append(question("event", "Уточнение затрагивает уже сохранённое мероприятие или отправленные запросы. Проверьте изменения в карточке ОМ; помощник не меняет выполненные действия."))

@@ -15,6 +15,7 @@ class OpsAssistantTask(TimeStampedModel):
     status = models.CharField(max_length=40, default="needs_information")
     delegated = models.BooleanField(default=False)
     revision = models.PositiveIntegerField(default=1)
+    processing = models.JSONField(default=dict)
 
     class Meta:
         db_table = "ops_assistant_tasks"
@@ -36,3 +37,19 @@ class OpsAssistantReceipt(TimeStampedModel):
         verbose_name = "Выполненное действие помощника по ОМ"
         verbose_name_plural = "Выполненные действия помощника по ОМ"
         constraints = [models.UniqueConstraint(fields=["task", "operation_key"], name="uniq_om_assistant_operation")]
+
+
+class OpsAssistantMessage(TimeStampedModel):
+    task = models.ForeignKey(OpsAssistantTask, on_delete=models.CASCADE, related_name="messages")
+    role = models.CharField(max_length=12)
+    text = models.TextField()
+    request_key = models.CharField(max_length=80, null=True, blank=True)
+    payload_hash = models.CharField(max_length=64, blank=True)
+    retries = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "ops_assistant_messages"
+        verbose_name = "Сообщение помощнику по ОМ"
+        verbose_name_plural = "Сообщения помощнику по ОМ"
+        ordering = ["id"]
+        constraints = [models.UniqueConstraint(fields=["task", "request_key"], name="uniq_om_assistant_message")]

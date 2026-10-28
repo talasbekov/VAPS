@@ -30,7 +30,8 @@
 // расчётов и ручек нет. Адрес прежний: `/employees?view=daily`.
 import { useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { useDailyExpenseRead } from '@/hooks/use-daily-expense-read'
 import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiClient, type OpsEmployeeStatusRow } from '@/lib/api'
@@ -111,21 +112,21 @@ interface Employee { id: string; full_name: string; rank_code: string }
 function People({ ids, divisionId, date, labelOf, onPick, everyone = false }: { ids: string[]; divisionId: string; date: string; labelOf: (code: string) => string; onPick?: (person: StatusPerson) => void; everyone?: boolean }) {
   const catalog = useOpsStatusTypes()
   const [showAll, setShowAll] = useState(false)
-  const employees = useQuery({ queryKey: ['daily-expense-board', 'responsible-people', date, ids], queryFn: async () => {
+  const employees = useDailyExpenseRead('responsible-people', [date, ids], async (_signal, authorize) => {
     const result: Employee[] = []
     // Daily adapter accepts at most 200 exact division IDs, not a subtree root.
     for (let offset = 0; offset < ids.length; offset += 200) {
       const query = new URLSearchParams({ business_date: date })
       ids.slice(offset, offset + 200).forEach(id => query.append('division_id', id))
-      const response = await opsApiClient.get<{ results: Employee[] }>(`${DAILY_EMPLOYEES_PATH}?${query}`)
+      const response = await opsApiClient.get<{ results: Employee[] }>(`${DAILY_EMPLOYEES_PATH}?${query}`, authorize)
       if (!Array.isArray(response.results)) throw new Error('Некорректный ответ состава')
       result.push(...response.results)
     }
     return [...new Map(result.map(person => [person.id, person])).values()]
-  } })
+  })
   // Operations status endpoint explicitly resolves division_id as a subtree.
-  const statuses = useQuery({ queryKey: ['daily-expense-board', 'responsible-statuses', date, divisionId],
-    queryFn: () => apiClient.getOpsStatusesOn({ businessDate: date, divisionId: Number(divisionId) }) })
+  const statuses = useDailyExpenseRead('responsible-statuses', [date, divisionId],
+    () => apiClient.getOpsStatusesOn({ businessDate: date, divisionId: Number(divisionId) }))
   if (employees.isError || statuses.isError || catalog.isError) return <DailyRetry label="Не удалось получить сотрудников и статусы" onRetry={() => Promise.all([employees.refetch(), statuses.refetch(), catalog.refetch()])} />
   if (employees.isPending || statuses.isPending || catalog.isLoading) return <p role="status">Загрузка сотрудников…</p>
   if (employees.data.length === 0) return <p className={styles.hint}>Нет сотрудников на выбранную дату.</p>
@@ -204,7 +205,7 @@ function DirectorateRow({ row, date, divisions, rows, submissions, columns, inSe
   }, [row, divisions, rows, submissions, inServiceColumn])
   const submissionText = submissionReady ? row.submission ? `сдано ${formatIsoDateTime(row.submission.submitted_at)} · v${row.submission.version}${row.submission.late ? ' · с опозданием' : ''}` : 'не сдано' : 'сдача: неизвестно'
   return <>
-    <tr className={styles.dir} aria-expanded={open}>
+    <tr id={`daily-unit-${row.division.id}`} className={styles.dir} aria-expanded={open} tabIndex={-1}>
       <td className={styles.name}>
         <Indicator submission={row.submission} ready={submissionReady} />
         <button type="button" className={styles.rowbtn} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronRight aria-hidden size={14} className={open ? styles.chevronOpen : ''} />{row.division.name}</button>
@@ -242,10 +243,10 @@ function RangeTiles({ from, to, activeDate, sources, divisions, scopeId, inServi
   const period = useStrengthReportPeriod({ from, to }, true, 'PLAN')
   // Все сдачи области одним запросом; по датам раскладываются здесь — ручка
   // фильтрует один день, а плиток несколько.
-  const submissions = useQuery({ queryKey: ['daily-expense-board', 'responsible-submissions-range', from, to], queryFn: async () => {
-    const response = await opsApiClient.get<{ results: unknown[] }>(`${DAILY_SUBMISSIONS_PATH}?limit=500`)
+  const submissions = useDailyExpenseRead('responsible-submissions-range', [from, to], async (_signal, authorize) => {
+    const response = await opsApiClient.get<{ results: unknown[] }>(`${DAILY_SUBMISSIONS_PATH}?limit=500`, authorize)
     return parseSubmissionList(response).filter(row => row.business_date >= from && row.business_date <= to)
-  } })
+  })
   if (period.isError || submissions.isError) return <DailyRetry label="Не удалось получить расход за период" onRetry={() => Promise.all([period.refetch(), submissions.refetch()])} />
   if (period.isPending || submissions.isPending) return <p role="status">Загрузка расхода за период…</p>
   const days: string[] = []
@@ -282,7 +283,8 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
     router.replace(query === '' ? pathname : `${pathname}?${query}`, { scroll: false })
   }
   const nameOf = (id: number) => divisions.data?.find(row => row.id === String(id))?.name ?? `Подразделение №${id}`
-  const submissionReady = submissions.isSuccess && !submissions.isError
+  const submissionReady = submissions.isSuccess && !submissions.isError && !submissions.isFetching
+  const awaiting = data?.sources.filter(row => !row.submission) ?? []
   const submitted = data?.sources.filter(row => row.submission).length ?? 0
   const inServiceColumn = catalog.all.find(row => row.code === 'IN_SERVICE')?.report_column_code
   const columns = useMemo(() => orderColumns(report.data?.columns ?? [], inServiceColumn), [report.data, inServiceColumn])
@@ -317,7 +319,14 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
           <RangeTiles from={rangeFrom} to={rangeTo} activeDate={date} sources={data.sources} divisions={divisions.data ?? []} scopeId={state.scopeId} inServiceColumn={inServiceColumn} onPick={onBusinessDateChange} />
           <p className={styles.hint}>Выберите дату, чтобы открыть расход за этот день. Значения разных дней не суммируются.</p>
         </div>}
-        <div className={styles.hero}><div>{submissions.isError ? <DailyRetry label="Не удалось получить состояние сдачи" action="Повторить состояние сдачи" onRetry={submissions.refetch} /> : submissions.isPending ? <p role="status">Загрузка состояния сдачи…</p> : <><strong>Сдали {submitted} из {data.sources.length}</strong><progress aria-label="Сдача обязательных источников" max={Math.max(data.sources.length, 1)} value={submitted} /><p>{data.sources.length === 0 ? 'Нет обязательных источников с сотрудниками.' : submitted === data.sources.length ? 'Все обязательные источники сдали расход.' : `Ожидаем: ${data.sources.filter(row => !row.submission).map(row => row.division.name).join(', ')}.`}</p></> }</div>
+        <div className={styles.hero}><div>{submissions.isError ? <DailyRetry label="Не удалось получить состояние сдачи" action="Повторить состояние сдачи" onRetry={submissions.refetch} /> : submissions.isPending || submissions.isFetching ? <p role="status">Загрузка состояния сдачи…</p> : <>
+          <strong>Сдали {submitted} из {data.sources.length}</strong>
+          <progress aria-label="Сдача обязательных источников" max={Math.max(data.sources.length, 1)} value={submitted} />
+          <p>{data.sources.length === 0 ? 'Нет обязательных источников с сотрудниками.' : awaiting.length === 0 ? 'Все обязательные источники сдали расход.' : `Ожидаем сдачу: ${awaiting.length}. Выберите управление, чтобы проверить его сведения.`}</p>
+          {awaiting.length > 0 && <details><summary className="cursor-pointer py-2 text-sm font-medium">Кто ещё не сдал · {awaiting.length}</summary>
+            <ul className="space-y-1 text-sm">{awaiting.map(row => <li key={row.division.id}><a className="underline underline-offset-4" href={`#daily-unit-${row.division.id}`}>{row.division.name}</a></li>)}</ul>
+          </details>}
+        </> }</div>
           {/* Главное действие экрана — свод (Plane №1221, [РАСХ-РШ-03]): чип
               состояния и кнопка ступени стоят здесь, в блоке готовности, а не
               под таблицей. «Напомнить» — вторичное действие, ниже него. */}

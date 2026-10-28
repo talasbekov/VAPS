@@ -784,12 +784,19 @@ class AccountViewSet(
 
         queryset = User.objects.select_related("employee").order_by("username")
         search = (self.request.query_params.get("search") or "").strip()
-        if search != "":
+        # Administrators often paste a full name or search an imported
+        # employee whose login profile has no separate first/last name.
+        # Every word must match this account or its one linked employee.
+        for word in search.split():
             queryset = queryset.filter(
-                Q(username__icontains=search)
-                | Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(email__icontains=search)
+                Q(username__icontains=word)
+                | Q(first_name__icontains=word)
+                | Q(last_name__icontains=word)
+                | Q(email__icontains=word)
+                | Q(employee__first_name__icontains=word)
+                | Q(employee__last_name__icontains=word)
+                | Q(employee__middle_name__icontains=word)
+                | Q(employee__personnel_number__icontains=word)
             )
         return queryset
 
@@ -847,6 +854,12 @@ class AccountViewSet(
             actor=resolve_actor_id(request),
         )
         return Response(AccountSerializer(user).data)
+
+    @action(detail=True, methods=["get"], url_path="effective-access")
+    def effective_access(self, request, pk=None):
+        require_global_permission(request, "admin.roles")
+        from organization_management.apps.operations.account_access import account_effective_access
+        return Response(account_effective_access(self.get_object()))
 
     @action(detail=False, methods=["get"], url_path="employee-options")
     def employee_options(self, request):

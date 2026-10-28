@@ -72,6 +72,8 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
 import { dutyWorkspaceHref } from "@/features/duty-register/model/workspace";
+import { WorkloadCoverage } from "@/features/service-analytics/ui/WorkloadCoverage";
+import type { WorkloadCoveragePeriod } from "@/features/service-analytics/model/workload-coverage";
 import { DIVISIONS, ruPlural } from "@/lib/ru-plural";
 import {
   Table,
@@ -738,11 +740,21 @@ const LOAD_STATE_LABEL: Record<string, string> = {
 /** §22.9: план и факт приезжают разными полями и печатаются разными колонками;
  * состояние красит сервер по порогам LOAD_POLICY. */
 function LoadSection() {
-  const query = useLoadAnalytics();
+  const [coveragePeriod, setCoveragePeriod] = useState<WorkloadCoveragePeriod | null>(null);
+  const [resolvedPeriod, setResolvedPeriod] = useState<WorkloadCoveragePeriod | null>(null);
+  const query = useLoadAnalytics(coveragePeriod);
+  const sourceFrom = query.data?.coverage?.period.from;
+  const sourceTo = query.data?.coverage?.period.to;
+  useEffect(() => {
+    if (sourceFrom && sourceTo) setResolvedPeriod({ from: sourceFrom, to: sourceTo });
+  }, [sourceFrom, sourceTo]);
+  const displayPeriod = coveragePeriod ?? resolvedPeriod;
   if (query.isPending) {
     return (
       <section className="rounded-xl border bg-card p-4" aria-label="Нагрузка">
         <p className="text-xs text-muted-foreground">Загрузка нагрузки…</p>
+        {displayPeriod && <WorkloadCoverage key={`${displayPeriod.from}:${displayPeriod.to}`}
+          period={displayPeriod} loading onPeriodChange={setCoveragePeriod} />}
       </section>
     );
   }
@@ -752,6 +764,9 @@ function LoadSection() {
         <p className="text-xs text-muted-foreground">
           Аналитика нагрузки сейчас недоступна.
         </p>
+        <WorkloadCoverage key={`${displayPeriod?.from}:${displayPeriod?.to}`} period={displayPeriod}
+          errorMessage="Сводка не обновлена. Показатели скрыты до успешного чтения."
+          onPeriodChange={setCoveragePeriod} onRetry={() => { void query.refetch(); }} />
       </section>
     );
   }
@@ -759,7 +774,7 @@ function LoadSection() {
   return (
     <section className="rounded-xl border bg-card p-4" aria-label="Нагрузка">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Нагрузка</h2>
+        <h2 className="text-sm font-semibold">Оценка нагрузки по типам смен</h2>
         {view.policy !== null ? (
           <span className="text-[11px] text-muted-foreground">
             Последние {view.policy.periodDays} сут. по {query.data.businessDate} · методика {view.policy.policyVersion}
@@ -771,7 +786,8 @@ function LoadSection() {
         )}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Нагрузка использует своё окно расчёта и не меняется при выборе периода выше.
+        План здесь оценивается по длительности вида смены. Это отдельная методика со своим окном расчёта;
+        она не суммируется с точными интервалами в сводке источников ниже и не меняется при выборе её дат.
       </p>
       {view.personalDetailSuppressed && <p className="mb-3 rounded-md border bg-muted/30 p-3 text-sm" role="status">
         {view.personalDetailReason || 'Персональная нагрузка показана только в пределах отдельного права доступа к сотрудникам.'}
@@ -853,6 +869,8 @@ function LoadSection() {
           </li>
         ))}
       </ul>
+      <WorkloadCoverage key={`${query.data.coverage?.period.from}:${query.data.coverage?.period.to}`}
+        data={query.data.coverage} onPeriodChange={setCoveragePeriod} />
     </section>
   );
 }

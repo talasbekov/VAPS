@@ -21,6 +21,7 @@ function load(file, dependencies = {}) {
 const grid = load('entities/daily-grid/index.ts');
 const workspace = load('features/forces-workspace/model/workspace.ts');
 const grouping = load('features/daily-expense/model/directorate-summary.ts', {
+  '@/hooks/use-daily-expense-read': {},
   '@tanstack/react-query': {}, '@/lib/api': {}, '@/lib/ops-api': {}, '@/hooks/use-ops-permissions': {},
   '@/hooks/use-strength-report': {}, '@/hooks/use-ops-status-types': {}, '@/entities/daily-grid': grid,
   './business-date': {}, '@/features/forces-workspace/model/workspace': workspace,
@@ -63,6 +64,7 @@ function capture(state) {
     } } },
     '@/lib/auth': { useAuth: () => ({ user: state.actor ? { id: state.actor } : null }) },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => state.access },
+    '@/entities/portal-access': load('entities/portal-access/index.ts'),
     '@/entities/daily-grid': grid,
     '@/features/daily-expense/model/business-date': { useBusinessDate: () => ({ businessDate: state.businessDate, dateError: false }) },
     '@/features/daily-expense/model/directorate-summary': grouping,
@@ -72,6 +74,16 @@ function capture(state) {
   return { options, result };
 }
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } } });
+
+test('daily responsibilities can load their own action queue without allocation authority', async () => {
+  const state = fixture();
+  state.access = access([role(2)], ['status.view', 'daily_report.generate']);
+  const {options} = capture(state);
+  assert.equal(options.enabled, true);
+  const result = await options.queryFn();
+  assert.equal(result.scope.id, '2');
+  assert.equal(result.sources[0].division.name, 'Управление А');
+});
 
 test('changing only the responsible scope fetches a different snapshot without reusing source identities', async () => {
   const state = fixture(); const cache = client();

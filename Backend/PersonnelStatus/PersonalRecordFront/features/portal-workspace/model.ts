@@ -40,7 +40,7 @@ export function portalWorkspace(access: TaskAccess): { primary: PortalTask[]; mo
   if (can('forces.command')) add(task('headquarters', 'Распределения Штаба', 'Подготовить сбор, проверить ответы и передать людей на расстановку.', '/employees?view=forces&tab=collections'));
   if (can('forces.allocate')) add(task('department-forces', 'Ответить на запрос людей', 'Открыть входящие запросы и подготовить ответ своего подразделения.', '/employees?view=forces&tab=requests'));
   add(task('statuses', can('status.manage') ? 'Отметить статусы сотрудников' : 'Посмотреть личный состав', 'Проверить присутствие и доступность людей своего подразделения.', '/statuses'));
-  if (can('forces.allocate') && can('status.view')) add(task('daily', 'Сдать расход департамента', 'Проверить сдачу подразделений и отправить свод.', '/employees?view=daily'));
+  add(task('daily', 'Ежедневный расход', 'Проверить состав, сдачу подразделений и доступные действия со сводом.', '/daily-expense'));
   add(task('assistant', 'Подготовить наряд', 'Описать поручение или продолжить уже сохранённое.', '/security-ops/assistant'));
   add(task('events', 'Продолжить работу по ОМ', 'Открыть мероприятие и выполнить свой текущий этап.', '/security-ops/events'));
   add(task('summary', 'Проверить свод по Службе', 'Увидеть состояние подразделений на выбранную дату.', '/security-ops/service-summary'));
@@ -58,11 +58,11 @@ export function portalWorkspace(access: TaskAccess): { primary: PortalTask[]; mo
 
 /** Change a work mode without carrying a target from the previous mode. */
 export function portalTaskHref(entry: PortalTask, current: URLSearchParams): string {
-  if (entry.accessHref !== '/employees') return entry.href;
+  if (entry.accessHref !== '/employees' && entry.accessHref !== '/daily-expense') return entry.href;
   const query = new URLSearchParams(current);
   for (const key of ['employee', 'request', 'collection', 'campaign', 'tab', 'view']) query.delete(key);
   for (const [key, value] of new URLSearchParams(entry.href.split('?')[1])) query.set(key, value);
-  return `/employees${query.size ? `?${query}` : ''}`;
+  return `${entry.accessHref}${query.size ? `?${query}` : ''}`;
 }
 
 export function activePortalTask(tasks: readonly PortalTask[], path: string, query: URLSearchParams): string | undefined {

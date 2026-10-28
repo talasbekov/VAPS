@@ -7,8 +7,9 @@ import { useOpsReadAccess, useOpsProtectedRead, hasCurrentOpsReadAuthority, asse
 import { currentOpsAuthorityStamp } from "@/lib/ops-write-authority";
 import { blockReadAccess } from "@/lib/query-read-access";
 import { opsApiClient } from "@/lib/ops-api";
+import { browserUuid } from "@/lib/browser-uuid";
 import { OpsApiError, friendlyOpsErrorMessage } from "@/lib/ops-errors";
-import { ASSISTANT_GROUP, ASSISTANT_PERMISSIONS, assistantListPage, isTaskId, type AssistantFields, type AssistantTask,
+import { ASSISTANT_GROUP, ASSISTANT_PERMISSIONS, assistantListPage, assistantProcessingBusy, isTaskId, type AssistantFields, type AssistantTask,
   type AssistantCatalogs, type AssistantConfiguration, type AssistantTaskList } from "@/features/om-assistant/model";
 
 const ENDPOINT = "/api/ops/assistant/tasks/";
@@ -36,7 +37,7 @@ export function useAssistantTasks(page = 1) {
 export function useAssistantTask(id: string | null) {
   const access = useAssistantAccess();
   return useOpsProtectedRead<AssistantTask>([ASSISTANT_GROUP, "task"], [id], access,
-    () => opsApiClient.get(`${ENDPOINT}${id}/`), { enabled: isTaskId(id), poll: () => 30000 });
+    () => opsApiClient.get(`${ENDPOINT}${id}/`), { enabled: isTaskId(id), poll: task => assistantProcessingBusy(task) ? 2000 : 30000 });
 }
 export function useAssistantConfiguration() {
   return useOpsProtectedRead<AssistantConfiguration>([ASSISTANT_GROUP, "configuration"], [], useAssistantAccess(),
@@ -48,7 +49,7 @@ export function useAssistantCatalogs() {
 }
 export interface AssistantWriteContext { access: OpsReadAccess; taskId: string | null; readKey?: QueryKey }
 interface WriteSnapshot { pending: boolean; retryable: boolean; error: string | null }
-interface Attempt { context: string; generation: number; endpoint: string; body: unknown; source?: QueryKey }
+interface Attempt { context: string; generation: number; endpoint: string; body: unknown; source?: QueryKey; dialogue?: "message" | "retry"; processingAttempt?: number }
 function contextKey(context: AssistantWriteContext) { return JSON.stringify([context.access.actor, context.access.scope, context.access.allowed, context.taskId]); }
 function denied(): never { throw new OpsApiError({ status: 403, errorCode: "READ_AUTHORITY_UNAVAILABLE", message: "Обновите данные и права доступа перед продолжением.", details: {}, requestId: null }); }
 
@@ -73,6 +74,14 @@ export function createAssistantWriter(options: {
     const context = getContext();
     if (contextKey(context) !== current.context || current.generation !== generation || !hasCurrentOpsReadAuthority(client, context.access)) denied();
     if (current.source) assertOpsReadAuthority(client, context.access, ASSISTANT_GROUP, current.source);
+    if (current.dialogue && current.source) {
+      const task = client.getQueryData<AssistantTask>(current.source);
+      const persisted = current.dialogue === "message"
+        ? task?.messages?.some(message => message.role === "user" && message.requestKey === (current.body as { requestKey: string }).requestKey)
+        : (task?.processing?.attempt ?? 0) > (current.processingAttempt ?? 0);
+      if (!task || task.id !== context.taskId || !task.canEdit ||
+        (!persisted && (current.dialogue === "message" ? !task.canMessage || assistantProcessingBusy(task) : !task.processing?.retryable))) denied();
+    }
   };
   async function execute(current: Attempt): Promise<AssistantTask | undefined> {
     publish({ pending: true, retryable: false, error: null });
@@ -101,18 +110,43 @@ export function createAssistantWriter(options: {
     }
   }
   function fail(error: unknown) { publish({ pending: false, retryable: false, error: friendlyOpsErrorMessage(error, "Действие недоступно. Обновите данные и права доступа.") }); }
+  async function dialogue(operation: "message" | "retry", message?: string, revision?: number) {
+    const key = sync();
+    if (state.pending) return;
+    if (attempt) return execute(attempt);
+    try {
+      const context = getContext();
+      if (!isTaskId(context.taskId) || !context.readKey) denied();
+      assertOpsReadAuthority(client, context.access, ASSISTANT_GROUP, context.readKey);
+      const task = client.getQueryData<AssistantTask>(context.readKey);
+      if (!task || task.id !== context.taskId || !task.canEdit ||
+        (operation === "message" ? !task.canMessage || assistantProcessingBusy(task) : !task.processing?.retryable)) denied();
+      const baseRevision = revision ?? task.revision;
+      if (!Number.isSafeInteger(baseRevision) || baseRevision < 1) denied();
+      if (operation === "message" && (!message?.trim() || message.length > 4000)) throw Error("Введите сообщение от 1 до 4000 символов.");
+      const current: Attempt = { context: key, generation, source: context.readKey, dialogue: operation, processingAttempt: task.processing?.attempt,
+        endpoint: `${ENDPOINT}${context.taskId}/${operation === "message" ? "messages" : "retry"}/`,
+        body: { requestKey: (options.makeKey ?? browserUuid)(), revision: baseRevision, ...(operation === "message" ? { message } : {}) } };
+      attempt = current;
+      return execute(current);
+    } catch (error) { fail(error); }
+  }
   return {
     snapshot(): WriteSnapshot { sync(); return state; },
     dispose() { generation++; attempt = null; },
     reset() { generation++; attempt = null; visibleContext = contextKey(getContext()); publish({ pending: false, retryable: false, error: null }); },
+    sendMessage: (message: string, revision?: number) => dialogue("message", message, revision),
+    retryProcessing: () => dialogue("retry"),
     async create(message: string, fields: AssistantFields = {}, interpret = true) {
       const key = sync();
       if (state.pending) return;
       if (attempt) return execute(attempt);
-      const current: Attempt = { context: key, generation, endpoint: ENDPOINT,
-        body: { requestKey: (options.makeKey ?? (() => crypto.randomUUID()))(), message, fields: structuredClone(fields), interpret } };
-      attempt = current;
-      return execute(current);
+      try {
+        const current: Attempt = { context: key, generation, endpoint: ENDPOINT,
+          body: { requestKey: (options.makeKey ?? browserUuid)(), message, fields: structuredClone(fields), interpret } };
+        attempt = current;
+        return execute(current);
+      } catch (error) { fail(error); }
     },
     async continueTask(fields?: AssistantFields, revision?: number) {
       const key = sync();
@@ -123,7 +157,7 @@ export function createAssistantWriter(options: {
         if (!isTaskId(context.taskId) || !context.readKey) denied();
         assertOpsReadAuthority(client, context.access, ASSISTANT_GROUP, context.readKey);
         const task = client.getQueryData<AssistantTask>(context.readKey);
-        if (!task || task.id !== context.taskId ||
+        if (!task || task.id !== context.taskId || assistantProcessingBusy(task) || (fields === undefined && task.processing?.state === "failed") ||
           (fields === undefined ? task.canContinue !== true : !task.canEdit)) denied();
         if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1)) denied();
         const current: Attempt = { context: key, generation, endpoint: `${ENDPOINT}${context.taskId}/continue/`, source: context.readKey,
@@ -145,5 +179,6 @@ export function useAssistantWriter(context: AssistantWriteContext, onSaved: (tas
     onSaved: task => latest.current.onSaved(task), onChange: () => rerender(value => value + 1) });
   useEffect(() => () => writer.current?.dispose(), []);
   return { ...writer.current.snapshot(), create: writer.current.create, continueTask: writer.current.continueTask,
+    sendMessage: writer.current.sendMessage, retryProcessing: writer.current.retryProcessing,
     retry: writer.current.retry, reset: writer.current.reset };
 }

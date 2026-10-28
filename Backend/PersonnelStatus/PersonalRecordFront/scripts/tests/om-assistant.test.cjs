@@ -15,6 +15,101 @@ const task = patch => ({ id: taskId, initiatedBy: 'chief', revision: 2, status: 
   event: { id: '70', code: 'ОМ-70', title: 'Встреча', stage: 'RECON', forceDemandTotal: 10, requested: 0, rosterCount: 0 },
   receipts: [], updatedAt: '2026-10-21T10:00:00Z', ...patch });
 
+test('multi-object briefing retains each object need and expandable structure without inventing a total', t => {
+  const f = fixture(t);
+  const value = task({ event: null, status: 'needs_information', canContinue: false, plan: {
+    title: 'Встреча', kind: 'INTERNAL', businessDate: '2026-10-28', briefing: { objects: [
+      { name: 'Аккорда', objectId: '9007199254740993', chiefName: 'Асанов А.', chiefEmployeeId: 'secret-chief-id',
+        sectorCount: 2, sectors: [{ number: 1, postCount: 2, posts: [{ number: 1, need: 3, subpostCount: 3,
+          subposts: [{ number: 1, need: 2 }, { number: 2, need: null }, { number: 3, need: 0 }] }, { number: 2, subpostCount: 0 }] },
+          { number: 2, postCount: null, posts: [] }], personnelNeed: 5, needStatus: 'known', checklistChecked: true },
+      { name: 'Тарлан', sectors: [], personnelNeed: 8, needStatus: 'known', checklistChecked: false },
+      { name: 'Бейбитшилик сарайы', sectors: [], personnelNeed: 0, needStatus: 'unknown' },
+      { name: 'Ritz', sectorCount: 0, sectors: [], personnelNeed: 0, needStatus: 'known' },
+    ], protectedPersons: [] } }, questions: [{ field: 'briefing.objects[2].personnelNeed', text: 'Сколько людей нужно на Бейбитшилик сарайы?' }] });
+  const before = JSON.stringify(value);
+  const html = renderWorkspace(f, value);
+  const briefing = html.match(/<section[^>]*aria-label="Объекты и охраняемые лица поручения"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(briefing, 'the card must render recognized multi-object briefing');
+  for (const [name, need] of [['Аккорда', '5 чел.'], ['Тарлан', '8 чел.'], ['Бейбитшилик сарайы', 'Нужно уточнить'], ['Ritz', '0 чел.']]) {
+    const object = [...briefing.matchAll(/<details[^>]*>[\s\S]*?<\/details>/g)].map(match => match[0]).find(row => row.includes(name));
+    assert.ok(object, `${name} must have expandable details`);
+    assert.ok(object.match(/<summary[^>]*>[\s\S]*?<\/summary>/)[0].includes(need), `${name} retains its own need`);
+  }
+  assert.match(briefing, /Асанов А\./);
+  assert.match(briefing, /Сектор 1/); assert.match(briefing, /Постов: 2/);
+  assert.match(briefing, /Пост 1/); assert.match(briefing, /Подпостов: 3/); assert.match(briefing, /Подпостов: 0/);
+  assert.match(briefing, /Пост 2 · Потребность: Нужно уточнить/);
+  assert.match(briefing, /Подпост 1: 2 чел\./); assert.match(briefing, /Подпост 2: Нужно уточнить/); assert.match(briefing, /Подпост 3: 0 чел\./);
+  assert.match(briefing, /Сектор 2/); assert.match(briefing, /Постов: Нужно уточнить/);
+  assert.match(briefing, /Секторов<\/dt><dd[^>]*>0/);
+  assert.doesNotMatch(briefing, /13 чел\.|21 чел\.|secret-chief-id|9007199254740993/);
+  const metadata = html.match(/<dl[^>]*aria-label="Сведения поручения"[\s\S]*?<\/dl>/)?.[0];
+  assert.doesNotMatch(metadata, />Не указан<|Объект выбран/);
+  assert.match(html, /Сколько людей нужно на Бейбитшилик сарайы\?/);
+  assert.equal(JSON.stringify(value), before);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('briefing displays protected person codes and foreign identity without treating checklist declarations as recon completion', t => {
+  const f = fixture(t);
+  const value = task({ status: 'needs_information', canEdit: false, canContinue: false, event: null,
+    plan: { kind: 'FOREIGN', briefing: { objects: [{ name: 'Ritz <зал>', objectId: 'private-object-id', sectors: [], needStatus: 'unknown', checklistChecked: true }],
+      protectedPersons: [{ code: '800', personId: 'private-person-id' }, { code: '802' }, { code: '803' },
+        { name: 'Гость <имя>', country: 'Казахстан', createIfMissing: true }],
+      issues: [{ field: 'briefing.objects[0].chiefName', text: 'Уточните старшего Ritz.' }] },
+      briefingPending: [{ objectId: 'private-object-id', action: 'Подтвердить рекогносцировку в карточке ОМ', reason: 'Требуется действие старшего объекта.' }] },
+    questions: [{ field: 'briefing.objects[0].chiefName', text: 'Уточните старшего Ritz.' }] });
+  const html = renderWorkspace(f, value, true);
+  for (const code of ['800', '802', '803']) assert.match(html, new RegExp(`Код ${code}`));
+  assert.match(html, /Гость &lt;имя&gt;/); assert.match(html, /Казахстан/);
+  assert.match(html, /Создать при отсутствии: разрешено инициатором/);
+  assert.match(html, /Чек-лист со слов инициатора/); assert.match(html, /Проверен/);
+  assert.match(html, /не подтверждает завершение рекогносцировки/);
+  assert.match(html, /Старший объекта<\/dt><dd[^>]*>Нужно уточнить/);
+  assert.match(html, /Уточните старшего Ritz\./);
+  assert.match(html, /Ожидают выполнения/); assert.match(html, /Ritz &lt;зал&gt;: Подтвердить рекогносцировку в карточке ОМ/);
+  assert.match(html, /Требуется действие старшего объекта\./);
+  assert.doesNotMatch(html, /private-person-id|private-object-id/);
+  assert.doesNotMatch(html, /href="#assistant-correction"|Создать ОМ от своего имени/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('legacy one-object plans keep their object metadata without an empty briefing section', t => {
+  const html = renderWorkspace(fixture(t), task());
+  const metadata = html.match(/<dl[^>]*aria-label="Сведения поручения"[\s\S]*?<\/dl>/)?.[0];
+  assert.match(metadata, /Объект<\/dt><dd[^>]*>Объект/);
+  assert.doesNotMatch(html, /aria-label="Объекты и охраняемые лица поручения"/);
+});
+
+test('a bulletin creator can open the assistant under their existing bulletin permission', t => {
+  const f = fixture(t);
+  f.client.setQueryData(['ops-me'], { permissions: ['event.bulletin'], global_permissions: ['event.bulletin'], roles: [] });
+  assert.equal(f.api.useAssistantAccess().allowed, true);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('briefing shows declared checklist results and translates pending domain action codes for review', t => {
+  const f = fixture(t);
+  const html = renderWorkspace(f, task({ canEdit: false, canContinue: false, plan: {
+    briefing: { objects: [{ name: 'Аккорда', objectId: '10', sectors: [], needStatus: 'unknown', checklistChecked: true,
+      checklistResults: [{ id: 'checklist-0', state: 'NORMAL', comment: '' },
+        { id: 'checklist-1', state: 'REMARK', comment: 'Ограждение <повреждено>' },
+        { id: 'checklist-2', state: 'UNCHECKED', comment: '' }] }], protectedPersons: [] },
+    briefingPending: [{ objectId: '10', action: 'visit_object_add', reason: 'Требуется руководитель.' },
+      { objectId: '10', action: 'visit_object_chief', reason: 'Требуется старший.' },
+      { objectId: '10', action: 'recon', reason: 'Нужно сохранить осмотр.' },
+      { objectId: '10', action: 'checklist', reason: 'Нужны результаты.' }] } }), true);
+  assert.match(html, /Результаты чек-листа со слов инициатора/);
+  assert.match(html, /Подъездные пути и парковка: Норма/);
+  assert.match(html, /Периметр и ограждение: Замечание/);
+  assert.match(html, /Ограждение &lt;повреждено&gt;/);
+  assert.match(html, /Входные группы и КПП: Не проверено/);
+  for (const text of ['Добавить объект в ОМ', 'Назначить старшего объекта', 'Сохранить расчёт и результаты осмотра', 'Уточнить результаты чек-листа']) assert.ok(html.includes(text));
+  assert.doesNotMatch(html, /visit_object_add|visit_object_chief|>recon<|>checklist</);
+  assert.equal(f.state.writes.length, 0);
+});
+
 test('the clarification next step names only unresolved fields and links the initiator to the retained editor', t => {
   const f = fixture(t);
   const value = task({ status: 'needs_information', event: null, gathering: null, canContinue: false,
@@ -98,7 +193,7 @@ test('foreign visitor tasks use the shared event-kind label in the card and edit
   assert.equal(f.model.fieldsFromDraft(f.model.draftFromPlan(value.plan)).kind, 'FOREIGN');
 });
 
-function fixture(t) {
+function fixture(t, browserCrypto = require('node:crypto').webcrypto) {
   const client = new query.QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   t.after(() => client.clear());
   client.setQueryData(['ops-me'], { permissions: ['event.create'], global_permissions: ['event.create'], roles: [] });
@@ -140,7 +235,7 @@ function fixture(t) {
     const exports = {}; modules.set(name, exports);
     vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
-    } }).outputText, { exports, require: load, URLSearchParams, Date, structuredClone, crypto: require('node:crypto').webcrypto });
+    } }).outputText, { exports, require: load, URLSearchParams, Date, structuredClone, crypto: browserCrypto });
     return exports;
   }
   const model = load('@/features/om-assistant/model');
@@ -357,6 +452,36 @@ test('NLP with selected event does not replace the extracted intent with a prepa
   const f = fixture(t);
   await f.writer.create('Запроси 4 человека', { eventId: '70' }, true);
   assert.deepEqual(f.state.writes[0].body, { requestKey: 'request-1', message: 'Запроси 4 человека', fields: { eventId: '70' }, interpret: true });
+});
+
+test('HTTP LAN creation without randomUUID sends a task and preserves its key on retry', async t => {
+  const f = fixture(t, { getRandomValues: bytes => require('node:crypto').webcrypto.getRandomValues(bytes) });
+  const writer = f.api.createAssistantWriter({ client: f.client, getContext: f.context,
+    onSaved: value => f.state.saved.push(value), onChange() {} });
+  f.state.post = () => { throw Error('response lost'); };
+  await writer.create('Наряд на Аккорду на 23 октября, 200 человек');
+  assert.equal(f.state.writes.length, 1);
+  const first = f.state.writes[0].body;
+  assert.match(first.requestKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(writer.snapshot().retryable, true);
+  f.state.post = null;
+  await writer.retry();
+  assert.deepEqual(f.state.writes[1].body, first);
+  assert.equal(f.state.saved.length, 1);
+  await writer.create('Следующее поручение');
+  assert.notEqual(f.state.writes[2].body.requestKey, first.requestKey);
+});
+
+test('request preparation failure is visible and leaves no pending write or rejected promise', async t => {
+  const f = fixture(t, {});
+  const writer = f.api.createAssistantWriter({ client: f.client, getContext: f.context,
+    onSaved: value => f.state.saved.push(value), onChange() {} });
+  await writer.create('Подготовь наряд');
+  assert.equal(f.state.writes.length, 0);
+  assert.equal(f.state.saved.length, 0);
+  assert.equal(writer.snapshot().pending, false);
+  assert.equal(writer.snapshot().retryable, false);
+  assert.ok(writer.snapshot().error);
 });
 
 test('clearing an optional model suggestion sends null explicitly rather than restoring the old date/time', t => {
@@ -888,5 +1013,377 @@ test('legacy gathering remains a conditional check while explicit null suppresse
   for (const status of ['awaiting_recon', 'placement', 'awaiting_approval', 'completed', 'event_unavailable']) {
     const omitted = render(task({ status, gathering: null }));
     assert.doesNotMatch(omitted, /Подготовка физического наряда|создано ли одно активное распределение|Открыть распределени/);
+  }
+});
+
+test('dialogue posts a clarification to the same task with a stable HTTP-safe key on lost response', async t => {
+  const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'ready', attempt: 1, retryable: false, error: null } }));
+  f.state.post = async () => { throw Error('connection lost'); };
+  assert.equal(typeof f.writer.sendMessage, 'function');
+  await f.writer.sendMessage('Всего нужно 180', 2);
+  assert.equal(f.writer.snapshot().retryable, true);
+  assert.deepEqual(f.state.writes[0], { url: `/api/ops/assistant/tasks/${taskId}/messages/`, body: { requestKey: 'request-1', message: 'Всего нужно 180', revision: 2 } });
+  f.state.post = null; await f.writer.retry();
+  assert.deepEqual(f.state.writes[1], f.state.writes[0]);
+  assert.equal(f.state.saved[0].id, taskId);
+});
+
+for (const patch of [{ canEdit: false }, { canMessage: false }, { processing: { state: 'running' } }, { processing: { state: 'queued' } }]) {
+  test(`dialogue rejects unavailable writes ${JSON.stringify(patch)}`, async t => {
+    const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'ready' }, ...patch }));
+    assert.equal(typeof f.writer.sendMessage, 'function');
+    await f.writer.sendMessage('Уточнение', 2);
+    assert.equal(f.state.writes.length, 0);
+    assert.ok(f.writer.snapshot().error);
+  });
+}
+
+test('dialogue rejects blank messages and invalid revisions without creating an attempt', async t => {
+  const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'ready' } }));
+  assert.equal(typeof f.writer.sendMessage, 'function');
+  await f.writer.sendMessage('   ', 2); await f.writer.sendMessage('Уточнение', 0); await f.writer.sendMessage('x'.repeat(4001), 2);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('failed processing retries the saved turn without posting another user message', async t => {
+  const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'failed', retryable: true } }));
+  assert.equal(typeof f.writer.retryProcessing, 'function');
+  await f.writer.retryProcessing();
+  assert.deepEqual(f.state.writes[0], { url: `/api/ops/assistant/tasks/${taskId}/retry/`, body: { requestKey: 'request-1', revision: 2 } });
+});
+
+test('a late dialogue response cannot replace another selected task or reappear after access revocation', async t => {
+  const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'ready' } }));
+  assert.equal(typeof f.writer.sendMessage, 'function');
+  let release; f.state.post = () => new Promise(resolve => { release = resolve; });
+  const pending = f.writer.sendMessage('Уточнение', 2);
+  f.select(task({ id: '4733240a-32a0-46cd-9ad9-5127665c29e8' }));
+  release(task()); await pending;
+  assert.equal(f.state.saved.length, 0);
+  f.select(task({ canMessage: true })); f.client.setQueryData(['ops-me'], { permissions: [], roles: [] });
+  await f.writer.sendMessage('Уточнение', 2);
+  assert.equal(f.state.writes.length, 1);
+});
+
+test('processing prevents continue even if stale canContinue still says yes', async t => {
+  const f = fixture(t); f.select(task({ processing: { state: 'running' } }));
+  await f.writer.continueTask(); await f.writer.continueTask({ title: 'Changed' });
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('saved dialogue displays escaped history and a permanent composer with manual correction collapsed', t => {
+  const f = fixture(t); const value = task({ canMessage: true, processing: { state: 'ready', attempt: 1, retryable: false, error: null },
+    messages: [{ id: 'm1', role: 'user', text: 'Всего <180>', requestKey: 'key1', createdAt: '2026-10-27T10:00:00Z' },
+      { id: 'm2', role: 'assistant', text: 'Сумма департаментов 200. Уточните распределение.', requestKey: 'key1', createdAt: '2026-10-27T10:00:01Z' }],
+    questions: [{ field: 'allocations', text: 'Согласуйте сумму.' }] });
+  const html = renderWorkspace(f, value);
+  assert.match(html, /aria-label="Переписка по поручению"/);
+  assert.match(html, /Всего &lt;180&gt;/);
+  assert.match(html, /Сумма департаментов 200/);
+  assert.match(html, /Сообщение помощнику/);
+  assert.match(html, /Согласуйте сумму/);
+  assert.doesNotMatch(html.match(/<details[^>]*id="assistant-correction"[^>]*>/)?.[0] ?? '', /open=/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+for (const [state, expected] of [['queued', 'Сообщение сохранено'], ['running', 'Помощник обрабатывает'], ['failed', 'Не удалось обработать'], ['ready', 'Ответ готов']]) {
+  test(`saved processing state ${state} survives rendering without starting another request`, t => {
+    const f = fixture(t); const html = renderWorkspace(f, task({ canMessage: true, messages: [], processing: { state, attempt: 1, retryable: state === 'failed', error: null } }));
+    assert.match(html, new RegExp(expected));
+    assert.match(html, /Сообщение помощнику/);
+    assert.equal(f.state.writes.length, 0);
+  });
+}
+
+test('lost dialogue response is replayable after polling discovers that same saved message is processing', async t => {
+  const f = fixture(t); f.select(task({ canMessage: true, processing: { state: 'ready' } }));
+  f.state.post = async () => { throw Error('lost response'); };
+  await f.writer.sendMessage('180 человек', 2);
+  f.select(task({ canMessage: false, processing: { state: 'queued' }, messages: [{ id: 'm1', role: 'user', text: '180 человек', requestKey: 'request-1', createdAt: '' }] }));
+  f.state.post = null; await f.writer.retry();
+  assert.equal(f.state.writes.length, 2);
+  assert.deepEqual(f.state.writes[1], f.state.writes[0]);
+});
+
+test('dialogue next step distinguishes processing and explicit creation from unresolved questions', t => {
+  const f = fixture(t);
+  assert.match(f.model.taskNextAction(task({ processing: { state: 'running' } })).title, /Обработка/);
+  assert.match(f.model.taskNextAction(task({ event: null, questions: [], processing: { state: 'ready' }, canContinue: true })).title, /Создать ОМ/);
+  assert.match(f.model.taskNextAction(task({ questions: [{ field: 'personnelTotal', text: 'Сколько?' }], processing: { state: 'ready' } })).description, /сообщени/);
+});
+
+test('dialogue uses UUID fallback on HTTP and does not require native randomUUID', async t => {
+  const f = fixture(t, { getRandomValues: buffer => require('node:crypto').webcrypto.getRandomValues(buffer) });
+  f.select(task({ canMessage: true, processing: { state: 'ready' } }));
+  const writer = f.api.createAssistantWriter({ client: f.client, getContext: f.context, onSaved() {}, onChange() {} });
+  await writer.sendMessage('Уточнение', 2);
+  assert.match(f.state.writes[0].body.requestKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('busy dialogue polls for recovery, ready dialogue returns to normal polling', t => {
+  const f = fixture(t); f.api.useAssistantTask(taskId);
+  const option = f.state.options.at(-1);
+  assert.equal(option.refetchInterval({ state: { status: 'success', data: task({ processing: { state: 'queued' } }) } }), 2000);
+  assert.equal(option.refetchInterval({ state: { status: 'success', data: task({ processing: { state: 'ready' } }) } }), 30000);
+});
+
+function conversationHarness(f, props) {
+  const slots = []; let cursor = 0; let effects = [];
+  f.override('react', { ...React, useId: () => 'conversation-input',
+    useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
+      return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }]; },
+    useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; }, useEffect(effect) { effects.push(effect); } });
+  const { AssistantConversation } = f.load('@/features/om-assistant/conversation');
+  function render(patch = {}) { Object.assign(props, patch); cursor = 0; effects = []; const tree = AssistantConversation(props); for (const effect of effects) effect(); return tree; }
+  function find(tree, type) { if (!tree || typeof tree !== 'object') return null; if (tree.type === type) return tree;
+    for (const child of React.Children.toArray(tree.props?.children)) { const match = find(child, type); if (match) return match; } return null; }
+  function button(tree, title) {
+    if (!tree || typeof tree !== 'object') return null;
+    if (tree.props?.onClick && tree.props?.children === title) return tree;
+    for (const child of React.Children.toArray(tree.props?.children)) { const match = button(child, title); if (match) return match; }
+    return null;
+  }
+  return { render, input: tree => find(tree, 'textarea'), form: tree => find(tree, 'form'), button };
+}
+
+test('conversation retains a failed draft and clears only its own acknowledged saved message', async t => {
+  const f = fixture(t); const selected = task({ canMessage: true, processing: { state: 'ready' }, messages: [] });
+  const h = conversationHarness(f, { task: selected, acknowledged: null, disabled: false, pending: false,
+    send: async () => undefined, retry: async () => undefined });
+  h.input(h.render()).props.onChange({ target: { value: 'Всего 180' } });
+  h.form(h.render()).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+  assert.equal(h.input(h.render()).props.value, 'Всего 180');
+  h.render({ acknowledged: task({ id: '4733240a-32a0-46cd-9ad9-5127665c29e8', revision: 3, messages: [{ role: 'user', text: 'Всего 180' }] }) });
+  assert.equal(h.input(h.render()).props.value, 'Всего 180');
+  h.render({ acknowledged: task({ revision: 3, messages: [{ role: 'user', text: 'Всего 180' }] }) });
+  assert.equal(h.input(h.render()).props.value, '');
+});
+
+test('conversation blocks submit while busy or revoked without discarding typed text', async t => {
+  const f = fixture(t); let calls = 0;
+  const h = conversationHarness(f, { task: task({ canMessage: true, processing: { state: 'ready' } }), acknowledged: null, disabled: false, pending: false,
+    send: async () => { calls++; }, retry: async () => undefined });
+  h.input(h.render()).props.onChange({ target: { value: '180 человек' } });
+  for (const selected of [task({ canMessage: true, processing: { state: 'running' } }), task({ canEdit: false, canMessage: true, processing: { state: 'ready' } })]) {
+    const tree = h.render({ task: selected }); assert.equal(h.input(tree).props.disabled, true);
+    h.form(tree).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+    assert.equal(h.input(h.render()).props.value, '180 человек');
+  }
+  assert.equal(calls, 0);
+});
+
+test('saved processing retry remains replayable after polling discovers a new attempt', async t => {
+  const f = fixture(t); f.select(task({ processing: { state: 'failed', retryable: true, attempt: 1 } }));
+  f.state.post = async () => { throw Error('lost'); }; await f.writer.retryProcessing();
+  f.select(task({ processing: { state: 'running', retryable: false, attempt: 2 } }));
+  f.state.post = null; await f.writer.retry();
+  assert.equal(f.state.writes.length, 2); assert.deepEqual(f.state.writes[0], f.state.writes[1]);
+});
+
+test('an old identical message and unrelated revision must not clear a failed repeated draft', async t => {
+  const f = fixture(t); const previous = { id: 'old', role: 'user', text: '180 человек', requestKey: 'old-key', createdAt: '' };
+  const h = conversationHarness(f, { task: task({ canMessage: true, processing: { state: 'ready' }, messages: [previous] }),
+    acknowledged: null, disabled: false, pending: false, send: async () => undefined, retry: async () => undefined });
+  h.input(h.render()).props.onChange({ target: { value: '180 человек' } });
+  h.form(h.render()).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+  h.render({ acknowledged: task({ revision: 3, messages: [previous] }) });
+  assert.equal(h.input(h.render()).props.value, '180 человек');
+  h.render({ acknowledged: task({ revision: 4, messages: [previous, { ...previous, id: 'new', requestKey: 'new-key' }] }) });
+  assert.equal(h.input(h.render()).props.value, '');
+});
+
+const guidedTask = patch => task({ event: null, status: 'needs_information', canContinue: false, canMessage: true,
+  processing: { state: 'ready', attempt: 1, retryable: false, error: null },
+  questions: [{ field: 'briefing.objects[1].sectorCount', text: 'Тарлан: сколько секторов?' },
+    { field: 'briefing.objects[0].chiefName', text: 'Аккорда: кто старший объекта?' }],
+  guidance: { current: { id: 'tarlan-sectors', field: 'briefing.objects[1].sectorCount', text: 'Тарлан: сколько секторов?',
+    placeholder: 'Например, 2', canDefer: true, choices: [{ label: 'Без секторов', value: '0' }] }, remaining: 2, deferred: 0 },
+  messages: [{ id: 'm1', role: 'user', text: 'Подготовь Аккорду и Тарлан', requestKey: 'k1', createdAt: '' },
+    { id: 'm2', role: 'assistant', text: 'Тарлан: сколько секторов?\nАккорда: кто старший объекта?', requestKey: 'k1', createdAt: '' }],
+  ...patch });
+
+function primaryConversation(html) {
+  return html.match(/<section[^>]*aria-label="Переписка по поручению"[\s\S]*?<\/section>/)?.[0]
+    ?.replace(/<details\b[^>]*>[\s\S]*?<\/details>/g, '');
+}
+
+test('guided dialogue shows one contextual question with compact history and all blockers available on expansion', t => {
+  const f = fixture(t); const html = renderWorkspace(f, guidedTask());
+  const primary = primaryConversation(html);
+  assert.ok(primary);
+  assert.equal(primary.split('Тарлан: сколько секторов?').length - 1, 1);
+  assert.doesNotMatch(primary, /Аккорда: кто старший объекта|Подготовь Аккорду и Тарлан/);
+  assert.match(primary, /Осталось уточнений: 2/);
+  assert.match(primary, /Ваш ответ/);
+  assert.match(primary, /placeholder="Например, 2"/);
+  assert.match(primary, /Без секторов/); assert.match(primary, /Пока не знаю/);
+  assert.match(html, /<details[^>]*><summary[^>]*>История диалога/);
+  assert.match(html, /<details[^>]*><summary[^>]*>Все недостающие сведения/);
+  for (const title of ['История диалога', 'Все недостающие сведения']) {
+    const disclosure = html.match(new RegExp(`<details([^>]*)><summary[^>]*>${title}`));
+    assert.ok(disclosure); assert.doesNotMatch(disclosure[1], /\bopen\b/);
+  }
+  assert.doesNotMatch(html.match(/<details[^>]*id="assistant-correction"[^>]*>/)?.[0] ?? '', /open=/);
+  assert.match(html, /href="#assistant-answer"/);
+  assert.doesNotMatch(html, /href="#assistant-correction"/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('all deferred questions remain blockers and offer an explicit return instead of a false ready state', t => {
+  const f = fixture(t); const html = renderWorkspace(f, guidedTask({ canContinue: true,
+    guidance: { current: null, remaining: 2, deferred: 2 } }));
+  const primary = primaryConversation(html);
+  assert.match(primary, /Осталось уточнений: 2/); assert.match(primary, /Отложено: 2/);
+  assert.match(primary, /Вернуться к отложенным вопросам/);
+  assert.doesNotMatch(primary, /Текущий вопрос|Ответ готов|все сведения собраны/i);
+  assert.match(html, /<button[^>]*disabled=""[^>]*>Создать ОМ от своего имени<\/button>/);
+  assert.equal(f.state.writes.length, 0);
+});
+
+for (const state of ['queued', 'running', 'failed']) {
+  test(`guided ${state} state does not present a stale active question or choices`, t => {
+    const html = renderWorkspace(fixture(t), guidedTask({ processing: { state, attempt: 1, retryable: state === 'failed', error: null } }));
+    const primary = primaryConversation(html);
+    assert.doesNotMatch(primary, /Тарлан: сколько секторов|Без секторов|Пока не знаю/);
+    assert.match(primary, /<textarea[^>]*disabled=""/);
+    if (state === 'failed') assert.match(primary, /Повторить обработку/);
+  });
+}
+
+test('guided choices fill an empty draft without posting and cannot overwrite a typed answer', async t => {
+  const f = fixture(t); const sent = [];
+  const h = conversationHarness(f, { task: guidedTask(), acknowledged: null, disabled: false, pending: false,
+    send: async (text, revision) => { sent.push({ text, revision }); }, retry: async () => undefined });
+  let tree = h.render(); const choice = h.button(tree, 'Без секторов'); assert.ok(choice);
+  choice.props.onClick(); tree = h.render();
+  assert.equal(h.input(tree).props.value, '0'); assert.equal(sent.length, 0);
+  h.input(tree).props.onChange({ target: { value: 'На Тарлане 3 сектора, на Аккорде старший Асанов' } });
+  tree = h.render(); const skip = h.button(tree, 'Пока не знаю');
+  assert.equal(skip.props.disabled, true); skip.props.onClick();
+  assert.equal(h.input(h.render()).props.value, 'На Тарлане 3 сектора, на Аккорде старший Асанов');
+  h.form(h.render()).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+  assert.deepEqual(sent, [{ text: 'На Тарлане 3 сектора, на Аккорде старший Асанов', revision: 2 }]);
+});
+
+test('deferring and resuming require the usual explicit send and carry literal messages with the current revision', async t => {
+  for (const [label, selected] of [['Пока не знаю', guidedTask()], ['Вернуться к отложенным вопросам', guidedTask({ revision: 4,
+    guidance: { current: null, remaining: 2, deferred: 2 } })]]) {
+    const f = fixture(t); const sent = [];
+    const h = conversationHarness(f, { task: selected, acknowledged: null, disabled: false, pending: false,
+      send: async (text, revision) => { sent.push({ text, revision }); }, retry: async () => undefined });
+    const button = h.button(h.render(), label); assert.ok(button); button.props.onClick();
+    assert.equal(h.input(h.render()).props.value, label); assert.equal(sent.length, 0);
+    h.form(h.render()).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+    assert.deepEqual(sent, [{ text: label, revision: selected.revision }]);
+  }
+});
+
+test('a short draft cannot silently migrate to another question after a remote revision', async t => {
+  const f = fixture(t); const sent = []; const original = guidedTask();
+  const h = conversationHarness(f, { task: original, acknowledged: null, disabled: false, pending: false,
+    send: async (text, revision) => { sent.push({ text, revision }); }, retry: async () => undefined });
+  h.input(h.render()).props.onChange({ target: { value: '3' } });
+  const updated = guidedTask({ revision: 3, guidance: { current: { id: 'akkorda-chief', field: 'briefing.objects[0].chiefName',
+    text: 'Аккорда: кто старший объекта?', canDefer: true }, remaining: 1, deferred: 0 } });
+  let tree = h.render({ task: updated });
+  assert.equal(h.input(tree).props.value, '3');
+  h.form(tree).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+  assert.equal(sent.length, 0);
+  const confirm = h.button(h.render(), 'Проверил вопрос — использовать мой ответ'); assert.ok(confirm); confirm.props.onClick();
+  tree = h.render(); h.form(tree).props.onSubmit({ preventDefault() {} }); await Promise.resolve();
+  assert.deepEqual(sent, [{ text: '3', revision: 3 }]);
+});
+
+test('legacy dialogue keeps one question visible without promising server guidance or losing the full blocker list', t => {
+  const html = renderWorkspace(fixture(t), guidedTask({ guidance: undefined }));
+  const primary = primaryConversation(html);
+  assert.match(primary, /Тарлан: сколько секторов/);
+  assert.doesNotMatch(primary, /Аккорда: кто старший объекта|Пока не знаю|Без секторов/);
+  assert.match(primary, /Сообщение помощнику/);
+  assert.match(html, /Аккорда: кто старший объекта/);
+});
+
+test('guided feedback explains an unrecognized answer before repeating its question and escapes provider text', t => {
+  const value = guidedTask(); value.guidance.feedback = 'Ответ сохранён, но количество <постов> пока не распознано.';
+  const primary = primaryConversation(renderWorkspace(fixture(t), value));
+  assert.match(primary, /Ответ сохранён, но количество &lt;постов&gt; пока не распознано/);
+  assert.ok(primary.indexOf('Ответ сохранён') < primary.indexOf('Тарлан: сколько секторов?'));
+  assert.equal(primary.split('Тарлан: сколько секторов?').length - 1, 1);
+  for (const state of ['queued', 'running', 'failed']) {
+    const hidden = primaryConversation(renderWorkspace(fixture(t), { ...value, processing: { state, attempt: 1, retryable: false, error: null } }));
+    assert.doesNotMatch(hidden, /количество &lt;постов&gt; пока не распознано/);
+  }
+});
+
+test('dialogue keeps a genuine domain permission notice visible alongside guidance', t => {
+  const html = renderWorkspace(fixture(t), guidedTask({ interpretationNotice: 'Для создания ОМ требуется право создания мероприятия.' }));
+  assert.match(primaryConversation(html), /Для создания ОМ требуется право создания мероприятия/);
+});
+
+test('a message being saved hides the previous active question and feedback until the response arrives', t => {
+  const f = fixture(t); const { AssistantConversation } = f.load('@/features/om-assistant/conversation');
+  const value = guidedTask(); value.guidance.feedback = 'Прежний ответ принят.';
+  const html = renderToStaticMarkup(React.createElement(AssistantConversation, { task: value, acknowledged: null,
+    disabled: true, pending: true, send: async () => undefined, retry: async () => undefined }));
+  const primary = primaryConversation(html);
+  assert.doesNotMatch(primary, /Тарлан: сколько секторов|Прежний ответ принят|Пока не знаю|Без секторов/);
+  assert.match(primary, /Сохраняем сообщение/); assert.match(primary, /<textarea[^>]*disabled=""/);
+});
+
+test('guided tasks with messaging unavailable offer the manual fallback without a misleading dialogue link', t => {
+  const f = fixture(t); const value = guidedTask({ canMessage: false });
+  const next = f.model.taskNextAction(value);
+  assert.equal(next.canCorrect, true);
+  assert.doesNotMatch(next.description, /Продолжите диалог сообщением/);
+  const html = renderWorkspace(f, value);
+  assert.doesNotMatch(html, /href="#assistant-answer"/);
+  assert.match(html, /href="#assistant-correction"/);
+  assert.match(html, /Новые сообщения недоступны/);
+});
+
+test('grouped blockers do not compete with the granular unanswered question count', t => {
+  const value = guidedTask(); value.guidance.remaining = 30;
+  const html = renderWorkspace(fixture(t), value);
+  assert.match(primaryConversation(html), /Осталось уточнений: 30/);
+  assert.match(html, /<summary[^>]*>Все недостающие сведения<\/summary>/);
+  assert.doesNotMatch(html, /Все вопросы \(2\)|Все недостающие сведения \(2\)/);
+});
+
+test('a real queued API plan with nullable briefing actions renders its durable locked dialogue', t => {
+  const f = fixture(t);
+  const value = task({ event: null, delegated: false, status: 'needs_information', canContinue: false,
+    canMessage: false, processing: { state: 'queued', attempt: 1, error: null, retryable: false },
+    guidance: { current: null, remaining: 3, deferred: 0 },
+    questions: [{ field: 'title', text: 'Как называется мероприятие?' },
+      { field: 'businessDate', text: 'На какую дату нужен наряд?' },
+      { field: 'kind', text: 'Мероприятие внутреннее или с участием иностранных лиц?' }],
+    plan: { title: null, businessDate: null, businessDateEnd: null, eventTime: null, kind: null,
+      objectId: null, objectName: null, eventId: null, intent: 'prepare', allocations: [],
+      personnelTotal: null, briefing: null, briefingPending: null } });
+  const before = JSON.stringify(value);
+  const html = renderWorkspace(f, value);
+  assert.match(html, /aria-label="Переписка по поручению"/);
+  assert.match(primaryConversation(html), /Сообщение сохранено\. Ожидает обработки/);
+  assert.match(primaryConversation(html), /<textarea[^>]*disabled=""/);
+  assert.doesNotMatch(html, /aria-label="Объекты и охраняемые лица поручения"|Создать ОМ от своего имени/);
+  assert.equal(JSON.stringify(value), before);
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('nullable or omitted pending actions retain recognized briefing facts without inventing completed actions', t => {
+  for (const pending of [null, undefined, []]) {
+    const f = fixture(t);
+    const value = task({ event: null, status: 'needs_information', canContinue: false, plan: {
+      title: 'Встреча', kind: 'INTERNAL', businessDate: '2026-10-28',
+      briefing: { objects: [{ name: 'Аккорда', needStatus: 'unknown', sectors: [] }], protectedPersons: [] },
+      briefingPending: pending,
+    }, questions: [{ field: 'briefing.objects[0].chiefName', text: 'Уточните старшего объекта.' }] });
+    const before = JSON.stringify(value);
+    const html = renderWorkspace(f, value);
+    assert.match(html, /aria-label="Объекты и охраняемые лица поручения"/);
+    assert.match(html, /Аккорда|Нужно уточнить/);
+    assert.doesNotMatch(html, /Ожидают выполнения|Создать ОМ от своего имени/);
+    assert.equal(JSON.stringify(value), before);
+    assert.equal(f.state.writes.length, 0);
   }
 });

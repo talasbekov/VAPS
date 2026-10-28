@@ -193,9 +193,26 @@ class ApplicationUpdate(base.Update):
         base.run(self.base + ['up', '-d', '--no-deps', '--pull', 'never', '--no-build',
             '--wait', '--wait-timeout', '180', 'proxy'], capture=False)
 
+    def verify_network_transition(self):
+        # Only reviewed schema releases prepare this optional configuration change.
+        transition = getattr(self, 'network_transition', None)
+        if transition is not None:
+            transition.require_original()
+
+    def apply_network_transition(self, folder):
+        transition = getattr(self, 'network_transition', None)
+        if transition is not None:
+            transition.apply(folder)
+
+    def rollback_network_transition(self):
+        transition = getattr(self, 'network_transition', None)
+        if transition is not None:
+            transition.rollback()
+
     def apply_without_database_changes(self, folder):
         self.recovery_required = False
         self.require_current_schema()
+        self.verify_network_transition()
         self.check_space(folder)
         new_backend = self.wrap_image(self.new_backend)
         rollback_backend = self.wrap_image(self.old_backend)
@@ -220,6 +237,7 @@ class ApplicationUpdate(base.Update):
             if restored != before:
                 database_uncertain = True
                 raise RuntimeError('Restored backup differs from paused database; inspect external writers')
+            self.apply_network_transition(folder)
             self.set_images(new_backend, self.new_frontend, self.new_proxy)
             self.start_application()
             after = self.readonly(FULL_FINGERPRINT)
@@ -256,6 +274,7 @@ class ApplicationUpdate(base.Update):
                         raise RuntimeError('Database identity changed; application remains stopped')
                     print('Restoring previous application images without database migration/restore.', flush=True)
                     (self.stack / 'images.env').write_bytes(old_images)
+                    self.rollback_network_transition()
                     self.set_images(rollback_backend, old_frontend, self.old_proxy)
                     self.start_application()
                     if before is not None and self.readonly(FULL_FINGERPRINT, image=rollback_backend) != before:

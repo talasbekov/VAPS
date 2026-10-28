@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { opsApiClient } from "@/lib/ops-api";
-import type { OpsApiFailure } from "@/lib/ops-errors";
 
 interface Freshness { status: "FRESH" | "STALE"; can_rebuild?: boolean }
 
@@ -19,11 +19,10 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
   const access = useOpsPermissions();
   const permissionsFetching = useIsFetching({ queryKey: ["ops-me"], exact: true }) > 0;
   const canRead = workspaceReady && !access.isLoading && !access.error && access.hasPermission("status.view");
-  const freshness = useQuery<Freshness, OpsApiFailure>({
-    queryKey: ["summary-freshness", divisionId, businessDate],
-    queryFn: () => opsApiClient.get(`/api/operations/daily-summaries/freshness/?division_id=${divisionId}&business_date=${encodeURIComponent(businessDate)}`),
+  const freshness = useDailyExpenseRead<Freshness>("summary-freshness", [divisionId, businessDate],
+    (_signal, authorize) => opsApiClient.get(`/api/operations/daily-summaries/freshness/?division_id=${divisionId}&business_date=${encodeURIComponent(businessDate)}`, authorize), {
     enabled: canRead,
-    staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always", retry: false,
+    staleTime: 0, refetchOnWindowFocus: true,
   });
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");

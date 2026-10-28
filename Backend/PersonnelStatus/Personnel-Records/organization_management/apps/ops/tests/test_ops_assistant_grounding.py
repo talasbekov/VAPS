@@ -7,7 +7,7 @@ from organization_management.apps.operations.models_assistant import OpsAssistan
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.assistant import planning, provider
 from organization_management.apps.ops.tests.test_ops_assistant_api import (
-    URL, bulletin_fields, chief, create_task, jwt_actor,
+    URL, bulletin_fields, chief, create_task, jwt_actor, finish_interpretation,
 )
 from organization_management.apps.ops.tests.test_ops_forces_gathering import (
     event_on_demand, make_department, manager,
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 def test_a_word_inside_the_named_title_is_not_a_reference_to_an_existing_event(chief, monkeypatch):
     proposal = {**bulletin_fields(title="Учебная проверка initial"), "eventCode": "initial"}
-    monkeypatch.setattr(provider, "interpret", lambda _: proposal)
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: proposal)
     response = create_task(chief[0], message="Подготовь внутреннее мероприятие «Учебная проверка initial»01.06.2027")
     assert response.status_code == 201, response.content
     assert response.json()["status"] == "awaiting_recon"
@@ -41,9 +41,10 @@ def test_model_must_ground_the_whole_department_quantity_proposal(manager, monke
     else:
         message = "Запроси во втором департаменте 4, в шестом 6"
         rows = [{"departmentName": second.name, "need": 4}, {"departmentName": ninth.name, "need": 6}]
-    monkeypatch.setattr(provider, "interpret", lambda _: {"intent": "send", "allocations": rows})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {"intent": "send", "allocations": rows})
     staff, _ = jwt_actor("ground_staff", ("event.view", "forces.command"))
     response = staff.post(URL, {"requestKey": str(uuid.uuid4()), "message": message, "fields": {"eventId": event_id}, "interpret": True}, format="json")
+    response = finish_interpretation(staff, response)
     assert response.status_code == 201, response.content
     data = response.json()
     assert data["status"] == "needs_information"
@@ -59,11 +60,12 @@ def test_directly_grounded_pairs_send_with_real_jwt(manager, monkeypatch):
     event_id = base.rstrip("/").rsplit("/", 1)[-1]
     second = make_department("Второй департамент")
     sixth = make_department("Шестой департамент")
-    monkeypatch.setattr(provider, "interpret", lambda _: {"intent": "send", "allocations": [
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {"intent": "send", "allocations": [
         {"departmentName": second.name, "need": 4}, {"departmentName": sixth.name, "need": 6},
     ]})
     staff, _ = jwt_actor("ground_valid", ("event.view", "forces.command"))
     response = staff.post(URL, {"requestKey": str(uuid.uuid4()), "message": "Запроси во втором департаменте 4, в шестом 6", "fields": {"eventId": event_id}, "interpret": True}, format="json")
+    response = finish_interpretation(staff, response)
     assert response.status_code == 201, response.content
     assert response.json()["status"] == "awaiting_department_responses"
     event = OpsSecurityEvent.objects.get(pk=event_id)
@@ -81,9 +83,10 @@ def test_event_code_is_a_complete_identity_not_a_prefix(manager, monkeypatch):
     short.save(update_fields=["code"])
     longer.save(update_fields=["code"])
     department = make_department("Второй департамент")
-    monkeypatch.setattr(provider, "interpret", lambda _: {"eventCode": short.code, "intent": "send", "allocations": [{"departmentName": department.name, "need": 4}]})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {"eventCode": short.code, "intent": "send", "allocations": [{"departmentName": department.name, "need": 4}]})
     staff, _ = jwt_actor("prefix_staff", ("event.view", "forces.command"))
     response = staff.post(URL, {"requestKey": str(uuid.uuid4()), "message": "По ОМ-2028-12 запроси 4 человека во втором департаменте"}, format="json")
+    response = finish_interpretation(staff, response)
     assert response.status_code == 201, response.content
     data = response.json()
     assert data["status"] == "needs_information"

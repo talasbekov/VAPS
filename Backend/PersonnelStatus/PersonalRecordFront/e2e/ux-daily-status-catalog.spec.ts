@@ -10,6 +10,14 @@ async function prepare(page: Page) {
   await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: {
     permissions: ['status.view', 'status.manage', 'forces.select'], global_permissions: [], status_manage_division_ids: [3],
     roles: [{ code: 'DIRECTORATE_HEAD', name: 'Начальник управления', scope_division_id: 3, scope_division_name: 'Управление' }] } }));
+  // A denied leadership read invalidates sibling daily data under the same
+  // authority. Model the real empty native response instead of a missing API.
+  await page.route('**/api/staff_unit/staff-units/directorate/**', route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const pageSize = Number(new URL(route.request().url()).searchParams.get('page_size') || 50);
+    return route.fulfill({ json: { staff_units: [], total_count: 0, matched_count: 0,
+      page: 1, page_size: pageSize, has_next: false } });
+  });
   const row = { division_id: 3, name: 'Управление', list_total: 1, staff_total: 1, vacancies: 0, attached: 0, off_list: 0, columns: { IN_SERVICE: 1 }, event: { group: 0, squad: 0 } };
   await page.route('**/api/operations/strength-report/**', route => route.fulfill({ json: { business_date: date, columns: ['IN_SERVICE'], column_labels: { IN_SERVICE: 'В строю' }, rows: [row], totals: row, warnings: [] } }));
   await page.route('**/api/operations/traffic-light/tree/**', route => route.fulfill({ json: { business_date: date, nodes: [] } }));

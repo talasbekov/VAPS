@@ -57,6 +57,7 @@ import type { Division } from "@/lib/api";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import { OpsApiError } from "@/lib/ops-errors";
 import { AccountEmployeeLink } from "./account-employee-link";
+import { AccountEffectiveAccess } from "./account-effective-access";
 
 // Право берётся из ОБЩЕЙ карты (Plane №350): пункт меню и гейт этого
 // экрана обязаны решать одно и то же, иначе спрятанный пункт и открытый
@@ -137,7 +138,7 @@ function AccessUsersScreen() {
         <div className="flex flex-wrap items-center gap-2">
           <Input
             className="h-[38px] max-w-[420px] text-[13px]"
-            placeholder="Поиск по логину, имени, фамилии или почте…"
+            placeholder="ФИО, табельный номер, логин или почта…"
             aria-label="Поиск по учётным записям"
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
@@ -325,7 +326,7 @@ function AccountRow({
         </button>
       </TableCell>
       <TableCell className="text-[13px]">
-        {account.full_name ?? (
+        {account.full_name || account.employee_name || (
           <span className="text-muted-foreground">имя не заполнено</span>
         )}
       </TableCell>
@@ -416,6 +417,7 @@ function AccountDetails({
       </CardHeader>
       <CardContent className="space-y-4">
         <AccountEmployeeLink account={account} />
+        <AccountEffectiveAccess userId={account.id} />
         <div className="border-t pt-3">
           <h3 className="mb-2 text-[13px] font-semibold">Учётная запись</h3>
           <p className="mb-2 text-[12px] text-muted-foreground">
@@ -581,7 +583,14 @@ function AccountDetails({
               {!globalRole && divisionsQuery.isError && <LoadFailure what="области назначения" onRetry={() => void divisionsQuery.refetch()} isRetrying={divisionsQuery.isFetching} />}
               <p id="assign-scope-help" className="text-[11.5px] text-muted-foreground">
                 Подразделение включает подчинённые. Вся служба — доступ без ограничения подразделением.
+                Область применяется по правилам каждого раздела.
               </p>
+              {rolesReady && (globalRole || selectedRole?.permissions.includes("event.view")) && <p className="text-[11.5px] text-muted-foreground">
+                Просмотр ОМ открывает общий реестр ОМ по всей службе. Область подразделения его не ограничивает.
+              </p>}
+              {rolesReady && (globalRole || selectedRole?.permissions.includes("event.manage")) && <p className="text-[11.5px] text-muted-foreground">
+                Ведение ОМ даёт широкие полномочия над мероприятиями. Область подразделения не изолирует эти изменения; ограничения этапа и назначения проверяются отдельно.
+              </p>}
               <p className="text-[11.5px] text-muted-foreground">
                 Права всех назначений складываются. Узкая область не отменяет доступ на всю службу:
                 лишнее широкое назначение снимите отдельно.

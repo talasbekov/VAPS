@@ -76,7 +76,7 @@ def test_schema_valid_model_hallucination_cannot_turn_prepare_text_into_an_exist
     staff, _ = jwt_actor("review_model_staff", ("event.view", "forces.command"))
     # The external dependency returns schema-valid but unsupported facts/intent.
     # Real authorization, event lookup and mutation remain untouched.
-    monkeypatch.setattr(provider, "interpret", lambda _: {
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {
         "eventCode": event.code, "intent": "send",
         "allocations": [{"departmentName": department.name, "need": 2}],
     })
@@ -109,6 +109,7 @@ def test_advanced_event_does_not_complete_a_new_unsent_task(chief, manager):
 
 @override_settings(OPS_ASSISTANT_PROVIDER="ollama", OPS_ASSISTANT_OLLAMA_URL="http://127.0.0.1:11434")
 @pytest.mark.parametrize("envelope", [[], None])
+@pytest.mark.django_db
 def test_non_object_provider_envelope_becomes_a_recoverable_provider_error(monkeypatch, envelope):
     monkeypatch.setattr(provider, "urlopen", lambda *_args, **_kwargs: BytesIO(json.dumps(envelope).encode()))
 

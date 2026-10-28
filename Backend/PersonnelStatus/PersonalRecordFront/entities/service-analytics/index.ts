@@ -287,6 +287,51 @@ export interface LoadAnalyticsResponse {
   generatedAt: string;
   view: LoadAnalyticsView;
   unavailable: UnavailableMetric[];
+  coverage?: WorkloadCoverageData;
+}
+
+export interface WorkloadCoverageRecord {
+  id: string;
+  employeeId: string;
+  source: "LOG" | "DISPATCH" | "PLAN" | "STATUS_DUTY" | "STATUS" | "OM";
+  sourceLabel: string;
+  label: string;
+  state: string;
+  dateFrom: string;
+  dateTo: string;
+  timing: "EXACT" | "DATE_ONLY";
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+  actualStartAt: string | null;
+  actualEndAt: string | null;
+  plannedMinutes: number | null;
+  actualMinutes: number | null;
+  sourceChanged: boolean;
+  includedInPlan: boolean;
+}
+
+export interface WorkloadCoverageData {
+  state: "AVAILABLE" | "PERSONAL_DETAIL_REQUIRED" | "LIMIT_EXCEEDED";
+  period: { from: string; to: string };
+  timeZone: string;
+  generatedAt: string;
+  calculationVersion: string;
+  maxPeriodDays: number;
+  scopeLabel: string;
+  reason: string | null;
+  limitations: string[];
+  sources: { code: string; label: string; state: "INCLUDED" | "UNAVAILABLE"; reason: string }[];
+  employees: {
+    employeeId: string;
+    safeLabel: string;
+    organizationUnitId: string;
+    divisionLabel: string;
+    knownPlannedMinutes: number | null;
+    confirmedActualMinutes: number | null;
+    unknownPlannedRecords: number;
+    unknownActualRecords: number;
+    records: WorkloadCoverageRecord[];
+  }[];
 }
 
 // ── Источник (узкая проекция стора дежурств) ─────────────────────────────

@@ -446,6 +446,72 @@ def test_employees_foreign_division_is_403(scoped_viewer, division):
     )
 
 
+def test_daily_people_unknown_division_preserves_empty_list_for_unscoped_reader(operator):
+    missing_id = max(Division.objects.values_list("pk", flat=True), default=0) + 1
+    response = operator.get(f"{EMPLOYEES}?division_id={missing_id}")
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+
+
+@pytest.mark.parametrize("with_own_division", [False, True])
+def test_daily_people_cannot_read_an_ancestor_with_a_descendant_grant(with_own_division):
+    department = Division.objects.create(name="Parent department")
+    own = Division.objects.create(name="Own directorate", parent=department)
+    make_employee(department)
+    person = make_employee(own)
+    api, _ = client_for("daily-child-reader", "DAILY_CHILD_READER", perms=("status.view",), scope_division_id=own.pk)
+
+    assert api.get(f"{EMPLOYEES}?division_id={own.pk}").json()["results"][0]["id"] == str(person.pk)
+    query = f"division_id={department.pk}"
+    if with_own_division:
+        query = f"division_id={own.pk}&{query}&division_id={own.pk}"
+    response = api.get(f"{EMPLOYEES}?{query}")
+
+    assert response.status_code == 403
+    assert "results" not in response.json()
+
+
+def test_daily_people_temporary_scope_cannot_read_ancestors_and_stops_after_revocation():
+    from organization_management.apps.operations.models import TemporaryDutyPermission
+    from organization_management.apps.operations.clock import Clock
+
+    department = Division.objects.create(name="Temporary parent")
+    own = Division.objects.create(name="Temporary own", parent=department)
+    make_employee(department)
+    person = make_employee(own)
+    api, user = client_for("daily-temporary-reader")
+    role = seed_role("DAILY_TEMPORARY_READER", ("status.view", "daily_report.generate"))
+    grant = TemporaryDutyPermission.objects.create(
+        user_id=str(user.pk), duty_role_code=role.code, scope_division_id=own.pk,
+        starts_at=Clock.now()-timedelta(hours=1), ends_at=Clock.now()+timedelta(hours=1), created_by="test",
+    )
+
+    assert api.get(f"{EMPLOYEES}?division_id={own.pk}").json()["results"][0]["id"] == str(person.pk)
+    assert api.get(f"{EMPLOYEES}?division_id={department.pk}").status_code == 403
+    grant.is_active = False
+    grant.save(update_fields=["is_active"])
+    assert api.get(f"{EMPLOYEES}?division_id={own.pk}").status_code == 403
+
+
+def test_daily_people_expired_temporary_grant_does_not_widen_other_active_scope():
+    from organization_management.apps.operations.models import TemporaryDutyPermission
+    from organization_management.apps.operations.clock import Clock
+
+    department = Division.objects.create(name="Expired parent")
+    own = Division.objects.create(name="Active own", parent=department)
+    make_employee(department)
+    person = make_employee(own)
+    api, user = client_for("daily-expired-reader", "DAILY_ACTIVE_READER", perms=("status.view",), scope_division_id=own.pk)
+    role = seed_role("DAILY_EXPIRED_READER", ("status.view",))
+    TemporaryDutyPermission.objects.create(
+        user_id=str(user.pk), duty_role_code=role.code, scope_division_id=department.pk,
+        starts_at=Clock.now()-timedelta(hours=2), ends_at=Clock.now()-timedelta(hours=1), created_by="test",
+    )
+
+    assert api.get(f"{EMPLOYEES}?division_id={own.pk}").json()["results"][0]["id"] == str(person.pk)
+    assert api.get(f"{EMPLOYEES}?division_id={department.pk}").status_code == 403
+
+
 def test_bulk_delegates_and_is_atomic(operator, division, duty_type):
     good = make_employee(division)
     with clock.override(TODAY):

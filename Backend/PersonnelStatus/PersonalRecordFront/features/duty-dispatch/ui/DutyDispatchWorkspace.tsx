@@ -21,6 +21,7 @@ import { moduleOpenFor } from '@/entities/portal-access';
 import { DUTY_STATE_LABELS } from '@/entities/duty-register';
 import { dutyWorkspaceHref, validDutyDate } from '@/features/duty-register/model/workspace';
 import { isReadAccessBlocked, readWithAccessCheck } from '@/lib/query-read-access';
+import { dispatchEmptyState, showDispatchFilters } from '../model/empty-state';
 
 const KEY = ['duty-dispatch'] as const;
 const PAGE_SIZE = 25;
@@ -92,6 +93,8 @@ export function DutyDispatchWorkspace({ embedded = false }: { embedded?: boolean
   const departments = [...new Set([...people, ...assignments].map(row => row.department_name).filter((name): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b, 'ru'));
   const needle = search.trim().toLocaleLowerCase('ru');
   const hasFilters = Boolean(needle || department);
+  const unfilteredCount = currentTab === 'waiting' ? waiting.length : currentTab === 'history' ? history.length : active.length;
+  const empty = dispatchEmptyState({tab: currentTab, people: people.length, waiting: waiting.length, active: active.length, invalid: active.filter(row => !row.valid).length, history: history.length, hasFilters});
   const match = (row: DutyPerson | DispatchAssignment) => {
     const placement = 'placement' in row ? row.placement : undefined;
     const words = [row.full_name, row.department_name, row.directorate_name, row.position_name, placement?.object_name, placement?.post_name, placement?.sector_name, placement?.group_name];
@@ -127,6 +130,16 @@ export function DutyDispatchWorkspace({ embedded = false }: { embedded?: boolean
   const personAllowed = Boolean(currentPerson && person?.business_date === date && !currentPerson.unavailable_reason && canPlace);
   if (!access.isLoading && !allowed) return <OpsAccessDenied what="расстановки дежурств" />;
 
+  function emptyState() {
+    return <div className="space-y-2 rounded-lg border p-5" role="status">
+      <p className="font-medium">{empty.title}</p><p className="text-sm text-muted-foreground">{empty.detail}</p>
+      {empty.action === 'clear' && <Button variant="outline" onClick={() => { setSearch(''); setDepartment(''); }}>Сбросить фильтры</Button>}
+      {empty.action === 'assigned' && <Button variant="outline" onClick={() => setTab('assigned')}>Посмотреть назначения</Button>}
+      {empty.action === 'waiting' && queue?.can_assign && <Button variant="outline" onClick={() => setTab('waiting')}>Расставить сотрудников</Button>}
+      {empty.action === 'roster' && access.allowed && <Button asChild variant="outline"><Link href={dutyWorkspaceHref('roster', new URLSearchParams({date}))}>Посмотреть состав на дату</Link></Button>}
+    </div>;
+  }
+
   function assignmentRows(rows: DispatchAssignment[]) {
     return rows.length ? <div className="grid gap-3">{rows.map(row => <article key={row.id} className="rounded-lg border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -136,7 +149,7 @@ export function DutyDispatchWorkspace({ embedded = false }: { embedded?: boolean
       {row.execution_state && <p className="mt-2 text-sm">Исполнение: {DUTY_STATE_LABELS[row.execution_state].toLocaleLowerCase('ru')}</p>}
       {row.cancelled_at ? <p className="mt-2 text-sm text-muted-foreground">Назначение снято{row.cancelled_reason ? `: ${row.cancelled_reason}` : ''}</p> : !row.valid && <p role="alert" className="mt-2 text-sm text-amber-700">Требует внимания: {row.invalid_reason || 'Выделение больше не действует'}. В действующем составе объекта не учитывается.</p>}
       {moduleOpenFor('/security-ops/duty-register', access.hasPermission) && <Button asChild variant="outline" size="sm" className="mt-3"><Link href={'/security-ops/duty-register/?' + new URLSearchParams({ from: date, to: date, source: 'DISPATCH', record: row.duty_record_id ?? `DISPATCH:${row.id}` })}>Учёт смены</Link></Button>}
-    </article>)}</div> : <p className="rounded-lg border p-5 text-sm text-muted-foreground">{hasFilters ? 'По этим условиям сотрудников нет.' : currentTab === 'history' ? 'Снятых назначений за этот день нет.' : 'На этот день ещё нет назначений.'}</p>;
+    </article>)}</div> : emptyState();
   }
 
   const Container = embedded ? Fragment : DashboardLayout;
@@ -161,14 +174,14 @@ export function DutyDispatchWorkspace({ embedded = false }: { embedded?: boolean
         {!access.hasPermission('object.view') && <p role="alert" className="text-sm">Для выбора места дежурства требуется доступ к объектам.</p>}
         <Tabs value={currentTab} onValueChange={setTab}>
           <TabsList className="h-auto flex-wrap">{queue.can_assign && <TabsTrigger value="waiting">Ожидают расстановки · {waiting.length}</TabsTrigger>}<TabsTrigger value="assigned">Расставлены · {active.filter(row => row.valid).length}{active.some(row => !row.valid) ? ' · Есть изменения' : ''}</TabsTrigger><TabsTrigger value="history">История · {history.length}</TabsTrigger></TabsList>
-          <div className="my-4 flex flex-wrap gap-3">
+          {showDispatchFilters(unfilteredCount, hasFilters) && <div className="my-4 flex flex-wrap gap-3">
             <input aria-label="Поиск сотрудника" className={`${inputStyle} min-w-0 flex-1 basis-64`} placeholder="ФИО, управление, объект или пост" value={search} onChange={event => setSearch(event.target.value)} />
             <select aria-label="Департамент отправителя" className={`${inputStyle} max-w-full`} value={department} onChange={event => setDepartment(event.target.value)}><option value="">Все департаменты</option>{department && !departments.includes(department) && <option value={department}>{department}</option>}{departments.map(name => <option key={name}>{name}</option>)}</select>
             {hasFilters && <Button variant="ghost" onClick={() => { setSearch(''); setDepartment(''); }}>Сбросить фильтры</Button>}
-          </div>
+          </div>}
           <div ref={resultsRef} tabIndex={-1} role="region" aria-label="Список дежурств" className="scroll-mt-24 outline-none">
           <TabsContent value="waiting" className="space-y-4">
-            {visibleWaiting.length ? <div className="divide-y rounded-lg border">{visibleWaiting.slice(offset, offset + PAGE_SIZE).map(row => <article key={row.employee_id} className="flex flex-wrap items-center justify-between gap-3 p-4"><div className="min-w-0 space-y-1 break-words"><h3 className="font-semibold">{row.full_name}</h3><p className="text-sm text-muted-foreground">{[row.department_name, row.directorate_name, row.position_name].filter(Boolean).join(' · ')}</p><p className="text-sm">{row.status_label} · {statusPeriod({ date_start: row.date_start, date_end: row.date_end ?? "" })}</p>{row.unavailable_reason && <p className="text-sm text-amber-700">{row.unavailable_reason}</p>}</div><Button disabled={!canPlace || Boolean(row.unavailable_reason)} onClick={() => { setNotice(''); setPerson({ ...row, business_date: date }); }}>Назначить</Button></article>)}</div> : <p className="rounded-lg border p-5 text-sm text-muted-foreground">{hasFilters ? 'По этим условиям сотрудников нет.' : 'Все выделенные сотрудники расставлены либо на эту дату ещё никто не выделен.'}</p>}
+            {visibleWaiting.length ? <div className="divide-y rounded-lg border">{visibleWaiting.slice(offset, offset + PAGE_SIZE).map(row => <article key={row.employee_id} className="flex flex-wrap items-center justify-between gap-3 p-4"><div className="min-w-0 space-y-1 break-words"><h3 className="font-semibold">{row.full_name}</h3><p className="text-sm text-muted-foreground">{[row.department_name, row.directorate_name, row.position_name].filter(Boolean).join(' · ')}</p><p className="text-sm">{row.status_label} · {statusPeriod({ date_start: row.date_start, date_end: row.date_end ?? "" })}</p>{row.unavailable_reason && <p className="text-sm text-amber-700">{row.unavailable_reason}</p>}</div><Button disabled={!canPlace || Boolean(row.unavailable_reason)} onClick={() => { setNotice(''); setPerson({ ...row, business_date: date }); }}>Назначить</Button></article>)}</div> : emptyState()}
           </TabsContent>
           <TabsContent value="assigned">{assignmentRows(visibleActive.slice(offset, offset + PAGE_SIZE))}</TabsContent>
           <TabsContent value="history">{assignmentRows(visibleHistory.slice(offset, offset + PAGE_SIZE))}</TabsContent>

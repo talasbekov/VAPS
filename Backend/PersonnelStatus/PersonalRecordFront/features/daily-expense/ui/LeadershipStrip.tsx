@@ -19,11 +19,11 @@
 // Это временный фронтовый признак: серверной пометки «руководство» пока нет,
 // и это написано на экране (подпись под блоком).
 import { useMemo } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
-import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { effectiveDailyStatus } from "../model/directorate-summary";
 import { StatusDetails } from "./StatusDetails";
 
@@ -106,11 +106,11 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
   //
   // `pageSize` — потолок ручки: руководителей заведомо меньше, а вторая
   // страница у полоски означала бы, что часть руководства не показана.
-  const staffUnits = useStaffUnitsPage({
+  const staffUnits = useDailyExpenseRead("leadership-staff", [LEADERSHIP_MAX_LEVEL], () => apiClient.getStaffUnitsByDirectorate({
     positionLevelMax: LEADERSHIP_MAX_LEVEL,
     page: 1,
     pageSize: 200,
-  });
+  }));
 
   const leaders = useMemo<LeaderVM[]>(() => {
     const raw = (staffUnits.data?.staff_units ?? []) as unknown as RawStaffUnit[];
@@ -146,33 +146,20 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
     return result;
   }, [staffUnits.data]);
 
-  // Подразделения руководителей — не обязательно те же, что раскрыты в
-  // рядовых `DivisionGroup` ниже, поэтому запрос свой. Ключ ИЗ ТОЙ ЖЕ семьи,
-  // что у `DivisionGroup` (`["daily-expense-board", "statuses", id, date]`):
-  // если пользователь уже раскрыл управление, чей начальник тут же показан
-  // строкой, кэш переиспользуется, а не дублируется вторым запросом.
+  // The batch belongs to the same protected daily family as its personnel.
+  // Scope changes cannot reuse status rows from a previous leadership list.
   const divisionIds = useMemo(
     () => Array.from(new Set(leaders.map((leader) => leader.divisionId))),
     [leaders]
   );
 
-  const statusQueries = useQueries({
-    queries: divisionIds.map((divisionId) => ({
-      queryKey: ["daily-expense-board", "statuses", divisionId, businessDate],
-      queryFn: () => apiClient.getOpsStatusesOn({ businessDate, divisionId }),
-    })),
-  });
+  const statuses = useDailyExpenseRead("leadership-statuses", [divisionIds, businessDate], async () =>
+    (await Promise.all(divisionIds.map(divisionId => apiClient.getOpsStatusesOn({ businessDate, divisionId })))).flat(),
+    { enabled: staffUnits.isSuccess });
+  const statusRows: OpsEmployeeStatusRow[] = statuses.data ?? [];
 
-  const statusRows: OpsEmployeeStatusRow[] = [];
-  for (const query of statusQueries) {
-    for (const row of (query.data as OpsEmployeeStatusRow[] | undefined) ?? []) {
-      statusRows.push(row);
-    }
-  }
-
-  const isPending =
-    staffUnits.isPending || statusTypes.isLoading || statusQueries.some((query) => query.isPending);
-  const isError = staffUnits.isError || statusTypes.isError || statusQueries.some(query => query.isError);
+  const isError = staffUnits.isError || statusTypes.isError || statuses.isError;
+  const isPending = !isError && (staffUnits.isPending || statusTypes.isLoading || statuses.isPending);
 
   return (
     <section
@@ -194,6 +181,7 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
           {!isPending && isError && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Штатное расписание не ответило — руководство показать нечем
+              {" "}<Button variant="link" size="sm" onClick={() => void staffUnits.refetch()}>Повторить загрузку</Button>
             </p>
           )}
           {!isPending && !isError && leaders.length === 0 && (

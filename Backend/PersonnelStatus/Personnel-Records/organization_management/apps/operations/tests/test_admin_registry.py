@@ -191,3 +191,23 @@ def test_reference_data_of_the_section_became_visible_too():
     """
     assert site_admin(Role) is not None
     assert site_admin(StatusType) is not None
+
+
+@pytest.mark.parametrize("model_name", [
+    "OpsDutyTemplate", "OpsEmployeeQualification", "OpsObjectInspection",
+])
+def test_non_om_history_is_visible_without_bypassing_workflow(model_name, rf):
+    from django.apps import apps
+
+    model = apps.get_model("operations", model_name)
+    model_admin = site_admin(model)
+    assert model_admin is not None
+    request = rf.get("/admin/")
+    request.user = User.objects.create_superuser("non-om-admin", password="x")
+    assert model_admin.has_view_permission(request)
+    assert not model_admin.has_add_permission(request)
+    assert not model_admin.has_change_permission(request)
+    assert not model_admin.has_delete_permission(request)
+    assert set(model_admin.get_readonly_fields(request)) == {
+        field.name for field in model._meta.fields
+    }

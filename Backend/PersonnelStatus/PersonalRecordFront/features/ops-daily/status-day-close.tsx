@@ -138,7 +138,7 @@ function StatusDayCloseInner() {
         <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true"><ClipboardCheck className="size-4" /></span>
-            <h2 className="text-base font-semibold">Сдача расхода</h2>
+            <h2 className="text-base font-semibold">Проверка и сдача расхода</h2>
           </div>
           {metadataReady && permitted.length === 1 && selectedDivision !== null ? (
             <p className="min-w-0 break-words text-sm text-muted-foreground lg:pl-[42px]">{[...(selectedDivision.ancestors ?? []), selectedDivision.name].join(" / ")}</p>
@@ -190,6 +190,11 @@ function StatusDayCloseInner() {
           />
         </div>
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        Выберите дату и управление, проверьте численность и подтвердите сдачу.
+        {" "}<a href="#employee-status-list" className="font-medium text-primary underline underline-offset-4">Вернуться к статусам сотрудников</a>
+      </p>
 
       {dateError ? (
         <div role="alert" className="text-sm text-destructive-ink">
@@ -346,7 +351,7 @@ function ExpensePreview({
         ))}
         {absent.length === 0 && (
           <p className="self-end text-sm text-muted-foreground">
-            Отсутствующих на эту дату нет — все в строю.
+            {totals.list_total === 0 ? "В списке выбранного управления нет сотрудников." : inService === totals.list_total ? "Отсутствующих на эту дату нет — все в строю." : "Проверьте состав расхода перед сдачей."}
           </p>
         )}
       </dl>
@@ -375,7 +380,7 @@ function ExpensePreview({
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-muted-foreground">Статусы и участие в ОМ на {formatIsoDate(businessDate)}. После изменения статусов числа обновятся.</p>
+          <p className="mt-2 text-muted-foreground">Текущие сведения на {formatIsoDate(businessDate)}. После изменения статусов числа обновятся. Сданный снимок меняется только через исправление сдачи.</p>
         </details>
       )}
     </section>

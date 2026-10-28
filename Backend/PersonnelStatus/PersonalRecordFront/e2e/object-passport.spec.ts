@@ -1,27 +1,4 @@
-/**
- * Паспорт объекта на ЖИВОМ стенде.
- *
- * Проба отвечает на шесть вопросов:
- *
- * 1. вкладки прототипа переключают содержимое, состояние живёт в адресе и
- *    переживает перезагрузку, а умолчание в адрес НЕ пишется — и все ШЕСТЬ
- *    вкладок прототипа видны, а не только три живых;
- * 2. «Общие данные» и срок проверки сходятся с ответами сервера — причём
- *    свежесть берётся по СВОЕМУ объекту, а не первой строкой конверта;
- * 3. баннер неготовности появляется ровно тогда, когда так сказал сервер, и
- *    молчит на зелёном объекте с соблюдённым сроком;
- * 4. «Чего в этом паспорте нет» печатает причины сервера ЕГО словами, и
- *    больше НЕ называет три вкладки, у которых теперь есть свой макет;
- * 5. три вкладки без бэка («Инфраструктура», «Чек-лист», «Привлекаемые
- *    группы») рисуют макет прототипа и по одной честной строке причины —
- *    ДОСЛОВНО, не подстрокой;
- * 6. набранный черновик на «Посты и секторы» переживает уход через ЛЮБУЮ
- *    вкладку, включая новые макетные, — вкладки прячутся `hidden`, а не
- *    снимаются условным рендером.
- *
- * 🔴 Service worker MSW блокируется на весь файл: без этого запросы идут через
- * воркер, и сверка с живым ответом проверяла бы мок. Разделу ОМ мок не нужен.
- */
+/** Live passport data, functional tabs, legacy links and unsaved draft preservation. */
 import { expect, test, type Page } from '@playwright/test'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
@@ -31,27 +8,15 @@ const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const SCREEN = '/security-ops/objects'
 
-// Пин дословно совпадает с константами на экране
-// (features/object-passport/ui/PassportPlannedTabs.tsx) — проба ловит
-// расхождение текста, а не только факт наличия какой-то строки.
-const PLANNED_TABS: ReadonlyArray<{ code: string; label: string; honestLine: string }> = [
+// Removed prototype tabs must never return as dead navigation.
+const REMOVED_TABS: ReadonlyArray<{ code: string; label: string }> = [
   {
     code: 'infra',
     label: 'Инфраструктура',
-    honestLine:
-      'Входы и выходы, транспорт, вертикальные коммуникации, инженерные системы, уязвимые места и ремонтные работы объекта в модели не хранятся — ни таблиц, ни ручек нет; появится бэк-этапом.',
-  },
-  {
-    code: 'check',
-    label: 'Чек-лист',
-    honestLine:
-      'Контрольных вопросов, ответов «да / нет / не применимо» и решения по расчёту постов в бэке нет — дата проверки в шапке паспорта считается политикой свежести от последней публикации, а не от пройденного чек-листа; появится бэк-этапом.',
   },
   {
     code: 'groups',
     label: 'Привлекаемые группы',
-    honestLine:
-      'Кинологическая, инженерно-сапёрная, группа быстрого реагирования и подобные привлекаемые группы у объекта не заведены: такие силы живут в мероприятии, а не в паспорте объекта; появится бэк-этапом.',
   },
 ]
 
@@ -144,14 +109,12 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     await expect(generalCard(page)).toBeVisible()
 
     // Прототип держит ШЕСТЬ вкладок паспорта — три живых и три макетных
-    // (см. PLANNED_TABS); все шесть обязаны быть видимыми контролами.
-    await expect(page.getByRole('tab')).toHaveCount(6)
+    // (см. REMOVED_TABS); все шесть обязаны быть видимыми контролами.
+    await expect(page.getByRole('tab')).toHaveCount(4)
     for (const label of [
       'Общие данные',
-      'Инфраструктура',
       'Посты и секторы',
-      'Чек-лист',
-      'Привлекаемые группы',
+      'Обследования',
       'История',
     ]) {
       await expect(page.getByRole('tab', { name: label })).toBeVisible()
@@ -232,14 +195,14 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     const typed = `черновик через макет ${object.code}`
     await sector.fill(typed)
 
-    await page.getByRole('tab', { name: 'Инфраструктура' }).click()
-    await expect(page.getByText(PLANNED_TABS[0].honestLine, { exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'Обследования' }).click()
+    await expect(page.getByRole('heading', { name: 'Обследования объекта' })).toBeVisible()
     await page.getByRole('tab', { name: 'Посты и секторы' }).click()
 
     await expect(page.getByRole('textbox').first()).toHaveValue(typed)
   })
 
-  test('три вкладки без бэка рисуют макет прототипа и честную причину', async ({ page }) => {
+  test('старые ссылки макетных вкладок открывают общие данные без неработающих контролов', async ({ page }) => {
     const snapshot = await registry(await apiToken())
     const object = snapshot.results[0]
 
@@ -247,15 +210,11 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     await page.goto(`${APP}${SCREEN}/${object.id}`)
     await expect(generalCard(page)).toBeVisible({ timeout: 15_000 })
 
-    for (const planned of PLANNED_TABS) {
-      await page.getByRole('tab', { name: planned.label }).click()
-      await expect(page.getByRole('tab', { name: planned.label })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      )
-      // Дословно, не подстрокой: «появится» само по себе — слишком общая
-      // подстрока, чтобы доказать, что причина именно ЭТА, а не какая-то.
-      await expect(page.getByText(planned.honestLine, { exact: true })).toBeVisible()
+    for (const removed of REMOVED_TABS) {
+      await page.goto(`${APP}${SCREEN}/${object.id}?tab=${removed.code}`)
+      await expect(page.getByRole('tab', { name: removed.label })).toHaveCount(0)
+      await expect(page.getByRole('tab', { name: 'Общие данные' })).toHaveAttribute('aria-selected', 'true')
+      await expect(generalCard(page)).toBeVisible()
     }
   })
 
@@ -351,7 +310,7 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     await expect(field(page, 'Тип')).toContainText(dated!.type)
     await expect(field(page, 'Регион')).toContainText(dated!.region)
     await expect(field(page, 'Адрес')).toContainText(dated!.address)
-    await expect(field(page, 'Срок проверки')).toContainText(own.verificationDueAt!)
+    await expect(field(page, 'Срок обновления паспорта')).toContainText(own.verificationDueAt!)
     await expect(field(page, 'Есть охранные мероприятия')).toContainText(
       dated!.hasSecurityEvents ? 'да' : 'нет',
     )
@@ -379,7 +338,7 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     await expect(banner).toBeVisible({ timeout: 15_000 })
     // Список незаполненных полей НЕ выдумывается: сервер его не отдаёт, и
     // экран обязан сказать это вслух, а не перечислить поля догадкой.
-    await expect(banner).toContainText('сервер не сообщает')
+    await expect(banner).toContainText('Результаты обследования ведутся отдельно')
 
     await page.goto(`${APP}${SCREEN}/${ready!.id}`)
     await expect(page.getByRole('heading', { name: ready!.name })).toBeVisible({ timeout: 15_000 })
@@ -395,8 +354,9 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}/${snapshot.results[0].id}`)
+    await page.getByText('Ограничения показателей', { exact: true }).click()
     const missing = page
-      .locator('[data-slot="card"]', { hasText: 'Чего в этом паспорте нет' })
+      .locator('[data-slot="card"]', { hasText: 'Доступность показателей' })
       .first()
     await expect(missing).toBeVisible({ timeout: 15_000 })
     for (const item of snapshot.unavailableKpi) {
@@ -406,7 +366,7 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     // Три вкладки получили собственный макет и честную строку — список
     // «чего нет» их больше не называет, иначе одно и то же отсутствие
     // читалось бы дважды двумя разными словами.
-    for (const tab of PLANNED_TABS) {
+    for (const tab of REMOVED_TABS) {
       await expect(missing).not.toContainText(tab.label)
     }
   })

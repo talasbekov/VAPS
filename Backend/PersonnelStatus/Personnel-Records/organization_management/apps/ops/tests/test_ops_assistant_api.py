@@ -30,7 +30,27 @@ def chief():
 
 
 def create_task(api, *, fields=None, key=None, message="Подготовь наряд"):
-    return api.post(URL, {"requestKey": key or str(uuid.uuid4()), "message": message, "fields": fields or {}}, format="json")
+    response = api.post(URL, {"requestKey": key or str(uuid.uuid4()), "message": message, "fields": fields or {}}, format="json")
+    return finish_interpretation(api, response)
+
+
+def finish_interpretation(api, response):
+    """Drive the durable worker then explicitly confirm through the real JWT API.
+
+    These legacy scenario tests exercise the complete journey. Async persistence
+    and the absence of automatic execution have separate dialogue regressions.
+    """
+    if response.status_code not in (200, 201) or response.data.get("processing", {}).get("state") != "queued":
+        return response
+    from organization_management.apps.ops.assistant.dialogue import process_task
+    task = OpsAssistantTask.objects.get(pk=response.data["id"])
+    process_task(str(task.pk), task.processing["generation"])
+    result = api.get(URL + str(task.pk) + "/")
+    if result.data["processing"]["state"] == "ready":
+        result = api.post(URL + str(task.pk) + "/continue/", {"revision": result.data["revision"]}, format="json")
+    if result.status_code == 200:
+        result.status_code = response.status_code
+    return result
 
 
 def bulletin_fields(**extra):
@@ -196,7 +216,7 @@ def test_ambiguous_object_stays_unresolved_after_partial_fact_update(chief, monk
     make_object(code="AI-DUP-A", name="Аккорда")
     make_object(code="AI-DUP-B", name="Аккорда")
     from organization_management.apps.ops.assistant import provider
-    monkeypatch.setattr(provider, "interpret", lambda _: {**bulletin_fields(), "objectName": "Аккорда"})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {**bulletin_fields(), "objectName": "Аккорда"})
     task = create_task(chief[0], message="Подготовь внутреннее мероприятие «Учебная встреча»01.06.2027 на объекте Аккорда").json()
     assert task["status"] == "needs_information"
     updated = chief[0].post(URL + task["id"] + "/continue/", {"fields": {"eventTime": "08:00"}}, format="json")
@@ -245,8 +265,9 @@ def test_text_interpretation_can_use_an_explicit_existing_event_context(chief, m
     event_id = base.rstrip("/").rsplit("/", 1)[-1]
     department = make_department("Шестой департамент")
     from organization_management.apps.ops.assistant import provider
-    monkeypatch.setattr(provider, "interpret", lambda _: {"intent": "send", "allocations": [{"departmentName": department.name, "need": need}]})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {"intent": "send", "allocations": [{"departmentName": department.name, "need": need}]})
     response = chief[0].post(URL, {"requestKey": str(uuid.uuid4()), "message": f"Запроси в шестом департаменте{need} человека", "interpret": True, "fields": {"eventId": event_id}}, format="json")
+    response = finish_interpretation(chief[0], response)
     assert response.status_code == 201, response.content
     assert response.json()["status"] == "awaiting_executor"
     assert response.json()["plan"]["allocations"][0]["departmentId"] == str(department.pk)
@@ -347,7 +368,7 @@ def test_initial_interpret_preserves_explicit_catalog_date_total_even_when_provi
     from organization_management.apps.ops.assistant import provider
     name = "Стенд: объект с готовым паспортом"
     obj = make_object(code="AI-TEXT-FULL", name=name)
-    def interpret(_message):
+    def interpret(_message, **kwargs):
         if not provider_available:
             raise provider.ProviderUnavailable("Модель недоступна; уточните поля.")
         return {"objectName": "Стенд"}
@@ -370,7 +391,7 @@ def test_initial_task_keeps_named_month_and_declined_object_when_model_fails(chi
     from organization_management.apps.operations import clock
     from organization_management.apps.ops.assistant import provider
     obj = make_object(code="AI-NATURAL-DATE", name="Аккорда")
-    def interpret(_message):
+    def interpret(_message, **kwargs):
         if not provider_available:
             raise provider.ProviderUnavailable("Модель недоступна; уточните поля.")
         return {"objectName": "Аккорда", "businessDate": "2026-10-23"}
@@ -394,7 +415,7 @@ def test_completion_does_not_expose_the_object_catalog_to_forces_command_only(mo
     api, _ = jwt_actor("catalogstaff", ("forces.command", "event.view"))
     name = "Каталожный объект для полного совпадения"
     make_object(code="AI-TEXT-HIDDEN", name=name)
-    monkeypatch.setattr(provider, "interpret", lambda _: {})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {})
     assert api.get(URL + "catalogs/").json()["objects"] == []
     response = create_task(api, message=f"Наряд на объект {name} на 23 число 200 человек")
     assert response.status_code == 201, response.data
@@ -404,7 +425,7 @@ def test_completion_does_not_expose_the_object_catalog_to_forces_command_only(mo
 
 def test_manual_total_can_be_changed_and_cleared_without_reextracting_or_changing_demand(chief, monkeypatch):
     from organization_management.apps.ops.assistant import provider
-    monkeypatch.setattr(provider, "interpret", lambda _: pytest.fail("manual task must not interpret"))
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: pytest.fail("manual task must not interpret"))
     task = create_task(chief[0], fields=bulletin_fields(personnelTotal=200), message="На 23 число 200 человек").json()
     assert task["plan"]["personnelTotal"] == 200 and task["event"]
     assert task["event"]["forceDemandTotal"] != 200
@@ -432,7 +453,7 @@ def test_total_is_immutable_after_dispatch_but_never_replaces_published_recon_de
     department = make_department()
     jwt_actor("totalrecipient", ("forces.allocate",), department.pk)
     task = create_task(chief[0], fields={"eventId": event_id, "intent": "send", "personnelTotal": 200,
-        "allocations": [{"departmentId": str(department.pk), "need": need}]}).json()
+        "allocations": [{"departmentId": str(department.pk), "need": 200}]}).json()
     staff, _ = jwt_actor("totalexecutor", ("event.view", "forces.command"))
     sent = staff.post(URL + task["id"] + "/continue/", {}, format="json")
     assert sent.status_code == 200, sent.data
@@ -450,13 +471,14 @@ def test_total_is_immutable_after_dispatch_but_never_replaces_published_recon_de
 
 def test_manual_field_overrides_initial_completion_and_clearing_does_not_refill_from_message(chief, monkeypatch):
     from organization_management.apps.ops.assistant import provider
-    monkeypatch.setattr(provider, "interpret", lambda _: {})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {})
     response = chief[0].post(URL, {"requestKey": str(uuid.uuid4()), "message": "Нужно 200 человек", "interpret": True,
         "fields": {"personnelTotal": 150}}, format="json")
+    response = finish_interpretation(chief[0], response)
     assert response.status_code == 201, response.data
     task = response.json()
     assert task["plan"]["personnelTotal"] == 150
-    monkeypatch.setattr(provider, "interpret", lambda _: pytest.fail("continue must not interpret"))
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: pytest.fail("continue must not interpret"))
     cleared = chief[0].post(URL + task["id"] + "/continue/", {"fields": {"personnelTotal": None}}, format="json")
     assert cleared.status_code == 200 and cleared.json()["plan"]["personnelTotal"] is None
 
@@ -469,21 +491,22 @@ def test_ambiguous_total_blocks_ready_event_dispatch_until_explicit_manual_choic
     event_id = base.rstrip("/").rsplit("/", 1)[-1]
     department = make_department()
     api, _ = jwt_actor("totalreviewstaff", ("event.view", "forces.command"))
-    monkeypatch.setattr(provider, "interpret", lambda _: {})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {})
     created = api.post(URL, {"requestKey": str(uuid.uuid4()), "message": message, "interpret": True,
         "fields": {"eventId": event_id, "intent": "send", "allocations": [{"departmentId": str(department.pk), "need": need}]}}, format="json")
+    created = finish_interpretation(api, created)
     assert created.status_code == 201, created.data
     task = created.json()
     assert task["status"] == "needs_information" and not task["canContinue"]
     assert [row["field"] for row in task["questions"]] == ["personnelTotal"]
     assert not OpsSecurityEvent.objects.get(pk=event_id).force_allocation
-    monkeypatch.setattr(provider, "interpret", lambda _: pytest.fail("continue must not interpret"))
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: pytest.fail("continue must not interpret"))
     url = URL + task["id"] + "/continue/"
     for fields in ({}, {"intent": "send"}):
         still = api.post(url, {"fields": fields}, format="json")
         assert still.status_code == 200 and still.json()["status"] == "needs_information"
         assert not OpsSecurityEvent.objects.get(pk=event_id).force_allocation
-    corrected = api.post(url, {"fields": {"personnelTotal": choice}}, format="json")
+    corrected = api.post(url, {"fields": {"personnelTotal": choice, "allocations": [{"departmentId": str(department.pk), "need": choice or need}]}}, format="json")
     assert corrected.status_code == 200, corrected.data
     assert corrected.json()["plan"]["personnelTotal"] == choice
     assert not corrected.json()["questions"]
@@ -493,9 +516,10 @@ def test_ambiguous_total_blocks_ready_event_dispatch_until_explicit_manual_choic
 @pytest.mark.parametrize("choice", [200, None])
 def test_explicit_human_total_or_clear_wins_over_ambiguous_initial_text(chief, monkeypatch, choice):
     from organization_management.apps.ops.assistant import provider
-    monkeypatch.setattr(provider, "interpret", lambda _: {})
+    monkeypatch.setattr(provider, "interpret", lambda _, **kwargs: {})
     response = chief[0].post(URL, {"requestKey": str(uuid.uuid4()), "message": "Всего 200 или 300 человек", "interpret": True,
         "fields": {"personnelTotal": choice}}, format="json")
+    response = finish_interpretation(chief[0], response)
     assert response.status_code == 201, response.data
     assert response.json()["plan"]["personnelTotal"] == choice
     assert not any(row["field"] == "personnelTotal" for row in response.json()["questions"])

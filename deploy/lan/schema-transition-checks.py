@@ -1,4 +1,4 @@
-"""Database evidence for the reviewed September/October -> 20 October transition.
+"""Database evidence for the reviewed September/October -> 27 October transition.
 
 Imported without Django by unit tests; the same source is executed inside the
 verified backend image. No business row values are emitted, only checksums.
@@ -10,11 +10,12 @@ import json
 from pathlib import Path
 import re
 
-RELEASE_POLICY = 'smart-20261020-v1'
+RELEASE_POLICY = 'smart-20261027-guided-v1'
 ACCESS_PLAN = (('operations', '0144_workspace_and_digital_twin_access'),)
 APPROVED_PLAN = (
     ('employees', '0006_iin_format_validation'),
     ('employees', '0007_employee_service_profile'),
+    ('employees', '0008_employee_service_profile_verbose_names'),
     ('operations', '0132_group_evaluation_targets'),
     ('operations', '0133_recon_materials'),
     ('operations', '0134_duty_status_variants'),
@@ -29,6 +30,15 @@ APPROVED_PLAN = (
     ('operations', '0143_duty_creation_closure'),
     *ACCESS_PLAN,
     ('operations', '0145_personnel_duty_execution'),
+    ('operations', '0146_om_assistant_tasks'),
+    ('operations', '0147_resource_calculation'),
+    ('operations', '0148_assistant_connection'),
+    ('operations', '0149_duty_templates'),
+    ('operations', '0150_employee_qualifications'),
+    ('operations', '0151_object_inspections'),
+    ('operations', '0152_assistant_dialogue'),
+    ('operations', '0153_assistant_connection_check'),
+    ('operations', '0154_assistant_credential_format'),
     ('statuses', '0005_employeestatus_duty_assignment'),
 )
 # Only these reviewed migrations insert rows into existing tables. Existing
@@ -37,29 +47,81 @@ SEED_TABLES = frozenset({'django_migrations', 'django_content_type', 'auth_permi
                         'ops_permissions', 'ops_role_permissions', 'ops_status_types', 'ops_dictionary_entries'})
 
 
-def canonical_constraint(table, name, definition):
-    """Match the proven lossless varchar[] -> text[] dump/restore rewrite.
+_ROUNDTRIP_ENUM_COLUMNS = {
+    ('ops_dictionary_entries', 'chk_ops_dictionary_code'): 'dictionary_code',
+    ('ops_duty_record_supplements', 'chk_duty_supplement_source'): 'source_type',
+    ('operations_opsforeignvisit', 'chk_ops_foreign_visit_status'): 'status',
+    ('operations_opslegaldocument', 'chk_ops_legal_document_kind'): 'kind',
+    ('operations_opslegaldocument', 'chk_ops_legal_document_status'): 'status',
+    ('operations_opsprotectedperson', 'chk_ops_protected_person_category'): 'category',
+    ('ops_analytics_metric_definitions', 'chk_ops_metric_unit'): 'unit',
+    ('ops_attention_detectors', 'chk_ops_detector_measure'): 'measure',
+    ('ops_attention_detectors', 'chk_ops_detector_severity'): 'base_severity',
+    ('ops_attention_detectors', 'chk_ops_detector_title'): 'title_code',
+    ('ops_daily_submissions', 'chk_ops_submission_event'): 'event',
+    ('ops_duty_conflict_policy', 'chk_ops_duty_policy_mode'): 'rest_after_duty_mode',
+    ('ops_duty_monthly_plans', 'chk_ops_duty_plan_state'): 'state_code',
+    ('ops_duty_shifts', 'chk_ops_duty_shift_state'): 'state_code',
+    ('ops_duty_types', 'chk_ops_duty_type_target'): 'target_type',
+    ('ops_employee_statuses', 'excl_hard_status_overlap'): 'status_type_code',
+    ('ops_evaluation_work_items', 'chk_ops_work_item_direction'): 'evaluation_direction',
+    ('ops_evaluation_work_items', 'chk_ops_work_item_status'): 'status',
+    ('ops_event_evaluations', 'chk_ops_evaluation_direction'): 'evaluation_direction',
+    ('ops_event_evaluations', 'chk_ops_evaluation_method'): 'method',
+    ('ops_issued_documents', 'chk_ops_issued_document_status'): 'status',
+    ('ops_notifications', 'chk_ops_notif_kind'): 'kind',
+    ('ops_placement_document_versions', 'chk_ops_placement_document_version_status'): 'status',
+    ('ops_policy_section_versions', 'chk_ops_section_version_code'): 'section_code',
+    ('ops_policy_settings', 'chk_ops_setting_kind'): 'kind',
+    ('ops_policy_settings', 'chk_ops_setting_section'): 'section_code',
+    ('ops_rating_audit_entries', 'chk_ops_rating_audit_event_code'): 'event_code',
+    ('ops_rating_audit_entries', 'chk_ops_rating_audit_outcome'): 'outcome',
+    ('ops_rating_dynamics_points', 'chk_ops_dynamics_data_state'): 'data_state',
+    ('ops_rating_export_jobs', 'chk_ops_rating_export_scope'): 'scope',
+    ('ops_rating_export_jobs', 'chk_ops_rating_export_state'): 'state',
+    ('ops_security_event_transitions', 'chk_ops_event_transition_kind'): 'kind',
+    ('ops_security_event_transitions', 'chk_ops_event_transition_to_stage'): 'to_stage',
+    ('ops_security_event_visit_objects', 'chk_ops_event_visit_object_stage'): 'stage',
+    ('ops_security_events', 'chk_ops_security_event_approval'): 'approval_status',
+    ('ops_security_events', 'chk_ops_security_event_kind'): 'kind',
+    ('ops_security_events', 'chk_ops_security_event_stage'): 'stage',
+    ('ops_security_objects', 'chk_ops_security_object_ownership'): 'ownership',
+    ('ops_security_objects', 'chk_ops_security_object_passport_state'): 'passport_state',
+    ('ops_security_objects', 'chk_ops_security_object_state'): 'object_state',
+    ('ops_service_report_jobs', 'chk_ops_report_job_state'): 'state',
+}
 
-    PostgreSQL deparses an IN check with an array cast before pg_dump, then
-    distributes that cast over the array elements when pg_restore reparses it.
-    Recognize only these two enum checks, their exact column/operator/shape,
-    unbounded varchar casts and non-null uppercase literals. Preserve every
-    literal and its order; leave every other definition byte-for-byte intact.
+
+def canonical_constraint(table, name, definition):
+    """Normalize only observed PostgreSQL literal-array cast distribution.
+
+    Keep the reviewed table/name/column, complete expression frame, non-null
+    uppercase literals and unbounded varchar type exact. The exclusion index
+    repeats the same predicate and needs the same lossless representation.
+    No values, operators, NULL guards, flags or other definitions are omitted.
     """
-    column = {
-        ('ops_dictionary_entries', 'chk_ops_dictionary_code'): 'dictionary_code',
-        ('ops_duty_record_supplements', 'chk_duty_supplement_source'): 'source_type',
-    }.get((table, name))
+    column = _ROUNDTRIP_ENUM_COLUMNS.get((table, name))
     if column is None:
         return definition
-    head = 'CHECK (((' + column + ')::text = ANY '
-    prefix, suffix = head + '((ARRAY[', '])::text[])))'
+    prefix, suffix = 'CHECK (((' + column + ')::text = ANY ', '))'
+    if (table, name) == ('ops_security_events', 'chk_ops_security_event_kind'):
+        prefix, suffix = 'CHECK ((((kind)::text = ANY ', ') OR (kind IS NULL)))'
+    elif (table, name) == ('ops_employee_statuses', 'excl_hard_status_overlap'):
+        if definition.startswith('CREATE INDEX '):
+            prefix = 'CREATE INDEX excl_hard_status_overlap ON public.ops_employee_statuses USING gist (employee_id, period) WHERE (((status_type_code)::text = ANY '
+            suffix = ') AND (cancelled_at IS NULL))'
+        else:
+            prefix = 'EXCLUDE USING gist (employee_id WITH =, period WITH &&) WHERE ((((status_type_code)::text = ANY '
+            suffix = ') AND (cancelled_at IS NULL)))'
     if not definition.startswith(prefix) or not definition.endswith(suffix):
         return definition
-    literals = definition[len(prefix):-len(suffix)].split(', ')
+    operand = definition[len(prefix):-len(suffix)]
+    if not operand.startswith('((ARRAY[') or not operand.endswith('])::text[])'):
+        return definition
+    literals = operand[len('((ARRAY['):-len('])::text[])')].split(', ')
     if not all(re.fullmatch(r"'[A-Z][A-Z0-9_]*'::character varying", value) for value in literals):
         return definition
-    return head + '(ARRAY[' + ', '.join('(' + value + ')::text' for value in literals) + '])))'
+    return prefix + '(ARRAY[' + ', '.join('(' + value + ')::text' for value in literals) + '])' + suffix
 
 
 def migration_graph():
@@ -90,7 +152,7 @@ def require_graph(actual, expected):
     order = list(map(tuple, expected['order']))
     if (len(nodes) != len(set(nodes)) or len(order) != len(set(order)) or set(nodes) != set(order)
             or not set(APPROVED_PLAN).issubset(nodes)):
-        raise RuntimeError('Incomplete current migration graph; employees0007 and operations0145 are required')
+        raise RuntimeError('Incomplete current migration graph; employees0008 and operations0154 are required')
     positions = {key: index for index, key in enumerate(order)}
     for item in expected['nodes']:
         key = (item['app'], item['name'])
@@ -108,7 +170,7 @@ def require_plan(plan, graph=None):
     if (len(pending) != len(set(pending)) or any(item not in allowed for item in pending)
             or pending != tuple(item for item in order if item in set(pending))):
         raise RuntimeError('Unreviewed migration plan; only ordered pending migrations from the '
-                           'reviewed 20 October delta are allowed')
+                           'reviewed 27 October delta are allowed')
 
 
 def require_preserved(before, projected):
@@ -145,7 +207,8 @@ def capture(spec=None):
         result['schema']['constraints'] = [[table, name, canonical_constraint(table, name, definition)]
                                           for table, name, definition in cursor.fetchall()]
         cursor.execute("SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname")
-        result['schema']['indexes'] = [list(row) for row in cursor.fetchall()]
+        result['schema']['indexes'] = [[table, name, canonical_constraint(table, name, definition)]
+                                      for table, name, definition in cursor.fetchall()]
         for table in tables:
             if table not in SEED_TABLES:
                 continue
