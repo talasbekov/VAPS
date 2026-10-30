@@ -68,3 +68,20 @@ def test_rebuild_authority_does_not_expand_freshness_read_scope(summary):
     root, left, _ = summary
     api = client([("status.view", left.pk), ("daily_report.correct", None)], role="REBUILD_CAPABILITY")
     assert freshness(api, root).status_code == 403
+
+
+def test_global_reader_with_separate_service_correction_cannot_correct_a_detached_root(summary):
+    root, _, _ = summary
+    detached = Division.objects.create(name="Detached organization")
+    OpsDailySubmission.objects.create(division_id=detached.pk, business_date=TODAY,
+        version=1, is_current=True, event="CHANGED", submitted_by="other",
+        submitted_at="2026-10-01T07:00:00Z", snapshot={"sources": []})
+    api = client([("status.view", None), ("daily_report.correct", root.pk)], role="DUTY_WITH_SERVICE_CORRECTION")
+    assert freshness(api, root).data["can_rebuild"] is True
+    response = freshness(api, detached)
+    assert response.status_code == 200
+    assert response.data["can_rebuild"] is False
+    rejected = api.post("/api/operations/daily-summaries/rebuild/", {
+        "division_id": detached.pk, "business_date": TODAY.isoformat(),
+        "reason": "Unauthorized detached root", "sanction": "None"}, format="json")
+    assert rejected.status_code == 403

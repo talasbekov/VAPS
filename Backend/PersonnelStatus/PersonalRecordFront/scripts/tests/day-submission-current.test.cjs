@@ -62,6 +62,12 @@ test('new local amendment remains visible while the parent still has the older s
 test('a successful local submission remains visible before the list refetch completes', () => {
   assert.match(render({ submitted: row(1) }), /День сдан: v1/);
 });
+
+test('first submission is identified as primary while later changed versions preserve their meaning', () => {
+  assert.match(render({ submission: row(1) }), /Первичная сдача/);
+  assert.match(render({ submission: row(2) }), /Изменено/);
+  assert.match(render({ submission: row(2, { event: 'AMENDED' }) }), /Исправлено/);
+});
 test('equal-version refresh uses fresh server metadata', () => {
   const html = render({ submitted: row(1), submission: row(1, { submitted_by: 'Updated author' }) });
   assert.match(html, /Updated author/);

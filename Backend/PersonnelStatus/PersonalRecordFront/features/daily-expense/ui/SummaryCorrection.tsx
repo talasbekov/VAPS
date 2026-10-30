@@ -36,8 +36,10 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
   const [refreshing, setRefreshing] = useState(false);
   const refreshLock = useRef(false);
   const [refreshError, setRefreshError] = useState(false);
+  const [allowIncomplete, setAllowIncomplete] = useState(false);
+  const canConfirmPartial = canRead && access.hasPermission("daily_report.override_block");
   const authorized = canRead && access.hasPermission("daily_report.correct") && dataReady && !permissionsFetching && freshness.isSuccess && !freshness.isFetching && freshness.data.can_rebuild === true;
-  const canSubmit = authorized && !refreshRequired && !pending;
+  const canSubmit = authorized && !refreshRequired && !pending && (!allowIncomplete || canConfirmPartial);
 
   const refresh = async () => {
     if (refreshLock.current || !canRead) return;
@@ -57,6 +59,7 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
     try {
       await opsApiClient.post("/api/operations/daily-summaries/rebuild/", {
         division_id: divisionId, business_date: businessDate, reason: reason.trim(), sanction: sanction.trim(),
+        ...(allowIncomplete ? { allow_incomplete: true } : {}),
       });
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : "Не удалось исправить свод");
@@ -64,7 +67,7 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
     }
     // The mutation is accepted. A subsequent read failure must never keep
     // the write form available for resubmission.
-    setOpen(false); setReason(""); setSanction(""); setAccepted(true); setRefreshRequired(true);
+    setOpen(false); setReason(""); setSanction(""); setAllowIncomplete(false); setAccepted(true); setRefreshRequired(true);
     saving.current = false; setPending(false);
     await refresh();
   };
@@ -84,6 +87,11 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
         <DialogHeader><DialogTitle>Исправить свод</DialogTitle><DialogDescription>Будет создана новая версия из действующих сдач подразделений. Предыдущая версия сохранится в истории. Новая версия не отправляется автоматически.</DialogDescription></DialogHeader>
         <label className="space-y-1">Причина исправления<textarea aria-label="Причина исправления" className="min-h-20 w-full rounded border bg-background p-2" maxLength={1000} required value={reason} disabled={pending || !authorized} onChange={event => setReason(event.target.value)} /></label>
         <label className="space-y-1">Санкция на исправление<input aria-label="Санкция на исправление" className="w-full rounded border bg-background p-2" maxLength={255} required value={sanction} disabled={pending || !authorized} onChange={event => setSanction(event.target.value)} /></label>
+        {(canConfirmPartial || allowIncomplete) && <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" aria-label="Подтверждаю пересборку неполного свода" checked={allowIncomplete} disabled={pending || !authorized || !canConfirmPartial} onChange={event => setAllowIncomplete(event.target.checked)} />
+          <span>Подтверждаю пересборку неполного свода. Несдавшие подразделения останутся в списке; причина и санкция будут сохранены.</span>
+        </label>}
+        {allowIncomplete && !canConfirmPartial && <p role="alert">Право на пересборку неполного свода не подтверждено. Обновите доступ.</p>}
         {!authorized && <p role="alert">Нет подтверждённого права исправления. Черновик сохранён до проверки доступа.</p>}
         {writeError && <p role="alert" className="text-destructive-ink">{writeError}</p>}
         <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => { if (!saving.current) setOpen(false); }}>Отмена</Button><Button type="button" disabled={!canSubmit || !reason.trim() || !sanction.trim()} onClick={() => void submit()}>{pending ? "Сохраняем…" : "Создать исправленную версию"}</Button></DialogFooter>

@@ -259,7 +259,7 @@ function DepartmentRow({
                       {member.divisionName || "подразделение не указано"}
                     </span>
                     <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
-                      {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
+                      {member.source === "STATUS" ? "По статусу" : "Включён в состав"}
                     </Badge>
                   </li>
                 ))}
@@ -528,6 +528,9 @@ function SplitEditor({
     split.mutate(payload, {
       onSettled: () => { saving.current = false; onSavingChange(false); },
       onSuccess: () => {
+        // An unsaved local draft has no server signature to change after send.
+        // Clear accepted rows explicitly so they are not counted twice.
+        if (!draft) setRows([]);
         setConfirmOpen(false);
         setNotice(draft ? "Черновик сохранён" : "Запросы отправлены департаментам");
       },

@@ -247,6 +247,10 @@ def assemble_summary(
 
     snapshot = build_division_snapshot(division_id, business_date)
     snapshot["sources"] = sources
+    # Missing submissions already known at assembly make this version
+    # incomplete, not stale. Keep the obligation baseline in the immutable
+    # snapshot so a later submission/new required branch is distinguishable.
+    snapshot["required_source_divisions"] = sorted(required)
     previous = DailySubmissionSelector.previous_for(division_id, business_date)
     event = _compute_summary_event(snapshot, previous)
     late = _is_late(
@@ -484,13 +488,17 @@ def summary_freshness(division_id, business_date):
 
     children_map = DivisionTreeSelector.children_map()
     required = _required_children(division_id, children_map=children_map)
-    # Спрашиваются ТОЛЬКО запиненные: их состояние даёт обе оси расхождения
-    # с пинами. Появившийся обязанный ребёнок сюда не добавляется намеренно —
-    # он виден по третьей оси, которая сравнивает пины со СПИСКОМ обязанных,
-    # а не с их сдачами (источник расширял выборку нынешними детьми; проба со
-    # снятым расширением осталась зелёной — читателя у них не было).
+    pinned_ids = {pin["division_id"] for pin in pins}
+    baseline = current.snapshot.get("required_source_divisions")
+    # Legacy snapshots cannot prove which missing children were known then.
+    # Preserve their conservative stale result instead of rewriting history.
+    known_required = (set(baseline) if isinstance(baseline, list)
+                      and all(type(value) is int for value in baseline)
+                      else pinned_ids)
+    # Include required children to detect the first submission of a child
+    # which was missing when a partial version was assembled. Still one query.
     live = DailySubmissionSelector.current_for_many(
-        {pin["division_id"] for pin in pins}, business_date
+        pinned_ids | set(required), business_date
     )
 
     superseded, missing = [], []
@@ -513,8 +521,8 @@ def summary_freshness(division_id, business_date):
                     "current_version": row.version,
                 }
             )
-    pinned_ids = {pin["division_id"] for pin in pins}
-    unpinned = sorted(child for child in required if child not in pinned_ids)
+    unpinned = sorted(child for child in required if child not in pinned_ids
+                      and (child not in known_required or child in live))
 
     return SummaryFreshness(
         status=STALE if (superseded or missing or unpinned) else FRESH,
@@ -525,7 +533,7 @@ def summary_freshness(division_id, business_date):
 
 
 @transaction.atomic
-def rebuild_summary(*, division_id, business_date, actor, reason, sanction):
+def rebuild_summary(*, division_id, business_date, actor, reason, sanction, allow_incomplete=False):
     """Пересобрать сводку «взамен»: НОВАЯ версия поверх прежней.
 
     Пересборка — это поправка сводки, и устроена она ровно так же: прежняя
@@ -590,10 +598,13 @@ def rebuild_summary(*, division_id, business_date, actor, reason, sanction):
     children_map = DivisionTreeSelector.children_map()
     required = _required_children(division_id, children_map=children_map)
     sources = _build_sources(children_map.get(division_id, []), business_date)
-    _require_children_submitted(required, sources)
+    if not allow_incomplete:
+        _require_children_submitted(required, sources)
+    laggards = _laggards_of(required, sources)
 
     snapshot = build_division_snapshot(division_id, business_date)
     snapshot["sources"] = sources
+    snapshot["required_source_divisions"] = sorted(required)
 
     with transaction.atomic():
         OpsDailySubmission.objects.filter(
@@ -611,6 +622,7 @@ def rebuild_summary(*, division_id, business_date, actor, reason, sanction):
             snapshot=snapshot,
             reason=reason,
             sanction=sanction,
+            incomplete_reason=reason if laggards else "",
         )
     audit_service.record(
         actor=actor,

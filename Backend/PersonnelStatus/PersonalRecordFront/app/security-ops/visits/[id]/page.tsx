@@ -262,6 +262,11 @@ function VisitCard({ event }: { event: SecurityEvent }) {
           Не утверждено: {approve.error.message}
         </p>
       )}
+      {render.error && <p className="text-sm text-destructive-ink" role="alert">
+        Не удалось скачать PDF: {"errorCode" in render.error && render.error.errorCode === "PDF_CONVERTER_MISSING"
+          ? "Конвертер PDF недоступен. На сервере требуется LibreOffice (soffice)."
+          : render.error.message}
+      </p>}
 
       <GvoSummaryPanel event={event} variant="page" />
 

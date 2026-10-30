@@ -12,7 +12,10 @@ function fixture(t) {
   const client = new query.QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   t.after(() => client.clear());
   const state = { actor: 'reader-a', ready: true, root: 1, reads: [], options: [], statuses: {}, gates: {},
-    submissions: [], report: { rows: [], totals: { list_total: 12, columns: { IN_SERVICE: 10, OTHER: 2 } } } };
+    submissions: [], report: { rows: [
+      { division_id: 1, list_total: 2, columns: { IN_SERVICE: 2 } },
+      { division_id: 2, list_total: 10, columns: { IN_SERVICE: 8, OTHER: 2 } },
+    ], totals: { list_total: 12, columns: { IN_SERVICE: 10, OTHER: 2 } } } };
   client.setQueryData(['ops-me'], { permissions: ['status.view', 'service_summary.view'], global_permissions: [], roles: [] });
   let slot = 0;
   const refs = [], cleanups = [], modules = new Map();
@@ -86,6 +89,28 @@ function fixture(t) {
   };
   return { client, state, render, fetch, renderSection, unmount: () => cleanups.forEach(cleanup => cleanup()) };
 }
+
+test('service totals include the canonical root and its departments, excluding detached organizations', async t => {
+  const f = fixture(t);
+  f.state.report = { rows: [
+    { division_id: 1, list_total: 2, columns: { IN_SERVICE: 2 } },
+    { division_id: 2, list_total: 4, columns: { IN_SERVICE: 3, OTHER: 1 } },
+    { division_id: 90, list_total: 61, columns: { IN_SERVICE: 61 } },
+  ], totals: { list_total: 67, columns: { IN_SERVICE: 66, OTHER: 1 } } };
+  f.render(undefined, 'day'); await f.fetch('tree'); await f.fetch('submissions'); await f.fetch('report');
+  const day = f.render(undefined, 'day');
+  assert.equal(day.totals.listTotal, 6);
+  assert.equal(day.totals.inService, 5);
+  assert.equal(day.totals.deviations, 1);
+  assert.equal(day.exactFigures(1).listTotal, 2);
+  assert.equal(day.figures(2).listTotal, 4);
+});
+
+test('service totals remain unavailable until the canonical tree is loaded', async t => {
+  const f = fixture(t);
+  f.render(undefined, 'day'); await f.fetch('report');
+  assert.equal(f.render(undefined, 'day').totals, null);
+});
 
 test('submissions-only failure retries both current-day reads and recovers current submission state', async t => {
   const f = fixture(t); f.state.statuses.submissions = 503;

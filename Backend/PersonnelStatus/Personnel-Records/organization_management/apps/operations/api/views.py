@@ -3708,12 +3708,18 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
         _assert_division_in_scope(
             request, division_id, _AMEND_DAY_PERMISSION, field="division_id"
         )
+        allow_incomplete = form.validated_data["allow_incomplete"]
+        if allow_incomplete:
+            _assert_division_in_scope(
+                request, division_id, _OVERRIDE_BLOCK_PERMISSION, field="division_id"
+            )
         summary = rebuild_summary(
             division_id=division_id,
             business_date=form.validated_data["business_date"],
             actor=resolve_actor_id(request),
             reason=form.validated_data["reason"],
             sanction=form.validated_data["sanction"],
+            allow_incomplete=allow_incomplete,
         )
         return Response(
             OpsDailySubmissionAmendedSerializer(summary).data,

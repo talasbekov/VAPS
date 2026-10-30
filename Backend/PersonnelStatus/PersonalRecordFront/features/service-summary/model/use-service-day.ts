@@ -39,7 +39,7 @@ export interface ServiceDay extends ServiceTree {
   figures: (divisionId: number) => NodeFigures;
   /** Точная строка расхода подразделения (без потомков). */
   exactFigures: (divisionId: number) => NodeFigures;
-  /** Итог по всей Службе из `totals` расхода. */
+  /** Итог поддерева канонической Службы, включая её прямых сотрудников. */
   totals: NodeFigures | null;
   inServiceCode: string | undefined;
   labelOf: (code: string) => string;
@@ -135,20 +135,9 @@ export function useServiceDay(businessDate: string): ServiceDay {
   );
 
   const totals = useMemo<NodeFigures | null>(() => {
-    const t = report.data?.totals;
-    if (t === undefined) return null;
-    let inService = 0;
-    let deviations = 0;
-    for (const [code, count] of Object.entries(t.columns)) {
-      if (inServiceColumn !== undefined && code === inServiceColumn) inService += count;
-      else deviations += count;
-    }
-    return {
-      listTotal: t.list_total,
-      inService: inServiceColumn === undefined ? null : inService,
-      deviations: inServiceColumn === undefined ? null : deviations,
-    };
-  }, [report.data, inServiceColumn]);
+    if (report.data === undefined || tree.rootId === null) return null;
+    return figures(tree.rootId);
+  }, [report.data, tree.rootId, figures]);
 
   const isStale = useCallback(
     (divisionId: number): boolean => {

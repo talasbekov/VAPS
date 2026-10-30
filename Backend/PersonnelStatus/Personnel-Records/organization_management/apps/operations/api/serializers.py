@@ -987,6 +987,7 @@ class SummaryRebuildSerializer(serializers.Serializer):
     business_date = serializers.DateField()
     reason = serializers.CharField(allow_blank=False, max_length=1000)
     sanction = serializers.CharField(allow_blank=False, max_length=255)
+    allow_incomplete = serializers.BooleanField(default=False)
 
 
 class DocumentReleaseSerializer(serializers.Serializer):

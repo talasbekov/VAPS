@@ -178,6 +178,7 @@ def test_a_missing_watermark_font_is_a_named_refusal_not_a_traceback(monkeypatch
     # Шрифт мог быть зарегистрирован соседней пробой в том же процессе —
     # снимаем регистрацию, иначе ветка проверки недостижима.
     pdfmetrics._fonts.pop("DejaVuSans", None)
+    monkeypatch.delenv("OPS_WATERMARK_FONT_PATH", raising=False)
     monkeypatch.setattr(documents, "_DEJAVU_CANDIDATES", ("/нет/такого/шрифта.ttf",))
 
     with pytest.raises(DomainError) as failure:

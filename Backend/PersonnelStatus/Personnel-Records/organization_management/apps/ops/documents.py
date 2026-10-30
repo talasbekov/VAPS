@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from organization_management.apps.operations.exceptions import DomainError
 
@@ -158,7 +159,7 @@ def docx_to_pdf(docx_path):
         result = subprocess.run(
             [
                 "soffice",
-                f"-env:UserInstallation=file://{workdir}/profile",
+                f"-env:UserInstallation={(Path(workdir) / 'profile').as_uri()}",
                 "--headless",
                 "--convert-to", "pdf",
                 "--outdir", workdir,
@@ -326,8 +327,9 @@ def stamp_draft(pdf_bytes, label="ПРОЕКТ"):
     from reportlab.pdfgen import canvas
 
     if "DejaVuSans" not in pdfmetrics.getRegisteredFontNames():
+        configured_font = os.environ.get("OPS_WATERMARK_FONT_PATH", "").strip()
         font_path = next(
-            (path for path in _DEJAVU_CANDIDATES if os.path.exists(path)), None
+            (path for path in (configured_font, *_DEJAVU_CANDIDATES) if path and os.path.isfile(path)), None
         )
         if font_path is None:
             raise DomainError(

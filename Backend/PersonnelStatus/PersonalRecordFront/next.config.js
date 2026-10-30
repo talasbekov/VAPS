@@ -28,6 +28,8 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
+    // Document conversion is bounded at60s on the backend; keep response headroom.
+    proxyTimeout: 90_000,
     // A 10 MiB file also needs multipart headers and metadata in the request.
     // The API independently validates the file's 10 MiB limit.
     middlewareClientMaxBodySize: "12mb",

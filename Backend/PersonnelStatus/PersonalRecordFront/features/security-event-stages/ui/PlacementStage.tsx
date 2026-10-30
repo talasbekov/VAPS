@@ -1117,7 +1117,7 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
             <Kpi label="постов" value={posts.length} />
             <Kpi label="требуется" value={totalNeed} />
             <Kpi label="назначено" value={assignedCount} />
-            <Kpi label="свободно" value={free} />
+            <Kpi label="свободно по всему ОМ" value={free} />
             <Kpi label="незаполнено" value={unfilled} tone={unfilled > 0 ? "warn" : undefined} />
             <Kpi label="конфликтов" value={conflicts} tone={conflicts > 0 ? "bad" : undefined} />
             {/* Плитка появляется, ТОЛЬКО когда усиление есть (Plane №746):
@@ -1940,6 +1940,7 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                   {/* Плашки состава — ПРО МЕРОПРИЯТИЕ: люди выделены ему, и
                       подбор предлагает их на любой его объект. Число объекта
                       стоит выше, в сводке этапа (Plane №410). */}
+                  <span className="text-xs text-muted-foreground">По всему мероприятию:</span>
                   <Chip tone="info">Выделено {allocated}</Chip>
                   <Chip>Свободны {free}</Chip>
                   <Chip>Назначены {assignedInEvent}</Chip>

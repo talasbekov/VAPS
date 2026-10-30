@@ -123,8 +123,22 @@ export function GvoSummaryPanel({
     );
   }
 
-  const summary = summaryQuery.data.summary;
+  const flagged = new Set(summaryQuery.data.unspecified ?? summaryQuery.data.visit?.unspecified ?? []);
+  const displayFlight = (flight: GvoFlight, prefix: string): GvoFlight => {
+    const shown = { ...flight };
+    for (const key of ["date", "time", "route", "flight", "dur"] as const) {
+      if (flagged.has(`${prefix}.${key}`)) shown[key] = UNSPECIFIED;
+    }
+    return shown;
+  };
+  const summary = {
+    ...summaryQuery.data.summary,
+    arrival: displayFlight(summaryQuery.data.summary.arrival, "arrival"),
+    departure: displayFlight(summaryQuery.data.summary.departure, "departure"),
+  };
   const filled = summaryQuery.data.filled;
+  const approved = summaryQuery.data.visit?.status === "APPROVED";
+  const ready = approved || summaryQuery.data.visit?.status === "READY" || filled;
   const staff = gvoStaffCount(summary);
 
   return (
@@ -160,12 +174,12 @@ export function GvoSummaryPanel({
                 )}
                 <span
                   className={
-                    filled
+                    ready
                       ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
                       : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
                   }
                 >
-                  {filled ? "Сводка заполнена" : "Черновик сводки"}
+                  {approved ? "Сводка утверждена" : ready ? "Сводка заполнена" : "Черновик сводки"}
                 </span>
               </div>
               {/* Надзаголовок не передаём: над H1 уже стоит ряд бейджей (код

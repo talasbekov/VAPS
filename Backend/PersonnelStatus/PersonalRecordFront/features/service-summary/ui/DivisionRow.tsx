@@ -180,7 +180,9 @@ export function StateCell({ submission, isLeaf, stale, hint }: { submission: Day
             v{submission.version} · {formatIsoDateTime(submission.sent_at ?? submission.submitted_at)}
           </span>
         )}
-        {submission !== undefined && <span>{submission.sent_by || submission.submitted_by}</span>}
+        {submission !== undefined && <span>
+          {submission.sent_by ? "Отправил" : "Сдал"}: пользователь {submission.sent_by || submission.submitted_by}
+        </span>}
         {hint !== undefined && <span>{hint}</span>}
       </div>
     </td>

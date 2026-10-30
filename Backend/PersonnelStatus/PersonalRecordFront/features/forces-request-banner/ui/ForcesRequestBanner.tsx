@@ -328,7 +328,7 @@ export function ForcesRequestBanner({
                   «своих» токенов вроде `text-success-ink` в системе нет, и
                   выдуманный класс молча отрисовался бы как ничто. */}
               <b className="tabular-nums">
-                всего сотрудников: {row.assigned}
+                выделено на мероприятие: {row.assigned}
               </b>
               <span className="text-muted-foreground">· квота физического наряда: {row.need}</span>
             </li>

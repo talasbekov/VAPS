@@ -12,7 +12,7 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   DAILY_DIVISIONS_PATH,
   DAILY_SUBMISSIONS_PATH,
-  EVENT_LABELS,
+  submissionEventLabel,
   SANCTION_MAX,
   dailyAmendPath,
   describeAmendFailure,
@@ -307,7 +307,7 @@ export function DaySubmissionPanel({
           <div className="flex flex-col gap-1 rounded-md bg-emerald-100 p-3 text-sm text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
             {/* Состояние названо словами — цвет никогда не единственный сигнал. */}
             <span className="font-medium">
-              День сдан: v{current.version} · {EVENT_LABELS[current.event]}
+              День сдан: v{current.version} · {submissionEventLabel(current)}
             </span>
             <span>
               {formatIsoDateTime(current.submitted_at)} · {current.submitted_by}
@@ -380,7 +380,7 @@ export function DaySubmissionPanel({
                   className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-2"
                 >
                   <span>
-                    v{version.version} · {EVENT_LABELS[version.event]} ·{" "}
+                    v{version.version} · {submissionEventLabel(version)} ·{" "}
                     {formatIsoDateTime(version.submitted_at)} · {version.submitted_by}
                   </span>
                   {version.is_current && (

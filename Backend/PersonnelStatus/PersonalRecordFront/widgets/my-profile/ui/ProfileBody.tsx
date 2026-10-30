@@ -52,6 +52,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
 import { MyNextShift } from "./MyNextShift";
+import { useProfileNextShiftSources } from "@/hooks/use-profile-next-shift";
+import type { PersonalDutyRow } from "../model/profile-next-shift";
 import { ProfileEventLink as EventLink } from "./ProfileEventLink";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
@@ -102,6 +104,7 @@ const STATE_DOT: Record<string, string> = {
 
 const STATE_LABEL: Record<string, string> = {
   PLANNED: "Запланирован",
+  ACKNOWLEDGED: "Ознакомлен",
   ACTIVE: "Действует",
   COMPLETED: "Завершён",
   CANCELLED: "Отменён",
@@ -297,6 +300,10 @@ export function ProfileBody({
   // Смены ЧУЖОГО сотрудника ручка «мои смены» не отдаёт — в чужом профиле
   // запрос не делается, а календарь говорит об этом словами.
   const shifts = useMyDutyShifts({ enabled: !readOnly });
+  const personalSources = useProfileNextShiftSources(String(employee.id), !readOnly);
+  const personalDuties = personalSources.duties;
+  const personalAvailable = !readOnly && personalSources.authorityAvailable &&
+    !personalDuties.readAccessBlocked && personalDuties.data !== undefined;
   /**
    * Смены, которые календарь имеет право нарисовать (Plane №656).
    *
@@ -390,12 +397,13 @@ export function ProfileBody({
           retrying={events.isFetching}
           onRetry={() => { void events.refetch(); }}
           shifts={shownShifts}
+          personalDuties={personalAvailable ? personalDuties.data?.results ?? [] : []}
           shiftsNote={shiftsNote}
-          shiftsLoading={!readOnly && shifts.isPending}
-          shiftsFailed={!readOnly && shifts.isError}
-          shiftsAvailable={!readOnly && shifts.data !== undefined && !shifts.readAccessBlocked}
-          shiftsRetrying={shifts.isFetching}
-          onRetryShifts={() => { void shifts.refetch(); }}
+          shiftsLoading={!readOnly && (shifts.isPending || personalDuties.isPending)}
+          shiftsFailed={!readOnly && (shifts.isError || personalDuties.isError || personalDuties.readAccessBlocked)}
+          shiftsAvailable={personalAvailable || (!readOnly && shifts.data !== undefined && !shifts.readAccessBlocked)}
+          shiftsRetrying={shifts.isFetching || personalDuties.isFetching}
+          onRetryShifts={() => { void shifts.refetch(); void personalDuties.refetch(); }}
           filters={assignmentFilters}
           onFiltersChange={(next) => setStoredFilters({ owner: filterOwner, ...next })}
         />
@@ -690,7 +698,7 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
 
 function EventsTab({
   assignments, note, loading, failed, readOnly = false, available, retrying, onRetry,
-  shifts, shiftsNote, shiftsLoading, shiftsFailed, shiftsAvailable, shiftsRetrying, onRetryShifts,
+  shifts, personalDuties = [], shiftsNote, shiftsLoading, shiftsFailed, shiftsAvailable, shiftsRetrying, onRetryShifts,
   filters, onFiltersChange,
 }: {
   assignments: MyAssignment[];
@@ -702,6 +710,7 @@ function EventsTab({
   retrying: boolean;
   onRetry: () => void;
   shifts: DutyShift[];
+  personalDuties?: PersonalDutyRow[];
   shiftsNote: string | null;
   shiftsLoading: boolean;
   shiftsFailed: boolean;
@@ -727,6 +736,14 @@ function EventsTab({
     if (shift.stateCode === "ACTIVE") return filters.period !== "upcoming";
     return matchesAssignmentPeriod(shift.businessDate, null, filters.period, today);
   }).sort((a, b) => Number(b.stateCode === "ACTIVE") - Number(a.stateCode === "ACTIVE") || a.businessDate.localeCompare(b.businessDate));
+  const planIds = new Set(shifts.map(shift => String(shift.id)));
+  const selectedPersonalDuties = personalDuties.filter(duty => {
+    if (duty.source === "PLAN" && planIds.has(String(duty.source_id))) return false;
+    if (["COMPLETED", "CANCELLED"].includes(duty.source_state) || duty.actual_end) return false;
+    if (duty.source_state === "ACTIVE") return filters.period !== "upcoming";
+    return matchesAssignmentPeriod(duty.date_start ?? duty.business_date, duty.date_end ?? null, filters.period, today);
+  }).sort((a, b) => Number(b.source_state === "ACTIVE") - Number(a.source_state === "ACTIVE") || a.business_date.localeCompare(b.business_date));
+  const dutyCount = selectedShifts.length + selectedPersonalDuties.length;
   const selectClass = "min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <section data-slot="profile-assignments" aria-label="Назначения сотрудника" className="min-w-0 space-y-4">
@@ -765,18 +782,27 @@ function EventsTab({
         </CardContent>
       </Card>}
       {kind !== "events" && (readOnly ? <p role="status" className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">{shiftsNote}</p> : <Card data-slot="profile-duty-assignments">
-        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div className="min-w-0"><CardTitle>Дежурства</CardTitle><p className="text-xs text-muted-foreground">Назначенные смены дежурств</p></div>{shiftsAvailable && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(selectedShifts.length)}</span>}</CardHeader>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div className="min-w-0"><CardTitle>Дежурства</CardTitle><p className="text-xs text-muted-foreground">Назначенные смены дежурств</p></div>{shiftsAvailable && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(dutyCount)}</span>}</CardHeader>
         <CardContent className="space-y-3">
           {shiftsNote !== null && <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{shiftsNote}</p>}
           {shiftsLoading && <p role="status" className="text-sm text-muted-foreground">Загрузка смен дежурств…</p>}
           {shiftsFailed && <LoadFailure what="смены дежурств" description={shiftsAvailable ? "Показаны ранее загруженные смены. Повторите чтение для актуальных сведений." : "Смены сейчас недоступны. Повторите проверку доступа."} onRetry={onRetryShifts} isRetrying={shiftsRetrying} />}
-          {shiftsAvailable && (selectedShifts.length === 0 ? <p className="text-sm text-muted-foreground">Дежурств по выбранным условиям нет.</p> : <ul className="divide-y">{selectedShifts.map(shift => <li key={shift.id} className="space-y-1 py-3 text-sm">
+          {shiftsAvailable && dutyCount === 0 && <p className="text-sm text-muted-foreground">Дежурств по выбранным условиям нет.</p>}
+          {shiftsAvailable && <ul className="divide-y">{selectedShifts.map(shift => <li key={shift.id} className="space-y-1 py-3 text-sm">
             <p className="break-words font-semibold">{shift.target.safeLabel}</p>
             <p>{formatIsoDate(shift.businessDate)} · {DUTY_STATE_LABEL[shift.stateCode]}</p>
             {shift.passportBinding && <p className="text-muted-foreground">{[shift.passportBinding.sectorName, shift.passportBinding.postName].filter(Boolean).join(" · ")}</p>}
             {shift.actualStart && <p className="text-muted-foreground">Заступил: {formatIsoDateTime(shift.actualStart)}</p>}
             {shift.note && <p className="whitespace-pre-wrap break-words text-muted-foreground">{shift.note}</p>}
-          </li>)}</ul>)}
+          </li>)}{selectedPersonalDuties.map(duty => <li key={duty.id} className="space-y-1 py-3 text-sm">
+            <p className="break-words font-semibold">{duty.object_label || "Объект не указан"}</p>
+            <p>{formatIsoDate(duty.date_start ?? duty.business_date)} · {STATE_LABEL[duty.source_state] ?? duty.source_state}</p>
+            {duty.post_label && <p className="text-muted-foreground">{duty.post_label}</p>}
+            {duty.planned_start && <p className="text-muted-foreground">По плану: {formatIsoDateTime(duty.planned_start)}{duty.planned_end ? ` — ${formatIsoDateTime(duty.planned_end)}` : ""}</p>}
+            {duty.acknowledged_at && <p className="text-muted-foreground">Ознакомлен: {formatIsoDateTime(duty.acknowledged_at)}</p>}
+            {duty.actual_start && <p className="text-muted-foreground">Заступил: {formatIsoDateTime(duty.actual_start)}</p>}
+            {duty.instruction && <p className="whitespace-pre-wrap break-words text-muted-foreground">{duty.instruction}</p>}
+          </li>)}</ul>}
         </CardContent>
       </Card>)}
     </section>

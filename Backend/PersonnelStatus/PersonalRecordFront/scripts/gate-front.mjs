@@ -40,6 +40,9 @@ try {
     run("scripts/tests/assistant-chat.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/assistant-progress.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/force-collections-queue.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/forces-form-state.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/gvo-read-display.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/pdf-proxy-timeout.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/security-events-filters.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/service-summary-retry.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/account-scope-choice.test.cjs", [], process.env, ["--test"]);
@@ -63,6 +66,7 @@ try {
     run("scripts/tests/status-extension-availability.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/daily-report-range.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/summary-versions-rights.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/summary-correction-partial.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/service-summary-current.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/expense-reminder-link.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/breadcrumbs-access.test.cjs", [], process.env, ["--test"]);
@@ -82,6 +86,7 @@ try {
     run("scripts/tests/duty-workspace.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-control.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-shift.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/profile-personal-duty-list.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-access.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-card.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-panel.test.cjs", [], process.env, ["--test"]);

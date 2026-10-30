@@ -559,6 +559,12 @@ export const EVENT_LABELS: Record<DaySubmissionEvent, string> = {
   AMENDED: "Исправлено",
 };
 
+export function submissionEventLabel(submission: Pick<DaySubmission, "version" | "event">): string {
+  return submission.version === 1 && submission.event === "CHANGED"
+    ? "Первичная сдача"
+    : EVENT_LABELS[submission.event];
+}
+
 export const SUBMIT_PERMISSION_MESSAGE =
   "Недостаточно прав на сдачу дня. Требуется право daily_report.mark_update.";
 
