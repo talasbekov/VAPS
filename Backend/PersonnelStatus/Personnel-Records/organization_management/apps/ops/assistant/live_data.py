@@ -153,7 +153,7 @@ def event_data(authority, spec):
             if not full:
                 visits = visits.filter(Q(chief_employee_id__in=employees.values('pk')) | Q(deputies__employee_id__in=employees.values('pk'))).distinct()
         result = page_result(visits.order_by('pk'), spec, lambda row: {'id':row.pk, 'name':row.object_name,
-            'stage':row.stage, 'stageLabel':row.get_stage_display(), 'href':f'/security-ops/events/{parent.pk}?visitId={row.pk}'})
+            'stage':row.stage, 'stageLabel':row.get_stage_display(), 'href':f'/security-ops/events/{parent.pk}?visit={row.pk}'})
         result['eventId'] = parent.pk
     else:
         if 'search' in spec:

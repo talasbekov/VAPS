@@ -78,6 +78,7 @@ def test_visit_chief_does_not_expose_other_visits_or_coordinates(people):
     hidden = OpsSecurityEventVisitObject.objects.create(event=parent, security_object=make_object('LV2'), position=1, object_name='Чужой объект', chief_employee_id=rows[2].pk)
     data = read(api, 'event_objects', eventId=parent.pk).json()['readOnly']
     assert data['count'] == 1 and data['rows'][0]['id'] == own.pk
+    assert data['rows'][0]['href']==f'/security-ops/events/{parent.pk}?visit={own.pk}'
     assert 'Чужой объект' not in str(data) and 'coordinates' not in str(data)
 
 
