@@ -14,6 +14,7 @@ import { addDaysIso } from '@/entities/daily-grid';
 import { SERVICE_EMPLOYEES_PATH, type ServiceEmployeeDetail, type ServiceAssignment } from '@/entities/service-employee';
 import { EmployeePortrait } from '@/components/employee-portrait';
 import { EmployeeServiceProfilePanel } from './EmployeeServiceProfilePanel';
+import './employee-visual.css';
 
 export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: string }) {
   const { key: authority, ready: authorityReady, hasPermission, isLoading: permissionsLoading } = useServiceEmployeeAuthority();
@@ -30,15 +31,15 @@ export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: s
   const eventTitle = (assignment: ServiceAssignment) => hasPermission('event.view')
     ? <Link className="font-semibold text-primary-ink hover:underline" href={`/security-ops/events/${assignment.event_id}`}>{assignment.event_code} · {assignment.event_title}</Link>
     : <span className="font-semibold">{assignment.event_code} · {assignment.event_title}</span>;
-  return <DashboardLayout><div className="space-y-4">
-    <Link href={`/service-employees${filters ? `?${new URLSearchParams(filters)}` : ''}`} className="inline-flex min-h-11 items-center text-sm font-medium text-primary-ink hover:underline">← Сотрудники подразделения</Link>
-    <PageHeader eyebrow="Личный состав" title={data?.full_name ?? 'Карточка сотрудника'} description="Основные сведения, личный профиль, назначения и история ОМ" />
+  return <DashboardLayout><div className="sj-employee-view sj-employee-profile space-y-6">
+    <Link href={`/service-employees${filters ? `?${new URLSearchParams(filters)}` : ''}`} className="sj-profile-return inline-flex min-h-11 items-center text-sm font-medium text-primary-ink hover:underline">← Сотрудники подразделения</Link>
+    <PageHeader className="sj-employee-heading" eyebrow="Личный состав" title={data?.full_name ?? 'Карточка сотрудника'} description="Основные сведения, личный профиль, назначения и история ОМ" />
     {(permissionsLoading || (authorityReady && employee.isPending)) && <p role="status">Загрузка карточки…</p>}
     {!authorityReady && !permissionsLoading && <LoadFailure what="доступ к кадровому разделу" onRetry={() => void queryClient.refetchQueries({ queryKey: ['ops-me'], exact: true })} isRetrying={checkingAccess} />}
     {notFound ? <p role="alert">Сотрудник не найден в вашей области доступа.</p> : authorityReady && employee.isError && <LoadFailure what="карточку сотрудника" onRetry={() => void employee.refetch()} isRetrying={employee.isFetching} />}
     {data && <>
-      <Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2">
-        <div className="sm:col-span-2"><EmployeePortrait name={data.full_name} photoUrl={data.photo_url} className="h-24 w-24 text-2xl" /></div>
+      <Card className="sj-profile-identity-card"><CardHeader><CardTitle>Основные сведения</CardTitle></CardHeader><CardContent className="sj-profile-identity-content">
+        <div className="sj-profile-portrait"><EmployeePortrait name={data.full_name} photoUrl={data.photo_url} className="h-24 w-24 text-2xl" /></div>
         <div>
           <p className="font-medium">{[data.rank, data.position].filter(Boolean).join(' · ')}</p>
           <p className="text-sm text-muted-foreground">{data.division?.name ?? 'Без подразделения'}</p>
@@ -57,7 +58,7 @@ export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: s
         </div>
       </CardContent></Card>
       <EmployeeServiceProfilePanel key={`${authority}:${id}`} employeeId={id} />
-      <Card><CardHeader><CardTitle>Назначения на ОМ</CardTitle></CardHeader><CardContent className="space-y-3">{data.assignments.length === 0 && <p className="text-sm text-muted-foreground">Предстоящих назначений нет.</p>}{data.assignments.map(a => <div key={`${a.event_id}-${a.id}`} className={`rounded-lg border p-4 ${a.acknowledged_at ? 'border-emerald-600/40 bg-emerald-500/5' : ['ACKNOWLEDGEMENT', 'CONDUCT'].includes(a.stage) ? 'border-amber-600/40 bg-amber-500/5' : 'bg-muted/20'}`}>
+      <div className="sj-profile-activity-grid"><Card><CardHeader><CardTitle>Назначения на ОМ</CardTitle></CardHeader><CardContent className="space-y-3">{data.assignments.length === 0 && <p className="text-sm text-muted-foreground">Предстоящих назначений нет.</p>}{data.assignments.map(a => <div key={`${a.event_id}-${a.id}`} className={`rounded-lg border p-4 ${a.acknowledged_at ? 'border-emerald-600/40 bg-emerald-500/5' : ['ACKNOWLEDGEMENT', 'CONDUCT'].includes(a.stage) ? 'border-amber-600/40 bg-amber-500/5' : 'bg-muted/20'}`}>
         {eventTitle(a)}<p className="mt-1 text-sm">{formatIsoDate(a.date_start)} — {formatIsoDate(a.date_end)}{a.event_time && ` · ${a.event_time.slice(0, 5)}`} · {a.object_name}</p>{a.address && <p className="text-sm">{a.address}</p>}<p className="text-sm">{[a.sector, a.post].filter(Boolean).join(' · ') || 'Пост не указан'}</p>{a.task && <p className="mt-2 text-sm">Задача: {a.task}</p>}{a.requirements && <p className="text-sm">Требования: {a.requirements}</p>}{a.uniform && <p className="text-sm">Форма: {a.uniform}</p>}{a.weapon && <p className="text-sm">Вооружение: {a.weapon}</p>}{a.chief_name && <p className="text-sm">Старший объекта: {a.chief_name}{a.chief_callsign && ` · ${a.chief_callsign}`}{a.chief_work_phone && ` · Тел.: ${a.chief_work_phone}`}</p>}<p className="mt-2 text-sm text-muted-foreground">{a.declined_at ? 'Отказ от заступления' : a.acknowledged_at ? `Ознакомлен ${formatIsoDateTime(a.acknowledged_at)}` : ['ACKNOWLEDGEMENT', 'CONDUCT'].includes(a.stage) ? 'Ожидает ознакомления' : 'Назначение готовится'}</p>
       </div>)}</CardContent></Card>
       <Card><CardHeader><CardTitle>История закрытых ОМ</CardTitle><p className="text-sm text-muted-foreground">Участие в ОМ: {new Set(data.history.map(a => a.event_id)).size} мероприятий{data.rating !== null && ` · средний балл ${data.rating.toFixed(1).replace('.', ',')}`}</p></CardHeader><CardContent className="space-y-3">
@@ -83,7 +84,7 @@ export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: s
             })}</tbody>
           </table>
         </div>}
-      </CardContent></Card>
+      </CardContent></Card></div>
     </>}
   </div></DashboardLayout>;
 }

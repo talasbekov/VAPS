@@ -24,9 +24,11 @@ export interface AssistantTask {
     progress?: { collectionClosed?: boolean; need: number | null; collected: number; remaining: number | null;
       departments: { id: string; name: string; requested: number; responded: number | null; status: string; overdue: boolean }[] } } | null;
   receipts: AssistantReceipt[]; updatedAt: string;
+  reviewBeforeExecute?: boolean;
+  confirmation?: { operation: "create_bulletin" | "send_allocations"; token: string | null; canConfirm: boolean; blockedReason?: string } | null;
 }
 export interface AssistantCatalogs { objects: { id: string; name: string }[]; departments: { id: string; name: string }[] }
-export interface AssistantConfiguration { enabled: boolean; provider: string | null; model: string | null; isHeadquarters: boolean }
+export interface AssistantConfiguration { enabled: boolean; provider: string | null; model: string | null; isHeadquarters: boolean; reviewBeforeExecute?: boolean }
 export interface AssistantTaskList {
   results: AssistantTask[]; isHeadquarters: boolean;
   page?: number; pageCount?: number; total?: number; nextPage?: number | null; previousPage?: number | null;
@@ -111,6 +113,7 @@ export function fieldsFromDraft(draft: AssistantDraft): AssistantFields {
   return fields;
 }
 const STATUS: Record<string, { label: string; owner: string; description: string }> = {
+  awaiting_confirmation: { label: "Ожидает подтверждения", owner: "Сотрудник с правом выполнения", description: "Проверьте план ниже. Действие выполнится после вашего подтверждения с повторной проверкой прав." },
   needs_information: { label: "Нужны сведения", owner: "Инициатор поручения", description: "Уточните сведения ниже, затем продолжите подготовку." },
   awaiting_recon: { label: "Ожидается рекогносцировка", owner: "Назначенные старшие объектов", description: "В карточке ОМ нужно завершить осмотр и опубликовать потребность. Запросы ещё не отправлены." },
   awaiting_executor: { label: "Ожидается штаб", owner: "Штаб второго департамента", description: "Запросы ещё не отправлены. Сотрудник штаба продолжит поручение со своим правом отправки." },
@@ -140,6 +143,14 @@ export function taskNextAction(task: AssistantTask): { title: string; owner: str
       ? { title: `Уточните ${fields}`, owner: "Инициатор поручения", description: "Остальные сведения уже сохранены. Дополните форму ниже и продолжите подготовку.", canCorrect: true }
       : { title: "Инициатор уточняет сведения", owner: "Инициатор поручения", description: `Нужно уточнить ${fields}. После уточнения обновите состояние поручения.`, canCorrect: false };
   }
+  if (task.confirmation) {
+    const sending = task.confirmation.operation === "send_allocations";
+    if (task.confirmation.blockedReason) return { title: "Проверьте полный запрос в сборе сил", owner: "Штаб второго департамента",
+      description: task.confirmation.blockedReason, canCorrect: false };
+    return { title: task.confirmation.canConfirm ? "Проверьте план и подтвердите действие" : sending ? "Дождаться подтверждения штабом" : "Дождаться подтверждения инициатором",
+      owner: sending ? "Штаб второго департамента" : "Инициатор поручения",
+      description: task.confirmation.canConfirm ? "Ниже показаны сведения и действие. Если нужны правки, сначала сохраните их и проверьте обновлённый план." : "План сохранён. Подтвердить действие может сотрудник с действующим правом выполнения.", canCorrect: false };
+  }
   const titles: Record<string, string> = {
     needs_information: "Проверьте сведения поручения",
     awaiting_recon: "Завершить осмотр и опубликовать потребность",
@@ -156,7 +167,7 @@ export function taskNextAction(task: AssistantTask): { title: string; owner: str
 }
 export function requestsSent(task: AssistantTask): boolean { return task.receipts.some(row => row.operation === "send_allocations"); }
 export function reconConfirmed(task: AssistantTask): boolean {
-  return requestsSent(task) || ["prepared", "awaiting_executor", "awaiting_department_responses", "collecting", "placement", "awaiting_approval", "completed"].includes(task.status);
+  return task.confirmation?.operation === "send_allocations" || requestsSent(task) || ["prepared", "awaiting_executor", "awaiting_department_responses", "collecting", "placement", "awaiting_approval", "completed"].includes(task.status);
 }
 export function taskSteps(task: AssistantTask): { title: string; state: "done" | "current" | "waiting" }[] {
   const sent = requestsSent(task);

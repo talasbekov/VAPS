@@ -2213,6 +2213,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action == "placement_map_update" and self._map_recon_context(request)[2]:
+            return self._may_manage_recon_map_request(request)
         if self.action in self._RECON_OBJECT_ACTIONS:
             return self._may_manage_recon_request(request)
         if self.action in self._VISIT_OBJECT_MANAGER_ACTIONS:
@@ -2373,6 +2375,38 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_object_lead = bool(allowed)
         self._object_lead_employee = employee if allowed else None
         return bool(allowed)
+
+    def _map_recon_context(self, request):
+        """Resolve map ownership from its saved target, never from a supplied visit hint."""
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        payload = request.data
+        if event is None or not isinstance(payload, dict):
+            return event, None, False
+        target_id = str(payload.get("targetId") or "")
+        if payload.get("targetType") == "object":
+            visit = next((row for row in event.visit_objects.all() if str(row.pk) == target_id), None)
+            if visit is None:
+                return event, None, False
+        elif payload.get("targetType") == "post":
+            post = next((row for row in event.recon_sector_posts or [] if str(row.get("id")) == target_id), None)
+            if post is None:
+                return event, None, False
+            try:
+                visit = event_service._visit_of_post(event, post.get("id"))
+            except DomainError:
+                return event, None, False
+        else:
+            return event, None, False
+        return event, visit, (visit.stage if visit is not None else event.stage) == "RECON"
+
+    def _may_manage_recon_map_request(self, request):
+        event, visit, recon = self._map_recon_context(request)
+        if event is None or not recon:
+            return False
+        permissions = effective_permissions(request)
+        if visit is None:
+            return event.stage != "CLOSED" and not event.visit_objects.exists() and bool(permissions & {_STAGE_OVERRIDE_PERMISSION, "*"})
+        return can_manage_recon(event, visit, getattr(request.user, "employee", None), permissions)
 
     def _recon_target(self, request):
         event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
@@ -2913,8 +2947,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @placement_map.mapping.patch
     def placement_map_update(self, request, pk=None):
-        self._require_placement_lead(pk)
-        return Response(map_locations.update(pk, request.data, actor=request.user, deputy=self._deputy_actor()))
+        recon_request = self._map_recon_context(request)[2]
+        if recon_request:
+            if not self._may_manage_recon_map_request(request):
+                raise PermissionDenied("PERMISSION_DENIED")
+        else:
+            self._require_placement_lead(pk)
+        return Response(map_locations.update(pk, request.data, actor=request.user, deputy=self._deputy_actor(), permission_codes=effective_permissions(request), expected_recon=recon_request))
 
     @action(
         detail=True,

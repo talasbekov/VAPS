@@ -19,8 +19,9 @@ import { EditProfileDialog } from "@/features/edit-profile";
 import { useAccountProfile } from "@/features/edit-profile/model/use-account-profile";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
-import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
+import { TopNavigation } from "@/components/navigation/section-navigation";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { AssistantLauncher } from "@/features/assistant-dock/assistant-dock";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -45,13 +46,15 @@ export function Header({
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
   return (
-    // Прилипает только сама шапка. Раньше `sticky` висел на всём <header>, и
-    // вместе с ним к верху экрана прилипала трёхстрочная плашка о правах —
-    // она отъедала треть экрана телефона на каждой странице у всех ролей,
-    // кроме role-2/4/6.
-    <header className="border-b border-border">
-      <div className="sticky top-0 z-40 flex min-h-16 items-center justify-between gap-2 bg-card px-4 py-2 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
+    // Закрепляется весь navbar: sticky на внутренней строке ограничивался
+    // высотой header и уезжал вместе с ним. Отступ задаёт общий shell CSS.
+    <header className="sj-header border-b border-border">
+      <div className="flex min-h-16 items-center justify-between gap-2 bg-card px-4 py-2 sm:px-6">
+        <div className="sj-header-context flex min-w-0 items-center gap-2">
+          <Link href="/workspace" className="sj-header-brand" aria-label="Smart Josparlau — Моя работа">
+            <span className="sj-brand-mark" aria-hidden="true">SJ</span>
+            <span>Smart Josparlau</span>
+          </Link>
           {/* Бургер — единственный вход в навигацию на мобильном, и до этой
               правки у него не было имени вовсе: скринридер читал «кнопка». */}
           <Button
@@ -77,10 +80,10 @@ export function Header({
               <Menu className="h-5 w-5" aria-hidden="true" />
             </Button>
           )}
-          <Breadcrumbs />
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 ml-auto sm:gap-3">
+        <TopNavigation />
+        <div className="sj-header-tools flex shrink-0 items-center gap-2 ml-auto sm:gap-3">
           {/* Роль в шапке ОДНА — та, что выдана в разделе. Пустое место
               вместо неё молчало бы о причине отказов, поэтому у учётки без
               ролей раздела стоит подпись «Роль не назначена»: человек видит,
@@ -98,7 +101,7 @@ export function Header({
                показывается первая: шапка не место для списка, а полный
                состав виден в разделе доступа. */
             <span
-              className="text-muted-foreground hidden max-w-[22rem] items-center gap-1 text-xs xl:inline-flex"
+              className="sj-header-role text-muted-foreground hidden max-w-[22rem] items-center gap-1 text-xs xl:inline-flex"
               aria-label="Рабочая роль"
               title={
                 sectionRoles.length > 1
@@ -117,6 +120,7 @@ export function Header({
               ) : null}
             </span>
           )}
+          <AssistantLauncher />
           <ThemeToggle />
           <NotificationsDropdown />
 

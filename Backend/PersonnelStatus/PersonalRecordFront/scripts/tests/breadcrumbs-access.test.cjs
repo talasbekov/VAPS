@@ -15,7 +15,8 @@ function load(file, dependencies = {}) {
 const portal = load('entities/portal-access/index.ts');
 const portalTasks = load('features/portal-workspace/model.ts', { '@/entities/portal-access': portal });
 const workspace = load('features/forces-workspace/model/workspace.ts');
-function render({ pathname = '/employees/', query = '', permissions = [], permissionsAvailable = true, roles = [], ...state } = {}) {
+const navigation = load('components/navigation/navigation-model.ts', { '@/entities/portal-access': portal, '@/features/portal-workspace/model': portalTasks });
+function render({ pathname = '/employees/', query = '', permissions = [], permissionsAvailable = true, roles = [], sectionId, ...state } = {}) {
   const access = { permissions: permissionsAvailable ? new Set(permissions) : undefined, roles: roles.map(code => ({ code })), hasPermission: code => permissions.includes('*') || permissions.includes(code), isLoading: false, error: null, ...state };
   const { Breadcrumbs } = load('components/navigation/breadcrumbs.tsx', {
     'next/link': { default: 'a' }, 'lucide-react': { ChevronRight: 'ChevronRight' },
@@ -23,11 +24,12 @@ function render({ pathname = '/employees/', query = '', permissions = [], permis
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => access },
     '@/entities/portal-access': portal,
     '@/features/portal-workspace/model': portalTasks,
+    '@/components/navigation/navigation-model': navigation,
     '@/features/forces-workspace/model/workspace': workspace,
   });
-  const wrapper = Breadcrumbs();
+  const wrapper = Breadcrumbs({sectionId});
   assert.equal(wrapper.type, require('react').Suspense, 'search parameters have a local Suspense boundary');
-  const tree = wrapper.props.children.type();
+  const tree = wrapper.props.children.type(wrapper.props.children.props);
   const nodes = [];
   function visit(value) {
     if (Array.isArray(value)) return value.forEach(visit);
@@ -60,12 +62,12 @@ test('analytics trails identify independent sources across slash and authority v
   for (const slash of ['', '/']) {
     for (const authority of authorities) {
       const operations = render({ ...authority, pathname: '/security-ops/analytics/operations' + slash });
-      assert.deepEqual(labels(operations), ['Smart Жоспарлау', 'Охранные мероприятия', 'Аналитика мероприятий']);
+      assert.deepEqual(labels(operations), ['Smart Жоспарлау', 'Охранное мероприятие', 'Аналитика мероприятий']);
       assert.equal(hasParent(operations, '/security-ops/analytics/'), false, 'a peer source is never an operations ancestor');
       const service = render({ ...authority, pathname: '/security-ops/analytics' + slash });
-      assert.deepEqual(labels(service), ['Smart Жоспарлау', 'Охранные мероприятия', 'Аналитика службы']);
+      assert.deepEqual(labels(service), ['Smart Жоспарлау', 'Ежедневный расход', 'Аналитика службы']);
       const rating = render({ ...authority, pathname: '/security-ops/ratings/analytics' + slash });
-      assert.deepEqual(labels(rating), ['Smart Жоспарлау', 'Охранные мероприятия', 'Оперативный рейтинг', 'Аналитика рейтинга']);
+      assert.deepEqual(labels(rating), ['Smart Жоспарлау', 'Охранное мероприятие', 'Оперативный рейтинг', 'Аналитика рейтинга']);
       assert.equal(current(rating), 'Аналитика рейтинга');
     }
   }
@@ -80,12 +82,12 @@ test('known assistant and participant screens retain their identity without chan
       { permissions: ['*'], permissionsAvailable: false },
     ]) {
       const assistant = render({ ...authority, pathname: '/security-ops/assistant' + slash });
-      assert.deepEqual(labels(assistant), ['Smart Жоспарлау', 'Охранные мероприятия', 'Помощник по ОМ']);
+      assert.deepEqual(labels(assistant), ['Smart Жоспарлау', 'Охранное мероприятие', 'Помощник по ОМ']);
       assert.equal(current(assistant), 'Помощник по ОМ');
       assert.equal(hasParent(assistant, '/security-ops/'), false);
       for (const participant of ['42', '9007199254740993']) {
         const rating = render({ ...authority, pathname: '/security-ops/ratings/employees/' + participant + slash });
-        assert.deepEqual(labels(rating), ['Smart Жоспарлау', 'Охранные мероприятия', 'Оперативный рейтинг', 'Агрегированный рейтинг участника']);
+        assert.deepEqual(labels(rating), ['Smart Жоспарлау', 'Охранное мероприятие', 'Оперативный рейтинг', 'Агрегированный рейтинг участника']);
         const trusted = !authority.isLoading && !authority.error && authority.permissionsAvailable !== false;
         const aggregate = authority.permissions.includes('*') || authority.permissions.includes('rating.view_aggregate');
         assert.equal(hasParent(rating, '/security-ops/ratings/'), trusted && aggregate);
@@ -207,4 +209,13 @@ test('parent navigation honours the shared conjunctive and optional role rules',
   assert.equal(hasParent(render(props), '/security-ops/analytics/'), false);
   assert.equal(hasParent(render({ ...props, roles: ['NAV_READER'] }), '/security-ops/analytics/'), true);
   assert.equal(hasParent(render({ ...props, permissions: ['*'] }), '/security-ops/analytics/'), true);
+});
+
+
+test('approved navigation labels objects and shared reports without stale OM ancestry', () => {
+  const labels = nodes => nodes.filter(node => node.type === 'li').map(node => node.props.children.at(-1).props.children);
+  assert.deepEqual(labels(render({pathname:'/security-ops/objects/',permissions:['*']})), ['Smart Жоспарлау','Боевое дежурство','Объекты и паспорта']);
+  for(const [sectionId,title] of [['duty','Боевое дежурство'],['events','Охранное мероприятие']]) assert.deepEqual(labels(render({pathname:'/security-ops/service-reports/',permissions:['*'],sectionId})), ['Smart Жоспарлау',title,'Дежурства и документы ОМ']);
+  assert.deepEqual(labels(render({pathname:'/security-ops/profile/',permissions:[]})), ['Smart Жоспарлау','Мой профиль']);
+  assert.deepEqual(labels(render({pathname:'/security-ops/profile/72/',query:'directory=1',permissions:[]})), ['Smart Жоспарлау','Сотрудники подразделения','Профиль сотрудника']);
 });

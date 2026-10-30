@@ -31,8 +31,13 @@ try {
     run("scripts/tests/recon-materials-authority.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/report-authority.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/event-workflow-readability.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/event-stepper-visual.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/ambient-background.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/shared-map-recon.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/workflow-context-navigation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/om-assistant.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/assistant-dock.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/assistant-chat.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/assistant-progress.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/force-collections-queue.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/security-events-filters.test.cjs", [], process.env, ["--test"]);
@@ -40,6 +45,7 @@ try {
     run("scripts/tests/account-scope-choice.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/portal-workspace.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/portal-workspace-ui.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/navigation-sections.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/notifications-center.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/rating-notification-access.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/ops-write-authority.test.cjs", [], process.env, ["--test"]);

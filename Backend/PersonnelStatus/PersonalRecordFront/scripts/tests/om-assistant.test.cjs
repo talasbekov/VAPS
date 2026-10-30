@@ -15,6 +15,143 @@ const task = patch => ({ id: taskId, initiatedBy: 'chief', revision: 2, status: 
   event: { id: '70', code: 'ОМ-70', title: 'Встреча', stage: 'RECON', forceDemandTotal: 10, requested: 0, rosterCount: 0 },
   receipts: [], updatedAt: '2026-10-21T10:00:00Z', ...patch });
 
+function reviewTask(patch = {}) {
+  return task({ event: null, status: 'awaiting_confirmation', canContinue: false, reviewBeforeExecute: true,
+    confirmation: { operation: 'create_bulletin', token: 'a'.repeat(64), canConfirm: true }, ...patch });
+}
+test('embedded assistant selects a saved task without navigating the underlying page', t => {
+  const f = fixture(t); let saved; const selected = [];
+  f.override('next/navigation', { useSearchParams: () => new URLSearchParams('unrelated=retained'),
+    useRouter: () => ({ replace() { throw Error('must keep underlying URL'); }, push() { throw Error('must keep underlying URL'); } }) });
+  const source = { isPending: false, isFetching: false, isError: false, canAct: true, refetch() {} };
+  f.override('@/features/om-assistant/api', { ...f.api,
+    useAssistantConfiguration: () => ({ ...source, data: { enabled: true, reviewBeforeExecute: true } }),
+    useAssistantCatalogs: () => ({ ...source, data: { objects: [], departments: [] } }),
+    useAssistantTasks: () => ({ ...source, data: { results: [] } }), useAssistantTask: () => source,
+    useAssistantWriter: (_context, onSaved) => { saved = onSaved; return { pending: false, retryable: false, reset() {} }; } });
+  const { AssistantAuthorizedWorkspace } = f.load('@/features/om-assistant/workspace');
+  renderToStaticMarkup(React.createElement(AssistantAuthorizedWorkspace, { embedded: true, onSelectTask: id => selected.push(id), draftMessage: 'Сохранённый ввод' }));
+  saved(task()); assert.deepEqual(selected, [taskId]);
+});
+test('embedded manual fallback keeps the submitted text visible', t => {
+  const f = fixture(t); const source = { isPending: false, isFetching: false, isError: false, canAct: true, refetch() {} };
+  f.override('@/features/om-assistant/api', { ...f.api,
+    useAssistantConfiguration: () => ({ ...source, data: { enabled: false, reviewBeforeExecute: true } }),
+    useAssistantCatalogs: () => ({ ...source, data: { objects: [], departments: [] } }),
+    useAssistantTasks: () => ({ ...source, data: { results: [] } }), useAssistantTask: () => source,
+    useAssistantWriter: () => ({ pending: false, retryable: false, reset() {} }) });
+  const { AssistantAuthorizedWorkspace } = f.load('@/features/om-assistant/workspace');
+  const html = renderToStaticMarkup(React.createElement(AssistantAuthorizedWorkspace, { embedded: true, draftMessage: 'Поручение из нижней строки' }));
+  assert.match(html, /Поручение из нижней строки/);
+});
+test('embedded saved queue selects locally instead of following its page link', t => {
+ const f=fixture(t),links=[],navigated=[];
+ f.override('next/link',{default:props=>{links.push(props);return React.createElement('a',{href:props.href},props.children);}});
+ const {AssistantTaskQueue}=f.load('@/features/om-assistant/workspace');
+ renderToStaticMarkup(React.createElement(AssistantTaskQueue,{data:{results:[task()]},search:'',embedded:true,navigate:href=>navigated.push(href)}));
+ const link=links.find(x=>x.href.includes('task='));assert.equal(typeof link.onClick,'function');let prevented=false;
+ link.onClick({button:0,preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(navigated.length,1);
+});
+test('embedded queue retains its internal selected page', t => {
+ const f=fixture(t);let page;
+ f.override('@/features/om-assistant/api',{...f.api,useAssistantConfiguration:()=>({data:{enabled:false}}),useAssistantCatalogs:()=>({data:{objects:[],departments:[]}}),
+  useAssistantTasks:p=>{page=p;return {data:{results:[]}};},useAssistantTask:()=>({}),useAssistantWriter:()=>({reset(){}})});
+ const {AssistantAuthorizedWorkspace}=f.load('@/features/om-assistant/workspace');
+ renderToStaticMarkup(React.createElement(AssistantAuthorizedWorkspace,{embedded:true,selectedPage:2}));assert.equal(page,2);
+});
+test('embedded clarification uses its own editor ID and leaves the outer URL unchanged', t => {
+ const f=fixture(t),links=[];f.override('next/link',{default:props=>React.createElement('a',props,props.children)});
+ // Capture the actual anchor handler before DOM rendering.
+ const {AssistantTaskCard}=f.load('@/features/om-assistant/workspace');
+ const value=task({questions:[{field:'title',text:'Уточните название'}],status:'needs_information',event:null});
+ const html=renderToStaticMarkup(React.createElement(AssistantTaskCard,{task:value,canViewEvent:true,canCommand:false,embedded:true,correctionId:'global-assistant-correction'}));
+ assert.match(html,/href="#global-assistant-correction"/);assert.doesNotMatch(html,/href="#assistant-correction"/);
+});
+for (const [name, config, expectedReview, blocked] of [
+  ['review backend', { data: { enabled: true, reviewBeforeExecute: true } }, true, false],
+  ['legacy backend', { data: { enabled: true } }, false, false],
+  ['configuration pending', {}, false, true],
+  ['configuration error', { isError: true }, false, true],
+]) test(`workdesk composer negotiates review safely with ${name}`, t => {
+  const f = fixture(t); let brief; const calls = [];
+  f.override('react', { ...React, useState: () => ['Подготовь встречу', () => {}] });
+  f.override('@/features/om-assistant/api', { useAssistantAccess: () => ({ allowed: true }), useAssistantConfiguration: () => config,
+    useAssistantWriter: () => ({ pending: false, retryable: false, create: (...args) => calls.push(args) }) });
+  f.override('@/features/om-assistant/brief', { AssistantBrief: props => { brief = props; return null; } });
+  f.override('@/hooks/use-my-employee', {}); f.override('@/widgets/my-profile/ui/MyNextShift', {});
+  f.override('@/entities/security-event', {}); f.override('./desk-model', {}); f.override('./workspace.module.css', { default: {} });
+  renderToStaticMarkup(React.createElement(f.load('@/features/portal-workspace/work-queues').WorkdeskComposer));
+  assert.equal(brief.disabled, blocked);
+  assert.equal(brief.reviewBeforeExecute, expectedReview);
+  brief.onSubmit();
+  assert.equal(calls.length, blocked ? 0 : 1);
+  if (!blocked) assert.deepEqual(structuredClone(calls[0]), ['Подготовь встречу', {}, true, expectedReview]);
+});
+test('review creation is opt-in and retained in network retries', async t => {
+  const f = fixture(t); f.state.post = () => { throw Error('lost preview response'); };
+  await f.writer.create('Подготовь встречу', {}, true, true);
+  assert.equal(f.state.writes[0].body.reviewBeforeExecute, true);
+  f.state.post = null; await f.writer.retry();
+  assert.deepEqual(f.state.writes[1].body, f.state.writes[0].body);
+});
+test('confirmation submits only displayed token and revision and retries its exact body', async t => {
+  const f = fixture(t); const value = reviewTask(); f.select(value);
+  assert.equal(typeof f.writer.confirmTask, 'function');
+  f.state.post = () => { throw Error('lost confirmation response'); };
+  await f.writer.confirmTask(value.confirmation.token, value.revision);
+  assert.deepEqual(f.state.writes[0].body, { confirmationToken: 'a'.repeat(64), revision: 2 });
+  assert.match(f.state.writes[0].url, /\/continue\/$/);
+  f.state.post = null; await f.writer.retry();
+  assert.deepEqual(f.state.writes[1].body, f.state.writes[0].body);
+});
+for (const changed of ['token', 'revision', 'canConfirm', 'scope']) test(`changed ${changed} blocks confirmation before dispatch`, async t => {
+  const f = fixture(t); const visible = reviewTask(); f.select(visible);
+  assert.equal(typeof f.writer.confirmTask, 'function');
+  if (changed === 'token') f.select(reviewTask({ confirmation: { ...visible.confirmation, token: 'b'.repeat(64) } }));
+  if (changed === 'revision') f.select(reviewTask({ revision: 3 }));
+  if (changed === 'canConfirm') f.select(reviewTask({ confirmation: { ...visible.confirmation, canConfirm: false } }));
+  if (changed === 'scope') { f.state.actor = 'other'; f.update(); }
+  await f.writer.confirmTask(visible.confirmation.token, visible.revision);
+  assert.equal(f.state.writes.length, 0);
+});
+test('review next step and card explain the action without executing on render', t => {
+  const f = fixture(t); const value = reviewTask();
+  assert.match(f.model.taskNextAction(value).title, /Проверьте план/);
+  const { AssistantConfirmation } = f.load('@/features/om-assistant/workspace');
+  assert.equal(typeof AssistantConfirmation, 'function');
+  const html = renderToStaticMarkup(React.createElement(AssistantConfirmation, { task: value, disabled: false, pending: false,
+    onConfirm: () => { throw Error('render must not confirm'); } }));
+  assert.match(html, /Подтвердить создание ОМ/); assert.match(html, /Встреча/);
+  assert.match(html, /25\.10\.2026/); assert.match(html, /до подтверждения/i);
+  assert.equal(f.state.writes.length, 0);
+});
+test('readonly review names responsible actor without executable confirmation', t => {
+  const f = fixture(t);
+  const value = reviewTask({ confirmation: { operation: 'send_allocations', canConfirm: false, token: null } });
+  const { AssistantConfirmation } = f.load('@/features/om-assistant/workspace');
+  assert.equal(typeof AssistantConfirmation, 'function');
+  const html = renderToStaticMarkup(React.createElement(AssistantConfirmation, { task: value, disabled: false, pending: false, onConfirm() {} }));
+  assert.match(html, /Штаб/); assert.doesNotMatch(html, /<button[^>]*>Подтвердить/);
+});
+test('hidden draft conditions explain why full collection review is required', t => {
+  const f = fixture(t); const value = reviewTask({ confirmation: { operation: 'send_allocations', token: null, canConfirm: false,
+    blockedReason: 'Проверьте дополнительные условия в сборе сил.' } });
+  const { AssistantConfirmation } = f.load('@/features/om-assistant/workspace');
+  const html = renderToStaticMarkup(React.createElement(AssistantConfirmation, { task: value, disabled: false, pending: false, onConfirm() {} }));
+  assert.match(html, /Проверьте дополнительные условия в сборе сил/);
+  assert.doesNotMatch(html, /<button[^>]*>Подтвердить/);
+  assert.match(f.model.taskNextAction(value).title, /сборе сил/);
+});
+test('review disappears after completion and escapes server strings', t => {
+  const f = fixture(t); const { AssistantConfirmation } = f.load('@/features/om-assistant/workspace');
+  assert.equal(typeof AssistantConfirmation, 'function');
+  const done = renderToStaticMarkup(React.createElement(AssistantConfirmation, { task: reviewTask({ confirmation: null }), disabled: false, pending: false, onConfirm() {} }));
+  assert.equal(done, '');
+  const value = reviewTask({ plan: { ...task().plan, title: '<img src=x onerror=alert(1)>' } });
+  const html = renderToStaticMarkup(React.createElement(AssistantConfirmation, { task: value, disabled: true, pending: false, onConfirm() {} }));
+  assert.match(html, /&lt;img/); assert.doesNotMatch(html, /<img/); assert.match(html, /disabled=""/);
+});
+
 test('the clarification next step names only unresolved fields and links the initiator to the retained editor', t => {
   const f = fixture(t);
   const value = task({ status: 'needs_information', event: null, gathering: null, canContinue: false,
@@ -733,19 +870,28 @@ test('queue DOM exposes the 26th task and preserves its page/event link; old res
   }
 });
 
-function renderWorkspace(f, value, headquarters = false) {
-  f.state.search = `task=${value.id}`;
+function renderWorkspace(f, value, headquarters = false, configuration) {
+  f.state.search = value ? `task=${value.id}` : '';
   const source = { isPending: false, isFetching: false, isError: false, readAccessBlocked: false, canAct: true, refetch() {} };
   f.override('@/features/om-assistant/api', { ...f.api,
-    useAssistantTask: () => ({ ...source, data: value, readKey: f.select(value) }),
-    useAssistantTasks: () => ({ ...source, data: { results: [value], isHeadquarters: headquarters } }),
-    useAssistantConfiguration: () => ({ ...source, data: { enabled: true, isHeadquarters: headquarters } }),
+    useAssistantTask: () => ({ ...source, data: value, readKey: value ? f.select(value) : undefined }),
+    useAssistantTasks: () => ({ ...source, data: { results: value ? [value] : [], isHeadquarters: headquarters } }),
+    useAssistantConfiguration: () => configuration ?? ({ ...source, data: { enabled: true, isHeadquarters: headquarters } }),
     useAssistantCatalogs: () => ({ ...source, data: { objects: [], departments: [] } }),
     useAssistantWriter: () => ({ ...f.writer.snapshot(), create: f.writer.create, continueTask: f.writer.continueTask, retry: f.writer.retry, reset: f.writer.reset }),
   });
   const { AssistantWorkspace } = f.load('@/features/om-assistant/workspace');
   return renderToStaticMarkup(React.createElement(AssistantWorkspace));
 }
+
+test('configuration error allows preparing manual details and explicitly retrying capability checks', t => {
+  const f = fixture(t);
+  const html = renderWorkspace(f, null, false, { isError: true, refetch() {} });
+  const fieldset = html.match(/<fieldset([^>]*)>[\s\S]*?<legend[^>]*>Как задать поручение/);
+  assert.ok(fieldset); assert.doesNotMatch(fieldset[1], /disabled/);
+  assert.match(html, /Повторить проверку помощника/);
+  assert.equal(f.state.writes.length, 0);
+});
 
 for (const status of ['awaiting_recon', 'awaiting_department_responses', 'collecting', 'awaiting_approval']) test(`${status} DOM offers refresh and domain links without a meaningless continuation write`, t => {
   const f = fixture(t);

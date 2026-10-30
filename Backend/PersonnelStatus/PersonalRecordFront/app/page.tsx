@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,9 +13,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Building2, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { ParticleField } from "@/components/login/particle-field";
+import "@/components/shell-visual.css";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { PORTAL_HOME_PATH } from "@/features/portal-workspace/model";
 import { useQueryClient } from "@tanstack/react-query";
@@ -97,51 +97,6 @@ function LoginScreen() {
     }
   }, [hasPermission, roles, permissions, permissionsError, permissionsLoading, router, searchParams, user]);
 
-  // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
-  // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const pointer = useRef({ x: 0, y: 0, px: 0, py: 0, visible: false });
-  const frame = useRef(0);
-
-  const applyPointer = useCallback(() => {
-    frame.current = 0;
-    const stage = stageRef.current;
-    if (stage === null) return;
-    const { x, y, px, py, visible } = pointer.current;
-    stage.style.setProperty("--cursor-x", `${x}px`);
-    stage.style.setProperty("--cursor-y", `${y}px`);
-    stage.style.setProperty("--parallax-x", String(px));
-    stage.style.setProperty("--parallax-y", String(py));
-    stage.style.setProperty("--pointer-visible", visible ? "1" : "0");
-  }, []);
-
-  const schedule = useCallback(() => {
-    // Один кадр — одна запись стилей: браузер сам склеивает поток событий.
-    if (frame.current !== 0) return;
-    frame.current = requestAnimationFrame(applyPointer);
-  }, [applyPointer]);
-
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    pointer.current = {
-      x,
-      y,
-      px: (x - rect.width / 2) / 30,
-      py: (y - rect.height / 2) / 30,
-      visible: true,
-    };
-    schedule();
-  };
-
-  const handleMouseLeave = () => {
-    pointer.current = { ...pointer.current, px: 0, py: 0, visible: false };
-    schedule();
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -185,7 +140,7 @@ function LoginScreen() {
 
   if (!sessionExpired && (awaitingWorkspace || authLoading || (user !== null && user !== undefined))) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="sj-visual sj-login min-h-screen flex items-center justify-center p-6">
         {permissionsError ? (
           <div role="alert" className="max-w-md space-y-3 text-center">
             <p className="font-medium">Не удалось загрузить доступные разделы</p>
@@ -204,233 +159,59 @@ function LoginScreen() {
   }
 
   return (
-    <div
-      ref={stageRef}
-      className="relative min-h-screen overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
-      {/* Магнитные частицы — на canvas, вне React (components/login/particle-field). */}
-      <ParticleField />
-
-      {/* Мягкое свечение вокруг курсора */}
-      <div
-        className="pointer-events-none absolute rounded-full transition-opacity duration-500"
-        style={{
-          left: "var(--cursor-x, 50%)",
-          top: "var(--cursor-y, 50%)",
-          width: 400,
-          height: 400,
-          transform: "translate(-50%, -50%)",
-          opacity: "calc(var(--pointer-visible, 0) * 0.3)",
-          background:
-            "radial-gradient(circle, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.1) 40%, transparent 70%)",
-          filter: "blur(40px)",
-        }}
-      />
-
-      {/* Внутреннее свечение */}
-      <div
-        className="pointer-events-none absolute rounded-full transition-opacity duration-300"
-        style={{
-          left: "var(--cursor-x, 50%)",
-          top: "var(--cursor-y, 50%)",
-          width: 200,
-          height: 200,
-          transform: "translate(-50%, -50%)",
-          opacity: "calc(var(--pointer-visible, 0) * 0.4)",
-          background:
-            "radial-gradient(circle, rgba(59, 130, 246, 0.3), rgba(99, 102, 241, 0.2) 40%, transparent 70%)",
-          filter: "blur(25px)",
-        }}
-      />
-
-      {/* Декоративные элементы с параллаксом */}
-      <div
-        className="pointer-events-none absolute -left-40 -top-40 rounded-full transition-all duration-700 ease-out"
-        style={{
-          width: 400,
-          height: 400,
-          transform:
-            "translate(calc(var(--parallax-x, 0) * 2px), calc(var(--parallax-y, 0) * 2px)) rotate(calc(var(--parallax-x, 0) * 0.5deg))",
-          background:
-            "radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.12), rgba(99, 102, 241, 0.08) 40%, transparent 70%)",
-          filter: "blur(70px)",
-          opacity: 0.8,
-        }}
-      />
-      <div
-        className="pointer-events-none absolute -right-32 bottom-0 rounded-full transition-all duration-700 ease-out"
-        style={{
-          width: 450,
-          height: 450,
-          transform:
-            "translate(calc(var(--parallax-x, 0) * -1.5px), calc(var(--parallax-y, 0) * -1.5px)) rotate(calc(var(--parallax-y, 0) * -0.5deg))",
-          background:
-            "radial-gradient(circle at 70% 70%, rgba(59, 130, 246, 0.12), rgba(96, 165, 250, 0.08) 40%, transparent 70%)",
-          filter: "blur(70px)",
-          opacity: 0.8,
-        }}
-      />
-
-      <div className="w-full max-w-md relative z-10">
-        <div
-          className="text-center mb-8 transition-transform duration-500 ease-out animate-fade-in-up"
-          style={{
-            transform: "translate(calc(var(--parallax-x, 0) * 0.5px), calc(var(--parallax-y, 0) * 0.5px))",
-            animationDelay: "0.1s",
-            opacity: 0,
-          }}
-        >
-          <div className="flex items-center justify-center mb-4">
-            <div
-              className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 p-4 rounded-3xl shadow-2xl transition-all duration-500 hover:scale-110 hover:shadow-blue-500/50 hover:rotate-6 group cursor-pointer"
-              style={{
-                transform: "translate(calc(var(--parallax-x, 0) * 0.8px), calc(var(--parallax-y, 0) * 0.8px))",
-                boxShadow:
-                  "0 20px 60px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3)",
-              }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent rounded-3xl opacity-0 group-hover:opacity-100 group-hover:animate-shimmer"
-                style={{
-                  backgroundSize: "200% 100%",
-                  animation: "shimmer 2s infinite",
-                }}
+    <div className="sj-visual sj-login">
+      <Card className="sj-login-card">
+        <CardHeader className="sj-login-header">
+          <div className="sj-brand-mark" aria-hidden="true">SJ</div>
+          <p className="sj-login-eyebrow">SMART JOSPARLAU</p>
+          <CardTitle className="sj-login-title"><h1>Вход в систему</h1></CardTitle>
+          <CardDescription>Введите данные вашей LAN-учётной записи.</CardDescription>
+        </CardHeader>
+        <CardContent className="sj-login-content">
+          <form onSubmit={handleLogin} className="sj-login-form">
+            <div className="sj-login-field">
+              <Label htmlFor="username">Имя пользователя</Label>
+              <Input
+                id="username"
+                type="text"
+                autoComplete="username"
+                placeholder="Введите имя пользователя"
+                value={credentials.username}
+                onChange={(e) => setCredentials((prev) => ({ ...prev, username: e.target.value }))}
+                required
               />
-              <Building2 className="h-9 w-9 text-white relative z-10 drop-shadow-lg transition-transform duration-300 group-hover:scale-110" />
             </div>
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
-            Smart Josparlau
-          </h1>
-          <p className="text-gray-600">Система управления служебной деятельностью подразделений</p>
-        </div>
-
-        <Card
-          className="shadow-2xl border border-white/20 backdrop-blur-2xl transition-all duration-500 ease-out hover:shadow-[0_40px_80px_rgba(59,130,246,0.4)] hover:scale-[1.02] hover:-translate-y-1.5 hover:border-blue-500/50 animate-fade-in-up overflow-hidden relative group ring-0 hover:ring-4 hover:ring-blue-500/10"
-          style={{
-            transform: "translate(calc(var(--parallax-x, 0) * 0.3px), calc(var(--parallax-y, 0) * 0.3px))",
-            animationDelay: "0.3s",
-            opacity: 0,
-            background:
-              "linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.95) 100%)",
-            boxShadow:
-              "0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.5)",
-          }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-          <div
-            className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-shimmer pointer-events-none"
-            style={{
-              backgroundSize: "200% 100%",
-              animation: "shimmer 2.5s infinite",
-            }}
-          />
-
-          <CardHeader className="space-y-2 relative z-10 pt-8">
-            <CardTitle className="text-2xl text-center font-bold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 bg-clip-text text-transparent">
-              Вход в систему
-            </CardTitle>
-            <CardDescription className="text-center text-gray-600">
-              Введите ваши учетные данные для доступа
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="relative z-10 px-8 pb-8">
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <Label
-                  htmlFor="username"
-                  className="text-gray-700 font-medium text-sm"
-                >
-                  Имя пользователя
-                </Label>
-                <Input
-                  id="username"
-                  type="text"
-                  // Без autoComplete менеджеры паролей не предлагают учётку —
-                  // оператор набирал её вручную при каждом входе.
-                  autoComplete="username"
-                  placeholder="Введите имя пользователя"
-                  value={credentials.username}
-                  onChange={(e) =>
-                    setCredentials((prev) => ({
-                      ...prev,
-                      username: e.target.value,
-                    }))
-                  }
-                  className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-300 bg-gray-50/50 hover:bg-white focus:bg-white"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label
-                  htmlFor="password"
-                  className="text-gray-700 font-medium text-sm"
-                >
-                  Пароль
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="Введите пароль"
-                  value={credentials.password}
-                  onChange={(e) =>
-                    setCredentials((prev) => ({
-                      ...prev,
-                      password: e.target.value,
-                    }))
-                  }
-                  className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-300 bg-gray-50/50 hover:bg-white focus:bg-white"
-                  required
-                />
-              </div>
-
-              {expired && (
-                /* НЕ `destructive`: истёкшая сессия — не ошибка человека и не
-                   поломка, а обычный конец рабочего дня. Красная плашка тут
-                   пугала бы там, где надо просто объяснить. Но и вид по
-                   умолчанию не годится: `AlertDescription` рисует текст
-                   `text-muted-foreground` на `bg-card`, то есть серым по
-                   белому внутри белой карточки входа — на снимке это читалось
-                   как placeholder поля, а не как сообщение. Отсюда своя рамка
-                   и обычный цвет текста. */
-                <Alert className="border-primary/40 bg-primary/5 text-left">
-                  <AlertCircle className="h-4 w-4 text-primary-ink" />
-                  <AlertDescription className="text-foreground">
-                    Сессия истекла — войдите заново.
-                  </AlertDescription>
-                </Alert>
-              )}
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full h-11 bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-700 hover:via-blue-600 hover:to-indigo-700 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] relative overflow-hidden group"
-                disabled={isLoading}
-              >
-                <div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-shimmer"
-                  style={{
-                    backgroundSize: "200% 100%",
-                  }}
-                />
-                <span className="relative z-10">
-                  {isLoading ? "Вход..." : "Войти"}
-                </span>
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-      </div>
+            <div className="sj-login-field">
+              <Label htmlFor="password">Пароль</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Введите пароль"
+                value={credentials.password}
+                onChange={(e) => setCredentials((prev) => ({ ...prev, password: e.target.value }))}
+                required
+              />
+            </div>
+            {expired && (
+              <Alert className="border-primary/40 bg-primary/5 text-left">
+                <AlertCircle className="h-4 w-4 text-primary-ink" />
+                <AlertDescription className="text-foreground">Сессия истекла — войдите заново.</AlertDescription>
+              </Alert>
+            )}
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" className="sj-login-submit" disabled={isLoading}>
+              {isLoading ? "Вход..." : "Войти"}
+            </Button>
+          </form>
+          <p className="sj-login-footer">Закрытый контур · Smart Josparlau</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

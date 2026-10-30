@@ -11,7 +11,7 @@ const roadWidths: Record<string, number> = { trunk: 4, primary: 3.5, secondary: 
 const fills: Record<string, string> = { green: '#dceacb', water: '#aad4ec', building: '#d8d4cd' };
 const order = ['green', 'water', 'building', 'rail', 'path', 'road', 'secondary', 'primary', 'trunk', 'river'];
 
-export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; focusPoint?: { key: number; location: GeoPoint } | null }) {
+export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint, fitViewport = false }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; focusPoint?: { key: number; location: GeoPoint } | null; fitViewport?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -70,6 +70,44 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
     observer.observe(target);
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    if (!fitViewport) return;
+    const surface = box.current?.closest<HTMLElement>('[data-slot="offline-map-surface"]');
+    if (!surface) return;
+    const reveal = () => surface.scrollIntoView({ block: 'start', behavior: 'instant' });
+    let frame = requestAnimationFrame(reveal);
+    const resized = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const focused = document.activeElement;
+        const tools = surface.parentElement;
+        const pointForm = tools?.querySelector<HTMLFormElement>(':scope > form');
+        const formBounds = pointForm?.getBoundingClientRect();
+        if ((focused && tools?.contains(focused) && !surface.contains(focused)) ||
+            (formBounds && formBounds.top < innerHeight - 48 && formBounds.bottom > 0)) return;
+        const bounds = surface.getBoundingClientRect();
+        // Keep an already-visible map aligned, without pulling focus away from
+        // tools or the coordinate form when the user has scrolled to them.
+        if (bounds.top < innerHeight * .65 && bounds.bottom > innerHeight * .35) reveal();
+      });
+    };
+    window.addEventListener('resize', resized);
+    window.visualViewport?.addEventListener('resize', resized);
+    // Dynamic viewport units may settle after the window resize event.
+    // Observe the surface too so the final layout remains aligned.
+    let initialSize = true;
+    const observer = new ResizeObserver(() => {
+      if (initialSize) { initialSize = false; return; }
+      resized();
+    });
+    observer.observe(surface);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', resized);
+      window.visualViewport?.removeEventListener('resize', resized);
+    };
+  }, [fitViewport]);
   useEffect(() => {
     if (!focusPoint) return;
     setCenter(project(focusPoint.location));
@@ -183,8 +221,9 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
     setSearch(place.name);
     searchInput.current?.focus({ preventScroll: true });
   }
-  return <section aria-label="Офлайн-карта Астаны" className="min-w-0 overflow-hidden rounded-lg border bg-background">
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
+  return <section aria-label="Офлайн-карта Астаны" data-slot="offline-map-surface" className={`min-w-0 overflow-hidden rounded-lg border bg-background${fitViewport ? ' sj-offline-map-fit' : ''}`}>
+    <div data-slot="offline-map-controls" className={fitViewport ? 'sj-map-fit-controls' : 'contents'} role={fitViewport ? 'group' : undefined} aria-label={fitViewport ? 'Инструменты карты' : undefined} tabIndex={fitViewport ? 0 : undefined}>
+    <div data-slot="offline-map-toolbar" className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
       <div><h3 className="text-sm font-semibold">Астана · офлайн</h3><p className="text-xs text-muted-foreground">Синий — объект, зелёный — наружный пост. Перетаскивайте карту для перемещения.</p></div>
       <div className="flex items-center gap-1">
         <Button size="sm" variant="outline" aria-label="Отдалить карту" onClick={() => changeZoom(-1)} disabled={zoom === 11}>−</Button>
@@ -206,7 +245,8 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
         </ul> : <p role="status" className="mt-2 text-xs text-muted-foreground">Улицы и районы не найдены.</p>
         : <p className="mt-2 text-xs text-muted-foreground">Поиск по названиям из офлайн-карты. Введите хотя бы две буквы.</p>}
     </form>
-    <div ref={box} className="relative h-[clamp(320px,55dvh,560px)] min-w-0 w-full bg-[#f5f2ea]" style={{ cursor: locating ? 'crosshair' : 'grab' }}>
+    </div>
+    <div ref={box} data-slot="offline-map-canvas" className="relative h-[clamp(320px,55dvh,560px)] min-w-0 w-full bg-[#f5f2ea]" style={{ cursor: locating ? 'crosshair' : 'grab' }}>
       <canvas ref={canvas} tabIndex={0} aria-label={locating ? 'Выберите точку на карте' : 'Карта Астаны. Стрелки перемещают карту, плюс и минус меняют масштаб.'}
         className="h-full w-full touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
         onKeyDown={event => {

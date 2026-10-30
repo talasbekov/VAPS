@@ -9,7 +9,7 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.api.permissions import RequirePermissionMixin, effective_permissions, resolve_actor_id
 from organization_management.apps.operations.models_assistant import OpsAssistantTask
 from organization_management.apps.operations.models_object import OpsSecurityObject
-from organization_management.apps.ops.assistant import access, execution, planning, provider
+from organization_management.apps.ops.assistant import access, answers, execution, planning, provider
 
 
 CAPABILITIES = ("event.create", "event.manage", "forces.command")
@@ -18,6 +18,12 @@ CAPABILITIES = ("event.create", "event.manage", "forces.command")
 class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {name: CAPABILITIES for name in ("list", "retrieve", "create", "continue_work", "configuration", "catalogs")}
     http_method_names = ["get", "post", "options"]
+
+    def permission_override(self, request):
+        # A narrow read-only branch for every authenticated actor. It cannot
+        # access task CRUD/catalogs/continuation and never accepts business fields.
+        return bool(self.action == "create" and request.user.is_authenticated
+                    and isinstance(request.data, dict) and request.data.get("mode") == "answer")
 
     def list(self, request):
         requested_page = request.query_params.get("page", "1")
@@ -38,8 +44,12 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def create(self, request):
         data = request.data
-        if not isinstance(data, dict) or set(data) - {"requestKey", "message", "fields", "interpret"}:
+        if isinstance(data, dict) and data.get("mode") == "answer":
+            return Response(answers.answer_request(request, data))
+        if not isinstance(data, dict) or set(data) - {"requestKey", "message", "fields", "interpret", "reviewBeforeExecute"}:
             execution.invalid("Неизвестные поля задачи.")
+        if "reviewBeforeExecute" in data and type(data["reviewBeforeExecute"]) is not bool:
+            execution.invalid("Признак проверки перед выполнением должен быть логическим.")
         if "interpret" in data and type(data["interpret"]) is not bool:
             execution.invalid("Признак понимания текста должен быть логическим.")
         key = data.get("requestKey")
@@ -72,6 +82,8 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
             proposal = planning.complete_explicit_proposal(message, proposal, object_names=object_names)
             review_total = "personnelTotal" not in patch.get("proposal", {}) and planning.personnel_total_requires_review(message)
         plan = execution.make_plan(proposal, patch, actor_id=actor, notice=notice)
+        if data.get("reviewBeforeExecute"):
+            plan["_reviewBeforeExecute"] = True
         if review_total:
             plan["questions"].append(planning.question("personnelTotal", "Уточните общее количество людей по поручению или очистите поле, если оно пока неизвестно."))
         # get_or_create's unique actor/key constraint arbitrates concurrent retries.
@@ -92,19 +104,26 @@ class OpsAssistantTaskViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=True, methods=["post"], url_path="continue")
     def continue_work(self, request, pk=None):
         data = request.data if request.data is not None else {}
-        if not isinstance(data, dict) or set(data) - {"fields", "revision"}:
+        if not isinstance(data, dict) or set(data) - {"fields", "revision", "confirmationToken"}:
             execution.invalid("Неизвестные поля продолжения задачи.")
+        token = data.get("confirmationToken")
+        if "confirmationToken" in data:
+            if (not isinstance(token, str) or len(token) != 64
+                    or any(char not in "0123456789abcdef" for char in token)
+                    or type(data.get("revision")) is not int or data["revision"] < 1
+                    or "fields" in data):
+                execution.invalid("Обновите план и подтвердите действие отдельно от изменения сведений.")
         if "fields" in data:
             execution.validate_fields(data["fields"])
         try:
-            task = execution.continue_task(request, pk, fields=data.get("fields"), revision=data.get("revision"))
+            task = execution.continue_task(request, pk, fields=data.get("fields"), revision=data.get("revision"), confirmation_token=token)
             return Response(execution.serialize_task(request, task))
         except execution.ManualActionFailed as error:
             return error.response
 
     @action(detail=False, methods=["get"], url_path="configuration")
     def configuration(self, request):
-        return Response({**provider.provider_configuration(), "isHeadquarters": access.is_headquarters(request)})
+        return Response({**provider.provider_configuration(), "isHeadquarters": access.is_headquarters(request), "reviewBeforeExecute": True})
 
     @action(detail=False, methods=["get"], url_path="catalogs")
     def catalogs(self, request):

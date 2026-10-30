@@ -7,6 +7,8 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { ThemeProvider } from "next-themes"
 import { MotionConfig } from "framer-motion"
 import { currentOpsAuthorityStamp, registerOpsWriteAuthority } from "@/lib/ops-write-authority"
+import { NavigationSectionProvider } from "@/components/navigation/section-navigation"
+import { GlobalAssistantProvider } from "@/features/assistant-dock/assistant-dock"
 
 function OpsWriteAuthority() {
   const client = useQueryClient()
@@ -67,7 +69,7 @@ export function Providers({ children }: { children: ReactNode }) {
               позже, чем он случился. */}
           <SessionProvider refetchInterval={60}>
             <OpsWriteAuthority />
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider><NavigationSectionProvider><GlobalAssistantProvider>{children}</GlobalAssistantProvider></NavigationSectionProvider></AuthProvider>
           </SessionProvider>
         </QueryClientProvider>
       </MotionConfig>

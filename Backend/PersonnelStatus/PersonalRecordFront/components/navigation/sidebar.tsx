@@ -14,8 +14,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { accessScopeLabel } from "@/entities/access";
-import { moduleOpenFor } from "@/entities/portal-access";
-import { PORTAL_HOME_PATH, portalWorkspace, activePortalTask, portalTaskHref } from "@/features/portal-workspace/model";
+import { activeNavigationItem, navigationHref, type NavigationItem as NavItem } from '@/components/navigation/navigation-model';
+import { useSectionNavigation } from '@/components/navigation/section-navigation';
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import {
@@ -23,27 +23,7 @@ import {
   inDevelopmentSummary,
 } from "@/shared/config/in-development";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  BarChart3,
-  Car,
-  ClipboardCheck,
-  ClipboardList,
-  FileText,
-  House,
-  KeyRound,
-  Landmark,
-  LineChart,
-  MessageSquarePlus,
-  Scale,
-  ScrollText,
-  Settings,
-  Shield,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { type LucideIcon } from "lucide-react";
 import "./sidebar.css";
 
 /** Активность пункта: `trailingSlash: true` в конфиге, хвостовой слэш есть. */
@@ -70,139 +50,6 @@ function normalizePath(path: string): string {
 // достижимость нижних пунктов — не влезание любой ценой.
 const ITEM_CLASS =
   "flex items-center rounded-[9px] px-3 py-2 text-sm leading-5 font-medium transition-colors";
-
-type NavItem = {
-  name: string;
-  href: string;
-  icon: LucideIcon;
-  /** Пункт ВНУТРИ родительского (Plane №1199, решение заказчика 12.09.2026):
-   * «Ежедневный расход» и «Сбор сил на ОМ» открываются внутри «Рабочего
-   * стола» ответственного — в меню они стоят под ним с отступом, а экраны
-   * модулей несут кнопку «Назад» на рабочий стол. Ссылки остаются ссылками:
-   * прямые адреса `?view=daily` / `?view=forces` живут как прежде. */
-  nested?: boolean;
-  // Право пункта здесь НЕ пишется: оно берётся по адресу из
-  // `entities/portal-access` — того же источника, из которого его берёт гейт
-  // самой страницы.
-  //
-  // 🔴 ПРАВИЛО ИЗМЕНИЛОСЬ ДВАЖДЫ ЗА ДЕНЬ, и оба раза по решению заказчика.
-  // 31.08.2026, Plane №350: раньше тут стояло «прав у пунктов ОМ нет
-  // намеренно: их считают сами страницы, и дублировать решение в меню значило
-  // бы завести вторую правду о видимости». Довод был верным, вывод — нет: под
-  // ролью «Сотрудник» в меню оставалось десять пунктов из шестнадцати, каждый
-  // отвечал «Доступ закрыт», и это читается как сломанная система. Второй
-  // правды не появилось — появился ОДИН источник на меню и на страницу.
-  // 31.08.2026, Plane №352: пара `resource`/`action` (права зашитой
-  // портальной роли из `lib/auth.tsx`) снята вовсе. Заказчик потребовал
-  // работать по семи ролям, а они живут в каталоге РАЗДЕЛА; портальные пункты
-  // теперь спрашивают его же.
-  // Адреса, на которых пункт тоже подсвечивается. Нужен там, где у одного
-  // экрана два входа: «Обратная связь» отрисована на /feedback, но открывается
-  // и по /security-ops/feedback (реализация одна, адреса два).
-  match?: string[];
-  /** Пункт несёт бейдж-счётчик прототипа. Число берётся ТОЛЬКО из ответа
-   * сервера: счётчик в меню — обещание «здесь столько-то дел», и выдуманное
-   * число врёт на каждой странице приложения сразу. */
-  counter?: "events";
-};
-
-// Категории нераскрываемые: заголовок — не кнопка, список под ним всегда
-// виден. Прежний аккордеон (aria-expanded + ChevronDown) убран целиком —
-// состояние группы больше не существует, значит и хранить его нечем.
-const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
-  {
-    title: "Личный состав и расход",
-    items: [
-      { name: "Обзор", href: "/dashboard", icon: BarChart3 },
-      { name: "Статусы сотрудников", href: "/statuses", icon: Shield },
-      // Workspace and status-read permissions are checked by the same gate
-      // as the page; role names do not authorize access.
-      { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
-    ],
-  },
-  {
-    title: "Дежурства",
-    items: [
-      { name: "Журнал дежурств", href: "/security-ops/duty-register", icon: ClipboardList },
-    ],
-  },
-  {
-    title: "Объекты",
-    items: [
-      { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
-    ],
-  },
-  {
-    title: "Охранные мероприятия",
-    items: [
-      { name: "Помощник по ОМ", href: "/security-ops/assistant", icon: Sparkles },
-      { name: "Оперативный контроль", href: "/security-ops/command-center", icon: LineChart },
-      { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList, counter: "events" },
-      { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
-      // Пункта «Реестр ГВО» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
-      // заказчик снял модуль, сводка живёт панелью в карточке мероприятия
-      // («Информация по ГВО»), а сводный взгляд — вкладкой «Визиты
-      // иностранных ОЛ» внутри реестра ОМ. Отдельный пункт вернул бы третий
-      // вход в одни и те же данные.
-      { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
-      { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
-      // Реестр транспорта ГОН (Plane №215): свой пункт, а не вкладка внутри
-      // объектов — это парк службы, он живёт независимо от мероприятий и
-      // читается сам по себе.
-      { name: "Транспорт ГОН", href: "/security-ops/vehicles", icon: Car },
-      // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
-      // попадали только по ссылкам с других экранов.
-    ],
-  },
-  {
-    title: "Аналитика и отчёты",
-    items: [
-      { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
-      { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
-      { name: "Отчёты", href: "/reports", match: ["/reports", "/security-ops/service-reports"], icon: FileText },
-    ],
-  },
-  {
-    title: "Личный кабинет",
-    items: [
-      { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
-      { name: "Сотрудники подразделения", href: "/service-employees", icon: Users },
-    ],
-  },
-  {
-    // Категория названа «Система», а пункт внутри неё — «Администрирование»
-    // (решение заказчика 25.08.2026, Plane №50). До этого группа и её пункт
-    // носили одно имя, и в меню две строки подряд читались как повтор, а
-    // надзаголовок страницы совпадал с её же заголовком.
-    title: "Система",
-    items: [
-      { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
-      { name: "Администрирование", href: "/security-ops/settings", icon: Settings },
-      // Экраны раздела доступа (Plane №36, шаги «П-6»…«П-8») существовали с
-      // 26.08.2026, но в меню не стояли: на них попадали только по прямому
-      // адресу. Права здесь НЕ проверяются — как и у остальных экранов ОМ:
-      // видимость считают сами страницы (`useOpsPermissions`), и вторая
-      // правда о ней в меню разошлась бы с первой. Без права раздел отвечает
-      // «Доступ закрыт», а не пустой страницей.
-      { name: "Права", href: "/settings/permissions", icon: KeyRound },
-      { name: "Роли", href: "/settings/roles", icon: ShieldCheck },
-      { name: "Пользователи", href: "/settings/users", icon: Users },
-      { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
-      { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
-    ],
-  },
-  {
-    title: "Обратная связь",
-    items: [
-      {
-        name: "Обратная связь",
-        href: "/feedback",
-        icon: MessageSquarePlus,
-        match: ["/security-ops/feedback"],
-      },
-    ],
-  },
-];
 
 function NavLink({
   href,
@@ -361,11 +208,12 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
   const queryClient = useQueryClient();
   // Из `useAuth` берётся только КТО вошёл: роль и права переехали в раздел
   // (Plane №352, Ш-4), и подпись человека внизу меню читает их оттуда же,
-  // что и шапка.
+  // что и шапка. Карточка находится над прокручиваемой навигацией.
   const { user } = useAuth();
   const pathname = normalizePath(usePathname() ?? "");
   const searchParams = useSearchParams();
   const query = new URLSearchParams(searchParams);
+  const grouped = useSectionNavigation();
   const [sectionSearch, setSectionSearch] = useState('');
   useEffect(() => setSectionSearch(''), [pathname]);
 
@@ -386,7 +234,6 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
   const access = useOpsPermissions();
   const {
     hasPermission: hasOpsPermission,
-    hasGlobalPermission: hasGlobalOpsPermission,
     isLoading: opsPermissionsLoading,
     roles: sectionRoles,
   } = access;
@@ -412,7 +259,7 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
         ? null
         : { value: eventsCount.data.count, hint: "Мероприятий в реестре" },
   };
-  // Подпись внизу меню: первая роль раздела. Их может быть несколько — полный
+  // Подпись в карточке сотрудника: первая роль раздела. Их может быть несколько — полный
   // состав виден в профиле, а строка в 256px не место для списка.
   const sidebarRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
   const accessLabel = opsPermissionsLoading ? "Загрузка доступа…" : access.error ? "Доступ не проверен" : sidebarRole?.name ?? "Роль не назначена";
@@ -420,71 +267,28 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
     ? sectionRoles.map(role => `${role.name} · ${accessScopeLabel(role)}`).join("; ")
     : accessLabel;
 
-  // Пункт остаётся в меню, только если модуль за ним открыт человеку (одна
-  // карта для меню и страницы — `entities/portal-access`). Категория без
-  // единого пункта не рисуется: заголовок над пустотой читался бы как
-  // «здесь что-то пропало».
-  const itemOpen = (item: NavItem) => navigationReady && moduleOpenFor(
-    item.href.split("?")[0],
-    (code) => code === "admin.roles" ? hasGlobalOpsPermission(code) : hasOpsPermission(code),
-    (code) => sectionRoles.some((role) => role.code === code),
-  );
-  // One entry opens the first permitted report source; each source retains
-  // its existing page guard and export APIs.
-  const reportHref = moduleOpenFor("/reports", hasOpsPermission)
-    ? "/reports" : "/security-ops/service-reports";
-  const work = portalWorkspace(access);
-  const allTasks = [...work.primary, ...work.more];
-  const taskHref = (task: (typeof allTasks)[number]) => portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams());
-  const categories = CATEGORIES.map(category => ({ ...category,
-    items: category.items
-      .flatMap<NavItem>(item => item.href === '/employees' && allTasks.some(task => task.accessHref === '/employees')
-        ? allTasks.filter(task => task.accessHref === '/employees').map(task => ({ name: task.title, href: taskHref(task), icon: Users })) : [item])
-      .map(item => item.href === '/reports' ? { ...item, href: reportHref } : item)
-      .filter(itemOpen),
-  })).filter(category => category.items.length > 0);
-  const activeTaskId = activePortalTask([...work.primary, ...work.more], pathname, query);
-  const contextualTask = work.more.find(task => task.id === activeTaskId && task.accessHref === '/employees');
-  const primaryTasks = contextualTask ? [...work.primary, contextualTask] : work.primary;
-  const primaryDestinations = new Set(primaryTasks.map(taskHref));
-  const remainingCategories = categories.map(category => ({ ...category,
-    items: category.items.filter(item => !primaryDestinations.has(item.href)),
-  })).filter(category => category.items.length > 0);
+  const selectedSection = grouped.sections.find(section => section.id === grouped.sectionId);
+  const selectedItems = selectedSection?.items ?? [];
+  const allItems = [...selectedItems, ...grouped.common, ...grouped.system];
+  const activeHref = activeNavigationItem(allItems, pathname, query, grouped.defaultMode)?.href;
+  const selectedHrefs = new Set(selectedItems.map(item => item.href));
   const searchTerm = sectionSearch.trim().toLocaleLowerCase('ru');
-  // Match the final links, including the permission-dependent report target
-  // and its job/history aliases. The longest matching address stays active.
-  const activeRouteHref = categories.flatMap(category => category.items.flatMap(item =>
-    [item.href.split('?')[0], ...(item.match ?? [])].map(prefix => ({ href: item.href, prefix }))
-  ))
-    .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-    .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.href;
-  const menuLayoutKey = JSON.stringify(categories.map(category => [
-    category.title,
-    category.items.map(item => [item.href, item.name]),
-  ]));
-  const activeEmployeeTask = allTasks.find(task => task.id === activeTaskId && task.accessHref === '/employees');
-  const activeHref = pathname === '/employees'
-    ? (activeEmployeeTask ? taskHref(activeEmployeeTask) : activeRouteHref)
-    : activeRouteHref;
-  // Keep the current page visible without unfolding every other module.
-  const currentItem = remainingCategories.flatMap(category => category.items).find(item => item.href === activeHref);
-  const otherCategories = remainingCategories.map(category => ({ ...category,
-    items: category.items.filter(item => item.href !== currentItem?.href),
-  })).filter(category => category.items.length > 0);
-  const visibleCategories = otherCategories.map(category => ({ ...category,
-    items: category.items.filter(item => `${category.title} ${item.name}`.toLocaleLowerCase('ru').includes(searchTerm)),
-  })).filter(category => category.items.length > 0);
-  // Сквозной счётчик для stagger-анимации: задержка считается от начала
-  // меню, а не от начала своей категории, иначе пункты разных категорий
-  // выезжали бы одновременно.
-  //
-  // Задержка обрезана восемью шагами. Раньше свёрнутые группы не рендерили
-  // своих пунктов, и до потолка дело не доходило; развернув все категории,
-  // сквозной счётчик дорос до 19 — нижние пункты («Обратная связь») выезжали
-  // почти через полторы секунды после загрузки. Эффект нужен на первых
-  // строках, а не в качестве задержки для половины меню.
-  const MAX_STAGGER_STEPS = 8;
-  let itemIndex = -1;
+  const otherCategories = grouped.sections.filter(section => section.id !== grouped.sectionId).map(section => ({ ...section,
+    items: section.items.filter(item => {
+      if (selectedHrefs.has(item.href)) return false;
+      selectedHrefs.add(item.href);
+      return true;
+    }),
+  })).filter(section => section.items.length > 0);
+  const visibleCategories = otherCategories.map(section => ({ ...section,
+    items: section.items.filter(item => `${section.title} ${item.name}`.toLocaleLowerCase('ru').includes(searchTerm)),
+  })).filter(section => section.items.length > 0);
+  const menuLayoutKey = JSON.stringify([grouped.sectionId, ...allItems.map(item => [item.href, item.name]), sectionSearch]);
+  const renderItem = (item: NavItem) => <li key={item.href}><NavLink
+    href={navigationHref(item, pathname, query)} name={item.name} icon={item.icon}
+    active={item.href === activeHref}
+    counter={item.counter === undefined ? undefined : counters[item.counter] ?? undefined}
+  /></li>;
 
   // Прокрутка меню — штатное состояние, а не авария: пунктов больше, чем
   // помещается на вьюпорте ноутбука, и уменьшать их ради влезания запрещено
@@ -579,27 +383,22 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
     <aside className={`workdesk-sidebar ${embedded ? 'h-full min-h-0' : 'h-screen'} w-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col`} onClick={event => {
       if ((event.target as HTMLElement).closest('a[href]')) onNavigate?.();
     }}>
-      {/* Логотип */}
-      {!embedded && <div
-        data-slot="sidebar-brand"
-        className="bg-sidebar border-sidebar-border flex h-20 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
-      >
-        {/* Прототип: плитка 36px, radius 10px, bg-primary, белый текст 800/13px.
-            Заливка ушла с шапки на плитку — шапка стала светлой.
-            Ужимание шапки 64→48px ради лишних пунктов отменено вместе с
-            остальной погоней за влезанием — см. комментарий у ITEM_CLASS. */}
-        <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
-          SЖ
-        </div>
-        <div className="min-w-0">
-          <div className="text-sidebar-foreground truncate text-base font-bold leading-5 tracking-[.06em]">
-            Smart Жоспарлау
-          </div>
-          <div className="text-sidebar-foreground/55 truncate text-xs leading-4">
-            Силы и мероприятия
-          </div>
-        </div>
-      </div>}
+      {user && (
+        <Link
+          href="/security-ops/profile"
+          className="sj-sidebar-identity"
+          title={`${assignmentsDescription}. Подразделение: ${user.department}`}
+          aria-label={`Профиль: ${user.name}. ${assignmentsDescription}. Подразделение: ${user.department}`}
+        >
+          <span className="sj-identity-avatar" aria-hidden="true">{initialsOf(user.name)}</span>
+          <span className="sj-identity-name">{user.name}</span>
+          <span className="sj-identity-role">
+            {accessLabel}
+            {sectionRoles.length > 1 && <span aria-hidden="true"> +{sectionRoles.length - 1}</span>}
+          </span>
+          <span className="sj-identity-department">{user.department}</span>
+        </Link>
+      )}
 
       {/* Навигация. Ссылки — next/link: раньше это были сырые <a>, и каждый
           клик по меню перезагружал документ (сброс кэша запросов, повторный
@@ -622,73 +421,30 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
               </button>
             </div>
           )}
-          {navigationReady && <section aria-label="Моя работа" className="mb-5">
-            <ul className="space-y-1">
-              <li><NavLink href={PORTAL_HOME_PATH} name="Моя работа" icon={House} active={pathname === PORTAL_HOME_PATH} /></li>
-              {primaryTasks.map(task => <li key={task.id}><NavLink href={portalTaskHref(task, pathname === '/employees' ? query : new URLSearchParams())} name={task.title}
-                icon={task.id === 'assistant' ? Sparkles : task.id === 'users' || task.id === 'department-forces' || task.id === 'headquarters' ? Users : task.id === 'roles' ? KeyRound : task.id === 'personal' ? UserRound : ClipboardCheck}
-                active={activeTaskId === task.id} /></li>)}
-            </ul>
+          {navigationReady && selectedSection && <section aria-label={selectedSection.title} className="sj-section-menu">
+            <h2 className="sj-nav-heading">{selectedSection.title}</h2>
+            <ul className="space-y-1">{selectedItems.map(renderItem)}</ul>
           </section>}
-          {navigationReady && currentItem && <section aria-label="Текущий раздел" className="mb-5">
-            <p className="px-3 text-xs font-medium text-muted-foreground">Текущий раздел</p>
-            <ul className="mt-1"><li><NavLink href={currentItem.href} name={currentItem.name} icon={currentItem.icon} active counter={currentItem.counter === undefined ? undefined : counters[currentItem.counter] ?? undefined} /></li></ul>
-          </section>}
-          {navigationReady && otherCategories.length > 0 && <details key={`${pathname}:${activeHref ?? ''}`} onToggle={event => {
-            syncScrollHint();
-            if (event.currentTarget.open) revealActive();
-          }} className="rounded-xl border border-sidebar-border px-1 py-2">
-            <summary className="min-h-9 cursor-pointer px-2 py-1 text-sm font-semibold">Все разделы</summary>
-            <label className="mx-2 mt-3 block text-xs text-muted-foreground">Найти раздел
-              <input type="search" value={sectionSearch} onChange={event => setSectionSearch(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-sidebar-border bg-sidebar px-3 text-sm text-sidebar-foreground" placeholder="Например, отчёты" />
+          {navigationReady && otherCategories.length > 0 && <details key={grouped.sectionId} onToggle={syncScrollHint} className="sj-all-sections">
+            <summary>Все разделы</summary>
+            <label className="sj-section-search">Найти раздел
+              <input type="search" value={sectionSearch} onChange={event => setSectionSearch(event.target.value)} placeholder="Например, отчёты" />
             </label>
             {visibleCategories.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Такого раздела не найдено. Попробуйте другое название.</p>}
-          {visibleCategories.map((category, categoryIndex) => {
-            const headingId = `sidebar-category-${categoryIndex}`;
-            return (
-              <div key={category.title} className={categoryIndex > 0 ? "mt-4" : undefined}>
-                {/* Заголовок категории — настоящий h2, а не подпись: категории
-                    стали единственной структурой меню, и скринридер должен уметь
-                    прыгать по ним, а не читать список из 20 ссылок подряд.
-                    Капс делает CSS — в разметке естественный регистр, иначе
-                    теряются акронимы («ОМ», «ГВО»). */}
-                <h2
-                  id={headingId}
-                  className="text-sidebar-foreground/60 mx-3 mb-1 text-xs font-bold leading-4 tracking-[.1em] uppercase"
-                >
-                  {category.title}
-                </h2>
-                <ul className="space-y-1" aria-labelledby={headingId}>
-                  {category.items.map((item) => {
-                    itemIndex += 1;
-                    return (
-                      <li
-                        key={item.href}
-                        className={item.nested ? "sidebar-nav-item ml-4 border-l border-sidebar-border pl-2" : "sidebar-nav-item"}
-                        data-nested={item.nested ? "true" : undefined}
-                        style={{
-                          animationDelay: `${Math.min(itemIndex, MAX_STAGGER_STEPS) * 50}ms`,
-                        }}
-                      >
-                        <NavLink
-                          href={item.href}
-                          name={item.name}
-                          icon={item.icon}
-                          active={item.href === activeHref}
-                          counter={
-                            item.counter === undefined
-                              ? undefined
-                              : counters[item.counter] ?? undefined
-                          }
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
+            {visibleCategories.map(category => <section key={category.id} className="mt-4" aria-label={category.title} onClick={event => {
+              if ((event.target as HTMLElement).closest('a[href]')) grouped.selectSection(category.id);
+            }}>
+              <h2 className="sj-nav-heading">{category.title}</h2>
+              <ul className="space-y-1">{category.items.map(renderItem)}</ul>
+            </section>)}
           </details>}
+          {navigationReady && grouped.common.length > 0 && <section aria-label="Общие разделы" className="sj-common-menu">
+            <ul className="space-y-1">{grouped.common.map(renderItem)}</ul>
+          </section>}
+          {navigationReady && grouped.system.length > 0 && <section aria-label="Система" className="sj-system-menu">
+            <h2 className="sj-nav-heading">Система</h2>
+            <ul className="space-y-1">{grouped.system.map(renderItem)}</ul>
+          </section>}
         </nav>
         {/* Признаки продолжения списка. `aria-hidden` — они дублируют то, что
             скринридер и так знает по разметке; для глаза это единственная
@@ -713,38 +469,9 @@ function SidebarContent({ embedded = false, onNavigate }: SidebarProps) {
         />
       </div>
 
-      {/* Подвал прототипа: состояние связи и карточка человека. */}
+      {/* Состояние связи остаётся доступным отдельно от прокручиваемой навигации. */}
       <div className="border-sidebar-border shrink-0 border-t p-3 sidebar-role-card">
         <LinkStatus />
-        {/* 🔴 КАРТОЧКА ЧЕЛОВЕКА БОЛЬШЕ НЕ ЗАВИСИТ ОТ РОЛИ (Plane №352, Ш-4).
-            Она стояла под `userRole &&` — то есть у учётки без портальной
-            роли пропадала целиком вместе с именем и входом в профиль. Роли
-            портальной больше нет вовсе, и условие исчезло бы вместе с
-            карточкой: теперь она показывается всегда, пока есть вошедший, а
-            второй строкой печатает роль РАЗДЕЛА либо «Роль не назначена». */}
-        {user && (
-          <Link
-            href="/security-ops/profile"
-            className="bg-sidebar-accent/60 hover:bg-sidebar-accent mt-2.5 flex w-full items-center gap-2.5 rounded-[9px] p-2.5 text-left transition-colors"
-            title={`${assignmentsDescription}. Подразделение: ${user.department}`}
-            aria-label={`Профиль: ${user.name}. ${assignmentsDescription}. Подразделение: ${user.department}`}
-          >
-            <span className="bg-primary/10 text-primary-ink grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold">
-              {initialsOf(user?.name)}
-            </span>
-            <span className="min-w-0 flex-1">
-              {/* Кегли по той же шкале, что и меню (12/14). Однострочный вариант
-                  на 10/12px был частью погони за высотой — отменён вместе с ней. */}
-              <span className="text-sidebar-foreground block truncate text-sm font-semibold leading-5">
-                {user?.name ?? "—"}
-              </span>
-              <span className="text-sidebar-foreground/60 flex items-center gap-1 text-xs leading-4">
-                <span className="truncate">{accessLabel}</span>
-                {sectionRoles.length > 1 && <span className="shrink-0" aria-hidden="true">+{sectionRoles.length - 1}</span>}
-              </span>
-            </span>
-          </Link>
-        )}
       </div>
     </aside>
   );

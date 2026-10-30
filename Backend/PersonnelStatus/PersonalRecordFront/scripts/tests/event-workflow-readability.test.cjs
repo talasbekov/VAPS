@@ -36,6 +36,7 @@ function authority(permissions, extra = {}) {
 function harness({ event = fixture(), query = 'visit=101&back=stage%3DCLOSED', permissions = ['event.view'], grantState } = {}) {
   let params = new URLSearchParams(query);
   const writes = [];
+  const navigations = [];
   const mutation = () => ({ isPending: false, isError: false, isSuccess: false, error: null, data: undefined,
     reset() {}, mutate(body) { writes.push(body); } });
   let access = grantState ?? authority(permissions);
@@ -49,7 +50,7 @@ function harness({ event = fixture(), query = 'visit=101&back=stage%3DCLOSED', p
       useTransition: () => [false, fn => fn()] },
     'next/link': { default: 'Link' },
     'next/navigation': { useSearchParams: () => params, useParams: () => ({ id: event.id }), usePathname: () => '/security-ops/events/' + event.id,
-      useRouter: () => ({ replace() {}, push() {} }) },
+      useRouter: () => ({ replace(href) { navigations.push(href); }, push() {} }) },
     'lucide-react': ui,
     '@tanstack/react-query': { useQuery: () => ({ data: [], isPending: false, isError: false }) },
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => access },
@@ -96,10 +97,10 @@ function harness({ event = fixture(), query = 'visit=101&back=stage%3DCLOSED', p
     const source = fs.readFileSync(file, 'utf8') + (path.basename(file) === 'PlacementStage.tsx' ? '\nexports.__PlacementBoard=PlacementBoard;' : '');
     vm.runInNewContext(ts.transpileModule(source, { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
-    } }).outputText, { exports, URLSearchParams, URL, console, require: id => load(id, file) }, { filename: file });
+    } }).outputText, { exports, URLSearchParams, URL, console, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, require: id => load(id, file) }, { filename: file });
     return exports;
   }
-  return { event, writes, load: name => load('@/' + name), setQuery: value => { params = new URLSearchParams(value); },
+  return { event, writes, navigations, load: name => load('@/' + name), setQuery: value => { params = new URLSearchParams(value); },
     setAuthority: value => { access = value; } };
 }
 
@@ -219,6 +220,56 @@ test('read-only recon disables writes even when the server capability names its 
   assert.equal(save.props.disabled, true);
   save.props.onClick();
   assert.equal(f.writes.length, 0);
+});
+
+test('recon reuses the shared map outside disabled fields with its own object authority', () => {
+  const f = harness({ event: fixture('RECON'), query: 'visit=101', permissions: ['event.view'] });
+  const tree = f.load('features/security-event-stages/ui/ReconStage').ReconStage({ event: f.event });
+  const map = nodes(tree).find(node => node.type === 'PlacementMap');
+  assert.ok(map); assert.equal(map.props.mode, 'recon'); assert.equal(map.props.visitId, '101');
+  assert.equal(map.props.canEdit, true);
+  assert.ok(!nodes(nodes(tree).find(node => node.type === 'fieldset')).includes(map));
+  assert.equal(f.writes.length, 0);
+});
+
+test('read-only recon retains the shared map without granting coordinate writes', () => {
+  const f = harness({ event: fixture('RECON'), query: 'visit=101', permissions: ['event.view'] });
+  const tree = f.load('features/security-event-stages/ui/ReconStage').ReconStage({ event: f.event, readOnly: true });
+  const map = nodes(tree).find(node => node.type === 'PlacementMap');
+  assert.ok(map); assert.equal(map.props.canEdit, false); assert.equal(f.writes.length, 0);
+});
+
+for (const [label, suffix, hidden] of [['default list', '', false], ['deep-linked map', '&map=1', true]]) {
+  test(`recon ${label} preserves the list draft in its mounted but exclusively selected view`, () => {
+    const f = harness({ event: fixture('RECON'), query: 'visit=101&back=stage%3DRECON' + suffix });
+    const tree = f.load('features/security-event-stages/ui/ReconStage').ReconStage({ event: f.event });
+    const list = nodes(tree).find(node => node.props['data-slot'] === 'recon-posts-list');
+    assert.ok(list, 'list remains mounted');
+    assert.equal(list.props.hidden, hidden);
+    assert.ok(nodes(list).some(node => node.type === 'Input'), 'original editable fields retained');
+    assert.ok(nodes(tree).some(node => node.type === 'PlacementMap'), 'map component retains its draft state');
+    assert.equal(f.writes.length, 0);
+  });
+}
+
+test('opening a recon post from the map selects the list without losing visit, post or registry context', () => {
+  const f = harness({ event: fixture('RECON'), query: 'visit=101&post=post-a&map=1&step=1&back=stage%3DRECON' });
+  const tree = f.load('features/security-event-stages/ui/ReconStage').ReconStage({ event: f.event });
+  nodes(tree).find(node => node.type === 'PlacementMap').props.onOpenPost('post-a');
+  assert.equal(f.navigations.length, 1);
+  const url = new URL(f.navigations[0], 'http://local');
+  assert.equal(url.searchParams.has('map'), false);
+  assert.equal(url.searchParams.get('visit'), '101');
+  assert.equal(url.searchParams.get('post'), 'post-a');
+  assert.equal(url.searchParams.get('back'), 'stage=RECON');
+  assert.equal(f.writes.length, 0);
+});
+
+test('past recon preview permits read-only map interaction instead of making the whole stage inert', () => {
+  const f = harness({ event: fixture('PLACEMENT'), query: 'step=1&visit=101', permissions: ['*'] });
+  const tree = page(f);
+  assert.equal(nodes(tree).find(node => node.type?.name === 'ActiveStage').props.readOnly, true);
+  assert.ok(!nodes(tree).some(node => node.props.inert === true));
 });
 
 const eventPassport = { objectId: '101', versionId: 'event-version', versionNumber: 37 };

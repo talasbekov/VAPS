@@ -78,7 +78,7 @@ test('all authorized employee work modes stay reachable without duplicate destin
       const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
       const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
       const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1].replaceAll('&amp;','&'));
-      for(const wanted of [{view:'forces',tab:'requests'},{view:'forces',tab:'collections'},{view:'daily'}]) {
+      for(const wanted of [{view:'forces',tab:'collections'},{view:'daily'}]) {
         assert.equal(hrefs.filter(href=>{const [path,search]=href.split('?'); const params=new URLSearchParams(search); return path==='/employees' && Object.entries(wanted).every(([key,value])=>params.get(key)===value);}).length,1,JSON.stringify(wanted));
       }
       assert.equal(new Set(hrefs).size,hrefs.length);
@@ -92,24 +92,25 @@ test('home never renders protected task links from retained permissions after a 
     assert.match(html,/role="alert"/);assert.doesNotMatch(html,/href=/);
   }finally{f.client.clear();}
 });
-test('sidebar initially has only home and three work links; all remaining modules are still rendered in disclosure',()=>{
+test('sidebar displays current category plus common and system groups, retaining searchable other categories',()=>{
   const f=fixture();try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
-    const primary=html.match(/<section aria-label="Моя работа"[\s\S]*?<\/section>/)[0];
-    assert.equal((primary.match(/<a /g)||[]).length,4);
+    const current=html.match(/<section aria-label="Ежедневный расход"[\s\S]*?<\/section>/)[0];
+    assert.ok(current.includes('href="/statuses"'));
+    for(const group of ['Общие разделы','Система'])assert.ok(html.includes(`aria-label="${group}"`));
     assert.match(html,/Все разделы/);assert.match(html,/Найти раздел/);
     assert.doesNotMatch(html,/<details[^>]*\bopen=/);
     for(const href of ['/security-ops/objects','/security-ops/events','/security-ops/analytics/operations'])assert.ok(html.includes(`href="${href}"`),href);
   }finally{f.client.clear();}
 });
-test('rare deep links keep the full menu closed and pin one current destination without duplicates',()=>{
+test('deep links select their real category and keep a single current destination without duplicates',()=>{
   for(const pathname of ['/security-ops/dictionaries/','/security-ops/assistant/','/security-ops/analytics/operations/']) {
   const f=fixture(['*'],pathname);try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
     assert.doesNotMatch(html,/<details[^>]*\bopen=/);
-    const current=html.match(/<section aria-label="Текущий раздел"[\s\S]*?<\/section>/)?.[0];
+    const expected = pathname.includes('dictionaries') ? 'Система' : 'Охранное мероприятие';
+    const current=html.match(new RegExp(`<section aria-label="${expected}"[\\s\\S]*?<\\/section>`))?.[0];
     assert.ok(current,pathname);
-    assert.equal((current.match(/<a /g)||[]).length,1);
     assert.match(current,/aria-current="page"/);
     assert.equal((html.match(/aria-current="page"/g)||[]).length,1);
     const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
@@ -189,11 +190,20 @@ test('selection-only access pins the authorized employee section with one active
   const f=fixture(['forces.select'],'/employees',{query:'view=forces'});try {
     const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
     const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
-    const current=nav.match(/<section aria-label="Текущий раздел"[\s\S]*?<\/section>/)?.[0] || '';
-    assert.match(current,/href="\/employees"/);
+    const current=nav.match(/<section aria-label="Охранное мероприятие"[\s\S]*?<\/section>/)?.[0] || '';
+    assert.match(current,/href="\/employees\?view=forces"/);
     assert.match(current,/aria-current="page"/);
     assert.equal((nav.match(/aria-current="page"/g)||[]).length,1);
-    assert.equal((nav.match(/href="\/employees"/g)||[]).length,1);
+    assert.equal((nav.match(/href="\/employees\?view=forces"/g)||[]).length,1);
     assert.doesNotMatch(nav,/<details[^>]*\bopen=/);
+  }finally{f.client.clear();}
+});
+test('expense actor without status read retains the forces default on a direct legacy employees URL',()=>{
+  const f=fixture(['forces.allocate'],'/employees',{roles:[{code:'DEPARTMENT_EXPENSE_OFFICER'}]});try {
+    const html=renderToStaticMarkup(React.createElement(f.load('@/components/navigation/sidebar').Sidebar));
+    const section=html.match(/<section aria-label="Охранное мероприятие"[\s\S]*?<\/section>/)?.[0] || '';
+    assert.match(section,/aria-current="page"/);
+    assert.match(section,/view=forces/);
+    assert.equal((html.match(/aria-current="page"/g)||[]).length,1);
   }finally{f.client.clear();}
 });

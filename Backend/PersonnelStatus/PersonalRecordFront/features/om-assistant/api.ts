@@ -105,12 +105,13 @@ export function createAssistantWriter(options: {
     snapshot(): WriteSnapshot { sync(); return state; },
     dispose() { generation++; attempt = null; },
     reset() { generation++; attempt = null; visibleContext = contextKey(getContext()); publish({ pending: false, retryable: false, error: null }); },
-    async create(message: string, fields: AssistantFields = {}, interpret = true) {
+    async create(message: string, fields: AssistantFields = {}, interpret = true, reviewBeforeExecute = false) {
       const key = sync();
       if (state.pending) return;
       if (attempt) return execute(attempt);
       const current: Attempt = { context: key, generation, endpoint: ENDPOINT,
-        body: { requestKey: (options.makeKey ?? (() => crypto.randomUUID()))(), message, fields: structuredClone(fields), interpret } };
+        body: { requestKey: (options.makeKey ?? (() => crypto.randomUUID()))(), message, fields: structuredClone(fields), interpret,
+          ...(reviewBeforeExecute ? { reviewBeforeExecute: true } : {}) } };
       attempt = current;
       return execute(current);
     },
@@ -132,6 +133,24 @@ export function createAssistantWriter(options: {
         return execute(current);
       } catch (error) { fail(error); }
     },
+    async confirmTask(token: string, revision: number) {
+      const key = sync();
+      if (state.pending) return;
+      if (attempt) return execute(attempt);
+      try {
+        const context = getContext();
+        if (!isTaskId(context.taskId) || !context.readKey) denied();
+        assertOpsReadAuthority(client, context.access, ASSISTANT_GROUP, context.readKey);
+        const task = client.getQueryData<AssistantTask>(context.readKey);
+        if (!task || task.id !== context.taskId || !task.reviewBeforeExecute || !task.confirmation?.canConfirm ||
+          typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token) || task.confirmation.token !== token ||
+          !Number.isSafeInteger(revision) || revision < 1 || task.revision !== revision) denied();
+        const current: Attempt = { context: key, generation, endpoint: `${ENDPOINT}${context.taskId}/continue/`, source: context.readKey,
+          body: { confirmationToken: token, revision } };
+        attempt = current;
+        return execute(current);
+      } catch (error) { fail(error); }
+    },
     async retry() { sync(); if (!state.pending && attempt) return execute(attempt); },
   };
 }
@@ -144,6 +163,6 @@ export function useAssistantWriter(context: AssistantWriteContext, onSaved: (tas
   if (!writer.current) writer.current = createAssistantWriter({ client, getContext: () => latest.current.context,
     onSaved: task => latest.current.onSaved(task), onChange: () => rerender(value => value + 1) });
   useEffect(() => () => writer.current?.dispose(), []);
-  return { ...writer.current.snapshot(), create: writer.current.create, continueTask: writer.current.continueTask,
+  return { ...writer.current.snapshot(), create: writer.current.create, continueTask: writer.current.continueTask, confirmTask: writer.current.confirmTask,
     retry: writer.current.retry, reset: writer.current.reset };
 }

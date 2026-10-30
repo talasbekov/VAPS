@@ -16,6 +16,7 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { CoreEmployee } from "@/lib/api";
 import { useMyAssignments } from "@/hooks/use-my-assignments";
 import { ProfileBody } from "@/widgets/my-profile";
+import "@/features/service-employees/ui/employee-visual.css";
 
 export default function EmployeeProfilePage() {
   // useParams в клиентском поддереве: граница Suspense — конвенция раздела.
@@ -64,8 +65,9 @@ function LegacyEmployeeProfileScreen() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4">
+      <div className="sj-employee-view sj-personal-profile space-y-6">
         <PageHeader
+          className="sj-employee-heading"
           eyebrow="Личный кабинет · сотрудник"
           title="Профиль сотрудника"
           description={

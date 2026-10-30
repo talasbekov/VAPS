@@ -55,7 +55,7 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
           onEscapeKeyDown={event => { if (interactionBlocked()) event.preventDefault(); }}
           onInteractOutside={event => { if (interactionBlocked()) event.preventDefault(); }}
           aria-label="Меню навигации"
-          className="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] flex-col bg-sidebar shadow-lg outline-none lg:hidden"
+          className="sj-visual sj-compact-menu fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] flex-col bg-sidebar shadow-lg outline-none lg:hidden"
         >
           <DialogPrimitive.Title className="sr-only">
             Меню навигации
@@ -63,11 +63,11 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
           <div className="border-sidebar-border flex h-16 shrink-0 items-center justify-between border-b px-4">
             <div className="flex items-center gap-[11px]">
               <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
-                SЖ
+                SJ
               </div>
               <div className="min-w-0">
                 <div className="text-sidebar-foreground truncate text-[15px] font-bold tracking-[.06em]">
-                  Smart Жоспарлау
+                  Smart Josparlau
                 </div>
                 <div className="text-sidebar-foreground/55 truncate text-[10.5px]">
                   Силы и мероприятия

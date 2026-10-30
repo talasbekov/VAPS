@@ -24,6 +24,7 @@ import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChief
 //   паспорта объекта, справочника нарядов в данных нет.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { EventForcesLink } from "@/features/forces-workspace/ui/EventForcesLink";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +65,7 @@ import { ReconMaterials } from "./ReconMaterials";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
 import { reconcileReconRows, rowsForReconSave, type ReconRowDraft } from "../model/recon-draft";
+import { PlacementMap } from "@/features/offline-map/ui/PlacementMap";
 
 /** Тип поста из эталона. Список закрытый, но чужое значение не выбрасывается:
  * строки паспорта могли прийти с типом вне списка, и молча заменить его на
@@ -90,6 +92,9 @@ interface SectorGroup {
 }
 
 export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; readOnly?: boolean }) {
+  const router = useRouter(), pathname = usePathname(), searchParams = useSearchParams();
+  const mapOpened = searchParams.get("map") === "1";
+  const [postToFocus, setPostToFocus] = useState<{ scope: string; id: string } | null>(null);
   const participationCatalog = useParticipationCatalog();
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(
     event.reconChecklist
@@ -502,16 +507,63 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
     if (confirmOpen && confirmationInvalid) setConfirmOpen(false);
   }, [confirmOpen, confirmationInvalid]);
 
+  function openMapPost(postId: string): void {
+    const row = visibleRows.find(post => post.id === postId);
+    if (!row) return;
+    setCollapsed(previous => previous.filter(name => name !== row.sector));
+    setPostToFocus({ scope: scope.shown, id: postId });
+    if (mapOpened) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("map");
+      router.replace(`${pathname}?${next}`, { scroll: false });
+    }
+  }
+
+  // Wait for the list to be visible after URL navigation before focusing a row.
+  useEffect(() => {
+    if (!postToFocus) return;
+    if (postToFocus.scope !== scope.shown || !visibleRows.some(row => row.id === postToFocus.id)) {
+      setPostToFocus(null);
+      return;
+    }
+    if (mapOpened) return;
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const line = document.getElementById(`recon-post-${postToFocus.id}`);
+        line?.scrollIntoView({ block: "start", behavior: "instant" });
+        const input = line?.querySelector<HTMLInputElement>("input:not(:disabled)");
+        (input ?? line)?.focus({ preventScroll: true });
+        setPostToFocus(null);
+      });
+    });
+    return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame); };
+  }, [mapOpened, postToFocus, scope.shown, visibleRows]);
+
+  const reconMap = (
+    <section className="space-y-4" data-slot="recon-map-card" aria-label="Карта объекта и постов">
+        <h3 className="text-sm font-semibold">{mapOpened ? "Карта объекта и постов" : "Посты и секторы"}</h3>
+        <PlacementMap event={event} visitId={activeVisitObject?.id ?? null} selectedPostId={null}
+          mode="recon" onOpenPost={openMapPost} canEdit={canManageRecon && activeVisitObject !== null && activeVisitObject.chiefEmployeeId !== null}
+          blockedReason={dirty ? "Сохраните расчёт, чтобы работать с координатами сохранённых постов. Черновик точки останется в форме." : update.isPending || importPosts.isPending ? "Дождитесь завершения сохранения или импорта расчёта." : null} />
+    </section>
+  );
+
   // `[РЕК-02]` (Plane №424): без старшего объекта рекогносцировка закрыта —
   // сервер отвечает 422 `VISIT_CHIEF_REQUIRED` на импорт, сохранение и
   // завершение, а экран не рисует форму, которую нельзя отправить. Хуки
   // выше уже отработали, ранний return их порядок не ломает.
   if (!readOnly && activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null) {
     return (
-      <Card role="region" aria-label="Рекогносцировка объекта">
-        <CardContent className="space-y-5">
+      <div className="sj-recon-workspace" data-map-open={mapOpened} role="region" aria-label="Рекогносцировка объекта">
+        <Card className="sj-recon-block sj-recon-context" data-slot="recon-context">
+          <CardContent className="space-y-5">
           <ObjectFacts event={event} />
           <VisitObjectPicker event={event} scope={scope} allRows={rows} />
+          </CardContent>
+        </Card>
+        <Card className="sj-recon-block">
+          <CardContent>
           <div
             className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center"
             data-slot="recon-chief-empty"
@@ -533,6 +585,14 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
               </p>
             )}
           </div>
+          </CardContent>
+        </Card>
+        <Card className="sj-recon-block">
+          <CardContent>
+            {reconMap}
+            {!mapOpened && <p className="mt-4 text-sm text-muted-foreground">Список постов станет доступен после назначения старшего объекта.</p>}
+          </CardContent>
+        </Card>
           <ReconMaterials
             eventId={event.id}
             visitObjectId={activeVisitObject.id}
@@ -545,23 +605,21 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
             open={chiefDialogOpen}
             onClose={() => setChiefDialogOpen(false)}
           />
-        </CardContent>
-      </Card>
+      </div>
     );
   }
 
   return (
-    // Карточка этапа — ОБЛАСТЬ с именем: видимого заголовка внутри больше
-    // нет (Plane №70), а имя у блока быть обязано — им пользуются и чтение с
-    // экрана, и пробы, которым нужно указать на этап, а не на «первую
-    // карточку страницы».
-    <Card role="region" aria-label="Рекогносцировка объекта">
+    // Общая область сохраняет имя этапа, а существующие разделы получают
+    // самостоятельные карточки без изменения состояния формы и её прав.
+    <div className="sj-recon-workspace" data-map-open={mapOpened} role="region" aria-label="Рекогносцировка объекта">
       {/* Имени этапа здесь НЕТ намеренно (Plane №70): оно стоит НАД
           карточкой, в шапке страницы («Этап N из 5 · …»). Второй заголовок
           читался бы как вложенный раздел, которого нет, и отнимал строку у
           содержимого. Подзаголовки внутри карточки остаются — они называют
           блоки, а не этап. */}
-      <CardContent className="space-y-5">
+      <Card className="sj-recon-block sj-recon-context" data-slot="recon-context">
+        <CardContent className="space-y-5">
         <ObjectFacts event={event} />
 
         <VisitObjectPicker event={event} scope={scope} allRows={rows}>
@@ -596,9 +654,13 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
             {reconManageReason} Форма доступна только для чтения.
           </p>
         )}
+        </CardContent>
+      </Card>
 
         <fieldset disabled={!canManageRecon} className="contents">
 
+        <Card className="sj-recon-block" data-slot="recon-checklist-card">
+          <CardContent>
         <section data-slot="recon-checklist">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Чек-лист рекогносцировки</h3>
@@ -671,11 +733,19 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
             })}
           </div>
         </section>
+          </CardContent>
+        </Card>
+        </fieldset>
 
+        <Card className="sj-recon-block" data-slot="recon-posts-card">
+          <CardContent>
+        {reconMap}
+        {/* Keep both components mounted so switching does not discard drafts. */}
+        <div hidden={mapOpened} className="mt-4" data-slot="recon-posts-list">
+        <fieldset disabled={!canManageRecon} className="contents">
         <section>
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Посты и секторы</h3>
               <p className="text-xs text-muted-foreground">
                 {activeVisitObject === null
                   ? "Расчёт для текущего ОМ"
@@ -827,7 +897,7 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
                           const name = row.post || "новый";
                           return (
                             <Fragment key={row.id}>
-                              <tr className="align-top">
+                              <tr id={`recon-post-${row.id}`} tabIndex={-1} className="align-top">
                                 <td />
                                 <td className="py-1">
                                   <Input
@@ -1084,6 +1154,9 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
           )}
         </section>
         </fieldset>
+        </div>
+          </CardContent>
+        </Card>
 
         <ReconMaterials
           eventId={event.id}
@@ -1103,7 +1176,7 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
             «Не проверено», не назначен старший или есть несохранённое;
             причина — в подсказке. Подтверждение — диалог с числом. */}
         <div
-          className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t bg-background/95 px-6 py-3 backdrop-blur"
+          className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 border bg-card px-6 py-4 text-card-foreground shadow-sm"
           data-slot="recon-footer"
         >
           {/* Штаб получает завершённый объект; расчёт соседнего объекта
@@ -1226,8 +1299,7 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -1258,7 +1330,7 @@ function ObjectFacts({ event }: { event: SecurityEvent }) {
       : boundVersion.sectors.reduce((sum, sector) => sum + sector.posts.length, 0);
 
   return (
-    <section className="rounded-md border bg-muted/30 p-3">
+    <section className="space-y-3" data-slot="recon-object-facts">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Сведения об объекте</h3>
         {/* Реестр ОМ ищет и по объекту (плейсхолдер поиска называет его явно),

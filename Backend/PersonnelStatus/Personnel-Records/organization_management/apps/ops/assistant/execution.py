@@ -13,7 +13,7 @@ from django.http import HttpRequest
 from rest_framework.exceptions import PermissionDenied
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.operations.api.permissions import resolve_actor_id
+from organization_management.apps.operations.api.permissions import effective_permissions, resolve_actor_id
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_assistant import OpsAssistantReceipt
 from organization_management.apps.operations.models_audit import OpsAuditLog
@@ -175,7 +175,7 @@ def live_status(task, event):
     if _task_questions(task):
         return "needs_information"
     if event is None:
-        return "needs_information"
+        return "awaiting_confirmation" if task.plan.get("_reviewBeforeExecute") else "needs_information"
     if task.plan.get("intent") == "send" and not task.receipts.filter(operation_key="send_allocations").exists():
         if event.get("stage") == "CLOSED":
             return "event_unavailable"
@@ -197,10 +197,59 @@ def live_status(task, event):
     return "prepared"
 
 
+def pending_confirmation(request, task, event):
+    """A preview is bound to its actor, proposal and current domain state.
+
+    The token detects stale consent, not authorization. The existing manual API
+    reauthenticates and checks all domain permissions again at execution time.
+    """
+    if not task.plan.get("_reviewBeforeExecute") or _task_questions(task):
+        return None
+    actor = resolve_actor_id(request)
+    blocked_reason = None
+    if not event:
+        if task.plan.get("eventId") or task.receipts.filter(operation_key="create_bulletin").exists():
+            return None
+        operation = "create_bulletin"
+        can_confirm = task.initiated_by == actor and bool(effective_permissions(request) & {"*", "event.create"})
+    else:
+        from organization_management.apps.ops.security_events import can_collect_forces
+        if (task.plan.get("intent") != "send" or not task.plan.get("allocations")
+                or not event.get("reconForceRequestedAt") or not task.event
+                or task.event.force_handover or not can_collect_forces(task.event)
+                or task.receipts.filter(operation_key="send_allocations").exists()):
+            return None
+        operation = "send_allocations"
+        can_confirm = access.is_headquarters(request)
+        proposed = {str(row["departmentId"]): row for row in task.plan["allocations"]}
+        for row in event.get("forceAllocation", []):
+            if row.get("topUpOf") or row.get("sentAt"):
+                continue
+            replacement = proposed.get(str(row.get("departmentId")))
+            if (replacement is None or row.get("groupDemandIds") or row.get("groupDemands")
+                    or row.get("comment") or (row.get("dueAt") and row["dueAt"] != replacement.get("dueAt"))):
+                # Legacy execution preserves these conditions. The compact review
+                # does not show them, so consent must happen in the full workspace.
+                blocked_reason = "В черновиках есть дополнительные условия или другие запросы. Проверьте полный состав и выполните отправку в сборе сил."
+                can_confirm = False
+                break
+    state = {key: event.get(key) for key in (
+        "id", "title", "stage", "businessDate", "businessDateEnd", "eventTime", "kind",
+        "reconForceRequestedAt", "forceDemandTotal", "forceAllocation",
+    )} if event else None
+    token = digest({"task": str(task.pk), "actor": actor, "revision": task.revision,
+                    "operation": operation, "plan": task.plan, "event": state})
+    return {"operation": operation, "canConfirm": can_confirm, "token": token if can_confirm else None,
+            **({"blockedReason": blocked_reason} if blocked_reason else {})}
+
+
 @transaction.atomic
-def continue_task(request, pk, *, fields=None, revision=None):
+def continue_task(request, pk, *, fields=None, revision=None, confirmation_token=None):
     task = access.lock_task(request, pk)
     actor = resolve_actor_id(request)
+    if confirmation_token is not None and task.plan.get("_confirmedActions", {}).get(confirmation_token) == actor:
+        # Lost response: return the receipt-bound result; never execute the next action.
+        return task
     patch = validate_fields(fields) if fields else None
     if revision is not None and (type(revision) is not int or revision != task.revision):
         # A response lost after commit can replay only the already-saved values.
@@ -227,6 +276,9 @@ def continue_task(request, pk, *, fields=None, revision=None):
         if not any(q["field"] == "allocations" for q in old.get("questions", [])):
             preserved["allocations"] = old.get("allocations", [])
         task.plan = make_plan(old.get("proposal", {}), {**preserved, **patch}, actor_id=actor)
+        for key in ("_reviewBeforeExecute", "_confirmedActions"):
+            if key in old:
+                task.plan[key] = old[key]
         if "personnelTotal" not in patch.get("proposal", {}):
             task.plan["questions"].extend(row for row in old.get("questions", []) if row["field"] == "personnelTotal")
         task.revision += 1
@@ -246,7 +298,20 @@ def continue_task(request, pk, *, fields=None, revision=None):
             event = call_manual(request, "retrieve", event_id=event_id)
             task.event_id = int(event["id"])
             plan["eventId"] = str(event["id"])
-    if not task.event_id and not plan.get("questions"):
+    reviewed = plan.get("_reviewBeforeExecute") is True
+    approved_operation = None
+    if confirmation_token is not None:
+        if task.event_id:
+            # Match consent against the state protected by the same row lock as
+            # the domain write. A task lock alone cannot exclude manual edits.
+            from organization_management.apps.operations.models_event import OpsSecurityEvent
+            task.event = OpsSecurityEvent.objects.select_for_update().get(pk=task.event_id)
+        confirmation = pending_confirmation(request, task, _live_event(request, task))
+        if (not reviewed or not confirmation or not confirmation["canConfirm"]
+                or confirmation["token"] != confirmation_token):
+            conflict()
+        approved_operation = confirmation["operation"]
+    if not task.event_id and not plan.get("questions") and (not reviewed or approved_operation == "create_bulletin"):
         prior = task.receipts.filter(operation_key="create_bulletin").first()
         if prior is not None:
             invalid("Сохранённый бюллетень больше недоступен. Выберите другое мероприятие.", "eventId")
@@ -257,7 +322,8 @@ def continue_task(request, pk, *, fields=None, revision=None):
         _save_receipt(task, "create_bulletin", payload, {"eventId": str(event["id"]), "code": event["code"]}, request)
     event = _live_event(request, task)
     task.delegated = bool(task.event_id and plan.get("intent") == "send" and not access.is_headquarters(request)) or task.delegated
-    if event and not plan.get("questions") and plan.get("intent") == "send" and event.get("reconForceRequestedAt"):
+    if (event and not plan.get("questions") and plan.get("intent") == "send" and event.get("reconForceRequestedAt")
+            and (not reviewed or approved_operation == "send_allocations")):
         if not plan.get("allocations"):
             plan["questions"] = [planning.question("allocations", "Укажите департаменты и количество людей для каждого.")]
         elif access.is_headquarters(request):
@@ -290,6 +356,8 @@ def continue_task(request, pk, *, fields=None, revision=None):
                 result = {"eventId": str(task.event_id), "requests": [{key: row.get(key) for key in ("id", "departmentId", "need", "sentAt")} for row in event.get("forceAllocation", []) if row.get("sentAt") and not row.get("topUpOf") and str(row.get("departmentId")) in targets],
                           "delivery": {"known": bool(report), **{key: value[key] for key in ("notifiedOfficers", "unaddressed", "undelivered") if key in value}}}
                 _save_receipt(task, "send_allocations", payload, result, request)
+    if approved_operation:
+        plan.setdefault("_confirmedActions", {})[confirmation_token] = actor
     task.status = live_status(task, event)
     task.plan = plan
     task.save(update_fields=["event", "plan", "status", "delegated", "revision", "updated_at"])
@@ -329,8 +397,13 @@ def serialize_task(request, task):
                         and collection_eligible and not questions and task.plan.get("allocations")
                         and task.plan.get("intent") == "send" and access.is_headquarters(request)
                         and not task.receipts.filter(operation_key="send_allocations").exists())
+    confirmation = None if unavailable else pending_confirmation(request, task, event)
+    if confirmation and confirmation["canConfirm"]:
+        status = "awaiting_confirmation"
     return {"id": str(task.pk), "initiatedBy": task.initiated_by, "message": task.message, "revision": task.revision,
-            "status": status, "delegated": task.delegated, "canEdit": not unavailable and task.initiated_by == resolve_actor_id(request), "canContinue": can_continue,
+            "status": status, "delegated": task.delegated, "canEdit": not unavailable and task.initiated_by == resolve_actor_id(request),
+            "canContinue": can_continue and not task.plan.get("_reviewBeforeExecute", False),
+            "reviewBeforeExecute": bool(task.plan.get("_reviewBeforeExecute")), "confirmation": confirmation,
             "gathering": _gathering_context(request, task, event, collection_eligible=collection_eligible),
             "questions": questions, "interpretationNotice": task.plan.get("interpretationNotice"), "plan": plan,
             "event": ({"id": str(event["id"]), "code": event["code"], "title": event["title"], "stage": event["stage"], "forceDemandTotal": event.get("forceDemandTotal"), "requested": sum(int(row.get("need") or 0) for row in event.get("forceAllocation", []) if row.get("sentAt")), "rosterCount": len(event.get("forceRoster", [])), "progress": assignment_progress(event, handed_over=bool(task.event and task.event.force_handover)), "href": f"/security-ops/events/{event['id']}/"} if event else None),

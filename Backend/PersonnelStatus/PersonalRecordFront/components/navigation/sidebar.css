@@ -1,20 +1,61 @@
 /* Local shell tokens keep controls and document surfaces in their own theme. */
 .workdesk-sidebar {
-  --sidebar: 218 35% 14%;
-  --sidebar-foreground: 215 30% 94%;
-  --sidebar-accent: 216 30% 23%;
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 218 23% 26%;
-  --muted-foreground: 216 22% 74%;
-  --primary-ink: 210 100% 81%;
-  --primary: 215 85% 62%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 240 3% 12%;
+  --sidebar-accent: 270 33% 94%;
+  --sidebar-accent-foreground: 240 3% 12%;
+  --sidebar-border: 69 10% 90%;
+  --muted-foreground: 96 5% 39%;
+  font-family: "SJ Noto Sans", "Noto Sans", sans-serif;
 }
-.workdesk-sidebar nav { padding-top: 24px; }
-.workdesk-sidebar nav a { min-height: 44px; }
-.workdesk-sidebar nav a[aria-current='page'] { background: #3154aa; color: white; }
+.workdesk-sidebar nav { padding: 16px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.workdesk-sidebar nav a { min-height: 48px; border-radius: 14px; }
+.workdesk-sidebar nav a[aria-current='page'] { background: hsl(var(--sidebar-accent)); color: hsl(var(--sidebar-accent-foreground)); }
 .workdesk-sidebar nav > details { border: 0; border-top: 1px solid hsl(var(--sidebar-border)); border-radius: 0; padding-top: 18px; }
 .workdesk-sidebar .sidebar-role-card { animation: none; }
 .workdesk-sidebar .sidebar-nav-item { animation: none; }
+
+.dark .workdesk-sidebar {
+  --sidebar: 225 10% 15%;
+  --sidebar-foreground: 60 10% 96%;
+  --sidebar-accent: 260 12% 24%;
+  --sidebar-accent-foreground: 60 10% 96%;
+  --sidebar-border: 225 8% 29%;
+  --muted-foreground: 70 5% 73%;
+}
+.sj-sidebar-identity {
+  display: flex;
+  flex-shrink: 0;
+  max-height: clamp(128px, 45%, 260px);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px;
+  padding: 24px 8px 16px;
+  border-bottom: 1px solid hsl(var(--sidebar-border));
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.sj-sidebar-identity:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.sj-identity-avatar {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 50%;
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-foreground));
+  font-size: 28px;
+  line-height: 40px;
+  font-weight: 500;
+}
+.sj-identity-name { font-size: 16px; line-height: 24px; font-weight: 600; }
+.sj-identity-role { color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 18px; }
+.sj-identity-department { color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 18px; }
 
 /* Stagger анимация для пунктов навигации */
 .sidebar-nav-item {

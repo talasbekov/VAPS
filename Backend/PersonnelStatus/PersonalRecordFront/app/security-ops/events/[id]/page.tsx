@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import { inDevelopmentOfStage } from "@/shared/config/in-development";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -245,12 +246,12 @@ function SecurityEventScreen() {
           </li>
           <li aria-hidden="true">/</li>
           <li className="text-foreground">
-            {event.code} «{event.title}»
+            {event.code}<span className="sr-only"> «{event.title}»</span>
           </li>
           {selectedVisit !== null && (
             <>
-              <li aria-hidden="true">/</li>
-              <li>
+              <li aria-hidden="true" className="sr-only">/</li>
+              <li className="sr-only">
                 Объект: {selectedVisit.objectName}
                 {selectedVisit.passportBinding !== null &&
                   ` (паспорт вер. ${selectedVisit.passportBinding.versionNumber})`}
@@ -260,30 +261,28 @@ function SecurityEventScreen() {
         </ol>
       </nav>
 
-      <Card className="mb-4" data-slot="event-workspace-header">
-        <CardContent className="p-4">
-          {/* Шапка в две колонки: сведения слева, действия справа. Обёртка
-              нужна именно здесь: содержимое карточки было вертикальным
-              стеком, и действие встало бы под паспортом, а не рядом с
-              названием. */}
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-64 flex-1">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
+      <Card className="mb-4 sj-event-summary" data-slot="event-workspace-header">
+        <CardContent className="sj-event-summary-content">
+          <div className="sj-event-meta">
+            <span className="sj-event-code">
               {event.code}
             </span>
             {/* Бейдж и готовность — у МЕРОПРИЯТИЯ: это его строка в реестре,
                 и она обязана читаться одинаково в обоих местах. Этап объекта
                 показывает цепочка ниже — там, где человек и работает. */}
             <StageBadge stage={event.stage} />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              готовность {event.readinessPercent}%
-            </span>
+            <div className="sj-event-readiness">
+              <span className="text-xs text-muted-foreground">Готовность ОМ</span>
+              <strong className="text-xs font-semibold tabular-nums">{event.readinessPercent}%</strong>
+              <Progress className="sj-event-readiness-meter" value={event.readinessPercent} aria-label="Готовность мероприятия" aria-valuenow={event.readinessPercent} />
+            </div>
           </div>
           {/* Надзаголовок не передаём: над H1 уже стоит ряд бейджей (код ОМ,
               этап, готовность) — он и есть контекст записи. Второй капсовый
               лейбл сверху дублировал бы его. */}
+          <div className="sj-event-heading-row">
           <PageHeader
+            className="sj-event-title"
             title={event.title}
             // Период, а не одна дата: ОМ бывает многодневным (бэк принимает
             // `businessDateEnd`, реестр считает по нему продолжительность), и
@@ -298,10 +297,11 @@ function SecurityEventScreen() {
           />
           {!permissionsLoading && (hasPermission('resource_calculation.view') || hasPermission('resource_calculation.manage')) && (
             <Link href={`/security-ops/events/${encodeURIComponent(event.id)}/force-calculation`}
-              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary-ink hover:underline">
+              className="sj-event-calculation-link">
               Расчёт сил и средств →
             </Link>
           )}
+          </div>
           {/* Карточка ОМ — хаб: объект кликабелен отсюда на любом этапе.
               Ссылки «Сводка ГВО →» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
               в сводку ведёт ссылка «Карточка визита →» в шапке бюллетеня
@@ -334,7 +334,6 @@ function SecurityEventScreen() {
           </p>}
           {/* Строка «Паспорт: версия …» снята (`[РЕК-09]`, Plane №443): объект
               и версия паспорта уже названы полосой объекта посещения ниже. */}
-            </div>
             {/* Кнопка «Информация по ГВО» ОТСЮДА УБРАНА (Plane №193):
                 заказчик просил её на бюллетене, а не на первом этапе. Стоя в
                 шапке — над степпером — она читалась как принадлежащая
@@ -342,14 +341,6 @@ function SecurityEventScreen() {
                 панели бюллетеня, а состояние осталось здесь: панель ГВО
                 рисуется ниже отдельным блоком, и второй хозяин у одного
                 «открыто/закрыто» означал бы рассинхрон. */}
-          </div>
-          <VisitObjectContext
-            key={event.id}
-            event={event}
-            selected={selectedVisit}
-            unassignedShown={unassignedShown}
-            onSelect={replaceVisit}
-          />
           {/* 🔴 ОБЪЯСНЕНИЕ ПРО ПАСПОРТ — ТАМ, ГДЕ ПОЛОСЫ ОБЪЕКТА НЕТ (Plane
               №711). Строку «Паспорт: версия …» сняли (№443) с доводом «объект
               и версия уже названы полосой объекта посещения ниже» — верным
@@ -373,7 +364,16 @@ function SecurityEventScreen() {
                   : NO_OBJECT_TEXT}
             </p>
           )}
-          <div className="mt-3">
+
+        </CardContent>
+      </Card>
+
+          <div className="mb-6" data-slot="event-step-navigation">
+            <p className="sj-event-step-context" data-slot="event-step-object-context">
+              {unassignedShown ? "Показаны посты, не отнесённые к объекту" : selectedVisit !== null
+                ? <>Этапы объекта: <strong>{visitObjectLabel(visits, selectedVisit)}</strong></>
+                : "Этапы мероприятия"}
+            </p>
             <EventStepper
               stage={objectStage}
               viewedIndex={viewedIndex}
@@ -383,8 +383,14 @@ function SecurityEventScreen() {
               <Button className="mt-2" size="sm" variant="outline" onClick={() => selectStep(placementStepIndex)}>Расстановка и карта</Button>
             )}
           </div>
-        </CardContent>
-      </Card>
+
+          <VisitObjectContext
+            key={event.id}
+            event={event}
+            selected={selectedVisit}
+            unassignedShown={unassignedShown}
+            onSelect={replaceVisit}
+          />
 
       {/* Бюллетень — ТОЛЬКО на стадии «Бюллетень» (Plane №468, решение
           заказчика 04.09.2026). Прежде панель стояла над этапами и была видна
@@ -430,11 +436,11 @@ function SecurityEventScreen() {
         />
       )}
 
-      {/* Расстановка и архивная рекогносцировка сами отключают запись,
+      {/* Расстановка и рекогносцировка сами отключают запись,
           сохраняя просмотр и скачивание разрешённых материалов. Остальные
           формы чужого этапа остаются inert. */}
       {!archiveBulletin && <div
-        inert={(viewingOtherStep && !editingReopenedPlacement && viewedIndex !== placementStepIndex && archiveDocument !== "recon") || undefined}
+        inert={(viewingOtherStep && !editingReopenedPlacement && viewedIndex !== placementStepIndex && archiveDocument !== "recon" && viewedStage !== "RECON") || undefined}
       >
         <ActiveStage key={viewedStage} event={event} stage={viewedStage} readOnly={viewingOtherStep && !editingReopenedPlacement} />
       </div>}
@@ -738,6 +744,11 @@ function ActiveStage({
  * и оба его читают. До этого шага переключатель шапки менял только справку, а
  * дерево постов жило своим состоянием и всегда начиналось с первого объекта.
  */
+function visitObjectLabel(visits: VisitObject[], visit: VisitObject): string {
+  const repeated = visits.filter(item => item.objectName === visit.objectName).length > 1;
+  return repeated ? `Объект ${visits.findIndex(item => item.id === visit.id) + 1}: ${visit.objectName}` : visit.objectName;
+}
+
 function VisitObjectContext({
   event,
   selected,
@@ -757,20 +768,20 @@ function VisitObjectContext({
 
   return (
     <>
-      <section className="mt-3 rounded-lg border bg-muted/30 p-3" data-slot="visit-context" aria-label="Объекты ОМ">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">Объекты ОМ: {visits.length}</h2>
+      <Card className="sj-event-objects" data-slot="visit-context" role="region" aria-label="Объекты ОМ">
+        <CardContent className="sj-event-objects-content">
+        <div className="sj-event-objects-heading">
+          <h2>Объекты мероприятия <span className="sj-event-object-count">{visits.length}</span></h2>
           {canManage && <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setAddOpen(true)}>Добавить объекты</Button>}
         </div>
         {visits.length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">Объекты ещё не добавлены. Площадки одного мероприятия ведутся в общей карточке.</p>
         ) : (
           <>
-            <div role="group" aria-label="Объект посещения мероприятия" className="mt-2 flex flex-wrap gap-2">
-              {visits.map((visit, index) => {
+            <div role="group" aria-label="Объект посещения мероприятия" className="sj-event-object-tabs">
+              {visits.map((visit) => {
                 const active = visit.id === selected?.id;
-                const repeated = visits.filter(item => item.objectName === visit.objectName).length > 1;
-                const label = repeated ? "Объект " + (index + 1) + ": " + visit.objectName : visit.objectName;
+                const label = visitObjectLabel(visits, visit);
                 return (
                   <button key={visit.id} type="button" aria-label={label} aria-pressed={active} onClick={() => onSelect(visit.id)}
                     className={active
@@ -783,28 +794,30 @@ function VisitObjectContext({
               })}
             </div>
             {selected !== null && (
-              <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="font-semibold text-foreground">Выбран объект: {selected.objectName}</span>
+              <div className="sj-event-object-details" data-slot="visit-selected-details">
+                <div className="sj-event-object-detail-title">
+                  <span className="font-semibold text-foreground"><span className="sr-only">Выбран объект: </span>{selected.objectName}</span>
                   {selected.objectId !== null && hasPermission("object.view") && (
                     <Link href={"/security-ops/objects/" + selected.objectId} aria-label={"Паспорт объекта " + selected.objectName}
                       className="inline-flex min-h-11 items-center font-semibold text-primary-ink hover:underline">
                       Паспорт объекта →
                     </Link>
                   )}
-                  <span>{selected.passportBinding === null ? "паспорт не привязан" : "паспорт вер. " + selected.passportBinding.versionNumber}</span>
                 </div>
-                <p data-slot="visit-chief-line">Старший объекта: <span className="font-semibold text-foreground">{selected.chiefName || "не назначен"}</span>
-                  {" · Замещающие: "}{selected.deputies.length === 0 ? "нет" : selected.deputies.map(item => item.employeeName).join(", ")}
-                </p>
-                <p>{selected.protectedPersonName ? "Охраняемое лицо: " + selected.protectedPersonName : "Охраняемое лицо не назначено"}</p>
+                <dl className="sj-event-object-facts">
+                  <div data-slot="visit-chief-line"><dt>Старший объекта</dt><dd>{selected.chiefName || "не назначен"}</dd></div>
+                  <div><dt>Замещающие</dt><dd>{selected.deputies.length === 0 ? "нет" : selected.deputies.map(item => item.employeeName).join(", ")}</dd></div>
+                  <div><dt>Охраняемое лицо</dt><dd>{selected.protectedPersonName || "не назначено"}</dd></div>
+                  <div><dt>Версия паспорта</dt><dd>{selected.passportBinding === null ? "паспорт не привязан" : "паспорт вер. " + selected.passportBinding.versionNumber}</dd></div>
+                </dl>
               </div>
             )}
             {unassignedShown && <p className="mt-2 text-xs font-medium">Не отнесены к объекту: показаны неразмеченные строки расчёта. Выберите площадку выше, чтобы вернуться к её этапам.</p>}
-            <p className="mt-2 text-xs text-muted-foreground">Рекогносцировка, расстановка и согласование ниже относятся к выбранному объекту.</p>
+            <p className="mt-4 text-xs text-muted-foreground">Рекогносцировка, расстановка и согласование относятся к выбранному объекту.</p>
           </>
         )}
-      </section>
+        </CardContent>
+      </Card>
       {canManage && <AddVisitObjectsDialog event={event} open={addOpen} onClose={() => setAddOpen(false)} />}
     </>
   );

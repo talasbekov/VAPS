@@ -66,7 +66,7 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
       }
     } finally { setBusy(false); }
   }
-  return <Card>
+  return <Card className="sj-service-profile-panel">
     <CardHeader><CardTitle>Личный профиль службы</CardTitle>
       <p className="text-sm text-muted-foreground">Вооружение, навыки и кадровые сведения. Значения вносит уполномоченный сотрудник.</p>
     </CardHeader>
@@ -120,7 +120,7 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
           <Button className="min-h-11" type="submit" disabled={busy || query.isFetching || conflict}>{busy ? 'Сохранение…' : 'Сохранить профиль'}</Button>
           <Button className="min-h-11" type="button" variant="outline" disabled={busy} onClick={() => { setEditing(null); setMessage(''); setConflict(false); void query.refetch(); }}>Отменить правки и обновить</Button>
         </div>
-      </form> : <div className="space-y-5">
+      </form> : <div className="sj-service-profile-read space-y-5">
         <div className="space-y-2"><h3 className="font-semibold">Личное вооружение и снаряжение</h3>
           {data.profile.inventory === null ? <p className="text-sm text-muted-foreground">Состав не указан.</p> : data.profile.inventory.length === 0 ? <p className="text-sm">Состав указан как пустой.</p> :
             <ul className="space-y-2">{data.profile.inventory.map((item, index) => <li className="break-words rounded-md border p-3 text-sm" key={index}><span className="text-muted-foreground">{INVENTORY_LABELS[item.category]} · </span>{item.name}<strong> — {item.quantity} шт.</strong></li>)}</ul>}

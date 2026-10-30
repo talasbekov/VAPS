@@ -16,8 +16,11 @@ const MapCanvas = dynamic(() => import('./OfflineAstanaMap'), { ssr: false, load
 const empty: MapLocations = { objects: {}, posts: {} };
 type Target = { value: string; id: string; kind: 'object' | 'post'; label: string };
 
-export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectionPending = false }: { event: SecurityEvent; visitId: string | null; selectedPostId: string | null; canEdit: boolean; selectionPending?: boolean }) {
+export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectionPending = false, mode = 'placement', blockedReason = null, onOpenPost }: { event: SecurityEvent; visitId: string | null; selectedPostId: string | null; canEdit: boolean; selectionPending?: boolean; mode?: 'placement' | 'recon'; blockedReason?: string | null; onOpenPost?: (postId: string) => void }) {
   const router = useRouter(), pathname = usePathname(), params = useSearchParams();
+  const recon = mode === 'recon';
+  const requestedPostId = selectedPostId ?? (recon ? params.get('post') : null);
+  const writeBlocked = blockedReason !== null;
   const opened = params.get('map') === '1';
   const [isNavigating, startNavigation] = useTransition();
   const navigating = isNavigating || selectionPending;
@@ -45,10 +48,11 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
     ...event.visitObjects.filter(visit => visit.id === visitId).map(visit => ({ value: `object:${visit.id}`, id: visit.id, kind: 'object' as const, label: `Объект: ${visit.objectName}` })),
     ...event.reconSectorPosts.filter(post => (post.visitObjectId ?? null) === visitId || (event.visitObjects.length === 1 && !post.visitObjectId)).map(post => ({ value: `post:${post.id}`, id: post.id, kind: 'post' as const, label: `Наружный пост: ${post.sector} · ${post.post}` })),
   ], [event.reconSectorPosts, event.visitObjects, visitId]);
+  const activePostId = recon ? targets.find(item => item.kind === 'post' && item.id === requestedPostId)?.id ?? null : selectedPostId;
   const target = targets.find(item => item.value === targetValue) || null;
   const switchTarget = targets.find(item => item.value === switchValue) || null;
   const currentTarget = (params.get('mapTarget') === 'object' ? targets.find(item => item.kind === 'object') : null)
-    || targets.find(item => item.kind === 'post' && item.id === selectedPostId) || targets[0] || null;
+    || targets.find(item => item.kind === 'post' && item.id === activePostId) || targets[0] || null;
   function pointOf(item: Target | null) {
     return item?.kind === 'object' ? data.objects[item.id] : item ? data.posts[item.id]?.location : null;
   }
@@ -84,14 +88,17 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
   useEffect(() => {
     if (!opened) { scrolledToMap.current = false; return; }
     if (positions.isPending || scrolledToMap.current) return;
+    // Recon's viewport-sized map reveals itself once its dynamic canvas mounts.
+    if (recon && !positions.isError) return;
     const frame = requestAnimationFrame(() => {
       workspace.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
       scrolledToMap.current = true;
     });
     return () => cancelAnimationFrame(frame);
-  }, [opened, positions.isPending]);
+  }, [opened, positions.isPending, positions.isError, recon]);
   function url(update: (next: URLSearchParams) => void) { const next = new URLSearchParams(params); update(next); startNavigation(() => router.replace(`${pathname}?${next}`, { scroll: false })); }
   function start(value?: string) {
+    if (!canEdit || writeBlocked || mutation.isPending) return;
     const chosen = targets.find(item => item.value === value) || currentTarget || targets[0];
     if (!chosen) return;
     draftVersion.current++;
@@ -101,14 +108,14 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
     if (point) setFocusPoint({ key: ++focusSequence.current, location: point });
   }
   function changeTarget(value: string) {
-    if (value === targetValue || !canEdit || !editing || mutation.isPending || !targets.some(item => item.value === value)) return;
+    if (value === targetValue || !canEdit || writeBlocked || !editing || mutation.isPending || !targets.some(item => item.value === value)) return;
     if (changedCoordinates) setSwitchValue(value);
     else start(value);
   }
   function choose(marker: Pick<MapMarker, 'kind' | 'id'>) {
     // A later marker click replaces all selection fields and must win even
     // while an earlier marker navigation is still rendering.
-    if (marker.kind === 'draft' || editing) return;
+    if (marker.kind === 'draft' || editing || writeBlocked) return;
     const point = marker.kind === 'object' ? data.objects[marker.id] : data.posts[marker.id]?.location;
     if (point) setFocusPoint({ key: ++focusSequence.current, location: point });
     url(next => {
@@ -122,22 +129,24 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
   }
   const markers: MapMarker[] = [
     ...event.visitObjects.flatMap(visit => data.objects[visit.id] ? [{ id: visit.id, kind: 'object' as const, label: `Объект: ${visit.objectName}`, location: data.objects[visit.id], selected: visitId === visit.id }] : []),
-    ...event.reconSectorPosts.flatMap(post => data.posts[post.id]?.outdoor && data.posts[post.id]?.location ? [{ id: post.id, kind: 'post' as const, label: `Наружный пост: ${post.post}`, location: data.posts[post.id].location!, selected: selectedPostId === post.id }] : []),
+    ...event.reconSectorPosts.flatMap(post => data.posts[post.id]?.outdoor && data.posts[post.id]?.location ? [{ id: post.id, kind: 'post' as const, label: `Наружный пост: ${post.post}`, location: data.posts[post.id].location!, selected: activePostId === post.id }] : []),
     ...(draft ? [{ id: 'draft', kind: 'draft' as const, label: 'Несохранённая точка', location: draft }] : []),
   ];
   const objectCount = event.visitObjects.filter(visit => data.objects[visit.id]).length;
-  const selectedPost = event.reconSectorPosts.find(post => post.id === selectedPostId);
+  const selectedPost = event.reconSectorPosts.find(post => post.id === activePostId);
+  const selectedCardId = recon && selectedPost ? `recon-post-${selectedPost.id}` : 'placement-selected-post';
   const outside = markers.some(marker => marker.location.longitude < 71.15 || marker.location.longitude > 71.7 || marker.location.latitude < 50.98 || marker.location.latitude > 51.35);
   function optionLabel(item: Target) {
     if (item.kind === 'object') return item.label;
     const post = posts.get(item.id);
-    return `${post?.sector} · ${post?.post} · ${counts.get(item.id) || 0}/${post?.need || 0}${pointOf(item) ? '' : ' · без точки'}`;
+    return `${post?.sector} · ${post?.post}${recon ? '' : ` · ${counts.get(item.id) || 0}/${post?.need || 0}`}${pointOf(item) ? '' : ' · без точки'}`;
   }
-  return <div ref={workspace} className="min-w-0 space-y-3 scroll-mt-4">
-    <div role="group" aria-label="Представление расстановки" aria-busy={navigating} className="flex flex-wrap items-center gap-2">
+  return <div ref={workspace} id={`event-map-${event.id}`} className={`min-w-0 space-y-3 scroll-mt-4${recon && opened ? ' sj-recon-map-viewport' : ''}`}>
+    <div role="group" aria-label={recon ? 'Представление карты рекогносцировки' : 'Представление расстановки'} aria-busy={navigating} className="flex flex-wrap items-center gap-2">
       <Button size="sm" variant={opened ? 'outline' : 'default'} aria-pressed={!opened} disabled={navigating} onClick={() => url(next => next.delete('map'))}>Список постов</Button>
-      <Button size="sm" variant={opened ? 'default' : 'outline'} aria-pressed={opened} disabled={navigating} onClick={() => url(next => next.set('map', '1'))}>Карта Астаны</Button>
+      <Button size="sm" variant={opened ? 'default' : 'outline'} aria-pressed={opened} disabled={navigating} onClick={() => url(next => next.set('map', '1'))}>{recon ? 'Карта' : 'Карта Астаны'}</Button>
     </div>
+    {blockedReason && <p role="status" className="text-sm text-muted-foreground">{blockedReason}</p>}
     {!opened && editing && canEdit && <p role={mutation.error ? 'alert' : 'status'} className={`text-xs ${mutation.error ? 'text-destructive' : 'text-muted-foreground'}`}>
       {mutation.isPending ? 'Сохраняем координаты точки…' : mutation.error
         ? 'Не удалось сохранить точку. Введённые координаты сохранены в форме. Вернитесь к карте, чтобы повторить.'
@@ -147,12 +156,12 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
     {opened && <div className="space-y-3">
       {positions.isPending ? <p role="status" className="text-sm text-muted-foreground">Загружаем координаты объектов…</p> : positions.isError ? <div role="alert" className="rounded border border-destructive/40 p-3 text-sm"><p>Не удалось загрузить координаты. Сохранённые точки могут быть недоступны.</p><Button className="mt-2" size="sm" variant="outline" onClick={() => { void positions.refetch(); }}>Повторить загрузку координат</Button></div> : <>
         <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-          <p className="text-xs text-muted-foreground">Выберите объект или пост, укажите точку и назначьте сотрудников в карточке поста.</p>
+          <p className="text-xs text-muted-foreground">{recon ? 'На карте — сохранённые посты выбранного объекта. Сохраните расчёт, чтобы добавить новые посты на карту, затем укажите их точки.' : 'Выберите объект или пост, укажите точку и назначьте сотрудников в карточке поста.'}</p>
           {targets.length > 0 ? <>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
               <label className="min-w-0 text-xs font-medium">Объект или пост на карте
                 {targets.length > 6 && <Input type="search" aria-label="Найти пост на карте" placeholder="Поиск по посту или сектору" className="mt-1 h-8" value={targetSearch} disabled={editing} onChange={event => setTargetSearch(event.target.value)} />}
-                <select aria-label="Объект или пост на карте" value={currentTarget?.value || ''} disabled={editing || navigating} className="mt-1 h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+                <select aria-label="Объект или пост на карте" value={currentTarget?.value || ''} disabled={editing || navigating || writeBlocked} className="mt-1 h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
                   onChange={event => { const item = targets.find(item => item.value === event.target.value); if (item) choose(item); }}>
                   {currentTarget && !shownTargets.includes(currentTarget) && <option value={currentTarget.value}>{optionLabel(currentTarget)}</option>}
                   {shownTargets.map(item => <option key={item.value} value={item.value}>{optionLabel(item)}</option>)}
@@ -161,12 +170,12 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
               </label>
               <div className="flex flex-wrap items-end gap-2">
                 <Button size="sm" variant="outline" disabled={!currentPoint} onClick={() => { if (currentPoint) setFocusPoint({ key: ++focusSequence.current, location: currentPoint }); }}>К выбранной точке</Button>
-                {canEdit && !editing && <Button size="sm" disabled={navigating} onClick={() => start()}>Указать точку на карте</Button>}
+                {canEdit && !editing && <Button size="sm" disabled={navigating || writeBlocked} onClick={() => start()}>Указать точку на карте</Button>}
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <p role="status" className="text-muted-foreground">{currentPoint ? 'Точка указана. Выбор поста приближает карту к нему.' : currentTarget?.kind === 'post' ? 'У выбранного поста ещё нет точки на карте.' : 'У выбранного объекта ещё нет точки на карте.'}</p>
-              {targets.some(item => item.kind === 'post') && <Button size="sm" variant="outline" disabled={editing || navigating || shortages.length === 0} onClick={() => {
+              {!recon && targets.some(item => item.kind === 'post') && <Button size="sm" variant="outline" disabled={editing || navigating || shortages.length === 0} onClick={() => {
                 const index = shortages.findIndex(item => item.value === currentTarget?.value);
                 const next = shortages[(index + 1) % shortages.length];
                 if (next) choose(next);
@@ -175,32 +184,34 @@ export function PlacementMap({ event, visitId, selectedPostId, canEdit, selectio
           </> : <p className="text-sm text-muted-foreground">У этого объекта пока нет постов. Добавьте расчёт на этапе рекогносцировки.</p>}
         </div>
         {outside && <p role="status" className="text-xs text-amber-700">Часть точек находится за границами подложки Астаны. Их координаты сохранены и доступны при выборе в списке.</p>}
-        <MapCanvas markers={markers} focusPoint={focusPoint} onSelect={choose} locating={editing && canEdit && !mutation.isPending} onPoint={point => {
-          if (mutation.isPending || !editing || !canEdit) return;
+        <MapCanvas fitViewport={recon} markers={markers} focusPoint={focusPoint} onSelect={choose} locating={editing && canEdit && !mutation.isPending && !writeBlocked} onPoint={point => {
+          if (mutation.isPending || !editing || !canEdit || writeBlocked) return;
           setLatitude(point.latitude.toFixed(6)); setLongitude(point.longitude.toFixed(6));
           pointForm.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
         }} />
         {selectedPost && <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs">
-          <p aria-live="polite"><span className="text-muted-foreground">Выбран пост: </span><strong>{selectedPost.post}</strong> · {selectedPost.sector} · {event.placementAssignments.filter(assignment => assignment.postId === selectedPost.id).length} из {selectedPost.need}</p>
-          <Button size="sm" variant="outline" aria-controls="placement-selected-post" onClick={() => {
-            const card = document.getElementById('placement-selected-post');
+          <p aria-live="polite"><span className="text-muted-foreground">Выбран пост: </span><strong>{selectedPost.post}</strong> · {selectedPost.sector}{!recon && <> · {event.placementAssignments.filter(assignment => assignment.postId === selectedPost.id).length} из {selectedPost.need}</>}</p>
+          <Button size="sm" variant="outline" aria-controls={selectedCardId} disabled={recon && (writeBlocked || navigating)} onClick={() => {
+            if (recon && onOpenPost) { onOpenPost(selectedPost.id); return; }
+            const card = document.getElementById(selectedCardId);
             card?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-            card?.focus({ preventScroll: true });
-          }}>Открыть карточку поста</Button>
+            const focus = recon ? card?.querySelector<HTMLElement>('input') : card;
+            focus?.focus({ preventScroll: true });
+          }}>{recon ? 'Открыть строку поста' : 'Открыть карточку поста'}</Button>
         </div>}
-        {editing && canEdit && <form ref={pointForm} className="space-y-3 rounded-lg border bg-muted/20 p-3" onSubmit={event => { event.preventDefault(); if (target && draft && !switchTarget && !mutation.isPending) mutation.mutate({ targetType: target.kind, targetId: target.id, location: draft, draftVersion: draftVersion.current, ...(target.kind === 'post' ? { outdoor: true } : {}) }); }}>
-          <label className="block text-xs font-medium">Точка для<select ref={targetSelect} aria-label="Точка для" value={targetValue} onChange={event => changeTarget(event.target.value)} disabled={mutation.isPending} className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm">{!target && targetValue && <option value={targetValue} disabled>Недоступная цель: {originalCoordinates.current.label}</option>}{targets.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        {editing && canEdit && <form ref={pointForm} className="space-y-3 rounded-lg border bg-muted/20 p-3" onSubmit={event => { event.preventDefault(); if (target && draft && !switchTarget && !mutation.isPending && !writeBlocked) mutation.mutate({ targetType: target.kind, targetId: target.id, location: draft, draftVersion: draftVersion.current, ...(target.kind === 'post' ? { outdoor: true } : {}) }); }}>
+          <label className="block text-xs font-medium">Точка для<select ref={targetSelect} aria-label="Точка для" value={targetValue} onChange={event => changeTarget(event.target.value)} disabled={mutation.isPending || writeBlocked} className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm">{!target && targetValue && <option value={targetValue} disabled>Недоступная цель: {originalCoordinates.current.label}</option>}{targets.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           {!target && <p role="alert" className="text-sm text-muted-foreground">Эта цель больше недоступна. Черновик сохранён. Выберите другую цель или отмените ввод.</p>}
-          <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium">Широта<Input aria-label="Широта точки" inputMode="decimal" type="number" step="any" min="-90" max="90" required value={latitude} onChange={event => setLatitude(event.target.value)} disabled={mutation.isPending} /></label><label className="text-xs font-medium">Долгота<Input aria-label="Долгота точки" inputMode="decimal" type="number" step="any" min="-180" max="180" required value={longitude} onChange={event => setLongitude(event.target.value)} disabled={mutation.isPending} /></label></div>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium">Широта<Input aria-label="Широта точки" inputMode="decimal" type="number" step="any" min="-90" max="90" required value={latitude} onChange={event => setLatitude(event.target.value)} disabled={mutation.isPending || writeBlocked} /></label><label className="text-xs font-medium">Долгота<Input aria-label="Долгота точки" inputMode="decimal" type="number" step="any" min="-180" max="180" required value={longitude} onChange={event => setLongitude(event.target.value)} disabled={mutation.isPending || writeBlocked} /></label></div>
           {target?.kind === 'post' && <p className="text-xs text-muted-foreground">После сохранения этот пост будет отмечен как наружный. Состав и потребность поста сохраняются.</p>}
           {mutation.error && <p role="alert" className="text-sm text-destructive">Не удалось сохранить точку. Проверьте права и этап объекта, затем повторите. Введённые координаты сохранены в форме.</p>}
-          <div className="flex flex-wrap gap-2"><Button type="submit" size="sm" disabled={!draft || !target || mutation.isPending}>{mutation.isPending ? 'Сохраняем…' : 'Сохранить точку'}</Button><Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={() => { setEditing(false); mutation.reset(); }}>Отмена</Button>
-            {target && (target.kind === 'object' ? data.objects[target.id] : data.posts[target.id]) && <Button type="button" size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate({ targetType: target.kind, targetId: target.id, location: null, draftVersion: draftVersion.current, ...(target.kind === 'post' ? { outdoor: false } : {}) })}>Убрать точку</Button>}
+          <div className="flex flex-wrap gap-2"><Button type="submit" size="sm" disabled={!draft || !target || mutation.isPending || writeBlocked}>{mutation.isPending ? 'Сохраняем…' : 'Сохранить точку'}</Button><Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={() => { setEditing(false); mutation.reset(); }}>Отмена</Button>
+            {target && (target.kind === 'object' ? data.objects[target.id] : data.posts[target.id]) && <Button type="button" size="sm" variant="ghost" disabled={mutation.isPending || writeBlocked} onClick={() => { if (!writeBlocked) mutation.mutate({ targetType: target.kind, targetId: target.id, location: null, draftVersion: draftVersion.current, ...(target.kind === 'post' ? { outdoor: false } : {}) }); }}>Убрать точку</Button>}
           </div>
         </form>}
         {saved && <p role="status" className="text-xs text-emerald-700">{saved}</p>}
         <p className="text-xs text-muted-foreground">На карте объектов: {objectCount} из {event.visitObjects.length} · наружных постов: {markers.filter(marker => marker.kind === 'post').length}. Колесо мыши приближает место под курсором, перетаскивание перемещает карту.</p>
-        {!canEdit && <p className="text-xs text-muted-foreground">Карта доступна для просмотра. Координаты меняет ответственный за расстановку на открытом этапе объекта.</p>}
+        {!canEdit && <p className="text-xs text-muted-foreground">{recon ? 'Карта доступна для просмотра. Координаты на рекогносцировке меняет уполномоченный старший выбранного объекта.' : 'Карта доступна для просмотра. Координаты меняет ответственный за расстановку на открытом этапе объекта.'}</p>}
       </>}
     </div>}
     <Dialog open={opened && canEdit && editing && !!switchTarget && !positions.isError} onOpenChange={open => { if (!open) setSwitchValue(null); }}>

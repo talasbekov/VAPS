@@ -15,6 +15,7 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops import security_events as events
+from organization_management.apps.ops.event_actor_policy import can_manage_recon
 
 
 def point(value):
@@ -184,7 +185,7 @@ def _atomic_write(path, content):
             os.unlink(temp_name)
 
 
-def update(event_id, payload, *, actor, deputy=None):
+def update(event_id, payload, *, actor, deputy=None, permission_codes=(), expected_recon=False):
     if not isinstance(payload, dict) or payload.get("targetType") not in {"object", "post"} or not payload.get("targetId") or "location" not in payload:
         raise events._validation({"targetId": "Выберите объект или наружный пост."})
     location = point(payload["location"])
@@ -208,12 +209,26 @@ def update(event_id, payload, *, actor, deputy=None):
                 if not any(str(p.get("id")) == target_id for p in (event.recon_sector_posts or [])):
                     raise events._not_found("Пост не найден в этом мероприятии.", target_id)
                 visit = events._visit_of_post(event, target_id)
+            if expected_recon:
+                if visit is not None:
+                    events._require_visit_stage(visit, {"RECON"}, "Этап объекта изменился. Обновите карту перед сохранением координат.")
+                else:
+                    events._require_stage(event, "RECON", "Этап мероприятия изменился. Обновите карту перед сохранением координат.")
             if visit is not None:
-                events._require_visit_stage(visit, {"PLACEMENT", "APPROVAL"}, "Координаты можно менять на этапе «Расстановка» или в возвращённом черновике этого объекта.")
-                if events.placement_frozen(visit):
-                    events._refuse_frozen_placement(visit, what="Координаты расстановки")
+                if visit.stage == "RECON":
+                    if not can_manage_recon(event, visit, getattr(actor, "employee", None), permission_codes):
+                        raise DomainError("PERMISSION_DENIED", 403)
+                    events._require_visit_chief(visit)
+                else:
+                    events._require_visit_stage(visit, {"PLACEMENT", "APPROVAL"}, "Координаты можно менять на рекогносцировке, расстановке или в возвращённом черновике этого объекта.")
+                    if events.placement_frozen(visit):
+                        events._refuse_frozen_placement(visit, what="Координаты расстановки")
             else:
-                events._require_stage(event, "PLACEMENT", "Координаты можно менять на этапе «Расстановка».")
+                if event.stage == "RECON":
+                    if event.visit_objects.exists() or not set(permission_codes or ()) & {"*", "event.stage_override"}:
+                        raise DomainError("PERMISSION_DENIED", 403)
+                else:
+                    events._require_stage(event, "PLACEMENT", "Координаты можно менять на рекогносцировке или расстановке.")
             data = read(event, locked=True)
             values = data["objects" if kind == "object" else "posts"]
             old_value = values.get(target_id)

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { useMyEmployee } from "@/hooks/use-my-employee";
 import { ProfileBody } from "@/widgets/my-profile";
+import "@/features/service-employees/ui/employee-visual.css";
 
 export default function MyProfilePage() {
   const me = useMyEmployee();
@@ -22,8 +23,9 @@ export default function MyProfilePage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4">
+      <div className="sj-employee-view sj-personal-profile space-y-6">
         <PageHeader
+          className="sj-employee-heading"
           eyebrow="Личный кабинет"
           title="Мой профиль"
           description="Личные данные, назначения, календарь и история службы"

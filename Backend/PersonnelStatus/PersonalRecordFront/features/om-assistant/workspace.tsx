@@ -45,8 +45,8 @@ function GatheringPreparation({ task, isHeadquarters }: { task: AssistantTask; i
   </section>;
 }
 
-export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarters = false, departments = [] }: {
-  task: AssistantTask; canViewEvent: boolean; canCommand: boolean; isHeadquarters?: boolean; departments?: AssistantCatalogs["departments"];
+export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarters = false, departments = [], correctionId = "assistant-correction", embedded = false }: {
+  task: AssistantTask; canViewEvent: boolean; canCommand: boolean; isHeadquarters?: boolean; departments?: AssistantCatalogs["departments"]; correctionId?: string; embedded?: boolean;
 }) {
   const presentation = taskPresentation(task);
   const nextAction = taskNextAction(task);
@@ -70,8 +70,10 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
       <h3 className="font-semibold">{nextAction.title}</h3>
       <p className="text-sm text-slate-500">Следующий шаг выполняет</p><p className="font-semibold">{nextAction.owner}</p>
       <p className="mt-1 text-sm leading-relaxed">{nextAction.description}</p>
-      {nextAction.canCorrect && <Button asChild variant="outline" className="mt-3"><a href="#assistant-correction" onClick={event => {
-        event.currentTarget.ownerDocument.getElementById("assistant-correction")?.setAttribute("open", "");
+      {nextAction.canCorrect && <Button asChild variant="outline" className="mt-3"><a href={`#${correctionId}`} onClick={event => {
+        const editor = event.currentTarget.ownerDocument.getElementById(correctionId);
+        editor?.setAttribute("open", "");
+        if (embedded) { event.preventDefault(); editor?.scrollIntoView({ block: "nearest" }); editor?.focus({ preventScroll: true }); }
       }}>Уточнить сведения</a></Button>}
       {task.event && task.status !== "event_unavailable" && <p className="mt-2 text-sm">
         {linkedStage ? <>Текущий этап ОМ: <strong>{STAGE_LABEL[linkedStage]}</strong></> : "Этап ОМ не определён. Проверьте карточку ОМ."}
@@ -127,9 +129,9 @@ export function AssistantTaskCard({ task, canViewEvent, canCommand, isHeadquarte
   </section>;
 }
 
-function DraftEditor({ draft, onChange, catalogs, metadata, disabled, questions = [], focusMissing = false }: {
+function DraftEditor({ draft, onChange, catalogs, metadata, disabled, questions = [], focusMissing = false, idPrefix = "om-assistant" }: {
   draft: AssistantDraft; onChange: (draft: AssistantDraft) => void; catalogs?: AssistantCatalogs; metadata: boolean; disabled: boolean;
-  questions?: AssistantTask["questions"]; focusMissing?: boolean;
+  questions?: AssistantTask["questions"]; focusMissing?: boolean; idPrefix?: string;
 }) {
   const field = (key: keyof AssistantDraft, value: string) => onChange({ ...draft, [key]: value });
   // Keep field groups in place while typing. Accepting a saved revision resets
@@ -147,8 +149,8 @@ function DraftEditor({ draft, onChange, catalogs, metadata, disabled, questions 
     kind: <label className={label}>Вид ОМ<select className={input} value={draft.kind} onChange={event => field("kind", event.target.value)}><option value="">Выберите вид</option><option value="INTERNAL">{SECURITY_EVENT_KIND_LABEL.INTERNAL}</option><option value="FOREIGN">{SECURITY_EVENT_KIND_LABEL.FOREIGN}</option></select></label>,
     businessDate: <label className={label}>Дата начала<input className={input} type="date" value={draft.businessDate} onChange={event => field("businessDate", event.target.value)} /></label>,
     objectId: <label className={label}>Объект<select className={input} value={draft.objectId} onChange={event => field("objectId", event.target.value)} disabled={!catalogs}><option value="">Выберите объект</option>{catalogs?.objects.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>,
-    personnelTotal: <><label className={label}>Людей по поручению<input className={input} inputMode="numeric" maxLength={6} value={draft.personnelTotal} aria-describedby="om-assistant-personnel-total-help" onChange={event => field("personnelTotal", event.target.value)} /></label>
-      <p id="om-assistant-personnel-total-help" className="mt-1 text-xs text-slate-500">Общее число из поручения. Количество по департаментам задаётся отдельно; потребность ОМ не меняется.</p></>,
+    personnelTotal: <><label className={label}>Людей по поручению<input className={input} inputMode="numeric" maxLength={6} value={draft.personnelTotal} aria-describedby={`${idPrefix}-personnel-total-help`} onChange={event => field("personnelTotal", event.target.value)} /></label>
+      <p id={`${idPrefix}-personnel-total-help`} className="mt-1 text-xs text-slate-500">Общее число из поручения. Количество по департаментам задаётся отдельно; потребность ОМ не меняется.</p></>,
     eventId: <label className={label}>Существующее ОМ, ID (если уже создано)<input className={input} value={draft.eventId} onChange={event => field("eventId", event.target.value)} placeholder="Из адреса карточки ОМ" /></label>,
     businessDateEnd: <label className={label}>Дата окончания (необязательно)<input className={input} type="date" value={draft.businessDateEnd} onChange={event => field("businessDateEnd", event.target.value)} /></label>,
     eventTime: <label className={label}>Время (необязательно)<input className={input} type="time" value={draft.eventTime} onChange={event => field("eventTime", event.target.value)} /></label>,
@@ -199,13 +201,47 @@ function DraftEditor({ draft, onChange, catalogs, metadata, disabled, questions 
   </fieldset>;
 }
 
-function TaskCorrection({ task, acknowledged, catalogs, disabled, save }: { task: AssistantTask; acknowledged: AssistantTask | null; catalogs?: AssistantCatalogs; disabled: boolean; save: (fields: AssistantFields, revision: number) => Promise<AssistantTask | undefined> }) {
+export function AssistantConfirmation({ task, disabled, pending, onConfirm, hasUnsavedCorrections = false }: {
+  task: AssistantTask; disabled: boolean; pending: boolean; onConfirm: () => void; hasUnsavedCorrections?: boolean;
+}) {
+  if (!task.confirmation) return null;
+  const sending = task.confirmation.operation === "send_allocations";
+  const allowed = task.confirmation.canConfirm && !!task.confirmation.token;
+  return <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-5 dark:border-blue-800 dark:bg-blue-950/40" aria-label="Проверка плана перед выполнением">
+    <p className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">План готов к проверке</p>
+    <h2 className="mt-2 text-xl font-semibold">{sending ? "Отправить запросы департаментам" : "Создать охранное мероприятие"}</h2>
+    <p className="mt-2 text-sm leading-relaxed">Это действие не выполнено. До подтверждения можно проверить и исправить сведения.</p>
+    <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+      <div className="min-w-0 sm:col-span-2"><dt className="text-muted-foreground">Мероприятие</dt><dd className="break-words font-semibold">{task.event?.code && `${task.event.code} · `}{task.plan.title || "Не указано"}</dd></div>
+      <div><dt className="text-muted-foreground">Дата и время</dt><dd className="font-medium">{assistantDate(task.plan.businessDate)}{task.plan.businessDateEnd && ` — ${assistantDate(task.plan.businessDateEnd)}`}{task.plan.eventTime && ` · ${task.plan.eventTime}`}</dd></div>
+      <div><dt className="text-muted-foreground">Вид ОМ</dt><dd className="font-medium">{task.plan.kind ? SECURITY_EVENT_KIND_LABEL[task.plan.kind] : "Не указан"}</dd></div>
+      <div className="min-w-0"><dt className="text-muted-foreground">Объект</dt><dd className="break-words font-medium">{task.plan.objectName || (task.plan.objectId ? "Выбран в сведениях поручения" : "Не указан")}</dd></div>
+      <div><dt className="text-muted-foreground">Людей по поручению</dt><dd className="font-medium">{task.plan.personnelTotal ?? "Не указано"}</dd></div>
+    </dl>
+    {sending && <ul className="mt-4 space-y-2 border-t border-blue-200 pt-4 text-sm dark:border-blue-800" aria-label="Запросы для подтверждения">
+      {task.plan.allocations?.map(row => <li key={row.departmentId} className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+        <span className="min-w-0 break-words">{row.departmentName || `Департамент ${row.departmentId}`}{row.dueAt && <span className="block text-xs text-muted-foreground">Срок: {row.dueAt}</span>}</span>
+        <strong className="tabular-nums">{row.need} чел.</strong>
+      </li>)}
+    </ul>}
+    <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{sending
+      ? "Подтверждение отправит запросы от вашего имени. Назначение сотрудников и согласование выполняются в своих рабочих разделах."
+      : "Будет создано ОМ в начальном состоянии. Рекогносцировка, запросы людей, назначения и согласование выполняются отдельными действиями."}</p>
+    {hasUnsavedCorrections && <p className="mt-3 text-sm font-medium" role="status">Сначала сохраните правки ниже и проверьте обновлённый план.</p>}
+    {allowed ? <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2" disabled={disabled || hasUnsavedCorrections} onClick={onConfirm}>
+      {pending ? "Проверяем и выполняем…" : sending ? "Подтвердить отправку запросов" : "Подтвердить создание ОМ"}
+    </Button> : <p className="mt-4 text-sm font-semibold" role="status">{task.confirmation.blockedReason || (sending ? "Подтверждение выполняет Штаб со своим правом отправки." : "Подтверждение выполняет инициатор с правом создания ОМ.")}</p>}
+  </section>;
+}
+
+function TaskCorrection({ task, acknowledged, catalogs, disabled, save, onDirtyChange, correctionId = "assistant-correction", idPrefix = "om-assistant" }: { task: AssistantTask; acknowledged: AssistantTask | null; catalogs?: AssistantCatalogs; disabled: boolean; save: (fields: AssistantFields, revision: number) => Promise<AssistantTask | undefined>; onDirtyChange?: (dirty: boolean) => void; correctionId?: string; idPrefix?: string }) {
   const [editor, setEditor] = useState(() => {
     const draft = draftFromPlan(task.plan);
     return { draft, original: draft, revision: task.revision };
   });
   const [error, setError] = useState<string | null>(null);
   const dirty = JSON.stringify(editor.draft) !== JSON.stringify(editor.original);
+  useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
   const conflict = dirty && editor.revision < task.revision;
   useEffect(() => {
     // Polling may update the task while someone is typing. Only an untouched
@@ -242,8 +278,8 @@ function TaskCorrection({ task, acknowledged, catalogs, disabled, save }: { task
       }
     } catch (value) { setError(value instanceof Error ? value.message : "Проверьте сведения."); }
   };
-  return <details id="assistant-correction" tabIndex={-1} className={`${panel} scroll-mt-6`} open={task.questions.length > 0}>
-    <summary className="cursor-pointer font-semibold">{task.questions.length ? "Уточнить сведения" : "Изменить предложение запросов"}</summary>
+  return <details id={correctionId} tabIndex={-1} className={`${panel} scroll-mt-6`} open={task.questions.length > 0}>
+    <summary className="cursor-pointer font-semibold">{task.questions.length ? "Уточнить сведения" : task.reviewBeforeExecute && !task.event ? "Изменить сведения плана" : "Изменить предложение запросов"}</summary>
     <div className="mt-4">
       {conflict && <div role="status" className="mb-4 space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
         <p><strong>Поручение изменилось.</strong> Ваш ввод остался в форме и ещё не отправлен. Проверьте обновлённую карточку выше. Можно загрузить сохранённые сведения или продолжить со своими правками — они заменят предложение инициатора.</p>
@@ -252,9 +288,9 @@ function TaskCorrection({ task, acknowledged, catalogs, disabled, save }: { task
           <Button type="button" variant="outline" className="h-auto min-h-11 max-w-full whitespace-normal" disabled={disabled} onClick={() => adoptSaved(true)}>Продолжить с моими правками</Button>
         </div>
       </div>}
-      <DraftEditor key={editor.revision} draft={editor.draft} onChange={draft => setEditor(previous => ({ ...previous, draft }))} catalogs={catalogs} metadata={!task.event} disabled={disabled} questions={task.questions} focusMissing={!task.event && task.questions.length > 0} />
+      <DraftEditor key={editor.revision} draft={editor.draft} onChange={draft => setEditor(previous => ({ ...previous, draft }))} catalogs={catalogs} metadata={!task.event} disabled={disabled} questions={task.questions} focusMissing={!task.event && task.questions.length > 0} idPrefix={idPrefix} />
       {error && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}
-      <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal" disabled={disabled || conflict} onClick={() => void submit()}>Сохранить сведения и продолжить</Button>
+      <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal" disabled={disabled || conflict} onClick={() => void submit()}>{task.reviewBeforeExecute ? "Сохранить и проверить план" : "Сохранить сведения и продолжить"}</Button>
     </div>
   </details>;
 }
@@ -266,9 +302,10 @@ export function AssistantWorkspace() {
   return <DashboardLayout><AssistantAuthorizedWorkspace key={access.scope} /></DashboardLayout>;
 }
 
-export function AssistantTaskQueue({ data, selectedTaskId, search, isPending, isFetching, isError, refresh, navigate }: {
+export function AssistantTaskQueue({ data, selectedTaskId, search, isPending, isFetching, isError, refresh, navigate, embedded = false }: {
   data?: AssistantTaskList; selectedTaskId: string | null; search: string | URLSearchParams;
   isPending: boolean; isFetching: boolean; isError: boolean; refresh: () => void; navigate: (href: string) => void;
+  embedded?: boolean;
 }) {
   const pagination = assistantQueuePagination(data);
   const blocked = isPending || isFetching || isError;
@@ -277,7 +314,9 @@ export function AssistantTaskQueue({ data, selectedTaskId, search, isPending, is
     {isError ? <div className="space-y-3"><p className="text-sm" role="status">Список поручений недоступен. Обновите данные.</p>
       {assistantListPage(new URLSearchParams(search).get("page")) > 1 && <Button variant="outline" size="sm" disabled={isFetching}
         onClick={() => navigate(assistantPageHref(search, 1))}>На первую страницу</Button>}
-    </div> : isPending ? <p className="text-sm" role="status">Загружаем список…</p> : !data?.results.length ? <p className="text-sm text-slate-500">Сохранённые поручения появятся здесь.</p> : <ul className="space-y-2">{data.results.map(row => <li key={row.id}><Link href={assistantTaskHref(row.id, search)} aria-current={row.id === selectedTaskId ? "page" : undefined} className={`block rounded-lg border p-3 text-sm ${row.id === selectedTaskId ? "border-blue-300 bg-blue-50 dark:bg-blue-950" : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"}`}>
+    </div> : isPending ? <p className="text-sm" role="status">Загружаем список…</p> : !data?.results.length ? <p className="text-sm text-slate-500">Сохранённые поручения появятся здесь.</p> : <ul className="space-y-2">{data.results.map(row => <li key={row.id}><Link href={assistantTaskHref(row.id, search)} onClick={embedded ? event => {
+      if (!event.ctrlKey && !event.metaKey && !event.shiftKey && event.button === 0) { event.preventDefault(); navigate(assistantTaskHref(row.id, search)); }
+    } : undefined} aria-current={row.id === selectedTaskId ? "page" : undefined} className={`block rounded-lg border p-3 text-sm ${row.id === selectedTaskId ? "border-blue-300 bg-blue-50 dark:bg-blue-950" : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"}`}>
       <span className="block font-medium">{assistantTaskTitle(row)}</span>
       <span className="mt-1 block text-xs text-slate-500">{[row.plan.objectName, row.plan.businessDate ? assistantDate(row.plan.businessDate) : null].filter(Boolean).join(" · ")}</span>
       <span className="mt-1 block text-xs text-slate-500">{taskPresentation(row).label}</span>
@@ -293,8 +332,18 @@ export function AssistantTaskQueue({ data, selectedTaskId, search, isPending, is
   </aside>;
 }
 
-function AssistantAuthorizedWorkspace() {
-  const router = useRouter(); const search = useSearchParams();
+export function AssistantAuthorizedWorkspace({ embedded = false, selectedTaskId = null, onSelectTask, selectedPage = 1, onSelectPage, draftMessage, onDraftMessageChange, onWriteBlockedChange }: {
+  embedded?: boolean; selectedTaskId?: string | null; onSelectTask?: (id: string | null) => void;
+  selectedPage?: number; onSelectPage?: (page: number) => void;
+  draftMessage?: string; onDraftMessageChange?: (value: string) => void; onWriteBlockedChange?: (blocked: boolean) => void;
+} = {}) {
+  const router = useRouter(); const routeSearch = useSearchParams();
+  const search = new URLSearchParams(embedded ? (selectedTaskId ? `task=${selectedTaskId}` : "") : routeSearch.toString());
+  if (embedded && selectedPage > 1) search.set("page", String(selectedPage));
+  const navigate = (href: string, replace = false) => {
+    if (embedded) { const params = new URLSearchParams(href.split("?")[1] ?? ""), value = params.get("task"); onSelectTask?.(isTaskId(value) ? value : null); onSelectPage?.(assistantListPage(params.get("page"))); }
+    else if (replace) router.replace(href); else router.push(href);
+  };
   const taskParam = search.get("task"); const taskId = isTaskId(taskParam) ? taskParam : null;
   const page = assistantListPage(search.get("page"));
   const eventContext = search.get("event");
@@ -303,52 +352,65 @@ function AssistantAuthorizedWorkspace() {
   const tasks = useAssistantTasks(page); const selected = useAssistantTask(taskId);
   const headquarters = configuration.data?.isHeadquarters ?? tasks.data?.isHeadquarters ?? false;
   const [acknowledged, setAcknowledged] = useState<AssistantTask | null>(null);
+  const [hasUnsavedCorrections, setHasUnsavedCorrections] = useState(false);
   const writer = useAssistantWriter({ access, taskId, readKey: selected.readKey }, task => {
     setAcknowledged(task);
-    router.replace(assistantTaskHref(task.id, search.toString()));
+    navigate(assistantTaskHref(task.id, search.toString()), true);
   });
-  const [message, setMessage] = useState("");
+  const [localMessage, setLocalMessage] = useState("");
+  const message = embedded ? draftMessage ?? "" : localMessage;
+  const setMessage = embedded ? onDraftMessageChange ?? setLocalMessage : setLocalMessage;
   const [draft, setDraft] = useState(() => draftFromPlan({ eventId: eventContext }));
   const [inputMode, setInputMode] = useState<"text" | "manual">("text");
   const [queueOpen, setQueueOpen] = useState(() => search.has("page"));
   const [formError, setFormError] = useState<string | null>(null);
   const frozen = writer.pending || writer.retryable;
+  useEffect(() => { onWriteBlockedChange?.(frozen); return () => onWriteBlockedChange?.(false); }, [frozen, onWriteBlockedChange]);
+  const reviewBeforeExecute = configuration.data?.reviewBeforeExecute === true;
+  const creationBlocked = frozen || !configuration.data || configuration.isError;
   const mode = configuration.data?.enabled === false ? "manual" : inputMode;
   const task = selected.data;
   const newTask = () => { writer.reset(); setMessage(""); setDraft(draftFromPlan({ eventId: eventContext })); setFormError(null); setQueueOpen(false);
     const params = new URLSearchParams(search.toString()); params.delete("task");
-    router.replace(`${ASSISTANT_PATH}${params.size ? `?${params.toString()}` : ""}`); };
-  const manual = () => { try { setFormError(null); void writer.create(message, fieldsFromDraft(draft), false); }
+    navigate(`${ASSISTANT_PATH}${params.size ? `?${params.toString()}` : ""}`, true); };
+  const manual = () => { if (creationBlocked) return; try { setFormError(null); void writer.create(message, fieldsFromDraft(draft), false, reviewBeforeExecute); }
     catch (error) { setFormError(error instanceof Error ? error.message : "Проверьте сведения."); } };
-  return <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+  const Heading = embedded ? "h3" : "h1";
+  const idPrefix = embedded ? "global-assistant" : "om-assistant";
+  const correctionId = embedded ? "global-assistant-correction" : "assistant-correction";
+  return <div className={embedded ? "min-w-0 space-y-5 p-4" : "mx-auto max-w-4xl space-y-6 p-4 sm:p-6"}>
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Охранные мероприятия</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">Помощник по ОМ</h1>
+        <Heading className={`mt-1 font-semibold tracking-tight ${embedded ? "text-xl" : "text-3xl"}`}>Помощник по ОМ</Heading>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">Опишите задачу. Помощник подготовит мероприятие и запросы, покажет, кто продолжает работу и что уже сохранено.</p></div>
       {taskParam && <Button variant="outline" disabled={frozen} onClick={newTask}>Новая задача</Button>}
     </header>
     <div className="grid items-start gap-5">
       <main className="min-w-0 space-y-4">
         {!taskParam && <section className={panel} aria-label="Новое поручение">
+          {embedded && message.trim() && <div className="mb-4 rounded-xl bg-muted/40 p-3 text-sm"><p className="mb-1 font-semibold">Ваше обращение</p><p className="whitespace-pre-wrap break-words">{message}</p></div>}
           <fieldset disabled={frozen} className="mb-5">
             <legend className="text-sm font-semibold">Как задать поручение</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {([['text', 'Описать задачу'], ['manual', 'Заполнить форму']] as const).map(([value, title]) => <label key={value}
                 className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${mode === value ? 'border-blue-400 bg-blue-50 dark:bg-blue-950' : 'border-slate-200 dark:border-slate-700'}`}>
-                <input type="radio" name="assistant-input-mode" value={value} checked={mode === value}
+                <input type="radio" name={embedded ? "global-assistant-input-mode" : "assistant-input-mode"} value={value} checked={mode === value}
                   disabled={frozen || (value === 'text' && configuration.data?.enabled === false)} onChange={() => setInputMode(value)} />{title}
               </label>)}
             </div>
           </fieldset>
           {configuration.data?.enabled === false && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" role="status">Понимание текста отключено. Заполните форму — поручение можно сохранить и продолжить.</p>}
-          {configuration.isError && <p role="status" className="mb-4 text-sm text-amber-700">Не удалось проверить понимание текста. Можно заполнить форму.</p>}
+          {configuration.isError && <div role="status" className="mb-4 text-sm text-amber-700"><p>Не удалось проверить режим помощника. Можно заполнить форму; отправка станет доступна после проверки.</p>
+            <button type="button" className="mt-2 min-h-9 underline" disabled={configuration.isFetching} onClick={() => void configuration.refetch()}>Повторить проверку помощника</button></div>}
+          {!configuration.data && !configuration.isError && <p className="mb-4 text-sm" role="status">Проверяем режим работы помощника…</p>}
+          {configuration.data && !reviewBeforeExecute && <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" role="status">Сервер использует прежний режим: полностью заполненное поручение может сразу создать ОМ или отправить запросы при наличии прав. Для отдельного подтверждения обновите backend помощника.</p>}
           {mode === "text" ? <>
-          <AssistantBrief value={message} onChange={setMessage} disabled={frozen} pending={writer.pending}
-            onSubmit={() => void writer.create(message, eventContext ? { eventId: eventContext } : {}, true)} />
+          <AssistantBrief value={message} onChange={setMessage} disabled={creationBlocked} pending={writer.pending} reviewBeforeExecute={reviewBeforeExecute}
+            onSubmit={() => { if (!creationBlocked) void writer.create(message, eventContext ? { eventId: eventContext } : {}, true, reviewBeforeExecute); }} />
           {eventContext && <p className="mt-2 text-sm text-blue-700 dark:text-blue-300">Поручение связано с выбранным ОМ. Его фактические сведения проверит сервер.</p>}
-          </> : <DraftEditor draft={draft} onChange={setDraft} catalogs={catalogs.data} metadata disabled={frozen} />}
-          {mode === "manual" && <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" disabled={frozen} onClick={manual}>
-            {writer.pending ? "Сохраняем поручение…" : "Сохранить по указанным сведениям"}
+          </> : <DraftEditor draft={draft} onChange={setDraft} catalogs={catalogs.data} metadata disabled={frozen} idPrefix={idPrefix} />}
+          {mode === "manual" && <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" disabled={creationBlocked} onClick={manual}>
+            {writer.pending ? "Сохраняем поручение…" : reviewBeforeExecute ? "Проверить план по сведениям" : "Сохранить по указанным сведениям"}
           </Button>}
         </section>}
         {taskParam && !taskId && <p className={panel} role="alert">Некорректная ссылка на поручение. Откройте его из списка или начните новую задачу.</p>}
@@ -364,10 +426,12 @@ function AssistantAuthorizedWorkspace() {
                 : "Сведения уточняет инициатор поручения. Чтобы проверить изменения, нажмите «Обновить состояние»."}</p>
             <details className="mt-3"><summary className="cursor-pointer">Подробности разбора</summary><p className="mt-2 break-words">{task.interpretationNotice}</p></details>
           </section>}
-          <AssistantTaskCard task={task} canViewEvent={permissions.hasPermission("event.view")} canCommand={permissions.hasPermission("forces.command")} isHeadquarters={headquarters} departments={catalogs.data?.departments} />
+          <AssistantTaskCard task={task} canViewEvent={permissions.hasPermission("event.view")} canCommand={permissions.hasPermission("forces.command")} isHeadquarters={headquarters} departments={catalogs.data?.departments} embedded={embedded} correctionId={correctionId} />
+          <AssistantConfirmation task={task} disabled={frozen || !selected.canAct} pending={writer.pending} hasUnsavedCorrections={hasUnsavedCorrections}
+            onConfirm={() => { if (task.confirmation?.token) void writer.confirmTask(task.confirmation.token, task.revision); }} />
           {task.questions.length > 0 && (!task.canEdit || requestsSent(task)) && <section className={panel} aria-label="Нужны сведения"><h2 className="font-semibold">Что нужно уточнить</h2><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{task.questions.map((question, index) => <li key={`${question.field}-${index}`}>{question.text}</li>)}</ul>
             {!task.canEdit && <p className="mt-3 text-sm text-slate-500">Сведения уточняет инициатор поручения. Штаб продолжит работу после уточнения.</p>}</section>}
-          <TaskCorrection key={`${access.scope}-${task.id}`} task={task} acknowledged={acknowledged} catalogs={catalogs.data} disabled={frozen || !selected.canAct} save={(fields, revision) => writer.continueTask(fields, revision)} />
+          <TaskCorrection key={`${access.scope}-${task.id}`} task={task} acknowledged={acknowledged} catalogs={catalogs.data} disabled={frozen || !selected.canAct} onDirtyChange={setHasUnsavedCorrections} save={(fields, revision) => writer.continueTask(fields, revision)} correctionId={correctionId} idPrefix={idPrefix} />
           <div className="flex flex-wrap gap-2">{task.canContinue === true && <Button disabled={frozen || !selected.canAct || task.questions.length > 0 || task.status === "event_unavailable"} onClick={() => void writer.continueTask()}>{writer.pending ? "Отправляем запросы…" : "Выполнить отправку от своего имени"}</Button>}
             <Button variant="outline" disabled={writer.pending || selected.isFetching} onClick={() => { writer.reset(); void selected.refetch(); void tasks.refetch(); }}>Обновить состояние</Button></div>
           {!task.canEdit && <p className="text-xs text-slate-500">Предложение редактирует инициатор поручения.</p>}
@@ -378,8 +442,8 @@ function AssistantAuthorizedWorkspace() {
       </main>
       <details open={queueOpen} onToggle={event => setQueueOpen(event.currentTarget.open)}>
         <summary className="cursor-pointer rounded-xl border bg-background p-4 text-sm font-semibold">Сохранённые поручения</summary>
-        <div className="mt-3"><AssistantTaskQueue data={tasks.data} selectedTaskId={taskId} search={search.toString()} isPending={tasks.isPending} isFetching={tasks.isFetching} isError={tasks.isError}
-          refresh={() => void tasks.refetch()} navigate={href => router.push(href)} /></div>
+        <div className="mt-3"><AssistantTaskQueue data={tasks.data} selectedTaskId={taskId} search={search.toString()} isPending={tasks.isPending} isFetching={tasks.isFetching} isError={tasks.isError} embedded={embedded}
+          refresh={() => void tasks.refetch()} navigate={href => navigate(href)} /></div>
       </details>
     </div>
   </div>;

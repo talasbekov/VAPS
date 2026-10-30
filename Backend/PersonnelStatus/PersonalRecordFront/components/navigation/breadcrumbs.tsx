@@ -8,6 +8,7 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION, moduleOpenFor } from "@/entities/portal-access";
 import { PORTAL_HOME_PATH } from "@/features/portal-workspace/model";
 import { legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole, resolveWorkspaceView } from "@/features/forces-workspace/model/workspace";
+import { activeNavigationItem, NAVIGATION_SECTIONS, SYSTEM_ITEMS, sectionForLocation, type NavigationSectionId } from '@/components/navigation/navigation-model';
 
 /**
  * Подписи сегментов маршрута. Ключ — сегмент URL как есть.
@@ -84,11 +85,11 @@ const SEGMENTS_WITHOUT_PAGE = new Set(["security-ops"]);
 
 /** Бренд первым звеном крошек — как в прототипе: «Smart Жоспарлау / Экран».
  * Ведёт прямо на доступный стартовый экран; до проверки прав перехода нет. */
-export function Breadcrumbs() {
-  return <Suspense fallback={null}><BreadcrumbsInner /></Suspense>;
+export function Breadcrumbs({ sectionId }: { sectionId?: NavigationSectionId } = {}) {
+  return <Suspense fallback={null}><BreadcrumbsInner preferredSection={sectionId} /></Suspense>;
 }
 
-function BreadcrumbsInner() {
+function BreadcrumbsInner({ preferredSection }: { preferredSection?: NavigationSectionId } = {}) {
   const pathname = usePathname();
   const query = useSearchParams();
   const access = useOpsPermissions();
@@ -104,14 +105,24 @@ function BreadcrumbsInner() {
     : workspaceView === "forces" ? workspaceRole === "headquarters" ? "Распределения" : "Сбор сил на ОМ"
     : legacyWorkspaceTitle(legacyWorkspaceView(query.get("view")));
   const segments = pathname.split("/").filter(Boolean);
+  const params = new URLSearchParams(query);
+  const directoryProfile = pathname.startsWith('/security-ops/profile/') && query.get('directory') === '1';
+  const categoryId = sectionForLocation(pathname, params, NAVIGATION_SECTIONS, preferredSection);
+  const category = NAVIGATION_SECTIONS.find(section => section.id === categoryId);
+  const categoryTitle = activeNavigationItem(SYSTEM_ITEMS, pathname, params) ? 'Система'
+    : directoryProfile ? 'Сотрудники подразделения'
+    : category && activeNavigationItem(category.items, pathname, params) ? category.title : undefined;
 
   const crumbs: { href: string; label: string; linked: boolean }[] = [];
   let href = "";
   for (const segment of segments) {
     href += `/${segment}`;
+    if (segment === 'security-ops' && categoryTitle === 'Мой профиль') continue;
     // Аналитика службы — соседний источник, а не родитель аналитики ОМ.
     if (pathname.replace(/\/+$/, "") === "/security-ops/analytics/operations" && href === "/security-ops/analytics") continue;
-    const label = href === PORTAL_HOME_PATH ? "Моя работа"
+    const label = segment === 'security-ops' ? categoryTitle ?? SEGMENT_LABELS[segment]
+      : href === '/security-ops/profile' && directoryProfile ? 'Профиль сотрудника'
+      : href === PORTAL_HOME_PATH ? "Моя работа"
       : href === "/security-ops/assistant" ? "Помощник по ОМ"
       : href === "/security-ops/ratings/employees" ? "Агрегированный рейтинг участника"
       : href === "/security-ops/ratings/analytics" ? "Аналитика рейтинга"
@@ -121,7 +132,7 @@ function BreadcrumbsInner() {
       crumbs.push({
         href: `${href}/`,
         label,
-        linked: trusted && !SEGMENTS_WITHOUT_PAGE.has(segment) &&
+        linked: trusted && !(directoryProfile && href === '/security-ops/profile') && !SEGMENTS_WITHOUT_PAGE.has(segment) &&
           Object.prototype.hasOwnProperty.call(MODULE_PERMISSION, moduleHref) &&
           moduleOpenFor(moduleHref, access.hasPermission, hasRole),
       });

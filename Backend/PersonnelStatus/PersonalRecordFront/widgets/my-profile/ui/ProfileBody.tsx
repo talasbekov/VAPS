@@ -358,7 +358,7 @@ export function ProfileBody({
       />
 
       <nav
-        className="flex w-fit max-w-full flex-wrap gap-1 rounded-lg bg-muted p-1"
+        className="sj-profile-tabs flex w-fit max-w-full flex-wrap gap-1 rounded-lg bg-muted p-1"
         aria-label="Разделы профиля"
       >
         {(Object.keys(TAB_LABEL) as ProfileTab[]).map((code) => (
@@ -370,6 +370,7 @@ export function ProfileBody({
                 ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
                 : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
             }
+            data-active={tab === code}
             onClick={() => setTab(code)}
           >
             {/* В чужом профиле «мои» не подходит: читает не владелец. */}
@@ -514,7 +515,7 @@ function HeroCard({
   ].filter((chip) => chip !== "");
 
   return (
-    <Card className="bg-gradient-to-br from-card via-card to-primary/10">
+    <Card className="sj-personal-profile-hero">
       <CardContent className="flex flex-wrap items-center gap-6 p-6 lg:flex-nowrap">
         <EmployeePortrait
           name={employee.full_name}

@@ -1,5 +1,7 @@
 "use client";
 
+import { AssistantHomeDock } from "@/features/assistant-dock/assistant-dock";
+
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { usePathname } from "next/navigation";
@@ -9,6 +11,9 @@ import { MobileMenu } from "@/components/navigation/mobile-menu";
 import { PerformanceProfiler } from "@/components/profiler";
 import { ApiGapNotice } from "@/components/api-gap-notice";
 import { findApiGap } from "@/lib/api-gaps";
+import "./shell-visual.css";
+import { NavigationBreadcrumbs } from "@/components/navigation/section-navigation";
+import { AmbientBackground } from "@/features/ambient-background/ui/AmbientBackground";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -150,7 +155,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           могут. Во время перетаскивания выделение текста снимается со всей
           страницы: иначе движение мыши по содержимому красит его синим. */}
       <div
-        className={`flex min-h-screen ${resizing ? "cursor-col-resize select-none" : ""}`}
+        data-sidebar-open={desktopSidebarOpen}
+        className={`sj-visual sj-shell flex min-h-screen ${resizing ? "cursor-col-resize select-none" : ""}`}
         style={{ "--sidebar-w": `${sidebarWidth}px` } as CSSProperties}
       >
         {/* Проброс к содержимому: до первой кнопки контента на «Управлении
@@ -163,6 +169,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           Перейти к содержимому
         </a>
 
+          <Header
+            onMenuClick={() => setSidebarOpen(true)}
+            onDesktopMenuClick={() =>
+              setDesktopSidebarOpen(!desktopSidebarOpen)
+            }
+            desktopSidebarOpen={desktopSidebarOpen}
+          />
+
         {/* Desktop Sidebar - Fixed */}
         <div
           // Уехавший за левый край сайдбар оставался в порядке табуляции: ~25
@@ -172,7 +186,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           // Анимация включается только ПОСЛЕ восстановления: иначе свёрнутый
           // сайдбар на каждой загрузке заново уезжал бы за край на глазах у
           // пользователя. Ручное переключение анимируется как прежде.
-          className={`hidden lg:block fixed left-0 top-0 h-screen z-30 ${
+          className={`sj-sidebar-frame hidden lg:block fixed left-0 top-0 h-screen z-30 ${
             restored ? "transition-transform duration-300 ease-in-out" : ""
           } ${desktopSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
@@ -227,17 +241,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
         {/* Main Content */}
         <div
-          className={`flex flex-col flex-1 min-w-0 ${
+          className={`sj-shell-main flex flex-col flex-1 min-w-0 ${
             desktopSidebarOpen ? "lg:ml-[var(--sidebar-w)]" : "lg:ml-0"
           } ${restored && !resizing ? "transition-all duration-300" : ""}`}
         >
-          <Header
-            onMenuClick={() => setSidebarOpen(true)}
-            onDesktopMenuClick={() =>
-              setDesktopSidebarOpen(!desktopSidebarOpen)
-            }
-            desktopSidebarOpen={desktopSidebarOpen}
-          />
+
 
           {/* Page content */}
           <main
@@ -245,10 +253,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             // tabIndex={-1}: без него переход по «якорю» в части браузеров
             // сдвигает только прокрутку, а фокус остаётся на skip-link.
             tabIndex={-1}
-            className="flex-1 px-4 sm:px-6 lg:px-8 py-4"
+            className="sj-main-content flex-1 min-w-0"
           >
+            <div className="sj-page-breadcrumbs"><NavigationBreadcrumbs /><AmbientBackground /></div>
             {apiGap && <ApiGapNotice gap={apiGap} />}
             {children}
+            <AssistantHomeDock />
           </main>
         </div>
       </div>
