@@ -115,6 +115,10 @@ def visible_events(authority):
     if not authority.has('event.view') and not bound:
         raise PermissionDenied('PERMISSION_DENIED')
     query = OpsSecurityEvent.objects.all()
+    # Q() is Django's empty condition, not Boolean True when OR-combined
+    # with pk__in=[]. A real global grant must return the unrestricted query.
+    if authority.has('event.view') and authority.scope('event.view') is None:
+        return query
     condition = Q(pk__in=bound)
     if authority.has('event.view'):
         condition |= base_event_condition(authority, authority.scope('event.view'))

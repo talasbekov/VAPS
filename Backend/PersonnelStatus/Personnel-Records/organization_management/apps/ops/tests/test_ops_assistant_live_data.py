@@ -176,3 +176,12 @@ def test_legacy_directory_also_rechecks_topology_before_issuing_response(people,
     monkeypatch.setattr(reads,'execute_read',execute)
     response=api.post(URL,{'mode':'answer','message':'Покажи доступных сотрудников','conversationToken':None},format='json')
     assert response.status_code==409
+
+
+def test_global_event_reader_sees_existing_legacy_events_and_detail():
+    first,second=event('GLOBAL-ONE'),event('GLOBAL-TWO')
+    api,_=jwt_actor('live-global-events',('event.view',))
+    result=read(api,'events').json()['readOnly']
+    assert result['count']==2
+    assert {row['id'] for row in result['rows']}=={first.pk,second.pk}
+    assert read(api,'event_detail',eventId=first.pk).status_code==200
