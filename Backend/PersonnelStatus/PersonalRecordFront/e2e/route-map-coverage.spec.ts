@@ -22,6 +22,19 @@ import { expect, test } from "@playwright/test";
 
 import { ROUTES, declaredPortalRoutes } from "./portal-routes";
 import { defaultPortalRoute } from "../entities/portal-access";
+import { navigationFor } from "../components/navigation/navigation-model";
+
+for (const [permissions, capability, expected] of [
+  [[], false, false], [[], true, true], [[], undefined, false],
+  [["personnel.view"], undefined, true], [["personnel.view"], false, false],
+] as [string[], boolean | undefined, boolean][]) {
+  test(`каталог сотрудников в меню: ${permissions.join(',')}/${String(capability)}`, () => {
+    const has = (code: string) => permissions.includes(code);
+    const menu = navigationFor({ permissions: new Set(permissions), roles: [], isLoading: false,
+      error: null, hasPermission: has, hasGlobalPermission: has, serviceEmployeesAccess: capability });
+    expect(menu.common.some(item => item.href === '/service-employees')).toBe(expected);
+  });
+}
 
 test("карта маршрутов покрыта обходом", () => {
   const covered = new Set(
@@ -46,7 +59,7 @@ test("стартовый маршрут следует grants forces, а не н
 
 const employeeReadPermissions = [
   "catalog.view", "document.view", "feedback.create", "feedback.view",
-  "object.view", "status.view",
+  "object.view", "status.view", "status.workspace",
 ];
 
 test("сотрудник с правами чтения начинает со своих назначений", () => {
@@ -64,6 +77,17 @@ test("личный старт не подменяет рабочий экран 
     employeeReadPermissions,
   )).toBe("/statuses");
 });
+
+test("чтение статусов без права рабочего экрана не открывает модуль статусов", () => {
+  const readOnly = employeeReadPermissions.filter(code => code !== "status.workspace");
+  expect(defaultPortalRoute(code => readOnly.includes(code), () => false, readOnly)).toBe("/security-ops/objects");
+});
+
+for (const code of ["duty.roster", "duty.catalog.manage", "duty.combat.manage"]) {
+  test(`отдельное ${code} открывает рабочее место боевых групп`, () => {
+    expect(defaultPortalRoute(permission => permission === code)).toBe("/security-ops/duty-register");
+  });
+}
 
 for (const [permission, route] of [
   ["forces.allocate", "/employees"],

@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useTheme } from 'next-themes';
 import type { Division, StaffUnit, StaffUnitStatistics } from '@/lib/api';
 import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { Button } from '@/components/ui/button';
@@ -41,7 +40,6 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
   const layout = useMemo(() => selectSceneTree(fullLayout.nodes, expandedIds, revealId), [fullLayout, expandedIds, revealId]);
   const access = useOpsPermissions();
   const canReadPeople = !access.isLoading && !access.error && access.permissions !== undefined && access.hasPermission('personnel.view');
-  const { resolvedTheme } = useTheme();
   const host = useRef<HTMLDivElement>(null);
   const actions = useRef<SceneActions | null>(null);
   const selectedRef = useRef<number | null>(null);
@@ -123,7 +121,6 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
         canvas.setAttribute('aria-describedby', 'org-scene-help');
         container.appendChild(canvas);
         const scene = new THREE.Scene();
-        const dark = resolvedTheme === 'dark';
         const camera = new THREE.PerspectiveCamera(45, 1, 0.1, layout.radius * 30);
         const controls = own(new OrbitControls(camera, canvas));
         controls.enableDamping = false;
@@ -132,7 +129,7 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
         controls.minDistance = 3;
         controls.maxDistance = layout.radius * 8;
         controls.maxPolarAngle = Math.PI * 0.86;
-        scene.add(new THREE.HemisphereLight(dark ? 0xb8d8ff : 0xffffff, dark ? 0x18253c : 0x70839a, 2.7));
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x70839a, 2.7));
         const light = new THREE.DirectionalLight(0xffffff, 3);
         light.position.set(20, 45, 30);
         scene.add(light);
@@ -156,28 +153,28 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
           const scale = width / labelWidth;
           context.scale(scale, scale);
           const root = node.kind === 'service';
-          const accent = root ? '#a9dbea' : (dark ? '#9ecfdf' : colors[node.kind]);
-          context.shadowColor = dark ? '#00000060' : '#23456830';
+          const accent = root ? '#a9dbea' : colors[node.kind];
+          context.shadowColor = '#23456830';
           // Canvas shadows are expressed in backing pixels, outside the transform.
           context.shadowBlur = 18 * scale;
           context.shadowOffsetY = 10 * scale;
           const fill = context.createLinearGradient(0, 12, 1040, 492);
-          fill.addColorStop(0, root ? '#284c79' : (dark ? '#24384d' : '#ffffff'));
-          fill.addColorStop(1, root ? '#172c4a' : (dark ? '#1b293c' : '#f5f9fc'));
+          fill.addColorStop(0, root ? '#284c79' : '#ffffff');
+          fill.addColorStop(1, root ? '#172c4a' : '#f5f9fc');
           context.fillStyle = fill;
           context.beginPath();
           context.roundRect(20, 12, 1000, 480, 32);
           context.fill();
           context.shadowBlur = 0;
           context.shadowOffsetY = 0;
-          context.strokeStyle = root ? '#507397' : (dark ? '#43556b' : '#c9dbe5');
+          context.strokeStyle = root ? '#507397' : '#c9dbe5';
           context.lineWidth = 2;
           context.stroke();
           context.save();
           context.clip();
           context.fillStyle = root ? '#6bc7d7' : colors[node.kind];
           context.fillRect(20, 12, 1000, 9);
-          context.fillStyle = root ? '#ffffff0c' : (dark ? '#ffffff06' : colors[node.kind] + '09');
+          context.fillStyle = root ? '#ffffff0c' : colors[node.kind] + '09';
           context.fillRect(20, 21, 1000, 81);
           context.restore();
           context.fillStyle = accent;
@@ -187,7 +184,7 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
           context.font = '500 32px system-ui, sans-serif';
           context.fillText(`#${node.id}`, 974, 74);
           context.textAlign = 'left';
-          context.fillStyle = root || dark ? '#f4f9ff' : '#213b52';
+          context.fillStyle = root ? '#f4f9ff' : '#213b52';
           context.font = `650 ${titleFontSize}px system-ui, sans-serif`;
           const words = node.name.split(/\s+/);
           const lines: string[] = [];
@@ -204,15 +201,15 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
             while (context.measureText(text + (clipped ? '…' : '')).width > 908 && text.length > 1) text = text.slice(0, -1);
             context.fillText(text + (clipped ? '…' : ''), 62, 197 + index * 96);
           });
-          context.fillStyle = root ? '#e3efff' : (dark ? '#d9e5f2' : '#2b5068');
+          context.fillStyle = root ? '#e3efff' : '#2b5068';
           context.font = '700 65px system-ui, sans-serif';
           const employeeCount = node.employees === null ? '—' : count(node.employees);
           context.fillText(employeeCount, 62, 370);
           const employeeWidth = context.measureText(employeeCount).width;
-          context.fillStyle = root ? '#b7cbdf' : (dark ? '#abc0d4' : '#607d91');
+          context.fillStyle = root ? '#b7cbdf' : '#607d91';
           context.font = '46px system-ui, sans-serif';
           context.fillText(node.employees === null ? 'нет сводных данных' : 'сотрудников', 82 + employeeWidth, 368);
-          context.fillStyle = root ? '#ffffff12' : (dark ? '#ffffff08' : colors[node.kind] + '0b');
+          context.fillStyle = root ? '#ffffff12' : colors[node.kind] + '0b';
           context.beginPath();
           context.roundRect(42, 402, 956, 70, 15);
           context.fill();
@@ -272,7 +269,7 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
           curve.add(new THREE.LineCurve3(cornerD, end));
           // Simple lit connectors avoid the PBR renderer's module-global DFG
           // texture, which retains disposed contexts in this Three version.
-          const material = own(new THREE.MeshPhongMaterial({ color: dark ? '#7396b4' : '#7f9db3', shininess: 25 }));
+          const material = own(new THREE.MeshPhongMaterial({ color: '#7f9db3', shininess: 25 }));
           scene.add(new THREE.Mesh(own(new THREE.TubeGeometry(curve, 36, rootBranch ? 0.075 : 0.085, 6, false)), material));
           branches.push({ ...edge, material });
           const port = new THREE.Mesh(own(new THREE.SphereGeometry(0.12, 10, 8)), own(new THREE.MeshPhongMaterial({ color: colors[layout.nodes.find(node => node.id === edge.to)!.kind], shininess: 45 })));
@@ -378,7 +375,7 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
           const ancestry = new Set<number>();
           let current = layout.nodes.find(node => node.id === id);
           while (current && !ancestry.has(current.id)) { ancestry.add(current.id); current = layout.nodes.find(node => node.id === current!.parentId); }
-          for (const branch of branches) branch.material.color.set(ancestry.has(branch.to) || branch.from === id ? '#13a8b7' : (dark ? '#7396b4' : '#7f9db3'));
+          for (const branch of branches) branch.material.color.set(ancestry.has(branch.to) || branch.from === id ? '#13a8b7' : ('#7f9db3'));
           render();
         };
         const rotate = (horizontal: number, vertical: number) => { controls.rotateLeft(horizontal); controls.rotateUp(vertical); controls.update(); };
@@ -466,7 +463,7 @@ export default function OrgScene3D({ stats, staffUnits, divisionTree, onFallback
       }
     })();
     return () => { cancelled = true; stop(); };
-  }, [layout, resolvedTheme]);
+  }, [layout]);
 
   const unassignedNotice = fullLayout.unassignedStaffCount > 0 && (
     <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 text-sm">

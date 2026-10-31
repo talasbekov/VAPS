@@ -83,7 +83,7 @@ export function DutyRecordDialog({ id, scope, allowed, onClose, onEdit, onCopy, 
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={pending} onClick={() => { setOperation(null); setError(''); }}>Назад</Button><Button type="submit" disabled={!ready || pending}>{pending ? 'Сохранение…' : operation === 'cancel' ? 'Подтвердить отмену' : 'Сохранить отметку'}</Button></div>
         </form>}
-        {notice && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
+        {notice && <p role="status" className="text-sm text-emerald-700 ">{notice}</p>}
         <section className="rounded-lg border p-3"><h3 className="font-semibold">История</h3>{!row.history?.length ? <p className="mt-2 text-sm text-muted-foreground">Отдельных отметок истории пока нет.</p> : <ol className="mt-3 space-y-3">{row.history.map((item, index) => <li key={`${item.at}-${index}`} className="min-w-0 text-sm"><p className="font-medium">{item.label}</p><p className="break-words text-xs text-muted-foreground">{dutyDateTime(item.at, row.time_zone)} · {item.actor || 'Автор не указан'}</p>{item.reason && <p className="mt-1 whitespace-pre-wrap break-words">{item.reason}</p>}</li>)}</ol>}</section>
       </div>}
     </DialogContent>

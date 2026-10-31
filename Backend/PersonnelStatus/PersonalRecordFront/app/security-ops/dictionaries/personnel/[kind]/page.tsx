@@ -101,7 +101,7 @@ export default function StaffDictionaryPage() {
     return (
       <DictionariesWorkspace>
         <div className="space-y-4">
-          <PageHeader eyebrow="Система" title="Справочник не найден" />
+          <PageHeader  title="Справочник не найден" />
           <Card>
             <CardContent className="p-6 text-sm text-muted-foreground">
               Такого кадрового справочника нет.{" "}
@@ -119,7 +119,7 @@ export default function StaffDictionaryPage() {
     <DictionariesWorkspace>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Система · Справочники"
+          
           title={meta.label}
           description={meta.description}
         />

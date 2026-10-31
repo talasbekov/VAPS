@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,6 @@ import { NotificationsDropdown } from "@/features/notifications/ui/Notifications
 import { EditProfileDialog } from "@/features/edit-profile";
 import { useAccountProfile } from "@/features/edit-profile/model/use-account-profile";
 import Link from "next/link";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { TopNavigation } from "@/components/navigation/section-navigation";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { AssistantLauncher } from "@/features/assistant-dock/assistant-dock";
@@ -44,11 +43,25 @@ export function Header({
   const accountProfile = useAccountProfile();
   const sectionRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Wrapped tabs change the sticky header's height at narrow widths and zoom.
+  // Map controls and anchor offsets must follow the actual header, not a guess.
+  useEffect(() => {
+    const header = headerRef.current;
+    const shell = header?.closest<HTMLElement>(".sj-shell");
+    if (!header || !shell) return;
+    const measure = () => shell.style.setProperty("--sj-header-height", `${header.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => { observer.disconnect(); shell.style.removeProperty("--sj-header-height"); };
+  }, []);
 
   return (
     // Закрепляется весь navbar: sticky на внутренней строке ограничивался
     // высотой header и уезжал вместе с ним. Отступ задаёт общий shell CSS.
-    <header className="sj-header border-b border-border">
+    <header ref={headerRef} className="sj-header border-b border-border">
       <div className="flex min-h-16 items-center justify-between gap-2 bg-card px-4 py-2 sm:px-6">
         <div className="sj-header-context flex min-w-0 items-center gap-2">
           <Link href="/workspace" className="sj-header-brand" aria-label="Smart Josparlau — Моя работа">
@@ -84,44 +97,14 @@ export function Header({
 
         <TopNavigation />
         <div className="sj-header-tools flex shrink-0 items-center gap-2 ml-auto sm:gap-3">
-          {/* Роль в шапке ОДНА — та, что выдана в разделе. Пустое место
-              вместо неё молчало бы о причине отказов, поэтому у учётки без
-              ролей раздела стоит подпись «Роль не назначена»: человек видит,
-              почему экраны закрыты, и знает, что просить. */}
+          {/* Назначенные роли и подразделение уже показаны под фотографией.
+              Здесь остаётся только предупреждение об отсутствии ролей. */}
           {sectionRole === null && (
             <span className="text-muted-foreground hidden items-center rounded-lg border border-dashed px-3 py-1.5 text-xs lg:inline-flex">
               Роль не назначена
             </span>
           )}
-          {sectionRole && (
-            /* Подпись «Раздел ОМ» нужна: два имени подряд без неё читаются
-               как одна роль с длинным названием. Область печатается там же —
-               «Ответственный за расход департамента» без указания, какого
-               именно, отвечает на вопрос наполовину. Если ролей несколько,
-               показывается первая: шапка не место для списка, а полный
-               состав виден в разделе доступа. */
-            <span
-              className="sj-header-role text-muted-foreground hidden max-w-[22rem] items-center gap-1 text-xs xl:inline-flex"
-              aria-label="Рабочая роль"
-              title={
-                sectionRoles.length > 1
-                  ? `Ролей раздела ${sectionRoles.length}: ${sectionRoles
-                      .map((role) => role.name)
-                      .join(", ")}`
-                  : undefined
-              }
-            >
-              <span className="truncate">{sectionRole.name}</span>
-              {sectionRole.scope_division_name ? (
-                <span>· {sectionRole.scope_division_name}</span>
-              ) : null}
-              {sectionRoles.length > 1 ? (
-                <span>· ещё {sectionRoles.length - 1}</span>
-              ) : null}
-            </span>
-          )}
           <AssistantLauncher />
-          <ThemeToggle />
           <NotificationsDropdown />
 
           <DropdownMenu>
@@ -160,8 +143,8 @@ export function Header({
                       только в атрибуте `title` подписи в шапке: он не
                       открывается ни с клавиатуры, ни касанием, то есть для
                       половины входов состава ролей не существовало вовсе.
-                      Шапка остаётся короткой («· ещё N»), а список —
-                      здесь, где место есть. Область печатается у каждой
+                      Список остаётся здесь и под фотографией в боковой панели.
+                      Область печатается у каждой
                       строки: «Начальник управления» без указания, какого
                       именно, отвечает на вопрос наполовину. */}
                   {sectionRoles.length === 0 ? (

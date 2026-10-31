@@ -17,9 +17,6 @@
 .toolbar button:hover { background: hsl(var(--accent)); }
 .toolbar button:disabled { cursor: default; opacity: .7; }
 .toolbar button:focus-visible, .toolbar a:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-:global(.dark) .backdrop { background: #19251e; }
-:global(.dark) .canvas { filter: brightness(.45) saturate(.55); }
-:global(.dark) .veil { background: rgb(11 17 19 / .5); }
 @keyframes mapDrift { from { transform: translate3d(-2%, -1%, 0) scale(1.035); } to { transform: translate3d(2%, 1.5%, 0) scale(1.075); } }
 @keyframes mapFade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {

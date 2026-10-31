@@ -1267,7 +1267,7 @@ export function DepartmentRequestCard({
             <p
               data-slot="notify-nothing-to-send"
               aria-hidden="true"
-              className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900   "
             >
               По управлениям не разложено ни одного человека:{" "}
               <strong>отправка пока недоступна</strong>.

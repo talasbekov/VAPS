@@ -4,12 +4,12 @@ const APP = process.env.SMOKE_APP ?? 'http://localhost:3352';
 const date = '2026-10-09';
 async function setup(page: Page, capability: boolean | undefined, mode: 'root' | 'department' | 'generic' = 'root', multiple = false) {
   const divisionId = mode === 'root' ? 1 : 2;
-  const state = { capability, contextFail: false, freshnessFail: false, submissionsFail: false, correctPermission: true, reject: false, hold: false, release: () => {}, writes: [] as any[], blocked: [] as string[], summaryTargets: [] as string[], reads: 0, version: 1 };
+  const state = { capability, contextFail: false, freshnessFail: false, submissionsFail: false, correctPermission: true, summaryPermission: true, reject: false, hold: false, release: () => {}, writes: [] as any[], blocked: [] as string[], summaryTargets: [] as string[], reads: 0, version: 1 };
   await page.route('**/api/**', route => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method()) || new URL(route.request().url()).pathname.startsWith('/api/auth/')) return route.fallback();
     state.blocked.push(route.request().url()); return route.fulfill({ status: 403, json: { detail: 'Unmocked write forbidden' } });
   });
-  await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: { permissions: mode === 'generic' ? ['*'] : ['status.view', 'service_summary.view', ...(state.correctPermission ? ['daily_report.correct'] : []), 'forces.allocate'], global_permissions: mode === 'generic' ? ['*'] : [], roles: mode === 'department' ? [{ code: 'DEPARTMENT_EXPENSE_OFFICER', scope_division_id: 2, name: 'Ответственный', scope_division_name: 'Департамент А' }] : [] } }));
+  await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: { permissions: mode === 'generic' ? ['*'] : ['status.view', ...(state.summaryPermission ? ['service_summary.view'] : []), ...(state.correctPermission ? ['daily_report.correct'] : []), 'forces.allocate'], global_permissions: mode === 'generic' ? ['*'] : [], roles: mode === 'department' ? [{ code: 'DEPARTMENT_EXPENSE_OFFICER', scope_division_id: 2, name: 'Ответственный', scope_division_name: 'Департамент А' }] : [] } }));
   await page.route('**/api/operations/service-summary-context/**', route => route.fulfill(state.contextFail ? { status: 503, json: { detail: 'Context unavailable' } } : { json: { root_division_id: 1, root_name: 'Служба', can_generate_root_summary: false } }));
   await page.route('**/api/operations/traffic-light/tree/**', route => route.fulfill({ json: { business_date: date, nodes: [
     { division_id: 1, parent_id: null, name: 'Служба', requires_daily_submission: false },
@@ -150,6 +150,27 @@ test.describe('explicit summary correction', () => {
     const before = state.reads; await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => state.reads).toBeGreaterThan(before);
     await expect(dialog.getByRole('button', { name: 'Создать исправленную версию', exact: true })).toBeDisabled(); expect(state.writes).toEqual([]);
+    await expect(dialog.getByLabel('Причина исправления', { exact: true })).toHaveValue('Департамент пересдал');
+    await expect(dialog.getByLabel('Санкция на исправление', { exact: true })).toHaveValue('Разрешение начальника');
+    state.correctPermission = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+    await expect(dialog.getByRole('button', { name: 'Создать исправленную версию', exact: true })).toBeEnabled();
+    await expect(dialog.getByLabel('Причина исправления', { exact: true })).toHaveValue('Департамент пересдал');
+    await expect(dialog.getByLabel('Санкция на исправление', { exact: true })).toHaveValue('Разрешение начальника');
+    expect(state.writes).toEqual([]); expect(state.blocked).toEqual([]);
+  });
+  test('losing summary read permission discards the correction draft', async ({ page }) => {
+    const state = await setup(page, true); const dialog = await openDraft(page);
+    state.summaryPermission = false;
+    await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+    await expect(page.getByText('Недостаточно прав для просмотра свода по Службе.', { exact: true })).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    state.summaryPermission = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+    await page.getByRole('button', { name: 'Исправить свод', exact: true }).click();
+    await expect(dialog.getByLabel('Причина исправления', { exact: true })).toHaveValue('');
+    await expect(dialog.getByLabel('Санкция на исправление', { exact: true })).toHaveValue('');
+    expect(state.writes).toEqual([]); expect(state.blocked).toEqual([]);
   });
   test('changing the active day does not carry the correction reason into another date', async ({ page }) => {
     await setup(page, true);

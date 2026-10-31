@@ -18,7 +18,7 @@ function HoursComparison({ row, maximum }: { row: SummaryGroup; maximum: number 
       {value.minutes != null && <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div className={`h-full rounded-full ${value.color}`} style={{ width: maximum ? `${100 * value.minutes / maximum}%` : '0%' }} /></div>}
     </div>)}
     {row.unknownPlan > 0 && <p className="text-xs text-muted-foreground">Записей без планового времени: {row.unknownPlan}.</p>}
-    {row.unknownActual > 0 && <p className="text-xs text-amber-700 dark:text-amber-400">Завершённых записей с неполным фактом: {row.unknownActual}.</p>}
+    {row.unknownActual > 0 && <p className="text-xs text-amber-700 ">Завершённых записей с неполным фактом: {row.unknownActual}.</p>}
   </div>;
 }
 

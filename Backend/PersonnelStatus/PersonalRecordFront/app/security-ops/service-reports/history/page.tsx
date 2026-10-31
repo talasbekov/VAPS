@@ -109,9 +109,9 @@ function ReportHistoryScreen() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="История отчётов"
-          description="Работы и артефакты, доступные вам, с параметрами, редакциями и сроком хранения."
+          description="Доступные отчёты, их версии и сроки хранения."
         />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">

@@ -28,22 +28,22 @@ async function signIn(page: Page): Promise<void> {
   })
 }
 
-test('личный старт сотрудника и ссылка бренда ведут к его назначениям', async ({ page }) => {
+test('личный старт сотрудника и ссылка бренда ведут на его рабочий стол', async ({ page }) => {
   test.skip(!LIVE || ROLE_PASSWORD === '', 'нужен живой стенд с ролевыми учётками')
   await page.goto(`${APP}/`)
-  await page.getByPlaceholder('Введите имя пользователя').fill('role_employee')
-  await page.getByPlaceholder('Введите пароль').fill(ROLE_PASSWORD)
+  await page.getByLabel('Имя пользователя').fill('role_employee')
+  await page.getByLabel('Пароль', { exact: true }).fill(ROLE_PASSWORD)
   await page.getByRole('button', { name: 'Войти', exact: true }).click()
-  await expect(page).toHaveURL(`${APP}/security-ops/profile/`, { timeout: 30_000 })
-  await expect(page.getByRole('button', { name: 'Мои назначения', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(`${APP}/workspace/`, { timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: 'Мои задания и дежурства', exact: true })).toBeVisible()
 
   await page.goto(`${APP}/statuses/`)
   const brand = page.getByRole('navigation', { name: 'Хлебные крошки' })
     .getByRole('link', { name: 'Smart Жоспарлау', exact: true })
-  await expect(brand).toHaveAttribute('href', '/security-ops/profile/')
+  await expect(brand).toHaveAttribute('href', '/workspace/')
   await brand.click()
-  await expect(page).toHaveURL(`${APP}/security-ops/profile/`)
-  await expect(page.getByRole('button', { name: 'Мои назначения', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(`${APP}/workspace/`)
+  await expect(page.getByRole('heading', { name: 'Мои задания и дежурства', exact: true })).toBeVisible()
 })
 
 test.describe(LIVE ? 'выход из профиля' : 'выход из профиля (скип: нет SMOKE_LIVE=1)', () => {

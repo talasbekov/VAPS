@@ -703,7 +703,7 @@ export function ReconStage({ event, readOnly = false }: { event: SecurityEvent; 
                           "h-8 rounded-md border px-2.5 text-xs transition-colors " +
                           (item.state === value
                             ? value === "REMARK"
-                              ? "border-amber-600 bg-amber-100 font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                              ? "border-amber-600 bg-amber-100 font-semibold text-amber-900  "
                               : value === "NORMAL"
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-foreground/40 bg-muted font-semibold"

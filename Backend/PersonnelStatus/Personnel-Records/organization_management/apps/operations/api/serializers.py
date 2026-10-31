@@ -526,6 +526,8 @@ class _StatusListSerializer(serializers.ListSerializer):
         warm_event_index(self.context, rows)
         from organization_management.apps.operations.status_destination import destinations_for
         self.context["_ops_destinations"] = destinations_for(rows, event_index=self.context[_EVENT_INDEX_KEY])
+        from organization_management.apps.ops.combat_projection import assignments_for
+        self.context["_combat_assignments"] = assignments_for(rows)
         return super().to_representation(rows)
 
 
@@ -539,6 +541,7 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
 
     state = serializers.SerializerMethodField()
     destination = serializers.SerializerMethodField()
+    combat_assignment = serializers.SerializerMethodField()
     # Мероприятия статуса ЕДУТ НАРУЖУ вместе со строкой (Plane №274): экран
     # правки открывает уже выбранное, и вторым запросом за ними ходить некуда
     # — их немного и они принадлежат этой же строке. С Plane №281 у каждого
@@ -552,6 +555,9 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
         # мероприятием был бы свой запрос, и «один запрос на ответ» держалось
         # бы только на том, что у соседних строк ОМ совпадают.
         warm_event_index(self.context, [instance])
+        if "_combat_assignments" not in self.context:
+            from organization_management.apps.ops.combat_projection import assignments_for
+            self.context["_combat_assignments"] = assignments_for([instance])
         if "_ops_destinations" not in self.context:
             from organization_management.apps.operations.status_destination import destinations_for
             self.context["_ops_destinations"] = destinations_for([instance], event_index=self.context[_EVENT_INDEX_KEY])
@@ -563,6 +569,7 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
             "id", "employee_id", "status_type_code", "date_start", "date_end",
             "state", "source", "source_ref", "comment", "document_basis",
             "destination",
+            "combat_assignment",
             "participations",
             "cancelled_at", "cancelled_by", "cancelled_reason",
             "created_by", "created_at", "updated_at",
@@ -574,6 +581,9 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
 
     def get_destination(self, obj) -> str:
         return self.context["_ops_destinations"].get(obj.pk, "")
+
+    def get_combat_assignment(self, obj):
+        return self.context["_combat_assignments"].get(obj.pk)
 
 
 class SecondmentSerializer(serializers.ModelSerializer):

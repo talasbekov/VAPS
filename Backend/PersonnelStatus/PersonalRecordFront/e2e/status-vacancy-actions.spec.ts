@@ -31,7 +31,7 @@ async function signIn(page: Page, username: string, password: string): Promise<v
 }
 
 async function hydrated(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: /тему|theme/i }).first()).toBeEnabled({
+  await expect(page.locator('.sj-shell')).toHaveAttribute('style', /--sj-header-height:/, {
     timeout: 20_000,
   })
 }

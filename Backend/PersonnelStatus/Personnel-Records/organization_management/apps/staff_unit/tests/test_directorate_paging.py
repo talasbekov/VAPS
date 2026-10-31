@@ -246,12 +246,14 @@ def test_summary_counts_the_whole_selection_not_the_page(actor, scene):
             start_date=today - timedelta(days=30), end_date=today - timedelta(days=2),
             state=EmployeeStatus.StatusState.ACTIVE,
         ),
-        EmployeeStatus(
-            employee=people[1], status_type="business_trip",
-            start_date=today + timedelta(days=5), end_date=today + timedelta(days=9),
-            state=EmployeeStatus.StatusState.ACTIVE,
-        ),
     ])
+    EmployeeStatus.objects.create(
+        employee=people[1], status_type="in_service", start_date=today,
+    )
+    EmployeeStatus.objects.create(
+        employee=people[1], status_type="business_trip",
+        start_date=today + timedelta(days=5), end_date=today + timedelta(days=9),
+    )
 
     payload = ask(actor, "?with_summary=1&page=1&page_size=2")
 
@@ -262,6 +264,81 @@ def test_summary_counts_the_whole_selection_not_the_page(actor, scene):
         "overdue": 1,
         "scheduled": 1,
     }
+
+
+def test_summary_counts_saved_future_plan_with_current_status(actor, scene):
+    """Normal save makes future statuses planned; the current status must not hide them."""
+    today = timezone.localdate()
+    employee = scene["people"][0]
+    current = EmployeeStatus.objects.create(
+        employee=employee, status_type="in_service", start_date=today,
+    )
+    future = EmployeeStatus.objects.create(
+        employee=employee, status_type="vacation",
+        start_date=today + timedelta(days=15), end_date=today + timedelta(days=19),
+    )
+    assert current.state == EmployeeStatus.StatusState.ACTIVE
+    assert future.state == EmployeeStatus.StatusState.PLANNED
+
+    payload = ask(actor, "?with_summary=1&page=1&page_size=1")
+
+    assert payload["summary"]["scheduled"] == 1
+    assert payload["summary"]["employees"] == 12
+    assert payload["total_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "offset,state,expected",
+    [(1, None, 1), (90, None, 1), (0, "planned", 0), (-2, "planned", 0),
+     (2, "cancelled", 0), (2, "completed", 0)],
+)
+def test_scheduled_summary_counts_only_future_pending_plans(actor, scene, offset, state, expected):
+    today = timezone.localdate()
+    employee = scene["people"][0]
+    EmployeeStatus.objects.create(employee=employee, status_type="in_service", start_date=today)
+    fields = {"state": state} if state is not None else {}
+    EmployeeStatus.objects.create(
+        employee=employee, status_type="vacation",
+        start_date=today + timedelta(days=offset),
+        end_date=today + timedelta(days=offset + 2), **fields,
+    )
+
+    assert ask(actor, "?with_summary=1")["summary"]["scheduled"] == expected
+
+
+def test_scheduled_summary_counts_an_employee_once_for_multiple_plans(actor, scene):
+    today = timezone.localdate()
+    employee = scene["people"][0]
+    EmployeeStatus.objects.create(employee=employee, status_type="in_service", start_date=today)
+    for offset in (3, 12):
+        EmployeeStatus.objects.create(
+            employee=employee, status_type="vacation",
+            start_date=today + timedelta(days=offset),
+            end_date=today + timedelta(days=offset + 2),
+        )
+
+    assert ask(actor, "?with_summary=1")["summary"]["scheduled"] == 1
+
+
+def test_scheduled_summary_preserves_division_search_and_current_status_filters(actor, scene):
+    today = timezone.localdate()
+    for employee in (scene["people"][0], scene["people"][8]):
+        EmployeeStatus.objects.create(employee=employee, status_type="in_service", start_date=today)
+        EmployeeStatus.objects.create(
+            employee=employee, status_type="vacation",
+            start_date=today + timedelta(days=3), end_date=today + timedelta(days=5),
+        )
+
+    scoped = ask(actor, f"?with_summary=1&division_id={scene['first'].pk}&status=in_service")
+    searched = ask(actor, "?with_summary=1&search=Фамилия09")
+    excluded = ask(actor, "?with_summary=1&status=vacation")
+
+    assert scoped["summary"]["scheduled"] == 1
+    assert scoped["summary"]["employees"] == 1
+    assert searched["summary"]["scheduled"] == 1
+    assert searched["summary"]["employees"] == 1
+    assert excluded["summary"]["scheduled"] == 0
+    assert excluded["summary"]["employees"] == 0
 
 
 def test_summary_is_not_sent_unless_asked(actor, scene):

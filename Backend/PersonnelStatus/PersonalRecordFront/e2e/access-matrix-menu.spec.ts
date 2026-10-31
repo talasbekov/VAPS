@@ -101,11 +101,13 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
       // Сначала — что меню ВООБЩЕ отрисовалось: ассерт «пункта нет» на пустой
       // странице зелен всегда и не значит ничего.
       await expect(menu.getByRole('link', { name: 'Мой профиль' })).toBeVisible()
+      const allSections = menu.locator('summary').filter({ hasText: 'Все разделы' })
+      if (await allSections.count()) await allSections.click()
 
       for (const item of GATED) {
         // The headquarters workspace names the same forces module
         // "Распределения" (sidebar.tsx); its access requirement is unchanged.
-        const name = username === 'acc_ops_staff' && item === 'Сбор сил на ОМ' ? 'Распределения' : item
+        const name = item === 'Ежедневный отчет' ? 'Расход и кадровые отчёты' : item
         const link = menu.getByRole('link', { name, exact: true })
         if (visible.includes(item)) {
           await expect(link, `${username}: «${item}» заказчик оставил открытым`).toBeVisible()

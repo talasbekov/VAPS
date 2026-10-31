@@ -13,7 +13,17 @@
  */
 import { expect, test } from '@playwright/test'
 
-import { auditChanges } from '../entities/audit-log'
+import { auditChanges, auditActionLabel, auditEntityLabel, isKnownAuditAction } from '../entities/audit-log'
+
+test('daily combat audit actions and entities have readable labels', () => {
+  for (const code of ['COMBAT_CATALOG_UPDATED', 'COMBAT_GROUP_FORMED', 'COMBAT_GROUP_REVIEWED', 'COMBAT_MEMBER_REPLACED',
+    'COMBAT_GROUP_CANCELLED', 'COMBAT_GROUP_ACKNOWLEDGED', 'COMBAT_GROUP_CHECKED_IN', 'COMBAT_GROUP_HANDED_OVER', 'COMBAT_GROUP_COMPLETED']) {
+    expect(isKnownAuditAction(code), code).toBe(true)
+    expect(auditActionLabel(code)).toMatch(/[А-Яа-я]/)
+  }
+  expect(auditEntityLabel('combat_duty_shift')).toBe('Смена боевой группы')
+  expect(auditEntityLabel('combat_catalog')).toBe('Справочник боевого дежурства')
+})
 
 test.describe('журнал действий: подписи записи старшего объекта', () => {
   test('все шесть ключей пейлоада подписаны, а не печатаются сырыми', () => {

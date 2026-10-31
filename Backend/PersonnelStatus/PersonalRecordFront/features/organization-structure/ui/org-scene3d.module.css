@@ -12,7 +12,6 @@
 .scenePage button:hover { background: #eaf4f8; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 250px; border-top: 1px solid hsl(var(--border)); }
 .viewport { position: relative; min-width: 0; height: 640px; background-color: #f0f5f9; background-image: radial-gradient(ellipse at 50% 20%, #ffffffb8, #ffffff00 75%), radial-gradient(#97b3c440 .8px, transparent .8px); background-size: auto, 20px 20px; box-shadow: inset 0 1px 12px #284b6c06; }
-:global(.dark) .viewport { background-color: #142234; background-image: radial-gradient(ellipse at 50% 20%, #29445b80, #29445b00 75%), radial-gradient(#91afc326 .8px, transparent .8px); }
 .canvasHost { width: 100%; height: 100%; }
 .canvasHost canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 .canvasHost canvas:active { cursor: grabbing; }
@@ -20,7 +19,7 @@
 .sceneCaption { position: absolute; top: 21px; left: 23px; pointer-events: none; color: #537287; }
 .sceneCaption span { display: flex; align-items: center; gap: 7px; font-size: 9px; letter-spacing: 1.6px; font-weight: 700; }
 .sceneCaption i { width: 6px; height: 6px; border-radius: 50%; background: #178d99; box-shadow: 0 0 0 3px #178d9912; }
-.sceneCaption p { font-size: 11px; margin-top: 6px; color: #71899b; }
+.sceneCaption p { font-size: 11px; margin-top: 6px; color: hsl(var(--table-head-ink)); }
 .buttons { position: absolute; bottom: 19px; left: 22px; display: flex; align-items: center; padding: 5px; gap: 2px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card) / .96); box-shadow: 0 5px 16px #243e4810; }
 .buttons button { width: 36px; min-width: 36px; height: 36px; padding: 0; border-radius: 8px; color: #426780; }
 .buttons button:hover { background: #eaf3f8; }
@@ -63,12 +62,6 @@
 .emptyDetails > svg { color: #487e9b; margin-bottom: 11px; }
 .help { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 7px; padding: 13px 24px; border-top: 1px solid hsl(var(--border)); font-size: 10px; color: hsl(var(--muted-foreground)); line-height: 1.7; }
 .help span { color: hsl(var(--muted-foreground)); }
-:global(.dark) .liveBadge, :global(.dark) .searchLabel small, :global(.dark) .scenePage button { color: #a8d5e2; background: #20384a; border-color: #385365; }
-:global(.dark) .unitList button[aria-pressed="true"] { background: #203a4e; border-color: #395e76; color: #d5edfa; }
-:global(.dark) .sceneCaption, :global(.dark) .legend span, :global(.dark) .buttons button { color: #aec8da; }
-:global(.dark) .sceneCaption p { color: #96b1c7; }
-:global(.dark) .detailKind, :global(.dark) .details a { color: #84cbdc; }
-:global(.dark) .buttons button:hover { background: #284257; }
 @media (max-width: 1100px) { .workspace { grid-template-columns: minmax(0, 1fr) 220px; } .legend { bottom: 79px; } }
 @media (max-width: 760px) {
   .toolbar { padding: 18px 17px 12px; } .toolbar strong { font-size: 17px; } .liveBadge { display: none; }

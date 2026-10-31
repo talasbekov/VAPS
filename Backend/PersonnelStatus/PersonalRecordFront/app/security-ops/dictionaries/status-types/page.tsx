@@ -66,9 +66,9 @@ export default function StatusTypesDictionaryPage() {
     <DictionariesWorkspace>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Система · Справочники"
+          
           title="Типы статусов сотрудников"
-          description="Каталог статусов раздела ОМ: приоритет, колонка суточного расхода и правила конфликтов"
+          description="Приоритеты статусов, колонки расхода и правила конфликтов."
           actions={
             <Link
               href="/security-ops/dictionaries"

@@ -968,11 +968,11 @@ export function ForceCollectionCard({
         </div>
         <div className="min-w-0">
           <dt className="text-muted-foreground text-xs">Собрано</dt>
-          <dd className="mt-1 text-xl font-semibold tabular-nums text-green-700 dark:text-green-400">{data.gathered}</dd>
+          <dd className="mt-1 text-xl font-semibold tabular-nums text-green-700 ">{data.gathered}</dd>
         </div>
         <div className="min-w-0">
           <dt className="text-muted-foreground text-xs">Осталось собрать</dt>
-          <dd className={`mt-1 text-xl font-semibold tabular-nums ${data.remaining > 0 ? "text-primary-ink" : "text-green-700 dark:text-green-400"}`}>
+          <dd className={`mt-1 text-xl font-semibold tabular-nums ${data.remaining > 0 ? "text-primary-ink" : "text-green-700 "}`}>
             {data.remaining}
           </dd>
         </div>

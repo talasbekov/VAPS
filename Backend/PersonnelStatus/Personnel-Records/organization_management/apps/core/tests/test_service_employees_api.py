@@ -18,6 +18,20 @@ pytestmark = pytest.mark.django_db
 URL = '/api/core/service-employees/'
 
 
+@pytest.mark.parametrize('kind,expected', [('unlinked',False),('own',True),('inactive',False),('fired',False),('reader',True)])
+def test_my_permissions_publishes_the_actual_directory_capability(kind, expected):
+    api, user = client_for('directory-capability-'+kind, 'DIRECTORY-CAP-'+kind,
+                           ['personnel.view'] if kind == 'reader' else [])
+    if kind in {'own','inactive','fired'}:
+        Employee.objects.create(personnel_number='dir-cap-'+kind, last_name='Проверка',
+            user=user, is_active=kind != 'inactive',
+            employment_status=Employee.EmploymentStatus.FIRED if kind == 'fired' else Employee.EmploymentStatus.WORKING)
+    response = api.get('/api/operations/my-permissions/')
+    assert response.status_code == 200
+    assert response.json()['service_employees_access'] is expected
+    assert (api.get(URL).status_code == 200) is expected
+
+
 @pytest.fixture
 def people():
     StatusType.objects.get_or_create(code='IN_SERVICE', defaults={

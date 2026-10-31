@@ -12,6 +12,8 @@ import { PerformanceProfiler } from "@/components/profiler";
 import { ApiGapNotice } from "@/components/api-gap-notice";
 import { findApiGap } from "@/lib/api-gaps";
 import "./shell-visual.css";
+import "./content-ui.css";
+import { ContentUiScope } from "./content-ui-scope";
 import { NavigationBreadcrumbs } from "@/components/navigation/section-navigation";
 import { AmbientBackground } from "@/features/ambient-background/ui/AmbientBackground";
 
@@ -248,18 +250,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
 
           {/* Page content */}
+          <ContentUiScope.Provider value={true}>
           <main
             id="main-content"
             // tabIndex={-1}: без него переход по «якорю» в части браузеров
             // сдвигает только прокрутку, а фокус остаётся на skip-link.
             tabIndex={-1}
-            className="sj-main-content flex-1 min-w-0"
+            className="sj-main-content sj-content-ui flex-1 min-w-0"
           >
             <div className="sj-page-breadcrumbs"><NavigationBreadcrumbs /><AmbientBackground /></div>
             {apiGap && <ApiGapNotice gap={apiGap} />}
             {children}
             <AssistantHomeDock />
           </main>
+          </ContentUiScope.Provider>
         </div>
       </div>
     </PerformanceProfiler>

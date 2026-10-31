@@ -7,7 +7,8 @@ async function prepare(page: Page, allowDateChanges = false) {
   const api = page.context().request
   const csrf = await (await api.get(`${APP}/api/auth/csrf/`)).json()
   const response = await api.post(`${APP}/api/auth/callback/credentials/`, { form: {
-    csrfToken: csrf.csrfToken, username: process.env.SMOKE_USER ?? 'acc_forces_officer', password: process.env.SMOKE_PASSWORD ?? process.env.ACCESS_MATRIX_PASSWORD ?? '', json: 'true',
+    csrfToken: csrf.csrfToken, username: process.env.SMOKE_USER ?? 'acc_forces_officer',
+    password: (process.env.SMOKE_USER ? process.env.SMOKE_PASSWORD : process.env.ACCESS_MATRIX_PASSWORD) ?? process.env.SMOKE_PASSWORD ?? '', json: 'true',
   } })
   expect((await response.json()).url).not.toContain('error=')
   // Deterministic hierarchy fixture: department's own staff + directorate + section.
@@ -269,8 +270,12 @@ test.describe('ежедневный расход ответственного', 
     // Dashboard shell animates its desktop margin for 300ms after breakpoint changes.
     await expect.poll(() => screen.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.screenshot({ path: path.join('/tmp', '1090-task2-responsible-daily-mobile.png'), fullPage: true })
-    await page.getByRole('button', { name: 'Переключить на тёмную тему' }).click()
-    await expect(page.locator('html')).toHaveClass(/dark/)
-    await page.screenshot({ path: path.join('/tmp', '1090-task2-responsible-daily-dark.png'), fullPage: true, animations: 'disabled' })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.evaluate(() => localStorage.setItem('theme', 'dark'))
+    await page.reload()
+    await expect(page.locator('html')).not.toHaveClass(/dark/)
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'light')
+    await expect(screen.getByLabel('Расход на дату')).toBeVisible()
+    await page.screenshot({ path: path.join('/tmp', '1090-task2-responsible-daily-light-system-dark.png'), fullPage: true, animations: 'disabled' })
   })
 })

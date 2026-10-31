@@ -8,6 +8,7 @@ export type NavigationSection = { id: NavigationSectionId; title: string; items:
 type Access = {
   permissions: ReadonlySet<string> | undefined; isLoading: boolean; error: unknown;
   roles: readonly { code: string }[];
+  serviceEmployeesAccess?: boolean;
   hasPermission(code: string): boolean;
   hasGlobalPermission(code: string): boolean;
 };
@@ -66,6 +67,7 @@ export function navigationFor(access: Access) {
   const can = (code: string) => code === 'admin.roles' ? access.hasGlobalPermission(code) : access.hasPermission(code);
   const open = (href: string) => moduleOpenFor(href.split('?')[0], can, code => access.roles.some(role => role.code === code));
   const filter = (items: NavigationItem[]) => items.flatMap(item => {
+    if (item.href === '/service-employees' && !(access.serviceEmployeesAccess ?? can('personnel.view'))) return [];
     const href = [item.href, ...(item.alternatives ?? [])].find(open);
     if (!href) return [];
     if (href === '/employees?view=daily' && !can('status.view')) return [];

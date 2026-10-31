@@ -304,7 +304,7 @@ export function DaySubmissionPanel({
         )}
 
         {!isLoading && !isError && current !== null && (
-          <div className="flex flex-col gap-1 rounded-md bg-emerald-100 p-3 text-sm text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <div className="flex flex-col gap-1 rounded-md bg-emerald-100 p-3 text-sm text-emerald-900  ">
             {/* Состояние названо словами — цвет никогда не единственный сигнал. */}
             <span className="font-medium">
               День сдан: v{current.version} · {submissionEventLabel(current)}
@@ -357,7 +357,7 @@ export function DaySubmissionPanel({
         {amendFailure !== null && amendFailure.kind !== "silent" && (
           <div
             role="alert"
-            className="flex flex-col gap-1 rounded-md bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200"
+            className="flex flex-col gap-1 rounded-md bg-red-100 p-3 text-sm text-red-800  "
           >
             <span className="font-medium">{amendFailure.message}</span>
             {amendValidationDetails.length > 0 && (
@@ -384,7 +384,7 @@ export function DaySubmissionPanel({
                     {formatIsoDateTime(version.submitted_at)} · {version.submitted_by}
                   </span>
                   {version.is_current && (
-                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900  ">
                       действующая
                     </span>
                   )}
@@ -410,7 +410,7 @@ export function DaySubmissionPanel({
         {blockedReason !== null && !confirming && (
           <p
             role="alert"
-            className="rounded-md bg-amber-100 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            className="rounded-md bg-amber-100 p-3 text-sm text-amber-800  "
           >
             {blockedReason}
           </p>
@@ -460,7 +460,7 @@ export function DaySubmissionPanel({
         {failure !== null && failure.kind !== "silent" && (
           <div
             role="alert"
-            className="flex flex-col gap-1 rounded-md bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200"
+            className="flex flex-col gap-1 rounded-md bg-red-100 p-3 text-sm text-red-800  "
           >
             <span className="font-medium">{failure.message}</span>
             {failure.allowed !== undefined && (
@@ -481,7 +481,7 @@ export function DaySubmissionPanel({
         {localDrift.length > 0 && current !== null && (
           <div
             role="alert"
-            className="flex flex-col gap-1 rounded-md bg-amber-100 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            className="flex flex-col gap-1 rounded-md bg-amber-100 p-3 text-sm text-amber-800  "
           >
             <span className="font-medium">Расход разошёлся с тем, что сдано</span>
             <ul className="list-disc pl-5">

@@ -27,12 +27,12 @@ const humanDate = (date: string) => new Date(date + "T12:00:00")
 const keyOf = (id: string, date: string) => id + "|" + date;
 function statusTone(code: string) {
   if (code === "IN_SERVICE") return "text-muted-foreground";
-  if (code === "DUTY" || code === "GEV" || code.startsWith("DUTY_")) return "bg-blue-50/70 text-blue-900 dark:bg-blue-950/35 dark:text-blue-200";
-  if (code === "REST_AFTER_DUTY") return "bg-sky-50/70 text-sky-900 dark:bg-sky-950/30 dark:text-sky-200";
-  if (["IN_EVENT", "EVENT_ASSIGNMENT", "EVENT_ASSIGNMENT_GROUP"].includes(code)) return "bg-violet-50/70 text-violet-900 dark:bg-violet-950/35 dark:text-violet-200";
-  if (code === "SICK_LEAVE") return "bg-rose-50/60 text-rose-900 dark:bg-rose-950/30 dark:text-rose-200";
-  if (code === "COMMAND") return "bg-slate-100/70 text-slate-800 dark:bg-slate-800/40 dark:text-slate-200";
-  return "bg-amber-50/70 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200";
+  if (code === "DUTY" || code === "GEV" || code.startsWith("DUTY_")) return "bg-blue-50/70 text-blue-900  ";
+  if (code === "REST_AFTER_DUTY") return "bg-sky-50/70 text-sky-900  ";
+  if (["IN_EVENT", "EVENT_ASSIGNMENT", "EVENT_ASSIGNMENT_GROUP"].includes(code)) return "bg-violet-50/70 text-violet-900  ";
+  if (code === "SICK_LEAVE") return "bg-rose-50/60 text-rose-900  ";
+  if (code === "COMMAND") return "bg-slate-100/70 text-slate-800  ";
+  return "bg-amber-50/70 text-amber-900  ";
 }
 
 export function StatusMatrix({ month, divisionId = null, search = "", selectedDate, onSelectDate }: Props) {

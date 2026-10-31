@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.db.models import F, OuterRef, Q, Subquery
+from django.db.models import Exists, F, OuterRef, Q, Subquery
 from django.db.models.query import Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -1044,16 +1044,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # раздела к сводке статусов отношения не имеет — тащить ради неё
         # зависимость от `operations` значило бы связать слои без нужды.
         today = timezone.localdate()
+        future_plans = EmployeeStatus.objects.filter(
+            employee_id=OuterRef('employee_id'),
+            state=EmployeeStatus.StatusState.PLANNED,
+            start_date__gt=today,
+        )
         rows = queryset.filter(employee__isnull=False).annotate(
             current_end=Subquery(active.values('end_date')[:1]),
-            current_start=Subquery(active.values('start_date')[:1]),
+            has_future_plan=Exists(future_plans),
             current_type=Subquery(active.values('status_type')[:1]),
         )
         return {
             'employees': rows.count(),
             'without_status': rows.filter(current_type__isnull=True).count(),
             'overdue': rows.filter(current_end__lt=today).count(),
-            'scheduled': rows.filter(current_start__gt=today).count(),
+            'scheduled': rows.filter(has_future_plan=True).values('employee_id').distinct().count(),
         }
 
     def _directorate_page(self, request):

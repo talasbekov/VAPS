@@ -284,10 +284,10 @@ function ReturnedRemarksPanel({
   const open = remarks.filter(remarkIsOpen).length;
   return (
     <section
-      className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30"
+      className="rounded-md border border-amber-200 bg-amber-50/60  "
       aria-label="Замечания согласования"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-amber-200 px-3 py-2 dark:border-amber-900">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-amber-200 px-3 py-2 ">
         <p className="text-xs font-semibold">Замечания согласования</p>
         <p className="text-[11px] text-muted-foreground">
           {open === 0
@@ -296,7 +296,7 @@ function ReturnedRemarksPanel({
           · клик по замечанию подсветит пост
         </p>
       </div>
-      <ul className="divide-y divide-amber-200 dark:divide-amber-900">
+      <ul className="divide-y divide-amber-200 ">
         {remarks.map((remark) => {
           // 🔴 ОТВЯЗАННОЕ ЗАМЕЧАНИЕ — НЕ «ОБЩЕЕ» (Plane №510, найдено ревью
           // №825). При снятии поста замечание отвязывается от него, но имя
@@ -334,7 +334,7 @@ function ReturnedRemarksPanel({
               ) : (
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-amber-900/40"
+                  className="w-full px-3 py-2 text-left hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring "
                   onClick={() => onPickPost(post.id)}
                 >
                   <span className="block">{remark.text}</span>
@@ -1179,7 +1179,7 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
             выше, — второй счёт разошёлся бы с ней на глазах. Нечего сказать —
             плашки НЕТ: постоянная плашка перестаёт читаться. */}
         {placementWarning !== null && (
-          <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+          <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900   ">
             <span aria-hidden className="font-extrabold">
               ℹ
             </span>
@@ -1200,7 +1200,7 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                 : `У объекта «${scope.visit.objectName}» постов нет — расчёт формируется на этапе рекогносцировки.`}
           </p>
         ) : (
-          <div className={mapOpened ? "grid min-w-0 content-start gap-3 xl:max-h-[900px] xl:overflow-y-auto xl:pr-1" : "grid gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]"}>
+          <div className={mapOpened ? "grid min-w-0 content-start gap-3 xl:max-h-[900px] xl:overflow-y-auto xl:pr-1" : "grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]"}>
             {/* Имя ОБЛАСТИ, а не только видимая подпись: подпись теперь
                 называет объект («Посты объекта «Мейрам»»), и указывать на
                 дерево текстом стало нельзя — проба ловила его по строке
@@ -1443,10 +1443,10 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
                 </p>
                 {remarksOfPost(selected.id).length > 0 && (
                   <div
-                    className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/40"
+                    className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2  "
                     data-slot="post-remarks"
                   >
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ">
                       Замечания по посту
                     </p>
                     <ul className="flex flex-col gap-1">
@@ -2125,7 +2125,7 @@ function PlacementBoard({ event, showMap, readOnly }: { event: SecurityEvent; sh
               </DialogDescription>
             </DialogHeader>
             {autoFillMessage !== null && (
-              <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950   ">
                 {autoFillMessage}
               </p>
             )}

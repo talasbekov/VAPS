@@ -59,7 +59,7 @@ export default function RatingAnalyticsPage() {
         <PageHeader
           eyebrow="Оценка и отчётность"
           title="Аналитика рейтинга"
-          description="Только агрегированные значения. Отдельные оценки, оценщики и комментарии в отчёт не входят и с сервера не запрашиваются."
+          description="Сводные значения без отдельных оценок, оценщиков и комментариев."
         />
 
         <AnalyticsNavigation current="rating" />

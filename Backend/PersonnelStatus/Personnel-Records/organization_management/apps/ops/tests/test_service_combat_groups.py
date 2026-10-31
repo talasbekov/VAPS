@@ -284,6 +284,13 @@ def test_submit_api_ignores_forged_division_id_and_freezes_actor_identity(branch
         "reserveEmployeeNames": [], "submittedByUnitName": foreign.name,
         "submittedByDivisionId": foreign.pk,
     }, format="json")
+    if not staffed_actor:
+        # A scoped writer without an employee identity cannot establish an owner
+        # for a name-only legacy roster. New groups use explicit authorised IDs.
+        assert response.status_code == 403, response.data
+        shift.refresh_from_db()
+        assert shift.submission is None
+        return
     assert response.status_code == 200, response.data
     assert response.json()["submission"]["submittedByDivisionId"] == (own.pk if staffed_actor else None)
     assert response.json()["submission"]["submittedByUnitName"] == (own.name if staffed_actor else "")

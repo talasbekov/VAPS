@@ -1583,5 +1583,31 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path, 
     assert retry["reused"] is True
     assert len(events(action=audit_service.SECURITY_OBJECT_CATALOG_IMPORTED)) == 1
 
+    # Daily combat groups exercise every declared action through real services.
+    from organization_management.apps.operations.tests.test_bulk_status_api import client_for as combat_client
+    from organization_management.apps.ops import combat_catalogs, combat_planning, combat_lifecycle
+    combat_home = Division.objects.create(name="Audit combat department", division_type="department")
+    _, combat_user = combat_client("combat-audit-head", "COMBAT_AUDIT_HEAD", ["duty.view", "duty.roster", "duty.manage", "duty.catalog.manage"], combat_home.pk)
+    _, combat_member_user = combat_client("combat-audit-member", "COMBAT_AUDIT_MEMBER", [])
+    combat_actor = str(combat_user.pk)
+    combat_people = [employee_in(combat_home) for _ in range(3)]
+    for person, user in [(combat_people[0], combat_user), (combat_people[2], combat_member_user)]:
+        person.user = user
+        person.save(update_fields=["user"])
+    group = combat_catalogs.save(combat_actor, "groups", {"divisionId": combat_home.pk, "name": "Audit group", "maxMembers": 2})
+    kind = combat_catalogs.save(combat_actor, "types", {"divisionId": combat_home.pk, "name": "Audit day", "code": "AUDIT_DAY", "shiftKind": "DAY"})
+    composition = {"businessDate": TODAY.isoformat(), "groupId": group["id"], "dutyTypeId": kind["id"], "members": [{"employeeId": p.pk, "isLeader": i == 0} for i, p in enumerate(combat_people[:2])], "location": {"kind": "POINT", "latitude": 51.13, "longitude": 71.43}}
+    formed = combat_planning.form(combat_actor, composition)
+    combat_lifecycle.perform(combat_actor, formed.pk, "review", {"decision": "RETURN", "reason": "Audit return"})
+    combat_lifecycle.perform(combat_actor, formed.pk, "resubmit", composition)
+    combat_lifecycle.perform(combat_actor, formed.pk, "review", {"decision": "ACCEPT"})
+    combat_lifecycle.perform(combat_actor, formed.pk, "replace", {"outgoingEmployeeId": combat_people[1].pk, "incomingEmployeeId": combat_people[2].pk, "reason": "Audit replacement"})
+    combat_lifecycle.perform(combat_actor, formed.pk, "acknowledge", {}, user_id=combat_user.pk)
+    combat_lifecycle.perform(str(combat_member_user.pk), formed.pk, "acknowledge", {}, user_id=combat_member_user.pk)
+    combat_lifecycle.perform(combat_actor, formed.pk, "check_in", {}, user_id=combat_user.pk)
+    combat_lifecycle.perform(combat_actor, formed.pk, "handover", {"remarks": "Audit handover"}, user_id=combat_user.pk)
+    combat_lifecycle.perform(combat_actor, formed.pk, "complete", {"actualMemberIds": [combat_people[0].pk, combat_people[2].pk]}, user_id=combat_user.pk)
+    cancellable = combat_planning.form(combat_actor, {**composition, "businessDate": (TODAY + timedelta(days=1)).isoformat()})
+    combat_lifecycle.perform(combat_actor, cancellable.pk, "cancel", {"reason": "Audit cancellation"})
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

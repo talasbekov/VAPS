@@ -11,14 +11,19 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { confirmInDialog } from './dialog'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { nativeCombatSmokeDatabase } from './native-combat-smoke'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 /** Роль пробы заведена спекой ролей; здесь она только выдаётся и снимается —
  * своя роль нужна, чтобы проба не трогала настоящие назначения стенда. */
-const PROBE_ROLE = 'E2E_PROBE_ROLE'
+const PROBE_ROLE = 'E2E_USER_' + randomUUID()
+let createdRole = false
+let roleHeaders: Record<string,string> = {}
 
 async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
@@ -32,8 +37,14 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
 
 test.describe(LIVE ? 'пользователи в настройках' : 'пользователи в настройках (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.afterEach(async ({ page }) => {
+    if (!createdRole) return
+    const cleanup = await page.request.patch(`${APP}/api/operations/roles/${PROBE_ROLE}/`, { headers: roleHeaders, data: { is_active: false } })
+    expect(cleanup.status(), 'Deactivate only this scenario\'s UUID role').toBe(200)
+  })
 
   test('поиск сужает реестр, роль выдаётся с областью и снимается', async ({ page }) => {
+    if(new URL(API).port === '8312' || new URL(APP).port === '3318') expect(nativeCombatSmokeDatabase(API,APP)).toBe('sj_combat_smoke')
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
@@ -41,13 +52,19 @@ test.describe(LIVE ? 'пользователи в настройках' : 'по�
     })
 
     await signIn(page)
+    const session = await (await page.request.get(`${APP}/api/auth/session/`)).json()
+    expect(typeof session.user?.accessToken).toBe('string')
+    roleHeaders = { Authorization: `Bearer ${session.user.accessToken}` }
 
     // Роль пробы заводится через API, а не экраном: этот экран про раздачу
     // ролей, и заведение здесь было бы чужой проверкой.
-    await page.request.post(`${APP}/api/operations/roles/`, {
-      data: { code: PROBE_ROLE, name: 'Роль пробы' },
+    const created = await page.request.post(`${APP}/api/operations/roles/`, {
+      headers: roleHeaders,
+      data: { code: PROBE_ROLE, name: 'Роль пробы ' + PROBE_ROLE },
       failOnStatusCode: false,
     })
+    expect(created.status()).toBe(201)
+    createdRole = true
 
     await page.goto(`${APP}/settings/users/`)
     await expect(page.getByRole('heading', { name: 'Пользователи', exact: true })).toBeVisible()
@@ -93,7 +110,8 @@ test.describe(LIVE ? 'пользователи в настройках' : 'по�
     // нечем, и экран молча предлагал бы одну строку.
     const scopeOptions = page.getByLabel('Область', { exact: true }).locator('option')
     await expect.poll(async () => scopeOptions.count()).toBeGreaterThan(1)
-    // Область по умолчанию — «вся служба»: подпись должна прийти словами,
+    await page.getByLabel('Область', { exact: true }).selectOption({ label: 'Вся служба' })
+    // Область выбрана явно — «вся служба»: подпись должна прийти словами,
     // числового id области на экране быть не должно.
     await page.getByRole('button', { name: 'Выдать' }).click()
     await expect(probeRow).toHaveCount(1)

@@ -64,9 +64,6 @@
 .pickerChoice:hover, .pickerChoice:focus-visible { background: hsl(var(--accent)); outline: 2px solid hsl(var(--ring)); }
 .back, .eyebrow, .header p:not(.eyebrow), .version, .toolbar > span, .hint, .sectionHeader h2 span { color: hsl(var(--muted-foreground)); }
 .notice { background: hsl(var(--muted)); border-color: hsl(var(--border)); }
-:global(.dark) .error { background: #3a2421; color: #fec3b7; border-color: #825145; }
-:global(.dark) .shared { background: #3c321c; color: #efcc8b; }
-:global(.dark) .success { background: #163323; color: #9fdbb4; border-color: #3a6249; }
 @media (max-width: 700px) {
   .workspace { padding: 20px 14px 40px; }
   .header { flex-direction: column; gap: 12px; }

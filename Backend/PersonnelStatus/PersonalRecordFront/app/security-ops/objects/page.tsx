@@ -194,8 +194,8 @@ const PASSPORT_STATES: PassportState[] = ["GREEN", "YELLOW", "RED"];
  * срока экран не считает — их посчитала политика на сервере. */
 const FRESHNESS_CLASS: Record<PassportFreshnessState, string> = {
   FRESH: "text-muted-foreground",
-  DUE_SOON: "text-amber-700 dark:text-amber-400",
-  OVERDUE: "text-red-600 dark:text-red-400 font-semibold",
+  DUE_SOON: "text-amber-700 ",
+  OVERDUE: "text-red-600  font-semibold",
   NO_PUBLISHED_VERSION: "text-muted-foreground",
 };
 
@@ -435,7 +435,7 @@ function SecurityObjectsScreen() {
         <PageHeader
           eyebrow="Объекты"
           title="Объекты и паспорта"
-          description="Найдите объект и откройте его паспорт."
+
         />
 
         {hasObjects && registryData !== undefined && (

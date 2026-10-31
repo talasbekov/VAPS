@@ -43,9 +43,9 @@ export const MODULE_PERMISSION = {
   // сводка отвечала, а защищённое дерево штатки закономерно возвращало 403.
   "/organization": "orgstructure.view",
   "/statuses": "status.view",
-  "/security-ops/combat-duty": "duty.view",
+  "/security-ops/combat-duty": ["duty.view", "duty.roster", "duty.catalog.manage", "duty.manage", "duty.combat.manage"],
   "/security-ops/duty-dispatch": ["duty.dispatch", "admin.roles"],
-  "/security-ops/duty-register": ["duty.view", "analytics.view", "duty.manage", "status.manage", "duty.dispatch", "admin.roles"],
+  "/security-ops/duty-register": ["duty.view", "duty.roster", "duty.catalog.manage", "duty.combat.manage", "analytics.view", "duty.manage", "status.manage", "duty.dispatch", "admin.roles"],
   // Сбор сил открывают ТРИ права, а не одно: делит потребность
   // (`forces.command`), оповещает управления (`forces.allocate`) и выделяет
   // людей (`forces.select`) — это три разные роли на одном экране, и
@@ -211,7 +211,7 @@ export function defaultPortalRoute(
   }
   return (
     DEFAULT_WORKSPACE_ROUTES.find((href) =>
-      (href !== '/security-ops/duty-register' || ['duty.view', 'duty.manage', 'status.manage', 'duty.dispatch'].some(hasPermission)) &&
+      (href !== '/security-ops/duty-register' || ['duty.view', 'duty.roster', 'duty.catalog.manage', 'duty.combat.manage', 'duty.manage', 'status.manage', 'duty.dispatch'].some(hasPermission)) &&
       moduleOpenFor(href, hasPermission, hasRole)) ??
     "/security-ops/profile"
   );

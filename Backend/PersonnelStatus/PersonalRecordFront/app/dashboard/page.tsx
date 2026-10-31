@@ -62,7 +62,7 @@ export default function DashboardPage() {
           className="mb-4"
           eyebrow="Ежедневный расход"
           title="Обзор"
-          description="Обзор состояния организации"
+          
           actions={
             <Badge variant="outline" className="text-sm">
               Последнее обновление: {updatedAt ? new Date(updatedAt).toLocaleString("ru-RU") : "ещё не завершено"}
@@ -124,7 +124,7 @@ export default function DashboardPage() {
               Состояние обзора:
             </span>
             <Badge role="status" variant="outline" className={hasLoadError
-              ? "text-destructive-ink" : isUpdating ? "text-muted-foreground" : "text-green-700 dark:text-green-400"}>
+              ? "text-destructive-ink" : isUpdating ? "text-muted-foreground" : "text-green-700 "}>
               {loadLabel}
             </Badge>
           </div>

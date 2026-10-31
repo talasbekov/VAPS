@@ -41,11 +41,16 @@ test('mode switch clears foreign target but retains existing business date filte
   assert.equal(query.get('view'), 'daily'); assert.equal(query.get('businessDate'), '2026-10-28');
   for (const key of ['request', 'collection', 'campaign', 'employee', 'tab']) assert.equal(query.get(key), null);
 });
-test('no-grant actor has profile and common catalogue, with protected modules absent', () => {
+test('unlinked no-grant actor has profile without a forbidden directory link', () => {
   const model = nav().navigationFor(access([]));
   assert.equal(model.sections.map(s => s.id).join('|'), 'personal');
-  assert.equal(model.common.map(i => i.href).join('|'), '/workspace|/service-employees');
+  assert.equal(model.common.map(i => i.href).join('|'), '/workspace');
   assert.equal(model.system.length, 0);
+});
+test('confirmed own employee retains directory access without personnel.view', () => {
+  const model = nav().navigationFor(access([], { serviceEmployeesAccess: true }));
+  assert.equal(model.common.map(i => i.href).join('|'), '/workspace|/service-employees');
+  assert.equal(nav().navigationFor(access(['personnel.view'], { serviceEmployeesAccess: false })).common.some(item => item.href === '/service-employees'), false);
 });
 test('retained permissions are hidden during loading, failure or undefined permission state', () => {
   for (const state of [{ isLoading: true }, { error: Error('403') }, { permissions: undefined }]) {

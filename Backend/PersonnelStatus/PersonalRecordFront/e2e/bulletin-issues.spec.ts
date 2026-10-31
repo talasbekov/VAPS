@@ -44,6 +44,7 @@ test.describe(LIVE ? 'выпуски бюллетеня' : 'выпуски бю�
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
   test('срез выбирается, выпуск замораживается и попадает в список', async ({ page }) => {
+    test.setTimeout(120_000)
     await signIn(page)
     await page.goto(`${APP}/security-ops/service-reports`)
     const group = page.getByRole('group', { name: 'Выгрузка документов ОМ' })
@@ -64,7 +65,11 @@ test.describe(LIVE ? 'выпуски бюллетеня' : 'выпуски бю�
     const before = await issues.getByRole('listitem').count()
 
     await slice.fill('2099-01-01T08:00')
-    await issues.getByRole('button', { name: 'Выпустить на этот срез' }).click()
+    const [issued] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/ops/bulletin-issues/' && response.request().method() === 'POST', { timeout: 90_000 }),
+      issues.getByRole('button', { name: 'Выпустить на этот срез' }).click(),
+    ])
+    expect(issued.status(), await issued.text()).toBe(201)
     await expect(issues.getByText(/Выпущен «byulleten-20990101-0800\.pdf»/)).toBeVisible()
     await expect(issues.getByRole('listitem')).toHaveCount(before + 1)
     const row = issues.getByRole('listitem').first()

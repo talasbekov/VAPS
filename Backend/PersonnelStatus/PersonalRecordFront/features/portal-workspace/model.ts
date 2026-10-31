@@ -44,7 +44,7 @@ export function portalWorkspace(access: TaskAccess): { primary: PortalTask[]; mo
   add(task('assistant', 'Подготовить наряд', 'Описать поручение или продолжить уже сохранённое.', '/security-ops/assistant'));
   add(task('events', 'Продолжить работу по ОМ', 'Открыть мероприятие и выполнить свой текущий этап.', '/security-ops/events'));
   add(task('summary', 'Проверить свод по Службе', 'Увидеть состояние подразделений на выбранную дату.', '/security-ops/service-summary'));
-  if (['duty.view', 'duty.manage', 'status.manage', 'duty.dispatch'].some(can)) add(task('duties', 'Посмотреть дежурства', 'Открыть график и журнал дежурств.', '/security-ops/duty-register'));
+  if (['duty.view', 'duty.manage', 'duty.combat.manage', 'duty.roster', 'duty.catalog.manage', 'status.manage', 'duty.dispatch'].some(can)) add(task('duties', 'Посмотреть дежурства', 'Открыть график и журнал дежурств.', '/security-ops/duty-register'));
   add(task('objects', 'Объекты и паспорта', 'Найти объект и проверить его паспорт.', '/security-ops/objects'));
   add(task('overview', 'Обзор подразделения', 'Посмотреть структуру и состояние личного состава.', '/dashboard'));
   const reportHref = moduleOpenFor('/reports', can) ? '/reports' : '/security-ops/service-reports';

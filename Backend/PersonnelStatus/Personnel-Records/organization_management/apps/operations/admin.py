@@ -436,6 +436,7 @@ register_allowed(
         # Справочники и настройки, которые администратор действительно ведёт.
         "OpsDictionaryEntry", "StatusType", "OpsDutyType", "OpsCombatDutyType",
         "OpsCombatRoute", "OpsServiceReportType", "OpsFeedbackRegistry",
+        "OpsCombatGroup", "OpsCombatPlace", "OpsCombatDutyMember",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle", "OpsCountry",
         "OpsCity", "OpsRatingGroup", "OpsPolicySetting",

@@ -1,4 +1,5 @@
 "use client";
+import { CombatAssignmentDetails } from '@/features/combat-duty/ui/CombatAssignmentDetails';
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1147,6 +1148,7 @@ export function PlannedStatusesDialog({
                           <div className="mt-1 font-medium">{formatDate(addDaysIso(status.date_end, -1))}</div>
                         </div>
                       </div>
+                      <CombatAssignmentDetails assignment={status.combat_assignment} />
                       {status.comment && (
                         <div className="break-words text-sm text-muted-foreground">
                           <span className="font-medium">Комментарий: </span>

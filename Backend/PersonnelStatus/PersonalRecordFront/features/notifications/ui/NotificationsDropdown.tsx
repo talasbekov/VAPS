@@ -200,7 +200,7 @@ export function NotificationsDropdown() {
           </AnimatePresence>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-96 max-h-[70vh] overflow-y-auto" align="end">
+      <DropdownMenuContent className="w-96 max-w-[calc(100vw-32px)] max-h-[70vh] overflow-y-auto" align="end">
         <DropdownMenuLabel className="flex justify-between items-center">
           <span className="font-medium">Уведомления</span>
           {tab === "unread" && unreadCount > 0 && (

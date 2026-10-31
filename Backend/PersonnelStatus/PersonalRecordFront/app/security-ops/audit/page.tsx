@@ -92,9 +92,9 @@ export default function OpsAuditPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Система"
+          
           title="Аудит"
-          description="Журнал действий раздела ОМ — только для чтения"
+          description="Только просмотр."
         />
 
         <div className="flex flex-wrap gap-2">

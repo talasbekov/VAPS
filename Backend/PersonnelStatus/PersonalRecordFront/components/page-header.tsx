@@ -46,7 +46,7 @@ export function PageHeader({
   const pathname = usePathname();
   const note = inDevelopment ? inDevelopmentOfRoute(pathname) : null;
   return (
-    <div className={cn("flex flex-wrap items-start justify-between gap-4", className)}>
+    <div data-slot="page-header" className={cn("flex flex-wrap items-start justify-between gap-4", className)}>
       <div className="min-w-0">
         {eyebrow ? (
           <p

@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { confirmInDialog } from './dialog'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { nativeCombatSmokeDatabase } from './native-combat-smoke'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -24,6 +25,8 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:18346'
 
 // Mutations require one complete approved tuple; mixed targets are rejected.
 function isolatedDatabase(): string {
+  const native = nativeCombatSmokeDatabase(API, APP)
+  if (native) return native
   const api = new URL(API)
   const app = new URL(APP)
   const local = (url: URL) => url.protocol === 'http:' &&

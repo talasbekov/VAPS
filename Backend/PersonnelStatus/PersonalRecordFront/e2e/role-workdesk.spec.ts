@@ -110,11 +110,15 @@ test('permission refresh failure removes both queue and composer from the desk',
   expect(businessWrites).toEqual([]);
 });
 
-test('dark theme keeps the workdesk legible and resizing keeps content outside the sidebar', async ({ page, businessWrites }) => {
+test('system dark preference keeps the light workdesk legible and resizing keeps content outside the sidebar', async ({ page, businessWrites }) => {
   await access(page); await assistant(page); await signIn(page); await page.goto('/workspace/');
-  await page.getByRole('button', { name: 'Переключить на тёмную тему', exact: true }).click();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.evaluate(() => localStorage.setItem('theme', 'dark'));
+  await page.reload();
+  await expect(page.locator('html')).not.toHaveClass(/dark/);
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
   const title = page.locator('main h1');
-  await expect.poll(() => title.evaluate(el => Number(getComputedStyle(el).color.match(/\d+/)?.[0]))).toBeGreaterThan(180);
+  await expect.poll(() => title.evaluate(el => Number(getComputedStyle(el).color.match(/\d+/)?.[0]))).toBeLessThan(100);
   await page.setViewportSize({ width: 320, height: 950 });
   await expect(page.getByLabel('Какой наряд нужно подготовить?', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });

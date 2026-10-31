@@ -23,7 +23,7 @@ export function DutyIntervalsFields({ value, onChange, errors }: Props) {
   return <section aria-labelledby={heading} className="min-w-0 space-y-3 rounded-lg border p-3">
     <h4 id={heading} className="text-sm font-semibold">Выходы на дежурство</h4>
     <p className="text-xs text-muted-foreground">Время Астаны. Укажите точные дату и время каждого выхода на выбранный пост или в группу. Для ночного выхода выберите следующую дату окончания.</p>
-    {value === undefined ? <p role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+    {value === undefined ? <p role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950  ">
       Время выходов не указано. Период статуса не означает круглосуточное нахождение на посту; часы дежурства неизвестны.
     </p> : value.length === 0 ? <p role="note" className="rounded-md border bg-muted/50 p-3 text-sm">
       Выходов нет. После сохранения сотрудник не будет показан на посту, пока не будет добавлен выход.

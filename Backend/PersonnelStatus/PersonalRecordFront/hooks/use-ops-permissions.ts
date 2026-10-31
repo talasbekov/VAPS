@@ -28,6 +28,7 @@ export interface OpsMyPermissionsResponse {
   permissions: string[];
   global_permissions?: string[];
   status_manage_division_ids?: number[] | null;
+  service_employees_access?: boolean;
   roles?: OpsSectionRole[];
   duty_register_scope?: Record<'read' | 'write' | 'plan' | 'dispatch', (number | string)[] | null>;
 }
@@ -38,6 +39,7 @@ export interface UseOpsPermissionsResult {
   /** Permissions from unscoped grants; absent on older API responses. */
   globalPermissions: ReadonlySet<string> | undefined;
   statusManageDivisionIds?: readonly number[] | null;
+  serviceEmployeesAccess?: boolean;
   dutyRegisterScope?: OpsMyPermissionsResponse['duty_register_scope'];
   /** Роли раздела актора; пусто — их нет либо ответ ещё не пришёл. */
   roles: OpsSectionRole[];
@@ -112,6 +114,7 @@ export function useOpsPermissions(): UseOpsPermissionsResult {
     permissions,
     globalPermissions,
     statusManageDivisionIds: authorityAvailable ? query.data?.status_manage_division_ids : undefined,
+    serviceEmployeesAccess: authorityAvailable ? query.data?.service_employees_access : undefined,
     dutyRegisterScope: authorityAvailable ? query.data?.duty_register_scope : undefined,
     // Роли раздела — ОТДЕЛЬНО от прав: права отвечают «что мне можно», роль —
     // «кто я здесь». Шапка портала печатала кадровую роль учётке, работающей

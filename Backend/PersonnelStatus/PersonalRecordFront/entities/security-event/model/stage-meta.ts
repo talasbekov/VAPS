@@ -51,15 +51,15 @@ export const STAGE_PROGRESS_CLASS: Record<SecurityEventStage, string> = {
 
 /** Классы бейджа стадии — целые Tailwind-классы (JIT видит только литералы). */
 export const STAGE_BADGE_CLASS: Record<SecurityEventStage, string> = {
-  BULLETIN: "bg-purple-100 text-purple-800 hover:bg-purple-100",
-  RECON: "bg-purple-100 text-purple-800 hover:bg-purple-100",
-  DEMAND: "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  FORCES: "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  PLACEMENT: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  APPROVAL: "bg-green-100 text-green-800 hover:bg-green-100",
-  ACKNOWLEDGEMENT: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  CONDUCT: "bg-green-100 text-green-800 hover:bg-green-100",
-  CLOSED: "bg-muted text-muted-foreground hover:bg-muted",
+  BULLETIN: "sj-status-neutral",
+  RECON: "sj-status-neutral",
+  DEMAND: "sj-status-pending",
+  FORCES: "sj-status-pending",
+  PLACEMENT: "sj-status-neutral",
+  APPROVAL: "sj-status-pending",
+  ACKNOWLEDGEMENT: "sj-status-pending",
+  CONDUCT: "sj-status-success",
+  CLOSED: "sj-status-success",
 };
 
 /**

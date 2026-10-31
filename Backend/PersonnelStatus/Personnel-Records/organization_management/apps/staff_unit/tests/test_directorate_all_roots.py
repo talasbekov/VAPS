@@ -17,17 +17,19 @@
 Обычному пользователю область НЕ расширена — это стережёт четвёртая проба:
 иначе «показать всё» прошло бы первые три и тихо сняло бы разграничение.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.staff_unit.models import StaffUnit
+from organization_management.apps.statuses.models import EmployeeStatus
 
 pytestmark = pytest.mark.django_db
 
@@ -180,3 +182,25 @@ def test_ordinary_user_still_sees_only_his_own_subtree(two_trees):
         unit["division"]["name"] for unit in payload["staff_units"] if unit["division"]
     }
     assert names == {"Первый отдел"}, f"обычный пользователь видит лишнее: {names}"
+
+
+
+def test_scheduled_summary_cannot_count_plans_outside_the_granted_subtree(two_trees):
+    user = get_user_model().objects.create_user(username="roots-scheduled")
+    employee = two_trees["in_main"][0]
+    employee.user = user
+    employee.save(update_fields=["user"])
+    _grant_section_role(user, employee.staff_unit.division_id)
+    today = timezone.localdate()
+    for person in (employee, two_trees["in_aside"][0]):
+        EmployeeStatus.objects.create(employee=person, status_type="in_service", start_date=today)
+        EmployeeStatus.objects.create(
+            employee=person, status_type="vacation",
+            start_date=today + timedelta(days=4), end_date=today + timedelta(days=7),
+        )
+
+    payload = ask(user, "?with_summary=1&page=1&page_size=1")
+
+    assert payload["summary"]["scheduled"] == 1
+    assert payload["summary"]["employees"] == 5
+    assert payload["matched_count"] == 5

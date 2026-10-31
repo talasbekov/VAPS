@@ -715,7 +715,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
                           />
                           {low && commentOf(row).trim() === "" && (
                             <p
-                              className="text-[11px] text-amber-700 dark:text-amber-300"
+                              className="text-[11px] text-amber-700 "
                               data-slot="low-score-hint"
                             >
                               Оценка {row.score} — желательно пояснить.
@@ -874,7 +874,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                   </DialogDescription>
                   {unrated > 0 && (
                     <p
-                      className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
+                      className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900  "
                       data-slot="close-unrated"
                     >
                       {unrated} сотрудников без оценки. Закрыть? Им автоматически будет

@@ -91,9 +91,9 @@ export default function ProtectedPersonsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="Охраняемые лица"
-          description="Профили лиц, в отношении которых организуются охранные мероприятия"
+
         />
 
         {canManage && <Button onClick={() => setEditor("new")}>Добавить охраняемое лицо</Button>}

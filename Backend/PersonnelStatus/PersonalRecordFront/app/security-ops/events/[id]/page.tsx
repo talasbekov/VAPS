@@ -592,8 +592,8 @@ function StageViewNotice({
     <div
       className={
         editing
-          ? "border-blue-300 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40 mb-3 rounded-md border px-3 py-2"
-          : "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 mb-3 rounded-md border px-3 py-2"
+          ? "border-blue-300 bg-blue-50   mb-3 rounded-md border px-3 py-2"
+          : "border-amber-300 bg-amber-50   mb-3 rounded-md border px-3 py-2"
       }
       data-slot="stage-view-notice"
       data-editing={editing ? "true" : "false"}
@@ -613,8 +613,8 @@ function StageViewNotice({
         <p
           className={
             editing
-              ? "text-[12.5px] text-blue-900 dark:text-blue-100"
-              : "text-[12.5px] text-amber-900 dark:text-amber-100"
+              ? "text-[12.5px] text-blue-900 "
+              : "text-[12.5px] text-amber-900 "
           }
         >
           {editing ? (
@@ -796,7 +796,7 @@ function VisitObjectContext({
             {selected !== null && (
               <div className="sj-event-object-details" data-slot="visit-selected-details">
                 <div className="sj-event-object-detail-title">
-                  <span className="font-semibold text-foreground"><span className="sr-only">Выбран объект: </span>{selected.objectName}</span>
+                  <span className="sr-only">Выбран объект: {selected.objectName}</span>
                   {selected.objectId !== null && hasPermission("object.view") && (
                     <Link href={"/security-ops/objects/" + selected.objectId} aria-label={"Паспорт объекта " + selected.objectName}
                       className="inline-flex min-h-11 items-center font-semibold text-primary-ink hover:underline">
@@ -813,7 +813,6 @@ function VisitObjectContext({
               </div>
             )}
             {unassignedShown && <p className="mt-2 text-xs font-medium">Не отнесены к объекту: показаны неразмеченные строки расчёта. Выберите площадку выше, чтобы вернуться к её этапам.</p>}
-            <p className="mt-4 text-xs text-muted-foreground">Рекогносцировка, расстановка и согласование относятся к выбранному объекту.</p>
           </>
         )}
         </CardContent>

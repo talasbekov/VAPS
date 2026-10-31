@@ -233,9 +233,9 @@ function SecurityEventsScreen() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="Реестр ОМ"
-          description="Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива"
+          
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {!permissionsLoading && hasPermission("event.create") && (
@@ -554,10 +554,8 @@ function ResultsTable({
           пустая колонка на всю таблицу — это не «честная пустота», а шум в
           каждой строке. */}
       <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        Колонки повторяют поля бюллетеня: дата, время, охраняемое лицо,
-        мероприятие, локация, старший. Локация и охраняемое лицо здесь — общие
-        для мероприятия; у каждого объекта посещения они свои и видны в
-        раскрытии строки.
+        Локация и охраняемое лицо указаны для мероприятия. Данные по объектам
+        доступны в раскрытии строки.
       </p>
     </>
   );
@@ -673,7 +671,7 @@ function EventRow({
                     aria-label={`Открыть мероприятие ${event.code}: ${event.title}`}
                     className="block min-h-11 w-full rounded text-left hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
+                    <span className="inline-flex rounded-full bg-secondary px-2 py-0.5 text-[10.5px] font-medium text-secondary-foreground">
                       {event.code}
                     </span>
                     {/* `whitespace-normal` обязателен: у `TableCell` умолчание
@@ -755,7 +753,7 @@ function EventRow({
                   <span className="flex flex-wrap items-center gap-1.5">
                     <StageBadge stage={event.stage} />
                     {event.conflictsCount > 0 && (
-                      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 dark:bg-red-950/60 dark:text-red-200">
+                      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800  ">
                         конфликтов: {event.conflictsCount}
                       </span>
                     )}
@@ -1159,7 +1157,7 @@ function VisitObjectRow({
             </span>
             {visit.approvalStatus === "RETURNED" && (
               <span
-                className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900  "
                 data-slot="visit-returned-badge"
               >
                 Возвращено · {remarksLabel(visit.approvalRemarks.filter(remarkIsOpen).length)}
@@ -1167,7 +1165,7 @@ function VisitObjectRow({
             )}
             {visit.approvalRemarks.some((remark) => remarkIsOpen(remark) && remark.urgent) && (
               <span
-                className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+                className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800  "
                 data-slot="visit-urgent-badge"
               >
                 Срочно
@@ -1722,7 +1720,7 @@ function EventsCalendar({
               {listEvents.map((event) => (
                 <li key={event.id} className="py-3 first:pt-0 last:pb-0">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
+                    <span className="inline-flex rounded-full bg-secondary px-2 py-0.5 text-[10.5px] font-medium text-secondary-foreground">
                       {event.code}
                     </span>
                     <StageBadge stage={event.stage} />

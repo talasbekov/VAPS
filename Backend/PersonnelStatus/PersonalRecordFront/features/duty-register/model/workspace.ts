@@ -1,10 +1,10 @@
-export type DutyWorkspaceSection = 'roster' | 'records' | 'shifts';
+export type DutyWorkspaceSection = 'roster' | 'records' | 'shifts' | 'combat';
 export const DUTY_WORKSPACE_HREF = '/security-ops/duty-register/';
 const recordKeys = ['from', 'to', 'kind', 'state', 'source', 'attention', 'division_id', 'employee_id', 'search', 'page', 'page_size', 'view', 'record'];
 
 export function dutyWorkspaceSection(params: URLSearchParams): DutyWorkspaceSection {
   const section = params.get('section');
-  if (section === 'roster' || section === 'records' || section === 'shifts') return section;
+  if (section === 'roster' || section === 'records' || section === 'shifts' || section === 'combat') return section;
   return recordKeys.some(key => params.has(key)) ? 'records' : 'roster';
 }
 

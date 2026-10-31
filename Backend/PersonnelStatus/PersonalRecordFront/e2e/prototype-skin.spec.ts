@@ -36,7 +36,7 @@ async function openOrgBoardTable(page: Page, timeout = 45_000) {
 test.describe(LIVE ? 'слой прототипа' : 'слой прототипа (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('полотно отличается от карточки в обеих темах', async ({ page }) => {
+  test('полотно и карточка сохраняют светлые цвета при системной тёмной теме', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/security-ops/command-center/`)
     // Ожидание ЯВНОЕ и длинное (Plane №150). Проба падала в общем прогоне и
@@ -66,9 +66,12 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(light.canvas, 'светлая: полотно слилось с карточкой').not.toBe(light.card)
 
     await page.emulateMedia({ colorScheme: 'dark' })
-    await page.evaluate(() => document.documentElement.classList.add('dark'))
-    const dark = await read()
-    expect(dark.canvas, 'тёмная: полотно слилось с карточкой').not.toBe(dark.card)
+    await page.evaluate(() => localStorage.setItem('theme', 'dark'))
+    await page.reload()
+    await expect(page.locator('html')).not.toHaveClass(/dark/)
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'light')
+    await expect(page.getByRole('heading', { name: 'Оперативный контроль' })).toBeVisible()
+    expect(await read()).toEqual(light)
   })
 
   test('таблица набрана по плотности прототипа', async ({ page }) => {

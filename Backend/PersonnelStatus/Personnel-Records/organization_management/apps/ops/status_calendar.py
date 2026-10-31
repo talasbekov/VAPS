@@ -262,11 +262,15 @@ def day_panel(*, on_date, scope_division_ids, search=""):
         key: {"count": 0, "has_more": False, "employees": []}
         for key in ("on_duty", "on_event", "absent")
     }
+    from organization_management.apps.ops.combat_projection import assignments_for
+    from organization_management.apps.operations.strength_report import resolve_status_row
+    assignments = assignments_for([row for rows in facts_by_employee.values() for row in rows])
     in_service = 0
     for employee in employees:
         code = resolve_status(
             facts_by_employee.get(employee.pk, []), on_date, catalog
         )
+        winner = resolve_status_row(facts_by_employee.get(employee.pk, []), on_date, catalog)
         group = _group_of(code, catalog)
         if group == "in_service":
             in_service += 1
@@ -287,6 +291,7 @@ def day_panel(*, on_date, scope_division_ids, search=""):
                         else None
                     ),
                     "status": {"code": code, "name": names.get(code, code)},
+                    "combat_assignment": assignments.get(winner["id"]) if winner else None,
                 }
             )
         else:

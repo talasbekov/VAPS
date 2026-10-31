@@ -35,7 +35,7 @@ export function DutyExecutionOverview() {
           { label: 'Не отмечено заступление', count: data.control.missing_start, attention: 'MISSING_START' },
           { label: 'Заступили позже плана', count: data.control.late_start, attention: 'LATE_START' },
           { label: 'Не отмечено завершение', count: data.control.missing_end, attention: 'MISSING_END' },
-        ].map(item => <Link key={item.attention} href={controlHref(data, { attention: item.attention })} className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-3 text-sm hover:bg-accent ${item.count ? 'border-amber-300 dark:border-amber-700' : ''}`}><span className="break-words">{item.label}</span><strong className="tabular-nums">{item.count}</strong></Link>)}</div>
+        ].map(item => <Link key={item.attention} href={controlHref(data, { attention: item.attention })} className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-3 text-sm hover:bg-accent ${item.count ? 'border-amber-300 ' : ''}`}><span className="break-words">{item.label}</span><strong className="tabular-nums">{item.count}</strong></Link>)}</div>
       </> : <p role="status" className="text-sm text-muted-foreground">Источник не вернул отдельные показатели ознакомления и заступления. Проверьте отметки в журнале.</p>}
       <p className="text-xs text-muted-foreground">Показатели считают выходы, включая завершённые за день. Один сотрудник может иметь несколько выходов. Если заступление не отмечено, проверьте выход сотрудника и необходимость замены; отсутствие отметки не доказывает неявку.</p>
       <Link className="inline-flex min-h-9 items-center text-sm font-medium text-primary underline underline-offset-2" href={controlHref(data)}>Открыть журнал за сегодня</Link>

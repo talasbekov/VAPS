@@ -93,9 +93,8 @@ export function EventChiefDialog({
         <DialogHeader>
           <DialogTitle>{label}</DialogTitle>
           <DialogDescription>
-            {event.code} · {event.title}. Отвечает за наряд мероприятия —
-            это не старший объекта посещения, тот назначается в раскрытии
-            строки на каждом объекте свой.
+            {event.code} · {event.title}. Отвечает за наряд мероприятия.
+            Старшие объектов назначаются отдельно в реестре.
             {assigned && (
               <>
                 {" "}

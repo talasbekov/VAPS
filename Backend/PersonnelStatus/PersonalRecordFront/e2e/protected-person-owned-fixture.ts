@@ -15,10 +15,14 @@ interface OwnDomestic extends PersonIdentity { id: string; code: string; role: s
 const INACTIVATE = String.raw`
 import json, os
 from django.db import connection, transaction
+from django.conf import settings
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson, OpsGvoSummaryPatch, OpsForeignVisit
 f = json.loads(os.environ['E2E_OWN_DOMESTIC'])
-assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009')
+assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009', 'sj_combat_smoke')
 assert connection.settings_dict['NAME'] == os.environ['E2E_EXPECTED_DB'], 'refuse cleanup outside the selected isolated database'
+if os.environ['E2E_EXPECTED_DB'] == 'sj_combat_smoke':
+    assert str(connection.settings_dict['PORT']) == '15434' and connection.settings_dict['HOST'] == '127.0.0.1'
+    assert 'smoke-files' in settings.OPS_PRIVATE_STORAGE_ROOT
 assert f['marker'].startswith('e2e-domestic-owned:')
 assert f['name'] == 'Собственное ОЛ ' + f['marker']
 assert f['bio'] == f['marker'] and f['callsign'] == f['marker']

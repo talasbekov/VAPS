@@ -41,6 +41,7 @@ import { useForceCampaignReserves } from "@/hooks/use-force-campaigns";
 export interface OpsSectionStatus {
   code: string;
   name: string;
+  assignment?: import('@/entities/combat-duty').CombatAssignment | null;
 }
 
 /**
@@ -155,7 +156,11 @@ export function useOpsSectionStatuses(enabled = true) {
   // сравнивать состояния двух каталогов между собой нельзя вовсе, каждый
   // читается своим регистром.
   const statusByEmployee = new Map<number, OpsSectionStatus>();
-  for (const row of statuses.data ?? []) {
+  const priority = new Map((statusTypes.data ?? []).map(type => [type.code, type.priority]));
+  const orderedStatuses = [...(statuses.data ?? [])].sort((a, b) =>
+    (priority.get(a.status_type_code) ?? 9999) - (priority.get(b.status_type_code) ?? 9999) ||
+    a.status_type_code.localeCompare(b.status_type_code) || a.date_start.localeCompare(b.date_start));
+  for (const row of orderedStatuses) {
     if (row.state !== "ACTIVE") continue;
     // Проекция КАДРОВОГО статуса (Plane №1209) в колонке раздела не
     // печатается: та же строка уже стоит слева, в «Статус (кадровый)», и
@@ -164,11 +169,12 @@ export function useOpsSectionStatuses(enabled = true) {
     if (row.source === PERSONNEL_STATUS_SOURCE) continue;
     const known = statusByEmployee.get(row.employee_id);
     // Строк может быть несколько (человек и на дежурстве, и привлечён);
-    // берётся первая действующая, остальные видны участиями ниже.
+    // Берётся победитель по приоритету каталога, как в расходе и календаре.
     if (known !== undefined) continue;
     statusByEmployee.set(row.employee_id, {
       code: row.status_type_code,
       name: nameOfCode.get(row.status_type_code) ?? row.status_type_code,
+      assignment: row.combat_assignment,
     });
   }
 

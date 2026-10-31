@@ -26,7 +26,6 @@ export * from "@/components/ui/tooltip";
 
 export { StatsCards } from "@/components/dashboard/stats-cards";
 export { OrgNode } from "@/features/organization-structure/ui/OrgNode";
-export { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 // Утилита стилевого идиома shadcn — дизайн-агенту нужна для композиции классов.
 export { cn } from "@/lib/utils";

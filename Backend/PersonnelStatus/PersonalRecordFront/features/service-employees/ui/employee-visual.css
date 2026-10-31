@@ -1,6 +1,5 @@
 /* C01: 725:1454 / 725:1497 / 732:22203. Existing queries and actions own behavior. */
 .sj-shell:has(.sj-employee-view) { --canvas: 270 33% 94%; }
-.dark .sj-shell:has(.sj-employee-view) { --canvas: 225 12% 10%; }
 .sj-employee-view { min-width: 0; }
 .sj-employee-view [data-slot="card"],
 .sj-employee-view [data-slot="profile-event-assignments"],
@@ -68,7 +67,6 @@
 .sj-employee-row-actions button { min-height: 48px; max-width: 100%; border-radius: 16px; background: hsl(var(--canvas)); border-color: transparent; box-shadow: none; white-space: normal; }
 .sj-employee-status { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 14px; font-size: 12px; line-height: 18px; }
 .sj-employee-status[data-status="IN_SERVICE"] { background: #e7f3ea; color: #245c3c; }
-.dark .sj-employee-status[data-status="IN_SERVICE"] { background: #183629; color: #c3e8d0; }
 .sj-employee-directory [data-testid="employee-portrait"] { width: 64px; height: 64px; border-radius: 16px; background: hsl(var(--canvas)); color: hsl(var(--foreground)); font-size: 20px; }
 .sj-employee-view [data-testid="employee-portrait"]:has([data-testid="employee-initials"]) { flex-direction: column; gap: 2px; }
 .sj-employee-view [data-testid="employee-portrait"]:has([data-testid="employee-initials"])::after { content: "Нет фото"; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 14px; font-weight: 400; }

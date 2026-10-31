@@ -28,7 +28,7 @@ export default function MyProfilePage() {
           className="sj-employee-heading"
           eyebrow="Личный кабинет"
           title="Мой профиль"
-          description="Личные данные, назначения, календарь и история службы"
+
         />
 
         {me.isPending && (

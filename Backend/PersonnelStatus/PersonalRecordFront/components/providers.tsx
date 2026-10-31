@@ -4,7 +4,6 @@ import { SessionProvider, useSession } from "next-auth/react"
 import { AuthProvider } from "@/lib/auth"
 import { useEffect, useRef, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query"
-import { ThemeProvider } from "next-themes"
 import { MotionConfig } from "framer-motion"
 import { currentOpsAuthorityStamp, registerOpsWriteAuthority } from "@/lib/ops-write-authority"
 import { NavigationSectionProvider } from "@/components/navigation/section-navigation"
@@ -47,7 +46,7 @@ const queryClient = new QueryClient({
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+    <>
       {/* reducedMotion="user": движение framer-motion живёт в inline-стилях и
           медиа-правилом в globals.css не гасится — это его выключатель. */}
       <MotionConfig reducedMotion="user">
@@ -73,7 +72,7 @@ export function Providers({ children }: { children: ReactNode }) {
           </SessionProvider>
         </QueryClientProvider>
       </MotionConfig>
-    </ThemeProvider>
+    </>
   )
 }
 

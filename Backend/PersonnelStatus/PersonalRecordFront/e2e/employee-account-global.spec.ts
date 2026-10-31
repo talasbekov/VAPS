@@ -6,6 +6,7 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { runBackendCommand } from './backend-command'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { nativeCombatSmokeDatabase } from './native-combat-smoke'
 
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:18346'
 const APP = process.env.SMOKE_APP ?? 'http://127.0.0.1:3347'
@@ -14,6 +15,8 @@ const ACCESS = '/api/operations/'
 const RIGHTS = ['admin.roles', 'dictionary.view', 'orgstructure.manage', 'orgstructure.view', 'personnel.view', 'status.view']
 // Mutations require one complete approved tuple; mixed targets are rejected.
 function isolatedDatabase(): string {
+  const native = nativeCombatSmokeDatabase(API, APP)
+  if (native) return native
   const api = new URL(API)
   const app = new URL(APP)
   const local = (url: URL) => url.protocol === 'http:' &&
@@ -205,13 +208,17 @@ const CLEANUP_EMPLOYEE = String.raw`
 import json, os
 from django.apps import apps
 from django.db import connection, transaction
+from django.conf import settings
 from django.contrib.auth.models import User
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.staff_unit.models import StaffUnit
 from organization_management.apps.statuses.models import EmployeeStatus, StatusChangeHistory
 f = json.loads(os.environ['E2E_EMPLOYEE_FIXTURE'])
-assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009')
+assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009', 'sj_combat_smoke')
 assert connection.settings_dict['NAME'] == os.environ['E2E_EXPECTED_DB'], 'refuse disposal outside the selected isolated database'
+if os.environ['E2E_EXPECTED_DB'] == 'sj_combat_smoke':
+    assert connection.settings_dict['PORT'] == '15434'
+    assert 'smoke-files' in settings.OPS_PRIVATE_STORAGE_ROOT
 def reverse_relations(model):
     # related_objects omits hidden reverse FK relations (related_name='+').
     # Those still participate in Django's delete/SET_NULL collection.

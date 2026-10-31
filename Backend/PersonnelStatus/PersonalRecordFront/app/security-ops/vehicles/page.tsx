@@ -82,9 +82,9 @@ function VehiclesScreen() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="Транспорт ГОН"
-          description="Бронированные транспортные средства Гаража особого назначения, задействованные на обслуживании охраняемых лиц"
+          description="Бронированный транспорт Гаража особого назначения."
         />
 
         <div className="space-y-[10px]">
@@ -184,7 +184,7 @@ function VehiclesScreen() {
         )}
 
         <p className="text-[11.5px] text-muted-foreground">
-          Реестр ведёт администратор: добавляет машины, меняет дислокацию и отмечает снятие с эксплуатации. Здесь доступен только просмотр.
+          Реестр ведёт администратор. Доступен только просмотр.
         </p>
       </div>
     </DashboardLayout>
@@ -219,7 +219,7 @@ function VehicleRow({ vehicle }: { vehicle: Vehicle }) {
         {vehicle.armorClass === "" ? (
           <span className="text-muted-foreground">без брони</span>
         ) : (
-          <span className="inline-flex whitespace-nowrap rounded-full bg-blue-100 px-[9px] py-0.5 text-[10.5px] font-bold text-blue-800">
+          <span className="inline-flex whitespace-nowrap rounded-full bg-secondary px-[9px] py-0.5 text-[10.5px] font-medium text-secondary-foreground">
             {vehicle.armorClass}
           </span>
         )}

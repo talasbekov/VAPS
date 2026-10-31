@@ -4121,7 +4121,7 @@ class CombatDutyTypeViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         "safeLabel": t.safe_label,
                         "supportsMultipleRoutes": t.supports_multiple_routes,
                     }
-                    for t in OpsCombatDutyType.objects.all()
+                    for t in OpsCombatDutyType.objects.filter(division__isnull=True)
                 ]
             }
         )
@@ -4139,7 +4139,7 @@ class CombatRouteViewSet(RequirePermissionMixin, viewsets.ViewSet):
             {
                 "results": [
                     {"routeId": r.route_code, "safeLabel": r.safe_label}
-                    for r in OpsCombatRoute.objects.all()
+                    for r in OpsCombatRoute.objects.filter(division__isnull=True)
                 ]
             }
         )
@@ -4149,17 +4149,27 @@ class CombatRosterCandidatesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Кандидаты в состав — из живых кадровых записей (просмотр — часть
     подачи §24.6, потому право управления, не чтения)."""
 
-    permission_map = {"list": _MANAGE_DUTY_PERMISSION}
+    permission_map = {"list": (_MANAGE_DUTY_PERMISSION, "duty.roster", "duty.combat.manage")}
 
     def list(self, request):
+        if "date" in request.query_params or "division_id" in request.query_params:
+            from organization_management.apps.ops import combat_access, combat_planning
+            actor = resolve_actor_id(request)
+            day = combat_access.business_date(request.query_params.get("date", Clock.today_local().isoformat()))
+            current = None
+            if request.query_params.get("shift_id"):
+                current = combat_planning.get_shift(actor, request.query_params["shift_id"], combat_access.ROSTER)
+            return Response({"results": combat_planning.candidates(actor, day, request.query_params.get("division_id"), shift=current)})
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
         )
 
+        from organization_management.apps.ops import combat_access
+        ids = combat_access.division_ids(resolve_actor_id(request), codes=combat_access.ROSTER)
         results = []
         for employee in (
-            Employee.objects.filter(is_active=True)
+            Employee.objects.filter(is_active=True).filter(**({} if combat_access.scope(resolve_actor_id(request), combat_access.ROSTER) is None else {"staff_unit__division_id__in": ids}))
             .select_related("staff_unit__division")
             .order_by("last_name", "first_name", "id")
         ):
@@ -4194,6 +4204,26 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "complete": _MANAGE_DUTY_PERMISSION,
         "replace": _MANAGE_DUTY_PERMISSION,
     }
+
+    def _legacy_guard(self, request, pk, *, submitting=False):
+        from organization_management.apps.ops import combat_access as access
+        from organization_management.apps.operations.models_combat import OpsCombatDutyShift
+        row = OpsCombatDutyShift.objects.filter(pk=access.identifier(pk)).first()
+        if row is None:
+            access.fail("ENTITY_NOT_FOUND", "Смена не найдена.", status=404)
+        if row.group_id:
+            access.fail(message="Для группы с поимённым составом используйте доску расчёта на день.")
+        owner = (row.submission or {}).get("submittedByDivisionId")
+        if type(owner) is int:
+            access.require_scope(resolve_actor_id(request), owner, ("duty.manage",))
+        elif submitting:
+            _, owner = self._actor_unit(request)
+            if owner:
+                access.require_scope(resolve_actor_id(request), owner, ("duty.manage",))
+            elif access.scope(resolve_actor_id(request), ("duty.manage",)) is not None:
+                access.fail("PERMISSION_DENIED", "Не определено подразделение подающего.", status=403)
+        elif access.scope(resolve_actor_id(request), ("duty.manage",)) is not None:
+            access.fail("PERMISSION_DENIED", "Нет доступа к смене без установленного подразделения.", status=403)
 
     def _response(self, shift, status=200):
         return Response(
@@ -4236,6 +4266,9 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
     def create(self, request):
+        from organization_management.apps.ops import combat_access as access
+        if access.scope(resolve_actor_id(request), ("duty.manage",)) is not None:
+            access.fail("PERMISSION_DENIED", "Сформируйте группу через расчёт на день с выбором подразделения.", status=403)
         data = request.data or {}
         shift = combat_service.create_shift(
             business_date=data.get("businessDate"),
@@ -4273,8 +4306,11 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=True)
         data = request.data or {}
         unit_name, division_id = self._actor_unit(request)
+        from organization_management.apps.ops import combat_access
+        combat_access.require_scope(resolve_actor_id(request), division_id, ("duty.manage",))
         return self._response(
             combat_service.submit_roster(
                 pk,
@@ -4288,6 +4324,7 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="review")
     def review(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         data = request.data or {}
         return self._response(
             combat_service.review_roster(
@@ -4299,6 +4336,7 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="acknowledge")
     def acknowledge(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         data = request.data or {}
         return self._response(
             combat_service.acknowledge(
@@ -4308,10 +4346,12 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="check-in")
     def check_in(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         return self._response(combat_service.check_in(pk))
 
     @action(detail=True, methods=["post"], url_path="handover")
     def handover(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         data = request.data or {}
         return self._response(
             combat_service.submit_handover(
@@ -4324,6 +4364,7 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         data = request.data or {}
         return self._response(
             combat_service.complete(
@@ -4333,6 +4374,7 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="replace")
     def replace(self, request, pk=None):
+        self._legacy_guard(request, pk, submitting=False)
         data = request.data or {}
         return self._response(
             combat_service.replace_member(

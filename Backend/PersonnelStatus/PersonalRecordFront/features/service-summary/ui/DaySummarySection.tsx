@@ -75,11 +75,12 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
 
   const assembled = day.rootSubmission !== undefined;
   // A temporary context/read refresh hides data, but must not discard a
-  // mounted correction draft. Actual scope changes and denials discard it.
+  // mounted correction draft. Actor/root/date changes and read denials discard
+  // it; a write-only grant change must keep the input while disabling submit.
   const correction = useRef<{ scope: string; rootId: number } | null>(null);
-  if (correction.current?.scope !== day.readScope || day.readBlocked) correction.current = null;
+  if (correction.current?.scope !== day.draftContext || day.readBlocked) correction.current = null;
   if (day.readAllowed && !day.isPending && !day.isError) {
-    correction.current = assembled && day.rootId !== null ? { scope: day.readScope, rootId: day.rootId } : null;
+    correction.current = assembled && day.rootId !== null ? { scope: day.draftContext, rootId: day.rootId } : null;
   }
   const correctionRootId = correction.current?.rootId ?? null;
   const rootStale = day.rootId !== null && day.isStale(day.rootId);
@@ -97,8 +98,8 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
     : { tone: "off", text: "Свод Службы: проверяем…" };
   const chipClass = {
     off: "bg-muted text-muted-foreground",
-    warn: "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    ok: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    warn: "bg-amber-50 text-amber-800  ",
+    ok: "bg-emerald-50 text-emerald-700  ",
   }[chip.tone as "off" | "warn" | "ok"];
 
   return (
@@ -117,7 +118,7 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
         </div>
       )}
 
-      {correctionRootId !== null && <SummaryCorrection key={`${businessDate}:${correctionRootId}`} divisionId={correctionRootId} businessDate={businessDate} workspaceReady={workspaceReady} dataReady={day.readAllowed && !day.isError && !day.isPending && !day.retryPending} />}
+      {correctionRootId !== null && <SummaryCorrection key={day.draftContext} divisionId={correctionRootId} businessDate={businessDate} workspaceReady={workspaceReady} dataReady={day.readAllowed && !day.isError && !day.isPending && !day.retryPending} />}
 
       {!day.isPending && !day.isError && day.rootId !== null && (
         <>
@@ -134,7 +135,7 @@ export function DaySummarySection({ businessDate }: { businessDate: string }) {
               />
               <p className="mt-2 text-sm text-muted-foreground">
                 {day.laggardDepartments.length > 0 ? (
-                  <>Не сдали: <span className="font-semibold text-red-700 dark:text-red-300">{day.laggardDepartments.map((node) => node.name).join(", ")}</span>.</>
+                  <>Не сдали: <span className="font-semibold text-red-700 ">{day.laggardDepartments.map((node) => node.name).join(", ")}</span>.</>
                 ) : (
                   <>Все департаменты сдали.</>
                 )}

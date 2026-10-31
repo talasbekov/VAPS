@@ -46,6 +46,13 @@ test('approved summary status is not replaced by a draft label when there is no 
   assert.match(html, /Сводка утверждена/);
   assert.doesNotMatch(html, /Черновик сводки/);
 });
+
+for (const filled of [false, true]) test(`READY visit uses the server filled=${filled} after a manual reset or save`, () => {
+  const row = summary(); row.visit.status = 'READY'; row.filled = filled;
+  const html = renderPanel(row);
+  assert.match(html, filled ? /Сводка заполнена/ : /Черновик сводки/);
+  assert.doesNotMatch(html, filled ? /Черновик сводки/ : /Сводка заполнена/);
+});
 test('PDF generation failure remains visible on the visit page with a meaningful converter error', () => {
   const Subject = load('app/security-ops/visits/[id]/page.tsx', 'VisitCard', {
     '@/hooks/use-ops-permissions': { useOpsPermissions: () => ({ hasPermission: () => true }) },

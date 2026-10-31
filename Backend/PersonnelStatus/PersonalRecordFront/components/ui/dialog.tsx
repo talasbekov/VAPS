@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useContentUiClassName } from "@/components/content-ui-scope"
 import { OpsProtectedPortalContext, OpsProtectedInteractionContext } from "@/lib/ops-permission-suspension"
 
 function Dialog({
@@ -66,6 +67,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
+          useContentUiClassName(),
           // max-h + собственный скролл — в БАЗЕ: без них семь диалогов на
           // низком экране прятали кнопки формы под нижний край, и форма
           // выглядела «без кнопки Сохранить».

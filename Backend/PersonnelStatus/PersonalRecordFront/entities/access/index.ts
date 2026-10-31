@@ -226,16 +226,16 @@ export interface SaveAccessPermissionRequest {
  * САМА подпись метода, цвет только помогает: по одному цвету ничего не
  * различается. */
 const ACCESS_METHOD_TONE: Record<string, string> = {
-  GET: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-  POST: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-  PUT: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200",
-  PATCH: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200",
-  DELETE: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+  GET: "bg-slate-100 text-slate-700  ",
+  POST: "bg-emerald-100 text-emerald-800  ",
+  PUT: "bg-amber-100 text-amber-900  ",
+  PATCH: "bg-amber-100 text-amber-900  ",
+  DELETE: "bg-rose-100 text-rose-800  ",
 };
 
 export function accessMethodTone(method: string): string {
   return (
     ACCESS_METHOD_TONE[method.toUpperCase()] ??
-    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    "bg-slate-100 text-slate-700  "
   );
 }

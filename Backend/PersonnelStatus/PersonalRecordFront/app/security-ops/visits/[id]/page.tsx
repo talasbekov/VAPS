@@ -52,8 +52,8 @@ const VISIT_STATUS_LABEL: Record<string, string> = {
 
 const VISIT_STATUS_CLASS: Record<string, string> = {
   DRAFT: "bg-muted text-muted-foreground",
-  READY: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
-  APPROVED: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200",
+  READY: "bg-amber-100 text-amber-900  ",
+  APPROVED: "bg-emerald-100 text-emerald-900  ",
 };
 
 export default function VisitPage() {
@@ -106,7 +106,7 @@ function NoVisit({ event }: { event: SecurityEvent }) {
   return (
     <>
       <PageHeader
-        eyebrow="Охранные мероприятия"
+        
         title={`Визит · ${event.code}`}
         description="Карточка визита ведётся только у мероприятий с участием иностранцев"
         inDevelopment={false}

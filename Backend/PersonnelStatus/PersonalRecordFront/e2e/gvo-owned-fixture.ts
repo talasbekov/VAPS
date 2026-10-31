@@ -7,11 +7,14 @@ import { uniqueBusinessDate } from './business-date'
 import { objectWithPassport, type StandCall } from './prepare-events'
 import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { nativeCombatSmokeDatabase } from './native-combat-smoke'
 
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:18346'
 const APP = process.env.SMOKE_APP ?? 'http://127.0.0.1:3347'
 // Mutations require one complete approved tuple; mixed targets are rejected.
 export function isolatedDatabase(): string {
+  const native = nativeCombatSmokeDatabase(API, APP)
+  if (native) return native
   const api = new URL(API)
   const app = new URL(APP)
   const local = (url: URL) => url.protocol === 'http:' &&
@@ -145,11 +148,15 @@ const PURGE = String.raw`
 import json, os
 from django.core.management import call_command
 from django.db import connection, transaction
+from django.conf import settings
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_gvo import OpsForeignVisit
 f = json.loads(os.environ['E2E_GVO_OWN'])
-assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009')
+assert os.environ['E2E_EXPECTED_DB'] in ('smart_night_20261008', 'smart_complete_20261008', 'smart_refine_20261008', 'smart_eight_hours_20261009', 'sj_combat_smoke')
 assert connection.settings_dict['NAME'] == os.environ['E2E_EXPECTED_DB'], 'refuse cleanup on a different database'
+if os.environ['E2E_EXPECTED_DB'] == 'sj_combat_smoke':
+    assert str(connection.settings_dict['PORT']) == '15434' and connection.settings_dict['HOST'] == '127.0.0.1'
+    assert 'smoke-files' in settings.OPS_PRIVATE_STORAGE_ROOT
 assert f['title'] == 'Проба собственной сводки ГВО ' + f['marker'] + ' (e2e)'
 with transaction.atomic():
     rows = list(OpsSecurityEvent.objects.select_for_update().filter(title=f['title']))

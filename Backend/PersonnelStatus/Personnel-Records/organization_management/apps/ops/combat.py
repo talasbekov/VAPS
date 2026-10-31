@@ -60,15 +60,34 @@ def _lock(shift_id):
 def _accepted_names_elsewhere(shift):
     """Имена, уже ПРИНЯТЫЕ в другие группы на ту же дату (§24.17)."""
     names = set()
+    from organization_management.apps.operations.models_combat import OpsCombatDutyMember
+    from organization_management.apps.ops.security_events import personnel_full_name, personnel_display_name
+    from organization_management.apps.employees.models import Employee
+    ids = OpsCombatDutyMember.objects.filter(business_date=shift.business_date, active=True).exclude(shift=shift).values("employee_id")
+    for person in Employee.objects.filter(pk__in=ids):
+        names.update((personnel_full_name(person), personnel_display_name(person)))
     for other in OpsCombatDutyShift.objects.filter(
         business_date=shift.business_date
     ).exclude(pk=shift.pk):
         submission = other.submission
-        if submission is None or submission.get("stateCode") != "ACCEPTED":
+        if other.cancelled_at or submission is None or submission.get("stateCode") not in ({"SUBMITTED", "ACCEPTED"} if other.group_id else {"ACCEPTED"}):
             continue
         names.add(submission.get("groupLeaderEmployeeName"))
         names.update(submission.get("memberEmployeeNames", []))
+        names.update(submission.get("reserveEmployeeNames", []))
     return names
+
+
+def _lock_people_named(names):
+    """Serialize legacy allocations with identity-based personnel writers.
+
+    Matching a legacy name only blocks an ambiguous allocation; it never
+    upgrades a name snapshot to an employee assignment or authorises access.
+    """
+    from organization_management.apps.employees.models import Employee
+    from organization_management.apps.ops.security_events import personnel_full_name, personnel_display_name
+    ids = [p.pk for p in Employee.objects.all() if {personnel_full_name(p), personnel_display_name(p)} & names]
+    list(Employee.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
 
 
 @transaction.atomic
@@ -92,7 +111,7 @@ def create_shift(*, business_date, duty_type_code, route_ids, coverage_mode,
             message="Требуемая численность должна быть не менее 1.",
         )
     duty_type = OpsCombatDutyType.objects.filter(
-        duty_type_code=duty_type_code
+        duty_type_code=duty_type_code, division__isnull=True
     ).first()
     if duty_type is None:
         raise DomainError(
@@ -103,7 +122,7 @@ def create_shift(*, business_date, duty_type_code, route_ids, coverage_mode,
             "TOO_MANY_ROUTES", 422,
             message="Этот вид дежурства не поддерживает несколько Трасс.",
         )
-    routes = {r.route_code: r for r in OpsCombatRoute.objects.all()}
+    routes = {r.route_code: r for r in OpsCombatRoute.objects.filter(division__isnull=True)}
     if any(route_id not in routes for route_id in route_ids):
         raise DomainError("UNKNOWN_ROUTE", 422, message="Неизвестная Трасса.")
     shift = OpsCombatDutyShift.objects.create(
@@ -139,6 +158,7 @@ def submit_roster(shift_id, *, group_leader, members, reserve, submitted_by_unit
             "подача недоступна.",
         )
     proposed = {group_leader, *members, *(reserve or [])}
+    _lock_people_named(proposed)
     if proposed & _accepted_names_elsewhere(shift):
         raise DomainError("DOUBLE_ASSIGNMENT", 422, message=
             "Один или несколько сотрудников уже приняты в другую боевую "
@@ -175,6 +195,10 @@ def review_roster(shift_id, *, decision, return_reason):
     now = _now_iso()
     accepted = decision == "ACCEPT"
     if accepted:
+        proposed = {submission.get("groupLeaderEmployeeName"), *submission.get("memberEmployeeNames", []), *submission.get("reserveEmployeeNames", [])}
+        _lock_people_named(proposed)
+        if proposed & _accepted_names_elsewhere(shift):
+            raise DomainError("DOUBLE_ASSIGNMENT", 422, message="Сотрудник уже назначен в другую боевую группу.")
         from organization_management.apps.ops.duty_dispatch import guard_combat_acceptance
         guard_combat_acceptance(shift.business_date, submission)
     shift.submission = {
@@ -368,6 +392,7 @@ def replace_member(shift_id, *, outgoing, incoming, reason_code, safe_comment):
         raise DomainError("ALREADY_IN_ROSTER", 422, message=
             "Указанный сотрудник уже состоит в основном составе.",
         )
+    _lock_people_named({incoming, *roster})
     if incoming in _accepted_names_elsewhere(shift):
         raise DomainError("DOUBLE_ASSIGNMENT", 422, message=
             "Заменяющий сотрудник уже принят в другую боевую группу на эту "

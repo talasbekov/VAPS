@@ -429,7 +429,7 @@ function PassportAlert({
   return (
     <div
       role="status"
-      className="mb-4 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+      className="mb-4 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900   "
     >
       <AlertTriangle className="h-5 w-5 shrink-0" />
       <div className="text-sm">

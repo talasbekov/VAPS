@@ -21,10 +21,10 @@ async function signIn(page: Page, username: string, password: string): Promise<v
 /**
  * Дождаться гидратации: клик и сабмит ДО неё уходят браузерной отправкой —
  * форма не проверяется вовсе, и проба ловит не то, что проверяет.
- * Признак готовности клиента — включившийся переключатель темы.
+ * Признак готовности клиента — эффект измерения высоты Navbar.
  */
 async function hydrated(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: /тему|theme/i }).first()).toBeEnabled({
+  await expect(page.locator('.sj-shell')).toHaveAttribute('style', /--sj-header-height:/, {
     timeout: 20_000,
   })
 }

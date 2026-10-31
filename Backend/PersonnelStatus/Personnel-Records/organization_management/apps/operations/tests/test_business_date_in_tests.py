@@ -134,7 +134,7 @@ def _test_files():
 def _offenders():
     found = []
     for path in _test_files():
-        relative = str(path.relative_to(APPS))
+        relative = path.relative_to(APPS).as_posix()
         if relative in ALLOWED:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))

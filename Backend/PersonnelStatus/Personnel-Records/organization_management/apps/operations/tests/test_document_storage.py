@@ -79,7 +79,7 @@ def test_a_traversing_original_name_cannot_move_the_file_out_of_the_root():
     path = document_storage.storage_path(make("../../etc/passwd"))
 
     assert path == Path(f"/srv/ops-private/{KEY}")
-    assert path.resolve() == Path(f"/srv/ops-private/{KEY}")
+    assert path.resolve() == Path(f"/srv/ops-private/{KEY}").resolve()
 
 
 @override_settings(OPS_PRIVATE_STORAGE_ROOT="/srv/ops-private")

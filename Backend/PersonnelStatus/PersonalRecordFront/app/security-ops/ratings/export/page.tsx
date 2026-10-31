@@ -63,7 +63,7 @@ export default function RatingExportPage() {
         <PageHeader
           eyebrow="Оценка и отчётность"
           title="История выгрузок рейтинга"
-          description="Ранее созданные выгрузки оперативного рейтинга и состояния их обработки."
+
         />
 
         <RatingsNav />

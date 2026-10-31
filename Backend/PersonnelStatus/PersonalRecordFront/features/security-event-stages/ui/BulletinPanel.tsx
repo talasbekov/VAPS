@@ -28,7 +28,6 @@ import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   SECURITY_EVENT_KIND_LABEL,
-  STAGE_LABEL,
 } from "@/entities/security-event";
 import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
@@ -83,7 +82,6 @@ export function BulletinPanel({ event, initiallyOpen = false }: { event: Securit
               />
             )}
             <span className="text-sm font-semibold">Бюллетень мероприятия</span>
-            <span className="text-xs text-muted-foreground">сведения об ОМ</span>
           </button>
 
           {/* Ссылка на карточку визита стоит НА БЮЛЛЕТЕНЕ (Plane №193 —
@@ -174,11 +172,8 @@ function EventFacts({ event }: { event: SecurityEvent }) {
               : objectQuery.data.address;
 
   return (
-    <section className="rounded-md border bg-muted/30 p-3">
-      <h3 className="mb-2 text-sm font-semibold">Сведения об ОМ</h3>
+    <section aria-label="Реквизиты мероприятия">
       <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
-        <Fact label="Номер ОМ" value={event.code} />
-        <Fact label="Наименование ОМ" value={event.title} />
         {/* Тип, локация, время и старший вводятся в окне создания. У ОМ,
             заведённых до 23.08.2026, полей не было вовсе — «не указан»
             здесь честнее подставленного «Внутреннее». */}
@@ -229,7 +224,6 @@ function EventFacts({ event }: { event: SecurityEvent }) {
           label={event.kind === "FOREIGN" ? "Старший ГВО" : "Старший наряда"}
           value={event.chiefName.trim() === "" ? "не назначен" : event.chiefName}
         />
-        <Fact label="Текущий статус" value={STAGE_LABEL[event.stage]} />
         <Fact label="Охраняемые лица" value={personsLabel} />
         <Fact
           label="Количество охраняемых лиц"
@@ -255,20 +249,7 @@ function EventFacts({ event }: { event: SecurityEvent }) {
       </dl>
       {/* Сводка живёт на СТРАНИЦЕ ВИЗИТА (`[ГВО-01]`/`[ГВО-03]`, Plane №436 и
           №441): ссылка ведёт туда, панели в карточке ОМ больше нет. */}
-      <p className="mt-2 text-xs text-muted-foreground">
-        Охраняемые лица, старший ГВО и численность выводятся из{" "}
-        <Link
-          href={`/security-ops/visits/${event.id}`}
-          className="font-semibold text-primary-ink"
-        >
-          сводки ГВО
-        </Link>
-        {/* Адрес кнопки в подписи ОБЯЗАН совпадать с местом, где она стоит:
-            с №193 она в заголовке этой самой панели, а не в шапке карточки.
-            Подпись, отсылающая не туда, хуже отсутствия подписи — человек
-            ищет кнопку там, где её нет. */}
-        {" "}— кнопка «Информация по ГВО» в заголовке этой панели.
-      </p>
+
     </section>
   );
 }

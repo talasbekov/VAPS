@@ -319,13 +319,9 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
         }}
       >
         <DialogHeader className="shrink-0 gap-1 border-b px-[22px] pb-3.5 pt-[22px]">
-          <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
-            Новое охранное мероприятие
-          </p>
           <DialogTitle>Создать бюллетень</DialogTitle>
           <DialogDescription className="text-[11.5px]">
-            Поля идут в порядке колонок бланка бюллетеня; внизу — строка, как
-            она ляжет в документ.
+            Проверьте предпросмотр бюллетеня перед созданием.
           </DialogDescription>
         </DialogHeader>
 

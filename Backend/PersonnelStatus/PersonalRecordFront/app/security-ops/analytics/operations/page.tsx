@@ -175,9 +175,9 @@ function OperationsAnalyticsScreen() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="Аналитика мероприятий"
-          description="Состояние охранных мероприятий, подготовка и обеспеченность силами"
+          description="Подготовка и обеспеченность мероприятий силами."
           actions={
             <>
               {freshness !== null && (

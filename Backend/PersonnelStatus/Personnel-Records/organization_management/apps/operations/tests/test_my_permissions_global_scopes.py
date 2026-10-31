@@ -208,7 +208,7 @@ def test_schema_describes_global_permissions_as_a_required_string_list():
     body = schema["components"]["schemas"]["MyPermissionsResponse"]
     assert body["type"] == "object"
     assert set(body["properties"]) == {
-        "permissions", "global_permissions", "roles", "status_manage_division_ids", "duty_register_scope",
+        "permissions", "global_permissions", "roles", "status_manage_division_ids", "duty_register_scope", "service_employees_access",
     }
     assert "global_permissions" in body["required"]
     global_codes = body["properties"]["global_permissions"]
@@ -221,3 +221,5 @@ def test_schema_describes_global_permissions_as_a_required_string_list():
     assert status_scope["nullable"] is True
     assert "duty_register_scope" in body["required"]
     assert body["properties"]["duty_register_scope"]["type"] == "object"
+    assert "service_employees_access" in body["required"]
+    assert body["properties"]["service_employees_access"]["type"] == "boolean"

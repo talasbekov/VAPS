@@ -220,6 +220,9 @@ from organization_management.apps.operations.models_duty_log import (  # noqa: E
 )
 
 from organization_management.apps.operations.models_combat import (  # noqa: E402
+    OpsCombatGroup,  # noqa: F401
+    OpsCombatDutyMember,  # noqa: F401
+    OpsCombatPlace,  # noqa: F401
     OpsCombatDutyShift,  # noqa: F401
     OpsCombatDutyType,  # noqa: F401
     OpsCombatRoute,  # noqa: F401

@@ -8,7 +8,7 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.services import PermissionService
-from organization_management.apps.operations.api.permissions import resolve_actor_id
+from organization_management.apps.operations.api.permissions import resolve_actor_id, effective_permissions
 from organization_management.apps.ops import ratings
 from organization_management.apps.operations.models_rating import OpsRatingFeatureFlags
 
@@ -22,6 +22,11 @@ def visible_employees(request):
     return qs.select_related('rank', 'staff_unit__position', 'staff_unit__division').order_by(
         'last_name', 'first_name', 'middle_name', 'id',
     )
+
+
+def can_access_directory(request):
+    """Shared directory gate, preserving the active own-employee fallback."""
+    return bool({'*', 'personnel.view'} & effective_permissions(request)) or visible_employees(request).exists()
 
 
 def annotated_employees(qs, today):

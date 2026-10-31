@@ -84,6 +84,7 @@ try {
     run("scripts/tests/workdesk.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/resource-calculation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-workspace.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/combat-ui-regressions.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-control.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-shift.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-personal-duty-list.test.cjs", [], process.env, ["--test"]);

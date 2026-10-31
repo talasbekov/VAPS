@@ -221,7 +221,23 @@ test('day source failure names both reads, exposes accessible recovery and retai
   assert.ok(retry, 'source failure must have a named button'); assert.equal(retry.props.disabled, false);
   await retry.props.onClick(); assert.equal(retries, 1);
   const correction = nodes.find(node => node.type === 'correction');
-  assert.ok(correction); assert.equal(correction.key, '2026-10-23:1'); assert.equal(correction.props.dataReady, false);
+  assert.ok(correction); assert.equal(correction.key, JSON.stringify(['reader-a', 1, '2026-10-23'])); assert.equal(correction.props.dataReady, false);
+});
+
+test('write-only grant refresh changes protected reads but retains the draft identity', t => {
+  const f = fixture(t); const before = f.render();
+  f.client.setQueryData(['ops-me'], { permissions: ['status.view', 'service_summary.view', 'daily_report.correct'], global_permissions: [], roles: [] });
+  const after = f.render();
+  assert.notEqual(after.readScope, before.readScope);
+  assert.equal(after.draftContext, before.draftContext);
+});
+
+for (const change of ['actor', 'root', 'date']) test(`correction draft identity changes with ${change}`, t => {
+  const f = fixture(t); const before = f.render();
+  if (change === 'actor') f.state.actor = 'reader-b';
+  if (change === 'root') f.state.root = 2;
+  const after = f.render(change === 'date' ? '2026-10-24' : undefined);
+  assert.notEqual(after.draftContext, before.draftContext);
 });
 
 test('context suspension keeps the same-authority correction owner mounted with actions disabled', async t => {

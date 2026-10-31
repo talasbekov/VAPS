@@ -14,15 +14,6 @@
 .workdesk-sidebar nav > details { border: 0; border-top: 1px solid hsl(var(--sidebar-border)); border-radius: 0; padding-top: 18px; }
 .workdesk-sidebar .sidebar-role-card { animation: none; }
 .workdesk-sidebar .sidebar-nav-item { animation: none; }
-
-.dark .workdesk-sidebar {
-  --sidebar: 225 10% 15%;
-  --sidebar-foreground: 60 10% 96%;
-  --sidebar-accent: 260 12% 24%;
-  --sidebar-accent-foreground: 60 10% 96%;
-  --sidebar-border: 225 8% 29%;
-  --muted-foreground: 70 5% 73%;
-}
 .sj-sidebar-identity {
   display: flex;
   flex-shrink: 0;
@@ -120,4 +111,15 @@
   .sidebar-pulse {
     animation: none;
   }
+}
+
+/* Calm internal navigation; the top Navbar has its own untouched tokens. */
+.workdesk-sidebar {
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 215 27.907% 16.863%;
+  --sidebar-accent: 220 14.286% 95.882%;
+  --sidebar-accent-foreground: 215 27.907% 16.863%;
+  --sidebar-border: 220 13.043% 90.98%;
+  --muted-foreground: 220 8.936% 46.078%;
+  --ring: 215 27.907% 16.863%;
 }

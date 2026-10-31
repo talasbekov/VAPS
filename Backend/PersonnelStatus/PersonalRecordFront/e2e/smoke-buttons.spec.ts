@@ -147,10 +147,10 @@ const PERSONAS = ALL_PERSONAS.filter((p) =>
 )
 
 const FORM_LOGIN_DESTINATION: Readonly<Record<string, { path: string; heading: string }>> = {
-  [STAND_USERNAME]: { path: '/dashboard', heading: 'Обзор' },
-  observer: { path: '/security-ops/objects', heading: 'Объекты и паспорта' },
-  erda: { path: '/statuses', heading: 'Управление статусами' },
-  'forces-officer': { path: '/employees', heading: 'Рабочий стол' },
+  [STAND_USERNAME]: { path: '/workspace', heading: 'Доступ и пользователи' },
+  observer: { path: '/workspace', heading: 'Мои задания и дежурства' },
+  erda: { path: '/workspace', heading: 'Люди и ежедневная работа' },
+  'forces-officer': { path: '/workspace', heading: 'Работа департамента' },
 }
 
 // ─────────────────────── запись трафика ───────────────────────
@@ -993,6 +993,12 @@ test.describe('смоук-обход портала', () => {
           }
           const items = (await collect(page, chrome)).filter((d) => !DESTRUCTIVE.test(d.name))
           for (const d of items) {
+            if (Date.now() >= ctx.deadline) {
+              ctx.findings.push({ page: ctx.label, element: '(потолок обхода)', action: '—', api: '—',
+                status: '—', verdict: '⚠️ обход усечён',
+                details: 'бюджет каркаса исчерпан; оставшиеся элементы НЕ проверены' })
+              break
+            }
             if (currentPath(page) !== norm(HOME)) await open(page, HOME)
             const match = (await collect(page, chrome)).find((f) => f.key === d.key)
             if (match === undefined) continue

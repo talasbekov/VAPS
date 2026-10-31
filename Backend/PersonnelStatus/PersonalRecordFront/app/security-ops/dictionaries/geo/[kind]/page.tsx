@@ -51,7 +51,7 @@ export default function GeoDictionaryPage() {
   if (!isLoading && !hasPermission("dictionary.view")) return <OpsAccessDenied what="справочников" />;
   if (!valid) return <DictionariesWorkspace><p>Справочник не найден</p></DictionariesWorkspace>;
   return <DictionariesWorkspace><div className="space-y-4">
-    <PageHeader eyebrow="Система · Справочники" title={countryMode ? "Страны" : "Города"} description="Корректирование меняет название; редактирование создаёт преемника и сохраняет историю." />
+    <PageHeader  title={countryMode ? "Страны" : "Города"} description="Корректирование меняет название. Редактирование создаёт преемника с сохранением истории." />
     <Link href="/security-ops/dictionaries" className="text-primary-ink">← Все справочники</Link>
     {query.isLoading && <p>Загрузка…</p>}{query.isError && <LoadFailure what="значения справочника" onRetry={() => void query.refetch()} />}
     {query.data && <DictionaryReviewTable rows={query.data.map((row) => ({ id: row.id, code: row.code, name: row.country_name ? `${row.name} (${row.country_name})` : row.name, nameKk: row.name_kk, active: row.is_active, count: row.usage.totalCount, inactiveSince: row.inactive_since, successor: row.superseded_by, lastChange: row.lastChange }))} onSelect={(id) => setSelectedId(Number(id))} />}

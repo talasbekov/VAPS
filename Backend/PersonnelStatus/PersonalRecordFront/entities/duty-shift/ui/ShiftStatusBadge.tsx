@@ -5,11 +5,11 @@ import type { DutyShiftState } from "../model/types";
 import { DUTY_STATE_LABEL } from "../model/plan-lifecycle";
 
 const STATE_CLASS: Record<DutyShiftState, string> = {
-  PLANNED: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  ACKNOWLEDGED: "bg-purple-100 text-purple-800 hover:bg-purple-100",
-  ACTIVE: "bg-green-100 text-green-800 hover:bg-green-100",
-  COMPLETED: "bg-muted text-muted-foreground hover:bg-muted",
-  CANCELLED: "bg-red-100 text-red-800 hover:bg-red-100",
+  PLANNED: "sj-status-neutral",
+  ACKNOWLEDGED: "sj-status-pending",
+  ACTIVE: "sj-status-success",
+  COMPLETED: "sj-status-success",
+  CANCELLED: "sj-status-error",
 };
 
 export function ShiftStatusBadge({

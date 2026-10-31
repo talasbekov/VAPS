@@ -29,6 +29,7 @@
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { ChevronRight, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -217,7 +218,7 @@ function CollapsedSubmissionBadge({
   }
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900  ">
         Сдан · v{summary.submission.version}
         {summary.submission.late && " · с опозданием"}
       </span>
@@ -228,6 +229,63 @@ function CollapsedSubmissionBadge({
   );
 }
 
+interface StatusDraft {
+  id: string;
+  name: string;
+  divisionId: number;
+  businessDate: string;
+  actor: string;
+}
+
+// The draft belongs to the board, outside rows replaced by a protected-read
+// refresh. Recheck the current employee and scope before every write.
+function BoardStatusDraft({ draft, contextReady, onClose }: {
+  draft: StatusDraft;
+  contextReady: boolean;
+  onClose: () => void;
+}) {
+  const access = useOpsPermissions();
+  const savingRef = useRef(false);
+  const createStatus = useCreateOpsStatus();
+  const employees = useQuery<DailyEmployeesResponse>({
+    queryKey: ["daily-expense-board", "employees", draft.divisionId, draft.businessDate],
+    queryFn: () => opsApiClient.get<DailyEmployeesResponse>(
+      `${DAILY_EMPLOYEES_PATH}?division_id=${draft.divisionId}&business_date=${draft.businessDate}`),
+    enabled: contextReady,
+    staleTime: 5 * 60 * 1000,
+  });
+  const person = employees.data?.results.find(row => String(row.id) === draft.id);
+  const divisionId = Number(person?.division_id);
+  const canSubmit = contextReady && employees.isSuccess && !employees.isFetching &&
+    !access.isLoading && !access.error && person !== undefined &&
+    Number.isSafeInteger(divisionId) && divisionId > 0 && canManageStatusInDivision(access, divisionId);
+  return <SetStatusDialog
+    open
+    onOpenChange={next => {
+      if (savingRef.current) return;
+      if (!next) { onClose(); createStatus.reset(); }
+    }}
+    employeeId={draft.id}
+    employeeName={draft.name}
+    businessDate={draft.businessDate}
+    isSaving={createStatus.isPending}
+    canSubmit={canSubmit}
+    permissionMessage="Нет подтверждённого права изменять статус этого сотрудника. Выбранный статус сохранён в форме."
+    failure={createStatus.error?.message ?? null}
+    onSubmit={async ({ statusCode, participations }) => {
+      if (savingRef.current || !canSubmit) return;
+      savingRef.current = true;
+      try {
+        await createStatus.mutateAsync({ employee_id: Number(draft.id), status_type_code: statusCode,
+          date_start: draft.businessDate, date_end: addOneDay(draft.businessDate), participations });
+        onClose();
+      } catch {
+        // Keep the draft and display the rejected write in the dialog.
+      } finally { savingRef.current = false; }
+    }}
+  />;
+}
+
 interface DivisionGroupProps {
   row: DivisionRowVM;
   columnLabels: Record<string, string>;
@@ -236,6 +294,7 @@ interface DivisionGroupProps {
   onToggle: () => void;
   submissionsSummary: DivisionSubmissionSummary;
   contextReady: boolean;
+  onSetStatus: (draft: Omit<StatusDraft, "actor">) => void;
 }
 
 function DivisionGroup({
@@ -246,9 +305,9 @@ function DivisionGroup({
   onToggle,
   submissionsSummary,
   contextReady,
+  onSetStatus,
 }: DivisionGroupProps) {
   const access = useOpsPermissions();
-  const savingRef = useRef(false);
   // ПРАВИЛО СОСТОЯНИЯ, а не права (Plane №295). Сводящему за департамент
   // список НЕсданного управления не раскрывается: пока день не сдан, список —
   // черновик, и считать по нему расход значит считать по незаконченным
@@ -313,14 +372,6 @@ function DivisionGroup({
   // каталогом каждое своё.
   const catalog = useOpsStatusTypes(open);
 
-  // Кому сейчас проставляют статус: null — окно закрыто. Состояние держит
-  // ГРУППА, а не строка таблицы: окно одно на управление, и его состояние не
-  // должно жить в каждой из сотен строк.
-  const [statusFor, setStatusFor] = useState<{ id: string; name: string } | null>(
-    null
-  );
-  const createStatus = useCreateOpsStatus();
-
   const isPending = employees.isPending || statuses.isPending || catalog.isLoading;
   const isError = employees.isError || statuses.isError || catalog.isError;
   const people = employees.data?.results ?? [];
@@ -330,8 +381,6 @@ function DivisionGroup({
       contextReady && employees.isSuccess && !employees.isFetching && !access.isLoading && !access.error &&
       canManageStatusInDivision(access, divisionId);
   };
-  const selectedPerson = people.find(person => person.id === statusFor?.id);
-  const canSubmitStatus = canEditPerson(selectedPerson);
   const statusByEmployee = new Map<number, OpsEmployeeStatusRow | null | undefined>();
   for (const person of people) {
     try { statusByEmployee.set(Number(person.id), effectiveDailyStatus((statuses.data ?? []).filter(entry => entry.employee_id === Number(person.id)), businessDate, catalog.all)); }
@@ -498,9 +547,11 @@ function DivisionGroup({
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            setStatusFor({
+                            onSetStatus({
                               id: String(person.id),
                               name: person.full_name,
+                              divisionId: row.id,
+                              businessDate,
                             })
                           }
                         >
@@ -515,46 +566,7 @@ function DivisionGroup({
         </div>
       )}
 
-      {statusFor !== null && (
-        <SetStatusDialog
-          open
-          onOpenChange={(next) => {
-            if (savingRef.current) return;
-            if (!next) {
-              setStatusFor(null);
-              createStatus.reset();
-            }
-          }}
-          employeeId={statusFor.id}
-          employeeName={statusFor.name}
-          businessDate={businessDate}
-          isSaving={createStatus.isPending}
-          canSubmit={canSubmitStatus}
-          permissionMessage="Нет подтверждённого права изменять статус этого сотрудника. Выбранный статус сохранён в форме."
-          failure={createStatus.error?.message ?? null}
-          onSubmit={async ({ statusCode, participations }) => {
-            if (savingRef.current || !canSubmitStatus) return;
-            savingRef.current = true;
-            try {
-              await createStatus.mutateAsync({
-                employee_id: Number(statusFor.id),
-                status_type_code: statusCode,
-                date_start: businessDate,
-                // Полуинтервал бэка [начало, конец): статус на ОДИН день
-                // закрывается СЛЕДУЮЩИМ днём, иначе строка пуста и статуса нет
-                // ни одного дня.
-                date_end: addOneDay(businessDate),
-                participations,
-              });
-              setStatusFor(null);
-            } catch {
-              // The mutation's error is displayed in the retained dialog.
-            } finally {
-              savingRef.current = false;
-            }
-          }}
-        />
-      )}
+
     </div>
   );
 }
@@ -710,6 +722,9 @@ export function DailyExpenseBoard({
   onBusinessDateChange,
   regionLabel = "Ежедневный расход",
 }: DailyExpenseBoardProps = {}) {
+  const { data: session } = useSession();
+  const draftActor = (session?.user as { id?: string } | undefined)?.id ?? session?.user?.email ?? "";
+  const [statusDraft, setStatusDraft] = useState<StatusDraft | null>(null);
   // Гейт права — ТОТ ЖЕ, что у соседних экранов той же ручки: командный центр
   // (`command-center/page.tsx`) и аналитика (`analytics/page.tsx`) включают
   // `useStrengthReport` только при `status.view`. Ревью ветки 22.08 нашло, что
@@ -735,6 +750,10 @@ export function DailyExpenseBoard({
     retryDate,
     isRetryingDate,
   } = useBusinessDate(businessDateOverride, gateAllowed);
+  useEffect(() => {
+    setStatusDraft(previous => previous && (!canRead || previous.actor !== draftActor ||
+      (resolvedBusinessDate !== null && previous.businessDate !== resolvedBusinessDate)) ? null : previous);
+  }, [canRead, draftActor, resolvedBusinessDate]);
   const strength = useStrengthReport(
     gateAllowed && !dateResolving,
     resolvedBusinessDate ?? undefined
@@ -838,6 +857,10 @@ export function DailyExpenseBoard({
   const contextReady = dateReady && strength.isSuccess && !strength.isFetching &&
     data?.business_date === resolvedBusinessDate &&
     divisionsQuery.isSuccess && !divisionsQuery.isFetching;
+  useEffect(() => {
+    if (contextReady && data) setStatusDraft(previous => previous &&
+      !data.rows.some(row => row.division_id === previous.divisionId) ? null : previous);
+  }, [contextReady, data]);
 
   // Сводка сдачи дня — «Сдано N из M управлений» + кто не сдал, и state для
   // КАЖДОГО управления (бейдж/панель в `DivisionGroup`) — из ОДНОГО списочного
@@ -1194,6 +1217,7 @@ export function DailyExpenseBoard({
                 onToggle={() => toggle(row.division_id)}
                 submissionsSummary={summaryFor(row.division_id)}
                 contextReady={contextReady}
+                onSetStatus={draft => setStatusDraft({ ...draft, actor: draftActor })}
               />
             );
           })}
@@ -1205,6 +1229,15 @@ export function DailyExpenseBoard({
           «Сбор сил» на этом же экране красит пилюли статусов), и молчать о
           нём значило бы оставить читателю догадку «почему тут серо». */}
       {data && <p className="text-xs text-muted-foreground">{STATUS_DATE_HINT}</p>}
+      {statusDraft !== null && statusDraft.actor === draftActor && canRead &&
+        statusDraft.businessDate === resolvedBusinessDate && (
+        <BoardStatusDraft
+          key={`${statusDraft.actor}-${statusDraft.id}-${statusDraft.businessDate}`}
+          draft={statusDraft}
+          contextReady={contextReady}
+          onClose={() => setStatusDraft(null)}
+        />
+      )}
     </section>
   );
 }

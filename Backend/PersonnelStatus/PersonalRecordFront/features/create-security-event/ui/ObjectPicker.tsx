@@ -119,7 +119,7 @@ export function ObjectPicker({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      <PopoverContent className="max-h-[var(--radix-popover-content-available-height)] w-[--radix-popover-trigger-width] overflow-y-auto p-0" align="start">
         <div className="relative border-b">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"

@@ -1025,6 +1025,9 @@ class MyPermissionsViewSet(viewsets.ViewSet):
                     "duty_register_scope": serializers.DictField(
                         help_text="Effective duty register scopes, including temporary grants; null is global.",
                     ),
+                    "service_employees_access": serializers.BooleanField(
+                        help_text="Directory access, including the active own-employee fallback.",
+                    ),
                 },
             )
         )
@@ -1042,6 +1045,7 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         # permissions and role names cannot tell a row whether it is editable.
         status_scope = PermissionService.visible_division_ids(actor_id, "status.manage")
         from organization_management.apps.ops.duty_record_access import effective_register_scope
+        from organization_management.apps.core.service_employees import can_access_directory
         # РОЛИ РАЗДЕЛА — РЯДОМ С ПРАВАМИ (Plane №325). Права отвечают на «что
         # мне можно», а человеку в шапке нужно «кто я здесь»: до №325 портал
         # печатал КАДРОВУЮ роль («Роль-1: Просмотр организации») учётке, чья
@@ -1061,6 +1065,7 @@ class MyPermissionsViewSet(viewsets.ViewSet):
                 ),
                 "roles": _actor_section_roles(actor_id),
                 "duty_register_scope": effective_register_scope(actor_id, status_scope=status_scope),
+                "service_employees_access": can_access_directory(request),
             }
         )
 

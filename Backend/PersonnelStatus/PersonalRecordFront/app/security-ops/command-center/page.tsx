@@ -179,9 +179,9 @@ export default function CommandCenterPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          
           title="Оперативный контроль"
-          description="Проверьте этапы незавершённых ОМ, недобор по заявкам сил и конфликты. Для действий откройте карточку мероприятия."
+          description="Незавершённые ОМ, недобор сил и конфликты."
           actions={
             <>
               {freshness !== null && (
@@ -249,7 +249,7 @@ function EventRow({ event }: { event: SecurityEvent }) {
       href={`/security-ops/events/${event.id}`}
       className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3.5 gap-y-2 border-b py-3 last:border-0 hover:bg-muted/30 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto] sm:items-center"
     >
-      <span className="row-span-2 grid h-11 w-11 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-blue-800 dark:text-blue-300 sm:row-span-1">
+      <span className="row-span-2 grid h-11 w-11 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-blue-800  sm:row-span-1">
         {event.businessDate.slice(8, 10)}
       </span>
       <span className="min-w-0">

@@ -134,8 +134,7 @@ class ServiceEmployeeViewSet(viewsets.ViewSet):
         super().initial(request, *args, **kwargs)
         if resolve_actor_id(request) is None:
             raise PermissionDenied('PERMISSION_DENIED')
-        perms = effective_permissions(request)
-        if not ({'*', 'personnel.view'} & perms) and not service.visible_employees(request).exists():
+        if not service.can_access_directory(request):
             if self.action != 'retrieve':
                 raise PermissionDenied('PERMISSION_DENIED')
 

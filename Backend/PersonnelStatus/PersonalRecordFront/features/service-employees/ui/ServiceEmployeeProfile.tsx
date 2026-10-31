@@ -33,7 +33,7 @@ export function ServiceEmployeeProfile({ id, filters }: { id: string; filters: s
     : <span className="font-semibold">{assignment.event_code} · {assignment.event_title}</span>;
   return <DashboardLayout><div className="sj-employee-view sj-employee-profile space-y-6">
     <Link href={`/service-employees${filters ? `?${new URLSearchParams(filters)}` : ''}`} className="sj-profile-return inline-flex min-h-11 items-center text-sm font-medium text-primary-ink hover:underline">← Сотрудники подразделения</Link>
-    <PageHeader className="sj-employee-heading" eyebrow="Личный состав" title={data?.full_name ?? 'Карточка сотрудника'} description="Основные сведения, личный профиль, назначения и история ОМ" />
+    <PageHeader className="sj-employee-heading" eyebrow="Личный состав" title={data?.full_name ?? 'Карточка сотрудника'}  />
     {(permissionsLoading || (authorityReady && employee.isPending)) && <p role="status">Загрузка карточки…</p>}
     {!authorityReady && !permissionsLoading && <LoadFailure what="доступ к кадровому разделу" onRetry={() => void queryClient.refetchQueries({ queryKey: ['ops-me'], exact: true })} isRetrying={checkingAccess} />}
     {notFound ? <p role="alert">Сотрудник не найден в вашей области доступа.</p> : authorityReady && employee.isError && <LoadFailure what="карточку сотрудника" onRetry={() => void employee.refetch()} isRetrying={employee.isFetching} />}

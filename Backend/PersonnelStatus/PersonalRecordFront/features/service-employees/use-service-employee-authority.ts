@@ -9,6 +9,7 @@ export function useServiceEmployeeAuthority() {
   const ready = !identityLoading && !sessionExpired && user !== null && !access.isLoading && access.permissions !== undefined && !access.error;
   const key = JSON.stringify({
     actor: user?.id,
+    directoryAccess: access.serviceEmployeesAccess,
     permissions: Array.from(access.permissions ?? []).sort(),
     globalPermissions: Array.from(access.globalPermissions ?? []).sort(),
     scopes: access.roles.map(role => [role.code, role.scope_division_id]).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),

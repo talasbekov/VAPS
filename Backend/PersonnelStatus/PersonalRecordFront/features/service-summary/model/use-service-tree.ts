@@ -71,6 +71,8 @@ export interface ServiceTree {
   isError: boolean;
   readAllowed: boolean;
   readScope: string;
+  /** Draft identity only; protected reads still use the complete authority scope. */
+  draftContext: string;
   readBlocked: boolean;
   canRetry: boolean;
   retryPending: boolean;
@@ -140,6 +142,7 @@ export function useServiceTree(businessDate: string | null): ServiceTree {
     isError: treeQuery.isError || submissionsQuery.isError,
     readAllowed: access.allowed,
     readScope: access.scope,
+    draftContext: JSON.stringify([access.actor, canonicalRootId, businessDate]),
     readBlocked,
     canRetry: access.allowed && !readBlocked && !retryPending,
     retryPending,

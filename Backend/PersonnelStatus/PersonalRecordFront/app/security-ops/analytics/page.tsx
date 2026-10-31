@@ -86,8 +86,8 @@ import {
 /** §22.3: карта идёт от СОСТОЯНИЯ — ни одна ветка не смотрит на value. */
 const STATE_CLASS: Record<MetricState, string> = {
   NORMAL: "border bg-card",
-  WARNING: "border-amber-300 bg-amber-50 dark:bg-amber-950/30",
-  CRITICAL: "border-red-300 bg-red-50 dark:bg-red-950/30",
+  WARNING: "border-amber-300 bg-amber-50 ",
+  CRITICAL: "border-red-300 bg-red-50 ",
   UNKNOWN: "border-dashed bg-muted/30",
 };
 
@@ -100,8 +100,8 @@ const STATE_LABEL: Record<MetricState, string> = {
 
 /** §22.11: цвет — от severity ОТВЕТА, не от величины count. */
 const SEVERITY_CLASS: Record<AttentionSeverity, string> = {
-  CRITICAL: "border-red-300 bg-red-50 dark:bg-red-950/30",
-  WARNING: "border-amber-300 bg-amber-50 dark:bg-amber-950/30",
+  CRITICAL: "border-red-300 bg-red-50 ",
+  WARNING: "border-amber-300 bg-amber-50 ",
   INFO: "border bg-card",
 };
 
@@ -281,7 +281,7 @@ function ServiceAnalyticsScreen() {
         <PageHeader
           eyebrow="Ежедневный расход"
           title="Состояние службы и личного состава"
-          description="Оперативная картина численности, статусов, дежурств и нагрузки подразделений"
+          description="Численность, статусы и нагрузка подразделений."
           actions={
             <>
               {freshness !== null && (

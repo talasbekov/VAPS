@@ -161,6 +161,8 @@ const LAWS_MOCK_BY_CONFIG: ApiGap = {
  * надпись «на бэке нет /api/ops/*».
  */
 export const SECURITY_OPS_RULED_PREFIXES: readonly string[] = [
+  "/security-ops/duty-register",
+  "/security-ops/assistant",
   "/security-ops/objects",
   "/security-ops/profile",
   ...SECURITY_EVENT_ROUTES,
@@ -284,6 +286,8 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
     const normalized = pathname.replace(/\/+$/, "") || "/";
+    // These workspaces call their live APIs directly, without MSW domains.
+    if (normalized === "/security-ops/duty-register" || normalized === "/security-ops/assistant") return null;
     if (
       normalized === "/security-ops/objects" ||
       normalized.startsWith("/security-ops/objects/")

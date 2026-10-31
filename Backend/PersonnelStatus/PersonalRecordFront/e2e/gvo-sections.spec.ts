@@ -649,12 +649,12 @@ function contrastRatio(colorA: string, colorB: string): number {
 
 test.describe(
   LIVE
-    ? 'тёмная тема — плашка страны в сводке ГВО'
-    : 'тёмная тема — плашка страны в сводке ГВО (скип: нет SMOKE_LIVE=1)',
+    ? 'светлая тема при системной тёмной — плашка страны в сводке ГВО'
+    : 'светлая тема при системной тёмной — плашка страны в сводке ГВО (скип: нет SMOKE_LIVE=1)',
   () => {
     test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-    test('фон и текст плашки различимы в тёмной теме', async ({ page, ownForeign }) => {
+    test('фон и текст плашки различимы при системной тёмной теме', async ({ page, ownForeign }) => {
       const target = ownForeign
       expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
 
@@ -664,9 +664,11 @@ test.describe(
         timeout: 15_000,
       })
 
-      // Настоящий тумблер темы приложения, а не подмена data-theme мимо него.
-      await page.getByRole('button', { name: 'Переключить на тёмную тему' }).click()
-      await expect(page.locator('html')).toHaveClass(/dark/)
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await page.evaluate(() => localStorage.setItem('theme', 'dark'))
+      await page.reload()
+      await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await expect(page.locator('html')).toHaveCSS('color-scheme', 'light')
 
       const abbrBox = page.getByTestId('gvo-country-abbr')
       // toBeVisible проверяет РЕАЛЬНУЮ видимость (размер, opacity, display) —

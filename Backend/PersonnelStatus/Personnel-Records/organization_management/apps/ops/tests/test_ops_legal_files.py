@@ -332,7 +332,12 @@ def test_download_rejects_symlink_escape(tmp_path):
     foreign = tmp_path / "foreign.pdf"
     foreign.write_bytes(path.read_bytes())
     path.unlink()
-    path.symlink_to(foreign)
+    try:
+        path.symlink_to(foreign)
+    except OSError as error:
+        if getattr(error, "winerror", None) == 1314:
+            pytest.skip("Windows test account lacks the privilege to create symlinks")
+        raise
     assert download(api, row).status_code == 500
 
 

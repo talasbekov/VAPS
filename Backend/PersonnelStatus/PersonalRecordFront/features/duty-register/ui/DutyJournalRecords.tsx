@@ -115,7 +115,7 @@ export function DutyJournalRecords() {
       {(query.isLoading || (query.isFetching && !data)) && <p role="status">Загрузка журнала и показателей…</p>}
       {query.isError && <LoadFailure what="журнал дежурств" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />}
       {query.isError && data && <p role="status" className="rounded-lg border border-amber-300 p-3 text-sm">Показаны ранее загруженные данные. Изменения доступны после успешного обновления.</p>}
-      {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{notice}</p>}
+      {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800  ">{notice}</p>}
       {data && <>
         <p className="text-sm text-muted-foreground">Период: {data.period.from} — {data.period.to}. Часы обрезаны границами периода. Время: {data.time_zone}.</p>
         <DutyRegisterAppliedFilters params={search} data={data} kinds={kinds.visibleData?.results ?? []} />

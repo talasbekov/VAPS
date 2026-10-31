@@ -16,21 +16,15 @@ button.card:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset:
 .title { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 14px; line-height: 20px; font-weight: 600; }
 .status { font-size: 12px; line-height: 18px; color: hsl(var(--muted-foreground)); }
 .caption { margin: 12px 0 0; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 18px; }
-.step[data-state='done'] .marker { background: #2e8540; color: #fff; }
-.step[data-state='current'] .card { background: #fff9e6; border-color: #f1cb49; }
-.step[data-state='current'] .marker { background: #f7ce46; color: #1d1d1f; }
+.step[data-state='done'] .marker { background: #356348; color: #fff; }
+.step[data-state='current'] .card { background: hsl(var(--card)); border-color: #c9ae78; }
+.step[data-state='current'] .marker { background: #fbf4e5; color: #805b18; }
 .step[data-state='current'] .title { color: #1d1d1f; }
 .step[data-state='current'] .status { color: #65624f; }
 .step[data-state='viewed'] .card { border-color: hsl(var(--ring)); box-shadow: 0 0 0 1px hsl(var(--ring)); }
 .step[data-state='viewed'] .marker { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
-.stepper[data-closed='true'] .step[data-state='current'] .card { background: #eff8f0; border-color: #8ec49b; }
-.stepper[data-closed='true'] .step[data-state='current'] .marker { background: #2e8540; color: #fff; }
-:global(.dark) .step[data-state='current'] .card { background: #38331e; border-color: #b49a43; }
-:global(.dark) .step[data-state='current'] .title { color: #fff1b4; }
-:global(.dark) .step[data-state='current'] .status { color: #dbd2b4; }
-:global(.dark) .stepper[data-closed='true'] .step[data-state='current'] .card { background: #20392a; border-color: #548f64; }
-:global(.dark) .stepper[data-closed='true'] .step[data-state='current'] .title { color: #d5efdc; }
-:global(.dark) .stepper[data-closed='true'] .step[data-state='current'] .status { color: #b7d5bf; }
+.stepper[data-closed='true'] .step[data-state='current'] .card { background: hsl(var(--card)); border-color: #8da795; }
+.stepper[data-closed='true'] .step[data-state='current'] .marker { background: #356348; color: #fff; }
 @container (max-width: 800px) {
   .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .step:nth-child(3n)::after { display: none; }

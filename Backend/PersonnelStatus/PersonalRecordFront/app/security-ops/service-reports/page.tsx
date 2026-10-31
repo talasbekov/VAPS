@@ -37,7 +37,7 @@ const JOB_STATE_CLASS: Record<ReportJobState, string> = {
   PENDING:
     "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground",
   PROCESSING:
-    "inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800",
+    "inline-flex rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground",
   COMPLETED:
     "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-900",
   FAILED:
@@ -120,7 +120,7 @@ export default function ServiceReportsPage() {
         <PageHeader
           eyebrow="Отчёты"
           title="Дежурства и документы ОМ"
-          description="Документы ОМ формируются по данным выбранного мероприятия. Ранее созданные отчёты доступны в истории."
+          description="Выберите мероприятие для формирования документа. Готовые отчёты — в истории."
         />
 
         <ReportNavigation current="service" />
@@ -142,7 +142,7 @@ export default function ServiceReportsPage() {
           aria-label="Выгрузка документов ОМ"
           icon={FileText}
           title="Документы по мероприятию"
-          description="Скачивание файла по текущим данным для печати или отправки. Для сохранения неизменного среза бюллетеня создайте выпуск ниже."
+          description="Файл содержит текущие данные. Для сохранения неизменного бюллетеня создайте выпуск."
         >
           {!hasPermission("event.view") ? <p className="text-sm text-muted-foreground">Выгрузка документов доступна с правом просмотра мероприятий.</p> : documentKinds.isError || documentKinds.readAccessBlocked ? (
             <LoadFailure what="виды документов" onRetry={() => void documentKinds.refetch()} isRetrying={documentKinds.isFetching} />

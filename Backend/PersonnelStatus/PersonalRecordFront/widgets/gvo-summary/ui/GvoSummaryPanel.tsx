@@ -138,7 +138,9 @@ export function GvoSummaryPanel({
   };
   const filled = summaryQuery.data.filled;
   const approved = summaryQuery.data.visit?.status === "APPROVED";
-  const ready = approved || summaryQuery.data.visit?.status === "READY" || filled;
+  // READY is the visit lifecycle, not proof that the manual summary survived
+  // a reset. The server owns the current summary's filled flag.
+  const ready = approved || filled;
   const staff = gvoStaffCount(summary);
 
   return (

@@ -37,12 +37,20 @@ export function OpsPermissionBoundary({ children }: { children: ReactNode }) {
     setIsRetrying(true);
     client.refetchQueries({ queryKey: ["ops-me"] }).finally(() => setIsRetrying(false));
   }} />;
-  if (isPermissionsCheckFailure(error) && !canSuspendOnFailure) return unavailable;
+  const permissionFailure = isPermissionsCheckFailure(error);
+  if (permissionFailure && !canSuspendOnFailure) return unavailable;
+  // Descendants also suspend for route/data loading. That is not evidence
+  // that the permissions request failed; keep its recovery screen for errors.
+  const fallback = permissionFailure ? unavailable : (
+    <div role="status" aria-busy="true" className="flex min-h-screen items-center justify-center bg-background p-4 text-sm text-muted-foreground">
+      Загружаем раздел…
+    </div>
+  );
 
   return <OpsPermissionSuspensionContext.Provider value={suspension.promise}>
     <OpsProtectedPortalContext.Provider value={portalContainer}>
       <OpsProtectedInteractionContext.Provider value={readInteractionBlocked}>
-        <Suspense fallback={unavailable}>
+        <Suspense fallback={fallback}>
           <PermissionContent pending={canSuspendOnFailure ? suspension.promise : null}>
             <div ref={retainPortalContainer}>{children}</div>
           </PermissionContent>

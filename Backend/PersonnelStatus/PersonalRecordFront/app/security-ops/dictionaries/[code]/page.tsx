@@ -151,9 +151,9 @@ export default function DictionaryDetailPage() {
 
       <div className="mb-4">
         <PageHeader
-          eyebrow="Система"
+          
           title={title}
-          description="Значения и их связи: без связей значение удаляется, со связями — деактивируется с датой; замена заводит запись-преемника."
+          description="Связанные значения деактивируются с датой, остальные можно удалить. Замена создаёт преемника."
         />
       </div>
 
@@ -340,7 +340,7 @@ export default function DictionaryDetailPage() {
               )}
               {code === "EVENT_PARTICIPATION_KINDS" &&
                 newCode.trim().toUpperCase() !== "PHYSICAL_SQUAD" && (
-                  <div className="min-w-72 flex-1 space-y-1">
+                  <div className="min-w-0 basis-72 flex-1 space-y-1">
                     <Label htmlFor="entry-owner">Подразделение-владелец *</Label>
                     <select
                       id="entry-owner"

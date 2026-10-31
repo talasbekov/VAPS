@@ -35,7 +35,7 @@ export function InDevelopmentBadge({
       data-slot="in-development"
       className={cn(
         "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border font-semibold",
-        "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200",
+        "border-amber-300 bg-amber-50 text-amber-900   ",
         "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-amber-400/50",
         size === "sm" ? "px-1.5 py-0 text-[10px] leading-4" : "px-2 py-0.5 text-[11px] leading-4",
         className

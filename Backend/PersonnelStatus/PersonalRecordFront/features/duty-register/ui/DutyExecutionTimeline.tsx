@@ -4,9 +4,9 @@ import { executionState, executionSteps } from '../model/execution';
 export function DutyExecutionBadge({ row, now }: { row: DutyRecord; now: string }) {
   const state = executionState(row, now);
   return <span className={`rounded-full px-3 py-1 text-xs font-medium ${state === 'COMPLETED'
-    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-    : state === 'ACTIVE' ? 'bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
-    : state === 'INCOMPLETE' ? 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+    ? 'bg-emerald-50 text-emerald-800  '
+    : state === 'ACTIVE' ? 'bg-blue-50 text-blue-800  '
+    : state === 'INCOMPLETE' ? 'bg-amber-50 text-amber-800  '
     : 'bg-muted text-muted-foreground'}`}>{state === 'INCOMPLETE' ? 'Фактические отметки требуют проверки' : DUTY_STATE_LABELS[state]}</span>;
 }
 

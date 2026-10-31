@@ -92,6 +92,8 @@ class DutyContext:
                 self.legacy[row.employee_id].append(row)
         self.shifts = set(scoped(OpsDutyShift.objects.filter(business_date__range=(first, last)).exclude(state_code="CANCELLED")).values_list("employee_id", "business_date"))
         self.combat = defaultdict(set)
+        from organization_management.apps.operations.models_combat import OpsCombatDutyMember
+        self.combat_members = set(scoped(OpsCombatDutyMember.objects.filter(business_date__range=(first, last), active=True)).values_list("employee_id", "business_date"))
         combat = OpsCombatDutyShift.objects.filter(business_date__range=(first, last), submission__stateCode="ACCEPTED")
         if employee_ids is not None:
             names = {name for person in self.people.values() for name in (personnel_full_name(person), personnel_display_name(person)) if name}
@@ -115,6 +117,8 @@ class DutyContext:
         return next((row.duty_assignment for row in self.legacy[employee_id] if row.start_date <= day and (row.actual_end_date or row.end_date or day) >= day), None)
 
     def busy_reason(self, employee_id, day):
+        if (employee_id, day) in self.combat_members:
+            return "Сотрудник уже назначен в боевую группу."
         if self.legacy_on(employee_id, day):
             return "У сотрудника уже есть наряд в кадровом статусе."
         if (str(employee_id), day) in self.shifts:
@@ -289,6 +293,17 @@ def assert_no_dispatch_overlap(employee_id, start, end):
 def guard_legacy_placement(employee_id, first, last):
     """Serialize every legacy placement writer with dispatch creation."""
     Employee.objects.select_for_update().filter(pk=employee_id).first()
+    from organization_management.apps.operations.models_combat import OpsCombatDutyMember
+    groups = OpsCombatDutyMember.objects.filter(employee_id=employee_id, active=True, business_date__gte=first)
+    if last is not None:
+        groups = groups.filter(business_date__lte=last)
+    if groups.exists():
+        raise conflict("Сотрудник уже назначен в боевую группу. Сначала отмените или измените её состав.")
+    rest = OpsEmployeeStatus.objects.filter(employee_id=employee_id, cancelled_at__isnull=True, source="OM_AUTO", source_ref__startswith="combat:", status_type_code="REST_AFTER_DUTY", date_end__gt=first)
+    if last is not None:
+        rest = rest.filter(date_start__lte=last)
+    if rest.exists():
+        raise conflict("Сотруднику запланирован отдых после суточного боевого дежурства.")
     start, _ = interval(first)
     if last is None:
         if OpsDutyDispatchAssignment.objects.filter(employee_id=employee_id, cancelled_at__isnull=True, end_at__gt=start).exists():

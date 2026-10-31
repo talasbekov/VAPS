@@ -73,7 +73,7 @@ export function SummaryCorrection({ divisionId, businessDate, workspaceReady = t
   };
 
   return <div className="space-y-2 text-sm" role="region" aria-label="Исправление свода">
-    {freshness.isSuccess && !freshness.isFetching && freshness.data.status === "STALE" && <p className="text-amber-800 dark:text-amber-300">Свод устарел: состав сдач подразделений изменился.</p>}
+    {freshness.isSuccess && !freshness.isFetching && freshness.data.status === "STALE" && <p className="text-amber-800 ">Свод устарел: состав сдач подразделений изменился.</p>}
     {authorized && !refreshRequired && <Button type="button" size="sm" variant="outline" onClick={() => { if (canSubmit) { setWriteError(null); setOpen(true); } }}>Исправить свод</Button>}
     {accepted && <p role="status">Исправленная версия сохранена.</p>}
     {refreshing && <p role="status">Обновляем свод…</p>}

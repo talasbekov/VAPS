@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ContentUiScope } from "@/components/content-ui-scope";
 import {
   Dialog,
   DialogContent,
@@ -233,6 +234,7 @@ export function EditProfileDialog({
   });
 
   return (
+    <ContentUiScope.Provider value={true}>
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={!busy}
         onEscapeKeyDown={(event) => { if (pendingRef.current) event.preventDefault(); }}
@@ -393,5 +395,6 @@ export function EditProfileDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </ContentUiScope.Provider>
   );
 }

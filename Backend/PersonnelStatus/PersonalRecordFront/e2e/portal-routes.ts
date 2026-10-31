@@ -30,6 +30,7 @@ export interface RouteSpec {
 
 export const ROUTES: readonly RouteSpec[] = [
   { template: '/', chromeless: true },
+  { template: '/workspace' },
   { template: '/dashboard' },
   { template: '/service-employees' },
   // Оба вида модуля, а не один: с Plane №273 по умолчанию открывается
@@ -63,6 +64,10 @@ export const ROUTES: readonly RouteSpec[] = [
   // дня (ОМ)» удалены 21.08.2026 вместе с экранами — обходить нечего.
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
+  { template: '/security-ops/events/{eventId}/force-calculation', needs: ['eventId'] },
+  { template: '/security-ops/assistant' },
+  { template: '/security-ops/duty-register' },
+  { template: '/security-ops/duty-register?section=combat' },
   // Страница визита иностранного ОЛ (Plane №436): открывается по id ОМ,
   // у внутреннего ОМ показывает «визита нет» — это ответ, не отказ.
   { template: '/security-ops/visits/{eventId}', needs: ['eventId'] },

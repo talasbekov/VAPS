@@ -64,19 +64,19 @@ export function EmployeeProfile({
   // работа, а не оправдание держать на её месте вымысел.
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
       {/* Header */}
       <Card>
-        <CardHeader>
+        <CardHeader className="min-w-0 grid-cols-1">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex min-w-0 basis-full items-start gap-4 sm:flex-1">
+            <div className="flex min-w-0 basis-full flex-col items-start gap-4 sm:flex-1 sm:flex-row">
               {/* Заглушка тут была КАРТИНКОЙ (`/placeholder.svg`), и это
                   подменяло инициалы: для Radix любой непустой `src` — попытка
                   показать изображение, а `AvatarFallback` включается только
                   когда показывать нечего. Правило одно на все экраны — см.
                   `EmployeeAvatar`. */}
               <EmployeeAvatar name={employee.name} photo={employee.photo} size="lg" />
-              <div className="min-w-0">
+              <div className="min-w-0 max-w-full">
                 <h2 className="break-words text-2xl font-bold">{employee.name}</h2>
                 {/* Шапка прототипа: «звание · должность». */}
                 <p className="text-muted-foreground">
@@ -87,7 +87,7 @@ export function EmployeeProfile({
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {getStatusBadge(employee.status, employee.statusCode)}
                   {employee.personnelNumber !== "" && (
-                    <Badge variant="outline">
+                    <Badge variant="outline" className="max-w-full whitespace-normal [overflow-wrap:anywhere]">
                       Табельный № {employee.personnelNumber}
                     </Badge>
                   )}

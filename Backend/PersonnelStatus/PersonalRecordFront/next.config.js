@@ -30,6 +30,8 @@ const nextConfig = {
   experimental: {
     // Document conversion is bounded at60s on the backend; keep response headroom.
     proxyTimeout: 90_000,
+    // Bound build workers on local computers with limited available memory.
+    ...(process.env.VAPS_BUILD_CPUS ? { cpus: Number(process.env.VAPS_BUILD_CPUS) } : {}),
     // A 10 MiB file also needs multipart headers and metadata in the request.
     // The API independently validates the file's 10 MiB limit.
     middlewareClientMaxBodySize: "12mb",

@@ -5,6 +5,7 @@
 
 
 :root {
+  color-scheme: light;
   --background: 0 0% 100%;
   /* Полотно страницы. ОТДЕЛЬНЫЙ токен, а не перекрашенный --background:
      класс bg-background стоит в 93 местах и почти везде означает поверхность
@@ -56,53 +57,6 @@
   --sidebar-accent: 210 40% 96%;
   --sidebar-accent-foreground: 222.2 84% 4.9%;
   --sidebar-border: 214.3 31.8% 91.4%;
-  --sidebar-ring: 221.2 83.2% 53.3%;
-}
-
-.dark {
-  --background: 222.2 47% 11%;
-  --canvas: 222.2 47% 9%;
-  --table-divider: 217.2 32.6% 20%;
-  --foreground: 210 40% 98%;
-  /* Карточка на тон СВЕТЛЕЕ полотна. Раньше --card == --background, и в тёмной
-     теме карточки не были видны вовсе. У прототипа тёмной темы нет — значения
-     выведены, контраст проверен. */
-  --card: 222.2 47% 13%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-  /* В тёмной теме текстовая пара уходит В СВЕТЛУЮ сторону: тот же оттенок,
-     но 9.65:1 на фоне и 8.85 на чипе bg-primary/10. */
-  --primary-ink: 213 93% 78%;
-  --destructive-ink: 0 91% 78%; /* 8.29:1 на тёмном */
-  /* В тёмной теме --muted-foreground на --muted/50 уже даёт 7.92:1 — запас
-     большой, лайтнесс не трогаем, просто именуем тем же токеном для th. */
-  --table-head-ink: 215 20.2% 75%;
-  --secondary: 217.2 32.6% 25%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 25%;
-  --muted-foreground: 215 20.2% 75%;
-  --accent: 217.2 32.6% 25%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 50%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 25%;
-  --input: 217.2 32.6% 25%;
-  --ring: 221.2 83.2% 53.3%;
-  --chart-1: 12 76% 61%;
-  --chart-2: 173 58% 39%;
-  --chart-3: 197 37% 24%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
-  --sidebar: 222.2 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 221.2 83.2% 53.3%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 217.2 32.6% 25%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217.2 32.6% 25%;
   --sidebar-ring: 221.2 83.2% 53.3%;
 }
 
@@ -204,13 +158,6 @@
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-/* В тёмной теме белое стекло превращало карточку в светлое пятно с белым же
-   текстом. Прозрачность и размытие те же, подложка — от темы. */
-.dark .glass-effect {
-  background: hsl(var(--card) / 0.9);
-  border: 1px solid hsl(var(--border));
 }
 
 /* Плавные переходы для всех интерактивных элементов */

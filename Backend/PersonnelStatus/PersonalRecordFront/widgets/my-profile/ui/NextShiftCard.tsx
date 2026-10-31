@@ -50,7 +50,7 @@ export function NextShiftCard({
               <p className="text-sm">{shift.postLabel ?? "Пост не указан в источнике"}</p>
             </div>
             <span className={shift.execution === "STARTED"
-              ? "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100"
+              ? "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900  "
               : "rounded-full bg-muted px-2.5 py-1 text-xs font-semibold"}>
               {shift.execution === "STARTED" ? "Сейчас на смене" : shift.execution === "PREPARING" ? "Назначение готовится" : "Назначен"}
             </span>

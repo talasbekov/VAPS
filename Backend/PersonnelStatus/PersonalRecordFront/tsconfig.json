@@ -42,8 +42,14 @@
     ".next-mock/types/**/*.ts",
     ".next-mut/types/**/*.ts",
     ".next-prod/types/**/*.ts",
+    ".next-production/types/**/*.ts",
+    ".next-redesign/types/**/*.ts",
+    ".next-release-final/types/**/*.ts",
+    ".next-release/types/**/*.ts",
+    ".next-smoke/types/**/*.ts",
     ".next/types/**/*.ts",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    ".next-release-ready/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

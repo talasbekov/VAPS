@@ -84,8 +84,7 @@ export function AssignChiefDialog({
         <DialogHeader>
           <DialogTitle>Старший объекта</DialogTitle>
           <DialogDescription>
-            {visit.objectName} · {event.code}. Старший объекта отвечает за его
-            расстановку и доклад.
+            {visit.objectName} · {event.code}. Отвечает за расстановку и доклад.
             {visit.chiefEmployeeId !== null && (
               <>
                 {" "}

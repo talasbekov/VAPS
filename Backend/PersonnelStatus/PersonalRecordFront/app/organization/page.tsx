@@ -98,7 +98,7 @@ function OrganizationScreen() {
         <PageHeader
           eyebrow="Личный состав"
           title="Структура организации"
-          description="Визуальная организационная диаграмма с иерархией подразделений"
+
         />
 
         {/* Отказ запроса статистики: без этой врезки шесть плиток показывали
@@ -229,10 +229,10 @@ function OrganizationScreen() {
                           <TableCell className="text-right tabular-nums">
                             {row.staffUnits}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-green-700 dark:text-green-400">
+                          <TableCell className="text-right tabular-nums text-green-700 ">
                             {row.employees}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-red-700 dark:text-red-400">
+                          <TableCell className="text-right tabular-nums text-red-700 ">
                             {row.vacancies}
                           </TableCell>
                         </TableRow>

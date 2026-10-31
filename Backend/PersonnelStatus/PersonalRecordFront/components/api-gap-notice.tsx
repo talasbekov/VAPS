@@ -20,15 +20,15 @@ export function ApiGapNotice({ gap }: { gap: ApiGap }) {
     <div
       role="status"
       data-testid="api-gap-notice"
-      className="mb-4 rounded-lg border border-amber-400 bg-amber-50 p-4 text-amber-950 dark:border-amber-500/60 dark:bg-amber-950/40 dark:text-amber-100"
+      className="mb-4 rounded-lg border border-amber-400 bg-amber-50 p-4 text-amber-950   "
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 " />
         <div className="min-w-0 space-y-2">
           {hasMissingPaths ? (
             <p className="text-sm font-semibold">
               Не подключено — {gap.subject}: на бэке нет{" "}
-              <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] dark:bg-amber-900/60">
+              <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] ">
                 {first}
               </code>
             </p>
@@ -45,7 +45,7 @@ export function ApiGapNotice({ gap }: { gap: ApiGap }) {
                 {rest.map((path) => (
                   <code
                     key={path}
-                    className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] dark:bg-amber-900/60"
+                    className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] "
                   >
                     {path}
                   </code>

@@ -1,5 +1,6 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
 from django.urls import path
+from organization_management.apps.ops.api.views_combat_planning import CombatCatalogViewSet, CombatDayViewSet, CombatGroupViewSet
 from organization_management.apps.ops.api.views_resource_calculation import ResourceCalculationViewSet
 from rest_framework.routers import DefaultRouter
 from organization_management.apps.ops.api.views_assistant import OpsAssistantTaskViewSet
@@ -70,6 +71,9 @@ from organization_management.apps.ops.api.views import (
 )
 
 router = DefaultRouter()
+router.register("combat-catalogs", CombatCatalogViewSet, basename="ops-combat-catalogs")
+router.register("combat-groups", CombatGroupViewSet, basename="ops-combat-groups")
+router.register("combat-duty-board", CombatDayViewSet, basename="ops-combat-board")
 router.register("assistant/tasks", OpsAssistantTaskViewSet, basename="ops-assistant-tasks")
 router.register("personal-duty", PersonalDutyViewSet, basename="ops-personal-duty")
 router.register("duty-register", DutyRegisterViewSet, basename="ops-duty-register")

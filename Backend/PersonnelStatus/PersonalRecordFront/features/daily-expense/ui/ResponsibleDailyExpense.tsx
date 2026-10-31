@@ -367,8 +367,8 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
         </div>
         {data.sources.some(row => row.division.division_type !== 'directorate') && <p className={styles.hint}>В список включены также прямые подразделения другого типа: они участвуют в полноте свода.</p>}
         {data.total.attached > 0 && <p className={styles.hint}>Придано сверх списка: {data.total.attached}.</p>}
-        {statusHost.dialog}
         <SummaryVersions key={`${date}:${state.scopeId}`} variant="history" businessDate={date} boardDivisionIds={data.sources.map(row => Number(row.division.id))} labelOfDivision={nameOf} scopeDivisionId={state.scopeId ?? undefined} />
       </>}
+    {statusHost.dialog}
   </section>
 }

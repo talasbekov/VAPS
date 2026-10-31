@@ -115,7 +115,7 @@ export default function FeedbackPage() {
           <PageHeader
             eyebrow="Обратная связь"
             title="Обратная связь"
-            description="Обращения пользователей: ошибки, неверные данные, UX, идеи, доступ и помощь."
+
           />
           {canOpenChangelog && (
             <p className="text-sm text-muted-foreground">

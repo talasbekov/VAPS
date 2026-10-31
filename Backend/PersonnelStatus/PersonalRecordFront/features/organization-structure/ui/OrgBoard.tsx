@@ -542,7 +542,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                 PHOTO_PLACEHOLDER;
                             }}
                           />
-                          <div className="text-blue-600 dark:text-blue-400 mt-2">
+                          <div className="text-blue-600  mt-2">
                             <b>
                               {managementHead.last_name}{" "}
                               {abbreviate(managementHead.first_name)}
@@ -628,7 +628,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                     : "ВАКАНТ"}
                                 </b>
                                 <br />
-                                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                <span className="font-semibold text-blue-600 ">
                                   {employeeData.position.name ||
                                     "Должность не указана"}
                                 </span>
@@ -641,7 +641,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                         «В строю» тому, у кого статуса нет
                                         вовсе, — а ветка сюда как раз и
                                         попадает при `undefined`. */}
-                                    <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                    <span className="font-semibold text-blue-600 ">
                                       {naming.labelOf(
                                         employeeData.employee?.current_status
                                           ?.status_type,
@@ -651,7 +651,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                     <br />
                                     {employeeData.employee?.current_status
                                       ?.end_date && (
-                                      <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                      <span className="font-semibold text-blue-600 ">
                                         до{" "}
                                         {formatDate(
                                           employeeData.employee.current_status
@@ -705,7 +705,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                       : "ВАКАНТ"}
                                   </b>
                                   <br />
-                                  <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                  <span className="font-semibold text-blue-600 ">
                                     {employeeData.position.name ||
                                       "Должность не указана"}
                                   </span>
@@ -716,7 +716,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                       {/* Второй такой же блок: отсутствие
                                           статуса называется вслух, а не
                                           подменяется «В строю». */}
-                                      <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                      <span className="font-semibold text-blue-600 ">
                                         {naming.labelOf(
                                           employeeData.employee?.current_status
                                             ?.status_type,
@@ -726,7 +726,7 @@ export default function OrgBoard({ onLoadStateChange }: {
                                       <br />
                                       {employeeData.employee?.current_status
                                         ?.end_date && (
-                                        <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                        <span className="font-semibold text-blue-600 ">
                                           до{" "}
                                           {formatDate(
                                             employeeData.employee.current_status

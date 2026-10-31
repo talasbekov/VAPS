@@ -145,8 +145,12 @@ class TestReferenceReads:
             "*",
             "catalog.view",
             "digital_twin.read",
+            # Migration0150 provisions scoped combat duty permissions.
+            "duty.catalog.manage",
+            "duty.combat.manage",
             # Миграция 0136 добавляет право расстановки и заполненным базам.
             "duty.dispatch",
+            "duty.roster",
             # Migration0147 also bootstraps event.view on a clean installation.
             "event.view",
             "forces.allocate",

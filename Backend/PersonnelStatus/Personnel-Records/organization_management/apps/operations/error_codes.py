@@ -28,6 +28,10 @@ docs/registries/error-codes.yaml лежат коды, которых разде�
 
 # Код → допустимые HTTP-статусы.
 CODES = {
+    "GROUP_ALREADY_FORMED": frozenset({422}),
+    "GROUP_OVERFLOW": frozenset({422}),
+    "EMPLOYEE_NOT_IN_SERVICE": frozenset({422}),
+    "INVALID_LOCATION": frozenset({422}),
     "ASSISTANT_TASK_CONFLICT": frozenset({409}),
     "PLACEMENT_MAP_UNAVAILABLE": frozenset({503}),
     "LEGAL_DOCUMENT_STALE": frozenset({409}),

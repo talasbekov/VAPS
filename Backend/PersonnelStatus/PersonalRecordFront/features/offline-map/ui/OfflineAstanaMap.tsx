@@ -11,7 +11,7 @@ const roadWidths: Record<string, number> = { trunk: 4, primary: 3.5, secondary: 
 const fills: Record<string, string> = { green: '#dceacb', water: '#aad4ec', building: '#d8d4cd' };
 const order = ['green', 'water', 'building', 'rail', 'path', 'road', 'secondary', 'primary', 'trunk', 'river'];
 
-export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint, fitViewport = false }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; focusPoint?: { key: number; location: GeoPoint } | null; fitViewport?: boolean }) {
+export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint, fitViewport = false, pointHint }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; focusPoint?: { key: number; location: GeoPoint } | null; fitViewport?: boolean; pointHint?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -226,15 +226,15 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
     <div data-slot="offline-map-toolbar" className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
       <div><h3 className="text-sm font-semibold">Астана · офлайн</h3><p className="text-xs text-muted-foreground">Синий — объект, зелёный — наружный пост. Перетаскивайте карту для перемещения.</p></div>
       <div className="flex items-center gap-1">
-        <Button size="sm" variant="outline" aria-label="Отдалить карту" onClick={() => changeZoom(-1)} disabled={zoom === 11}>−</Button>
-        <Button size="sm" variant="outline" aria-label="Приблизить карту" onClick={() => changeZoom(1)} disabled={zoom === 18}>+</Button>
-        <Button size="sm" variant="outline" onClick={fit}>Показать точки</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Отдалить карту" onClick={() => changeZoom(-1)} disabled={zoom === 11}>−</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Приблизить карту" onClick={() => changeZoom(1)} disabled={zoom === 18}>+</Button>
+        <Button type="button" size="sm" variant="outline" onClick={fit}>Показать точки</Button>
       </div>
     </div>
-    <form role="search" aria-label="Поиск по карте" className="border-b p-3" onSubmit={event => { event.preventDefault(); if (searchResults[0]) showPlace(searchResults[0]); }}>
+    <div role="search" aria-label="Поиск по карте" className="border-b p-3">
       <div className="flex items-center gap-2">
         <Input ref={searchInput} type="search" aria-label="Поиск улицы или района" placeholder="Улица или район Астаны" value={search} disabled={!asset}
-          onChange={event => { setSearch(event.target.value); setShownPlace(null); }} className="min-w-0" />
+          onChange={event => { setSearch(event.target.value); setShownPlace(null); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); if (searchResults[0]) showPlace(searchResults[0]); } }} className="min-w-0" />
         {search && <Button type="button" variant="outline" size="sm" aria-label="Очистить поиск на карте" onClick={() => { setSearch(''); setShownPlace(null); }}>Очистить</Button>}
       </div>
       {shownPlace ? <p role="status" className="mt-2 break-words text-xs text-muted-foreground">Найдено: {shownPlace.name}</p>
@@ -244,7 +244,7 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
             onClick={() => showPlace(place)}><span className="min-w-0 break-words">{place.name}</span><span className="shrink-0 text-xs text-muted-foreground">{place.kind === 'street' ? 'Улица' : 'Место'}</span></button></li>)}
         </ul> : <p role="status" className="mt-2 text-xs text-muted-foreground">Улицы и районы не найдены.</p>
         : <p className="mt-2 text-xs text-muted-foreground">Поиск по названиям из офлайн-карты. Введите хотя бы две буквы.</p>}
-    </form>
+    </div>
     </div>
     <div ref={box} data-slot="offline-map-canvas" className="relative h-[clamp(320px,55dvh,560px)] min-w-0 w-full bg-[#f5f2ea]" style={{ cursor: locating ? 'crosshair' : 'grab' }}>
       <canvas ref={canvas} tabIndex={0} aria-label={locating ? 'Выберите точку на карте' : 'Карта Астаны. Стрелки перемещают карту, плюс и минус меняют масштаб.'}
@@ -274,9 +274,9 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
           style={{ left: x, top: y }}>{marker.kind === 'object' ? 'О' : marker.kind === 'post' ? 'П' : '+'}</button>;
       })}
       {!asset && <div className="absolute inset-0 flex items-center justify-center bg-background/90 p-6 text-center text-sm" role={error ? 'alert' : 'status'}>
-        {error ? <div><p>Не удалось загрузить офлайн-карту.</p><Button className="mt-3" variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку карты</Button></div> : 'Загружаем карту Астаны с локального сервера…'}
+        {error ? <div><p>Не удалось загрузить офлайн-карту.</p><Button type="button" className="mt-3" variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку карты</Button></div> : 'Загружаем карту Астаны с локального сервера…'}
       </div>}
-      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">Нажмите на карту или введите координаты ниже. Точка сохранится после нажатия «Сохранить точку».</div>}
+      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">{pointHint ?? 'Нажмите на карту или введите координаты ниже. Точка сохранится после нажатия «Сохранить точку».'}</div>}
       {asset && <div className={`pointer-events-none absolute left-3 rounded bg-white/95 px-2 py-1 text-center text-[11px] text-slate-700 shadow-sm ${locating ? 'bottom-16' : 'bottom-3'}`}>
         <div style={{ width: scaleMeters / metersPerPixel }} className="h-1.5 border-x border-b border-slate-600" />
         <output aria-label="Масштаб карты">{scaleLabel}</output>

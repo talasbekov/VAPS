@@ -4,15 +4,10 @@
    сигнал: рядом с точкой всегда подпись словами. */
 .screen { --line:#dce3ed; --line2:#c5cfdd; --ink:#24334b; --rd-muted:#5e6d82; --surface:#fff; --tint:#f8faff; --hero:#eef4ff; --hero-line:#cddbf0;
   --ok:#16a34a; --ok-soft:#e6f6ec; --bad:#dc2626; --bad-soft:#fdeaea; --off:#9aa3b2; --off-soft:#eef1f5; --rd-primary:#2563eb; --rd-primary-soft:#e8efff; color:var(--ink); }
-:global(.dark) .screen { --line:#3b4b63; --line2:#4d6385; --ink:#edf2fa; --rd-muted:#b7c5d8; --surface:#1b293f; --tint:#22324c; --hero:#253857; --hero-line:#4d6385;
-  --ok:#34c26a; --ok-soft:#12321f; --bad:#ef5a5a; --bad-soft:#3a1a1a; --off:#6b7688; --off-soft:#222a3a; --rd-primary:#5b8cff; --rd-primary-soft:#1b2a4d; }
 .screen button { min-height:44px; }
 .screen :where(p,strong,span) { overflow-wrap:anywhere; }
 .hero>div { min-width:0; }
 .hero button { white-space:normal; height:auto; }
-:global(.dark) .screen .neutral { color:#d0dff7; background:#334765; }
-:global(.dark) .screen .error { color:#ffb9b4; }
-:global(.dark) .screen button { color:var(--ink); }
 
 /* Шапка */
 .title,.listHead { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px; }
@@ -113,6 +108,11 @@ td.name { display:flex; align-items:center; gap:10px; min-height:44px; }
 .chip_off { background:var(--off-soft); color:var(--rd-muted); }
 .chip_wait { background:var(--rd-primary-soft); color:var(--rd-primary); }
 .chip_ok { background:var(--ok-soft); color:var(--ok); }
+@media(max-width:639px) {
+  .summaryBar { grid-template-columns:minmax(0,1fr); }
+  .summaryHead { min-width:0; }
+  .summaryHead .chip { white-space:normal; }
+}
 .reason { display:grid; gap:6px; font-size:13px; }
 .reason>div { display:flex; flex-wrap:wrap; gap:8px; }
 .reason input { flex:1 1 220px; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); min-height:44px; }

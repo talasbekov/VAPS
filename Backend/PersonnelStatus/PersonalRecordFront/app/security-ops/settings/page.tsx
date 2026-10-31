@@ -56,9 +56,9 @@ export default function OpsSettingsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Система"
+          
           title="Администрирование"
-          description="Политики, которые читают другие разделы — правка меняет исход операций, а не окраску экрана"
+          description="Изменения политик влияют на выполнение операций."
         />
 
         {query.isLoading && (

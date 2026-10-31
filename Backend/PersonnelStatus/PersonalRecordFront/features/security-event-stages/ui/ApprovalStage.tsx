@@ -296,8 +296,8 @@ const DOCUMENT_STATUS_CLASS: Record<
   string
 > = {
   DRAFT: "bg-muted text-muted-foreground",
-  SUBMITTED: "bg-blue-100 text-blue-900",
-  APPROVED: "bg-green-100 text-green-800",
+  SUBMITTED: "sj-status-pending",
+  APPROVED: "sj-status-success",
   RETURNED: "bg-amber-100 text-amber-900",
 };
 
@@ -415,7 +415,7 @@ const VISIT_APPROVAL_LABEL: Record<SecurityEvent["approvalStatus"], string> = {
 
 const VISIT_APPROVAL_CLASS: Record<SecurityEvent["approvalStatus"], string> = {
   PENDING: "bg-muted text-muted-foreground",
-  APPROVED: "bg-green-100 text-green-800",
+  APPROVED: "sj-status-success",
   RETURNED: "bg-amber-100 text-amber-900",
 };
 
@@ -592,10 +592,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
               Согласовывать нечего: строки расчёта не отнесены к объекту
             </p>
             <p className="mx-auto mt-1 max-w-prose text-xs text-muted-foreground">
-              Согласуется расстановка ОБЪЕКТА посещения — у каждого свой
-              маршрут, свои замечания и свой документ. «Строки без объекта»
-              объектом не являются, поэтому ни маршрута, ни документа у них
-              нет. Отнести строки к объекту можно на рекогносцировке.
+              На рекогносцировке отнесите строки к объекту. Для каждого объекта
+              согласуются отдельные маршрут и документ.
             </p>
             <Button
               type="button"
@@ -712,9 +710,9 @@ const APPROVER_STATUS_LABEL: Record<string, string> = {
 
 const APPROVER_STATUS_CLASS: Record<string, string> = {
   NOT_SENT: "bg-secondary text-secondary-foreground",
-  PENDING: "bg-blue-100 text-blue-800",
-  APPROVED: "bg-green-100 text-green-800",
-  RETURNED: "bg-red-100 text-red-800",
+  PENDING: "sj-status-pending",
+  APPROVED: "sj-status-success",
+  RETURNED: "sj-status-error",
 };
 
 /**
@@ -1006,13 +1004,13 @@ function ApprovalRoute({
       </div>
 
       {rights.send && !sent && visitObjectId !== undefined && (
-        <div className="grid gap-2 border-b bg-muted/20 px-3 py-3 sm:grid-cols-[minmax(260px,1fr)_auto] sm:items-end">
-          <label className="space-y-1 text-xs font-medium">
+        <div className="grid min-w-0 grid-cols-1 gap-2 border-b bg-muted/20 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <label className="min-w-0 space-y-1 text-xs font-medium">
             <span>Выберите согласующего из руководства второго департамента</span>
             <select
               value={approverUserId}
               onChange={(event) => setApproverUserId(event.target.value)}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
             >
               <option value="">Выберите руководителя</option>
               {(candidates.data?.results ?? []).map((candidate) => (

@@ -104,7 +104,7 @@ function AccessRolesScreen() {
         <PageHeader
           eyebrow="Настройки"
           title="Роли"
-          description="Роль объединяет права в редактируемый набор. При назначении пользователю отдельно выбирают область действия: подразделение или всю службу."
+          description="При назначении роли выберите область действия: подразделение или всю службу."
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -281,8 +281,8 @@ function StateBadge({ isActive }: { isActive: boolean }) {
     <span
       className={
         isActive
-          ? "inline-flex whitespace-nowrap rounded-full bg-green-100 px-[9px] py-0.5 text-[10.5px] font-bold text-green-800 dark:bg-green-900/40 dark:text-green-200"
-          : "inline-flex whitespace-nowrap rounded-full bg-slate-200 px-[9px] py-0.5 text-[10.5px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+          ? "inline-flex whitespace-nowrap rounded-full bg-green-100 px-[9px] py-0.5 text-[10.5px] font-bold text-green-800  "
+          : "inline-flex whitespace-nowrap rounded-full bg-slate-200 px-[9px] py-0.5 text-[10.5px] font-bold text-slate-700  "
       }
     >
       {isActive ? "Действует" : "Отключена"}

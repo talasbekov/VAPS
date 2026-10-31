@@ -18,15 +18,11 @@ export default function DictionariesPage() {
   return (
     <DictionariesWorkspace>
       <div className="space-y-4">
-        <PageHeader eyebrow="Система" title="Справочники" description="Значения для мероприятий, кадровых данных, стран и городов." />
+        <PageHeader  title="Справочники" description="Значения для мероприятий, кадровых данных, стран и городов." />
         <Card>
           <CardContent className="flex flex-col items-start gap-3">
             <BookOpen className="h-8 w-8 text-primary-ink" aria-hidden="true" />
             <h2 className="text-lg font-semibold">Выберите справочник</h2>
-            <p className="max-w-prose text-sm text-muted-foreground">
-              Откройте нужный справочник в перечне. Здесь появятся его значения, поиск и доступные вам действия.
-              Между справочниками можно переключаться, оставаясь рядом со значениями.
-            </p>
             {query.data !== undefined && !query.isError && <div className="flex flex-wrap gap-x-6 gap-y-2 border-t pt-3 text-sm">
               <span><strong className="tabular-nums">{query.data.results.length}</strong> справочников</span>
               <span><strong className="tabular-nums">{query.data.results.reduce((sum, row) => sum + row.totalCount, 0)}</strong> значений</span>

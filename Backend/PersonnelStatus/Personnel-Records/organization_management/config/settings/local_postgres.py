@@ -44,6 +44,9 @@ DATABASES = {
         "PASSWORD": _db_password(),
         "HOST": os.environ.get("PR_DB_HOST", "localhost"),
         "PORT": os.environ.get("PR_DB_PORT", "5434"),
-        "CONN_MAX_AGE": 60,
+        # This contour runs under ASGI. Persistent per-thread connections can
+        # exhaust PostgreSQL during concurrent requests; WSGI deployments may
+        # explicitly opt into connection reuse through their environment.
+        "CONN_MAX_AGE": int(os.environ.get("PR_DB_CONN_MAX_AGE", "0")),
     }
 }

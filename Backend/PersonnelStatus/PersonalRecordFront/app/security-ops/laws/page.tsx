@@ -66,7 +66,7 @@ function LegalDocumentsScreen() {
   return <DashboardLayout>
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader eyebrow="Охранные мероприятия" title="Законы об ОМ" description="Законы, приказы, регламенты и инструкции по организации охранных мероприятий" />
+        <PageHeader  title="Законы об ОМ" description="Законы, приказы, регламенты и инструкции." />
         {canManage && <Button disabled={query.isError} onClick={() => { setSaved(""); setEditor({ document: null }); }}>Добавить документ</Button>}
       </div>
       {saved && <p role="status" className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{saved}</p>}

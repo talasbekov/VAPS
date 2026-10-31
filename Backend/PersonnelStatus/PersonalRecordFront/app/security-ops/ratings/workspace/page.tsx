@@ -328,7 +328,7 @@ function EvaluationWorkspaceScreen() {
         <PageHeader
           eyebrow="Оценка и отчётность"
           title="Оценивание участников"
-          description="Выберите мероприятие и оцените участников из списка ваших заданий."
+          description="Оцените участников по вашим заданиям."
         />
 
         <RatingsNav />

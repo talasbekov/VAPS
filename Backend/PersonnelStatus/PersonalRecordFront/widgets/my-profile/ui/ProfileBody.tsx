@@ -52,6 +52,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
 import { MyNextShift } from "./MyNextShift";
+import { MyCombatDuty } from '@/features/combat-duty/ui/MyCombatDuty';
 import { useProfileNextShiftSources } from "@/hooks/use-profile-next-shift";
 import type { PersonalDutyRow } from "../model/profile-next-shift";
 import { ProfileEventLink as EventLink } from "./ProfileEventLink";
@@ -347,6 +348,7 @@ export function ProfileBody({
   return (
     <>
       {!readOnly && <MyNextShift employeeId={String(employee.id)} />}
+      {!readOnly && <MyCombatDuty employeeId={String(employee.id)} />}
       <HeroCard
         employee={employee}
         rankLabel={employee.rank_label ?? directories.rankLabel(employee.rank_code)}
@@ -547,7 +549,7 @@ function HeroCard({
                 data-testid="profile-status"
                 role="status"
                 title="Запрос статусов сотрудника не прошёл — обновите страницу"
-                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900  "
               >
                 статус не получен
               </span>
@@ -556,7 +558,7 @@ function HeroCard({
                 data-testid="profile-status"
                 className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                   statusLine.inService
-                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+                    ? "bg-emerald-100 text-emerald-800  "
                     : "bg-primary/10 text-primary-ink"
                 }`}
               >
@@ -567,7 +569,7 @@ function HeroCard({
               <span
                 data-testid="profile-rating"
                 title="Средний балл по закрытым мероприятиям"
-                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900  "
               >
                 {rating.average.toFixed(1).replace(".", ",")} · из {rating.events}{" "}
                 {ruPlural(rating.events, EVENTS_OF)}
@@ -775,7 +777,7 @@ function EventsTab({
           {available && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(upcoming.length)}</span>}
         </CardHeader>
         <CardContent>
-          {note !== null && <p data-slot="assignments-note" className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{note}</p>}
+          {note !== null && <p data-slot="assignments-note" className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900   ">{note}</p>}
           {loading && <p role="status" className="text-sm text-muted-foreground">Загрузка назначений…</p>}
           {failed && <LoadFailure what="назначения" description={available ? "Показаны ранее загруженные назначения. Повторите чтение для актуальных сведений." : "Назначения сейчас недоступны. Повторите проверку доступа."} onRetry={onRetry} isRetrying={retrying} />}
           {available && (upcoming.length === 0 ? <p className="text-sm text-muted-foreground">{filters.period === "all" ? "Действующих назначений нет." : "Назначений на ОМ по выбранным условиям нет."}</p> : <ul className="divide-y">{upcoming.map(item => <AssignmentRow key={item.id} item={item} readOnly={readOnly} />)}</ul>)}
@@ -784,7 +786,7 @@ function EventsTab({
       {kind !== "events" && (readOnly ? <p role="status" className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">{shiftsNote}</p> : <Card data-slot="profile-duty-assignments">
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div className="min-w-0"><CardTitle>Дежурства</CardTitle><p className="text-xs text-muted-foreground">Назначенные смены дежурств</p></div>{shiftsAvailable && <span aria-live="polite" className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">{countLabel(dutyCount)}</span>}</CardHeader>
         <CardContent className="space-y-3">
-          {shiftsNote !== null && <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">{shiftsNote}</p>}
+          {shiftsNote !== null && <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900   ">{shiftsNote}</p>}
           {shiftsLoading && <p role="status" className="text-sm text-muted-foreground">Загрузка смен дежурств…</p>}
           {shiftsFailed && <LoadFailure what="смены дежурств" description={shiftsAvailable ? "Показаны ранее загруженные смены. Повторите чтение для актуальных сведений." : "Смены сейчас недоступны. Повторите проверку доступа."} onRetry={onRetryShifts} isRetrying={shiftsRetrying} />}
           {shiftsAvailable && dutyCount === 0 && <p className="text-sm text-muted-foreground">Дежурств по выбранным условиям нет.</p>}
@@ -1068,7 +1070,7 @@ function AckBadge({
     return (
       <>
         <span
-          className="inline-flex w-fit max-w-[260px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+          className="inline-flex w-fit max-w-[260px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800  "
           title={declineReason ?? undefined}
         >
           Не могу заступить{declineReason ? `: ${declineReason}` : ""}
@@ -1096,12 +1098,12 @@ function AckBadge({
     );
   }
   return acknowledgedAt === null ? (
-    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800  ">
       Ознакомление не подтверждено
     </span>
   ) : (
     <span
-      className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950/60 dark:text-green-200"
+      className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800  "
       data-slot="ack-badge"
       /* СПОСОБ НАЗВАН (Plane №722): «лично» значит, что довели устно, и это
          другой факт, чем собственное подтверждение в системе. Автор отметки —
