@@ -347,11 +347,7 @@ function EvaluationWorkspaceScreen() {
         {data !== undefined && (
           <>
             {data.unavailableReason === "FEATURE_DISABLED" && (
-              <p className="rounded-xl border bg-card p-4 text-sm">
-                Оценивание выключено сервером (ENABLE_OPERATIONAL_RATINGS).
-                Заданий нет не потому, что работа выполнена, — функция не
-                работает целиком.
-              </p>
+              <p className="rounded-xl border bg-card p-4 text-sm">Оценивание пока недоступно.</p>
             )}
 
             {/* §19.28: уведомления адресованы человеку и живут там, где он

@@ -185,10 +185,7 @@ function OrganizationScreen() {
                 <span aria-hidden="true" className="ml-2 text-sm font-normal text-muted-foreground">{rows.length}</span>
               </summary>
               <CardContent className="space-y-3 pt-0">
-                <p className="text-sm text-muted-foreground">
-                  Уровни вложены друг в друга: числа управления включают его
-                  отделы, поэтому строки не складываются в итог.
-                </p>
+                <p className="text-sm text-muted-foreground">Численность управления включает отделы; строки не суммируются.</p>
                 <div
                   role="region"
                   aria-label="Штат по подразделениям"

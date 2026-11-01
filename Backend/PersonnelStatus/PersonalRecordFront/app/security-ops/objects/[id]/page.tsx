@@ -442,8 +442,7 @@ function PassportAlert({
           freshness.verificationDueAt !== null
             ? `Срок очередной проверки — ${freshness.verificationDueAt}. `
             : ""}
-          Какие именно поля не заполнены, сервер не сообщает — он отдаёт
-          состояние паспорта целиком.
+
         </p>
       </div>
     </div>

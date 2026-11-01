@@ -151,10 +151,7 @@ export default function ReportJobPage() {
         <section className="rounded-xl border bg-card p-4" aria-label="Артефакт">
           <h2 className="mb-3 text-sm font-semibold">Артефакт</h2>
           {artifact === null ? (
-            <p className="text-sm text-muted-foreground">
-              Артефакта нет: он создаётся ровно при переходе работы в состояние
-              «Готов» и больше не меняется (§22.22).
-            </p>
+            <p className="text-sm text-muted-foreground">Файл появится, когда отчёт будет готов.</p>
           ) : (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="font-semibold text-muted-foreground">Редакция</dt>

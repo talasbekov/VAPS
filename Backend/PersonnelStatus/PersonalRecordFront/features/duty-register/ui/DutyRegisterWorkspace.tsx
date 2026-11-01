@@ -23,11 +23,11 @@ export function DutyRegisterWorkspace() {
   const canShifts = !access.isLoading && !access.error && (access.hasPermission('duty.dispatch') || access.hasGlobalPermission('admin.roles'));
   const canCombat = !access.isLoading && !access.error && ['duty.view', 'duty.manage', 'duty.combat.manage', 'duty.roster', 'duty.catalog.manage'].some(access.hasPermission);
   const requested = dutyWorkspaceSection(search);
-  const section = !access.allowed && !params.has('section') ? (canCombat ? 'combat' : canShifts ? 'shifts' : requested) : requested;
+  const section = !params.has('section') && requested !== 'records' ? (canCombat ? 'combat' : access.allowed ? 'roster' : canShifts ? 'shifts' : requested) : requested;
   if (isPermissionsCheckFailure(access.error)) return <OpsPermissionsUnavailable onRetry={() => void client.invalidateQueries({ queryKey: ['ops-me'] })} isRetrying={access.isLoading} />;
   if (!access.isLoading && !access.allowed && !canShifts && !canCombat) return <OpsAccessDenied what="журнала дежурств" />;
   const tabs = [
-    ...(canCombat ? [{ value: 'combat' as const, label: 'Боевые группы · расчёт на день' }] : []),
+    ...(canCombat ? [{ value: 'combat' as const, label: 'Боевые группы' }] : []),
     ...(access.allowed ? [{ value: 'roster' as const, label: 'Состав на дату' }, { value: 'records' as const, label: 'Журнал и контроль' }] : []),
     ...(canShifts ? [{ value: 'shifts' as const, label: 'Почасовые смены' }] : []),
   ];

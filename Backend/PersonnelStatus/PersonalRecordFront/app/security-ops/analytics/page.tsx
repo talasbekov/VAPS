@@ -308,9 +308,7 @@ function ServiceAnalyticsScreen() {
           aria-label="Шапка аналитики"
           className="rounded-xl border bg-card p-4"
         >
-          <p className="mb-3 text-sm text-muted-foreground">
-            Период меняет показатели смен и график динамики. Кадровый расход ниже остаётся текущим.
-          </p>
+          <p className="mb-3 text-sm text-muted-foreground">Период относится к сменам. Кадровый расход — на сегодня.</p>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {(presetsQuery.data?.results ?? []).map((preset) => (
               <button
@@ -1522,10 +1520,7 @@ function StaffingSection({ report }: { report: StrengthReport }) {
           ))}
         </ul>
       )}
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Срок открытия вакансии расход не хранит — «длительно открытых» здесь
-        нет: у штатной единицы есть занятость, но не дата, с которой она пуста.
-      </p>
+      <p className="mt-2 text-[11px] text-muted-foreground">Длительность вакансий не учитывается.</p>
     </section>
   );
 }

@@ -1017,9 +1017,7 @@ function TemporaryPasswordDialog({
                 <span className="font-mono">{secret?.login}</span> заведена.
               </>
             )}{" "}
-            Пароль показывается <b>один раз</b>: система хранит только его
-            свёртку. Закроете окно — восстановить его будет нельзя, останется
-            сбросить заново.
+            Сохраните пароль: он показывается <b>один раз</b>. После закрытия окна потребуется сброс.
           </p>
           <div className="flex flex-wrap items-center gap-2 rounded-[10px] border bg-muted/40 px-3 py-2">
             <code className="select-all font-mono text-[15px] tracking-wide">

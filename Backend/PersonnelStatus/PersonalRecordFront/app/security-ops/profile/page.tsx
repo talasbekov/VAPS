@@ -53,11 +53,7 @@ export default function MyProfilePage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>{me.data.unlinked_reason}</p>
-              <p>
-                Обратитесь к администратору доступа, чтобы связать учётную запись
-                с карточкой сотрудника. Кадровая служба поможет уточнить нужную
-                карточку. После привязки здесь появятся личные данные и назначения.
-              </p>
+              <p>Для привязки карточки сотрудника обратитесь к администратору.</p>
             </CardContent>
           </Card>
         )}

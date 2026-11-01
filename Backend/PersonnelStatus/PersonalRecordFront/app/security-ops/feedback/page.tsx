@@ -599,10 +599,7 @@ function FeedbackForm(props: FeedbackFormProps) {
             }}
           />
         </label>
-        <p className="text-xs text-muted-foreground">
-          Сохраняются только название, размер и тип файла. Сам файл не передаётся;
-          открыть или скачать его из обращения нельзя.
-        </p>
+        <p className="text-xs text-muted-foreground">Сам файл не отправляется — только его название, размер и тип.</p>
 
         <label className="flex items-center gap-2 text-xs font-semibold">
           <input

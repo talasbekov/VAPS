@@ -64,5 +64,6 @@ test('PDF generation failure remains visible on the visit page with a meaningful
   });
   const html = renderToStaticMarkup(React.createElement(Subject, { event }));
   assert.match(html, /role="alert"[^>]*>[^<]*Не удалось скачать PDF/);
-  assert.match(html, /Конвертер PDF недоступен/);
+  // Keep the actionable failure while hiding the converter's installation details.
+  assert.match(html, /Создание PDF недоступно.*Обратитесь к администратору/);
 });

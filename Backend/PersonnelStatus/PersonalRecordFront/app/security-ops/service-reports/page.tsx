@@ -451,7 +451,7 @@ export default function ServiceReportsPage() {
                       <p className="text-xs text-muted-foreground">
                         {job.state === "FAILED"
                           ? `${job.failureCode}: ${job.safeFailureMessage}`
-                          : "Артефакт ещё не сформирован — отчёт готовится на сервере."}
+                          : "Отчёт готовится."}
                       </p>
                     ) : (
                       <div className="flex flex-col gap-1 text-xs text-muted-foreground">

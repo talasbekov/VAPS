@@ -109,7 +109,7 @@ function ReportHistoryScreen() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          
+
           title="История отчётов"
           description="Доступные отчёты, их версии и сроки хранения."
         />
@@ -162,10 +162,7 @@ function ReportHistoryScreen() {
             />
             Только мои запуски
           </label>
-          <p className="text-xs text-muted-foreground">
-            Фильтры применяет сервер: строки, которые не показаны, в браузер не
-            приезжают (§22.24).
-          </p>
+
         </section>
 
         <section className="rounded-xl border bg-card p-4">

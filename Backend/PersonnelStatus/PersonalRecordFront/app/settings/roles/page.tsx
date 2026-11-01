@@ -347,7 +347,7 @@ function RoleDetails({ role }: { role: AccessRole }) {
             {role.is_active ? "Отключить" : "Включить"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Отключение роли не снимает доступ. Для отзыва доступа снимите назначение роли у пользователя.</p>
+        <p className="text-xs text-muted-foreground">Отключение роли не отзывает доступ. Снимите назначение роли у пользователя.</p>
         {setActive.error !== null && (
           <p className="text-[12px] text-destructive">
             Не удалось изменить состояние роли. Попробуйте ещё раз.

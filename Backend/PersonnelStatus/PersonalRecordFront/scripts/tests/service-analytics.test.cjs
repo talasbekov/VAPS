@@ -424,7 +424,8 @@ const ratingScopeScreens = [
     capabilities: ratingsCapabilities, options: { events: [], units: [], employees: [] }, page: 1, pageCount: 1, total: 1,
     results: [{ rowId: 'outside', employeeSafeLabel: 'outside-scope-person', employeeId: null, unitSafeLabel: 'outside-division',
       aggregateRating: 9, aggregateState: 'READY' }], unavailableViews: [],
-  }, data => ({ ...data, results: [], total: 0 }), /По выбранным условиям оценки не найдены/],
+  // Audited copy stays distinct from an unavailable scope or a loading failure.
+  }, data => ({ ...data, results: [], total: 0 }), /По выбранным условиям оценок нет/],
 ];
 
 for (const [name, file, exportName, cached, empty, emptyLabel] of ratingScopeScreens) {

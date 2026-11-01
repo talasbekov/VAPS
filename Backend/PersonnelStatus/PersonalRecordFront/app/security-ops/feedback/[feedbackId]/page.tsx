@@ -431,10 +431,7 @@ export default function FeedbackDetailPage() {
                   Закрыть обращение
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Закрытие всегда сопровождается ответом автору: человек, написавший
-                обращение, узнаёт причину, а не только новый статус.
-              </p>
+              <p className="text-xs text-muted-foreground">Для закрытия обращения нужен ответ автору.</p>
               {close.error !== null && (
                 <p className="text-xs text-destructive-ink">{close.error.message}</p>
               )}

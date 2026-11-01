@@ -109,7 +109,7 @@ export function DutyRoster() {
       <Button variant="outline" disabled={!validDate || query.isFetching} onClick={() => void query.refetch()}>Обновить состав</Button>
       {access.hasPermission('status.manage') && moduleOpenFor('/statuses', access.hasPermission) && validDutyDate(day) && <Button asChild><Link href={statusCalendarHref(day)}>Статусы на {formatIsoDate(day)}</Link></Button>}
     </div>
-    <p className="text-sm text-muted-foreground">Назначайте пост или группу при изменении статуса сотрудника. Сохранённый наряд появляется здесь автоматически. Время выходов указывается в том же назначении. В учёте выходов отдельно отмечаются ознакомление, заступление и завершение.</p>
+    <p className="text-sm text-muted-foreground">Группу назначайте во вкладке «Боевые группы». Индивидуальный пост — через статус сотрудника.</p>
     {!validDate && <p role="alert" className="text-sm text-destructive">Укажите существующую дату в формате ГГГГ-ММ-ДД.</p>}
     {(query.isLoading || (query.isFetching && !data)) && validDate && <p role="status">Загрузка состава дежурств…</p>}
     {query.isError && <LoadFailure what="состав дежурств" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />}

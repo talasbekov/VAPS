@@ -128,10 +128,7 @@ function ScopeNotice({ shown, total }: { shown: number; total: number }) {
   if (total === 0) return null;
   if (shown === total) {
     return (
-      <p className="text-xs text-muted-foreground">
-        Статус в строке — из расхода раздела на сегодня, а не из кадровой
-        карточки: по нему и отобраны эти люди.
-      </p>
+      <p className="text-xs text-muted-foreground">Статусы на дату расхода.</p>
     );
   }
   return (
@@ -1087,10 +1084,7 @@ function EmployeesScreen() {
               связи с кадровой записью в нём нет. Ключа для соединения с этой
               таблицей не существует — колонка, сортировка по ней и чипы
               «есть благодарности / есть замечания» были бы выдумкой. */}
-          <p className="text-xs text-muted-foreground">
-            Рейтинг сотрудника в этом списке не показывается: оперативный
-            рейтинг ведётся обезличенно и не связан с кадровой карточкой.
-          </p>
+
           </>
           )}
 

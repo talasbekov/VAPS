@@ -50,10 +50,7 @@ export function OpsPermissionsUnavailable({
           <h1 className="text-xl font-semibold text-foreground">
             Не удалось проверить права доступа
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Раздел не открыт не потому, что доступ закрыт, — сервер не ответил
-            на запрос прав. Повторите попытку.
-          </p>
+          <p className="text-sm text-muted-foreground">Повторите загрузку.</p>
           <Button ref={retry} onClick={onRetry} disabled={isRetrying}>
             {isRetrying ? "Проверяем…" : "Повторить"}
           </Button>

@@ -110,7 +110,7 @@ export function EmployeeServiceProfilePanel({ employeeId }: { employeeId: string
             <label className="space-y-1 text-sm"><span>Вес, кг</span><Input className="min-h-11" type="number" min="0.01" step="any" value={draft.weight_kg} onChange={event => change({ weight_kg: event.target.value })} placeholder="Не указан" /></label>
           </div>
           <div className="space-y-3"><h3 className="font-semibold">Сведения о здоровье</h3>
-            <p className="text-sm text-muted-foreground">Только внесённые кадровые сведения. Автоматическая медицинская оценка не выполняется.</p>
+            <p className="text-sm text-muted-foreground">Автоматическая медицинская оценка не выполняется.</p>
             {healthKeys.map(key => <label key={key} className="block space-y-1 text-sm"><span>{HEALTH_LABELS[key]}</span>
               <Textarea maxLength={2000} value={draft.health[key] ?? ''} placeholder="Не указано" onChange={event => change({ health: { ...draft.health, [key]: event.target.value || null } })} />
             </label>)}

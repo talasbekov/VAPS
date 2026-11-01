@@ -79,11 +79,7 @@ export default function OperationalRatingsPage() {
         {data !== undefined && (
           <>
             {!data.capabilities.operationalRatings && (
-              <p className="rounded-xl border bg-card p-4 text-sm">
-                Оперативный рейтинг пока недоступен: функция выключена сервером
-                (ENABLE_OPERATIONAL_RATINGS). Это не рейтинг «0» — оценок нет
-                ни у кого, потому что их никто не выставлял.
-              </p>
+              <p className="rounded-xl border bg-card p-4 text-sm">Рейтинг пока недоступен.</p>
             )}
 
             <section

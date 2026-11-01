@@ -107,14 +107,7 @@ export default function OpsSettingsPage() {
                     администратор не может отличить «нечего настраивать» от
                     «экран сломан». */}
                 {rows.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Настройки этого раздела не заведены в базе. Так бывает,
-                    когда база накатана миграциями без наполнения справочников:
-                    их заводит команда{" "}
-                    <code className="rounded bg-muted px-1 py-0.5">
-                      manage.py seed_operations
-                    </code>{"."}
-                  </p>
+                  <p className="text-xs text-muted-foreground">Настройки не заполнены. Обратитесь к администратору.</p>
                 )}
                 {rows
                   .map((setting) => (

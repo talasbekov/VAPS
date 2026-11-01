@@ -215,7 +215,7 @@ export default function CommandCenterPage() {
           {summaryOpen && expenseDate && <Link className="inline-flex min-h-10 items-center rounded-md border px-3 py-2 hover:bg-muted"
             href={`/security-ops/service-summary?dateFrom=${encodeURIComponent(expenseDate)}`}>Свод по Службе на сегодня</Link>}
         </div>
-        <p className="text-xs text-muted-foreground">Этап и конфликты — из реестра ОМ. Недобор считается по заявкам сил; назначения на посты проверяются в карточке мероприятия.</p>
+        <p className="text-xs text-muted-foreground">Недобор — по заявкам. Назначения — в карточке ОМ.</p>
 
         {query.isLoading && <p role="status" className="text-sm text-muted-foreground">Загрузка мероприятий…</p>}
         {query.isError && <p role="alert" className="text-sm text-destructive-ink">Не удалось загрузить мероприятия полностью. Обновите данные, чтобы увидеть итоги.</p>}

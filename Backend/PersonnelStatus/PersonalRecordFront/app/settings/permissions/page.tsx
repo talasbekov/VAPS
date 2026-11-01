@@ -356,9 +356,7 @@ function PermissionDetails({
         {/* Удаления нет и здесь: код права стоит в гейтах живых ручек, и
             удалить строку справочника значило бы оставить закрытую ручку без
             объяснения, чем именно она закрыта. */}
-        <p className="text-[11.5px] text-muted-foreground">
-          Отключение права не снимает доступ. Чтобы отозвать его, удалите право из роли или снимите назначение роли у пользователя.
-        </p>
+        <p className="text-[11.5px] text-muted-foreground">Отключение права не отзывает доступ. Удалите его из роли или снимите назначение роли.</p>
         {setActive.error !== null && (
           <p className="text-[12px] text-destructive">
             Не удалось изменить состояние права. Попробуйте ещё раз.
@@ -532,11 +530,7 @@ function CreatePermissionDialog({
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
-            <p className="text-[11.5px] text-muted-foreground">
-              Код должен совпасть с тем, что стоит в гейте ручки. Заведённое
-              право, которого нет ни в одном гейте, ничего не откроет — это
-              допустимо, но видно в карточке.
-            </p>
+            <p className="text-[11.5px] text-muted-foreground">Новый код сам по себе не добавляет доступ. Подключение настраивает разработчик.</p>
             {fieldErrors.code && (
               <p className="text-[12px] text-destructive">{fieldErrors.code}</p>
             )}

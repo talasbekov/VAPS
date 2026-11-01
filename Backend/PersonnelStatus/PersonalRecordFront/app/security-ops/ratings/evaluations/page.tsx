@@ -131,11 +131,7 @@ function EvaluationRegistryScreen() {
         {data !== undefined && (
           <>
             {!data.capabilities.operationalRatings && (
-              <p className="rounded-xl border bg-card p-4 text-sm">
-                Оперативный рейтинг выключен сервером
-                (ENABLE_OPERATIONAL_RATINGS): записей нет не потому, что никого
-                не оценивали.
-              </p>
+              <p className="rounded-xl border bg-card p-4 text-sm">Рейтинг пока недоступен.</p>
             )}
 
             <section
@@ -354,10 +350,7 @@ function EvaluationRegistryScreen() {
               </Table>
               {/* §19.31: каноническая формулировка дословно. */}
               {data.results.length === 0 && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  По выбранным условиям оценки не найдены. Это результат отбора,
-                  а не отсутствие оценивания.
-                </p>
+                <p className="p-4 text-sm text-muted-foreground">По выбранным условиям оценок нет.</p>
               )}
             </section>
 
