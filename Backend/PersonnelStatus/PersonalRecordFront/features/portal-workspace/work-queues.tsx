@@ -22,13 +22,16 @@ export function WorkdeskComposer() {
   const [message, setMessage] = useState('');
   const writer = useAssistantWriter({ access, taskId: null }, task => router.push(assistantTaskHref(task.id)));
   const frozen = writer.pending || writer.retryable;
+  const reviewBeforeExecute = config.data?.reviewBeforeExecute === true;
+  const creationBlocked = frozen || !access.allowed || !config.data || config.isError === true;
   return <section className={`${styles.panel} ${styles.compose}`} aria-label="Новое поручение">
     {config.data?.enabled === false ? <>
       <h2 className="text-lg font-semibold">Подготовить наряд</h2>
       <p className="my-3 text-sm text-muted-foreground">Понимание текста отключено. Укажите сведения в форме.</p>
       <Link className={styles.action} href="/security-ops/assistant/">Заполнить поручение <ArrowRight className="size-4" aria-hidden /></Link>
-    </> : <AssistantBrief value={message} onChange={setMessage} disabled={frozen || !access.allowed}
-      pending={writer.pending} onSubmit={() => void writer.create(message)} />}
+    </> : <AssistantBrief value={message} onChange={setMessage} disabled={creationBlocked}
+      pending={writer.pending} reviewBeforeExecute={reviewBeforeExecute}
+      onSubmit={() => { if (!creationBlocked) void writer.create(message, {}, true, reviewBeforeExecute); }} />}
     {config.isError && <p role="status" className="mt-3 text-sm text-muted-foreground">Не удалось проверить понимание текста. Форму можно открыть в помощнике.</p>}
     {writer.error && <div role="alert" className="mt-4 rounded-lg border border-destructive/30 p-4 text-sm">
       <p>{writer.error}</p>

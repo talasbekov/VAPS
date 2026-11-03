@@ -74,7 +74,7 @@ MODEL_CATEGORY: dict[str, str] = {
     **_spread(
         "Справочники", "operations",
         "OpsDictionaryEntry", "StatusType", "OpsDutyType", "OpsCombatDutyType",
-        "OpsCombatRoute", "OpsServiceReportType",
+        "OpsCombatRoute", "OpsCombatGroup", "OpsCombatPlace", "OpsServiceReportType",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle",
         "OpsCountry", "OpsCity", "OpsRatingGroup", "OpsProtectedPerson",
@@ -104,7 +104,6 @@ MODEL_CATEGORY: dict[str, str] = {
         "Служебное", "operations",
         "OpsAuditLog", "OpsRatingAuditEntry", "OpsNotification",
         "OpsRatingNotification", "OpsRatingIdempotencyRecord",
-        "OpsAssistantMessage", "OpsAssistantReceipt", "OpsAssistantConnectionCheck",
     ),
     **_spread(
         "Охранные мероприятия", "operations",
@@ -123,7 +122,7 @@ MODEL_CATEGORY: dict[str, str] = {
     ),
     **_spread(
         "Сотрудники и статусы", "operations",
-        "OpsEmployeeStatus", "Secondment", "StatusOverride",
+        "OpsEmployeeStatus", "OpsCombatDutyMember", "Secondment", "StatusOverride",
     ),
 }
 

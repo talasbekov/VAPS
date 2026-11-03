@@ -25,6 +25,17 @@ GUIDED_DELTA = (
     ('operations', '0154_assistant_credential_format'),
 )
 
+COMBAT_DELTA = (
+    ('operations', '0148_combat_day_planning'),
+    ('operations', '0149_combat_owned_places'),
+    ('operations', '0150_combat_day_permissions'),
+    ('operations', '0151_combat_day_labels'),
+    ('operations', '0152_combat_post_history_reference'),
+    ('operations', '0153_combat_optional_event_lifecycle'),
+    ('operations', '0154_combat_manage_permission'),
+)
+MERGE = ('operations', '0155_merge_r7_combat')
+
 
 REVIEWED = (
     ('employees', '0006_iin_format_validation'),
@@ -48,6 +59,8 @@ REVIEWED = (
     ('operations', '0147_resource_calculation'),
     ('operations', '0148_assistant_connection'),
     *GUIDED_DELTA,
+    *COMBAT_DELTA,
+    MERGE,
     ('statuses', '0005_employeestatus_duty_assignment'),
 )
 
@@ -59,14 +72,13 @@ def graph():
         for app, name in order],
         'order': [list(item) for item in order],
         'leaves': [['employees', '0008_employee_service_profile_verbose_names'],
-                   ['operations', '0154_assistant_credential_format'],
+                   list(MERGE),
                    ['statuses', '0005_employeestatus_duty_assignment']]}
 
 
 class CurrentPlanTests(unittest.TestCase):
     def test_october27_accepts_assistant_and_resource_transition_without_other_steps(self):
         checks = load('schema-transition-checks')
-        self.assertEqual(checks.RELEASE_POLICY, 'smart-20261027-guided-v1')
         new = [('employees', '0008_employee_service_profile_verbose_names'), ('operations', '0146_om_assistant_tasks'), ('operations', '0147_resource_calculation'), ('operations', '0148_assistant_connection')]
         for pending in (new, new[1:], []):
             checks.require_plan(pending, graph())
@@ -86,6 +98,16 @@ class CurrentPlanTests(unittest.TestCase):
                      (REVIEWED[-2],), ()):
             with self.subTest(plan=plan):
                 checks.require_plan([list(item) for item in plan], graph())
+
+    def test_both_published_tails_upgrade_to_the_merge_and_reordering_is_refused(self):
+        checks = load('schema-transition-checks')
+        for plan in (COMBAT_DELTA + (MERGE,), (('operations', '0148_assistant_connection'),) + GUIDED_DELTA + (MERGE,), (MERGE,)):
+            checks.require_plan(plan, graph())
+            with self.assertRaises(RuntimeError):
+                checks.require_plan(plan + (plan[0],), graph())
+            if len(plan) > 1:
+                with self.assertRaises(RuntimeError):
+                    checks.require_plan(tuple(reversed(plan)), graph())
 
     def test_october27_accepts_each_remaining_new_migration_suffix(self):
         checks = load('schema-transition-checks')

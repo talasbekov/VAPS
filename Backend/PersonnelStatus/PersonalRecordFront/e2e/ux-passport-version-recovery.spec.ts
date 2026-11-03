@@ -9,9 +9,9 @@ async function prepare(page: Page, options: { held?: boolean; denied?: boolean; 
   const archiveSectors = [{ id: 'archive-s1', name: 'Сектор опубликованного снимка', posts: [{ id: 'archive-p1', name: 'Пост опубликованного снимка', task: 'Задача опубликованного снимка', requirements: 'Архивные требования' }] }];
   const object: SecurityObject = {
     id: '1', name: 'Объект опубликованной версии', code: 'UX-VERSION', type: 'Здание', region: 'Астана', address: 'Адрес проверки',
-    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null,
+    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null, location: null,
     sectors: [{ id: 's1', name: 'Сектор действующей редакции', posts: [{ id: 'p1', name: 'Пост действующей редакции', task: 'Текущая задача', requirements: 'Текущие требования' }] }],
-    passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Опубликованное примечание', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX', sectors: archiveSectors }],
+    passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Опубликованное примечание', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX', location: null, sectors: archiveSectors }],
     createdAt: '2026-09-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z',
   };
   const state = { object, reads: 0, permissionsReads: 0, failedReads: 0, fail: options.fail ?? 0, release: () => {} };

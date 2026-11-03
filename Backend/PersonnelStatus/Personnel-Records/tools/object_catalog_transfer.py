@@ -167,10 +167,19 @@ def export_bundle(object_id, *, actor_id, source_namespace, export_id=None):
         obj = OpsSecurityObject.objects.filter(pk=object_id).first()
         if obj is None:
             fail("OBJECT_NOT_FOUND")
+        # Version 1 transports catalog text only, including for mapped posts.
+        # Keep its strict schema independent of the evolving passport DTO.
+        sectors = [
+            {"id": sector["id"], "name": sector["name"], "posts": [
+                {key: post[key] for key in ("id", "name", "task", "requirements")}
+                for post in sector["posts"]
+            ]}
+            for sector in snapshot_sectors(obj)
+        ]
         bundle = {
             "format": FORMAT, "exportId": export_id,
             "source": {"namespace": source_namespace, "objectId": object_id, "code": obj.code},
-            "object": _object_fields(obj), "sectors": snapshot_sectors(obj),
+            "object": _object_fields(obj), "sectors": sectors,
         }
         bundle["bundleSha256"] = bundle_digest(bundle)
         return validate_bundle(bundle)

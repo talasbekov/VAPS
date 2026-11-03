@@ -91,6 +91,10 @@ class OpsSecurityObject(TimeStampedModel):
     photo = models.ImageField(
         upload_to="security-objects/photos/", null=True, blank=True
     )
+    # One catalog point shared by the registry and current passport. Unknown
+    # locations stay NULL; event visit points have their own operational scope.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_security_objects"
@@ -101,6 +105,20 @@ class OpsSecurityObject(TimeStampedModel):
         # могут повторять и терять строки.
         ordering = ["code", "id"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(latitude__isnull=True, longitude__isnull=True)
+                    | models.Q(
+                        latitude__isnull=False,
+                        longitude__isnull=False,
+                        latitude__gte=-90,
+                        latitude__lte=90,
+                        longitude__gte=-180,
+                        longitude__lte=180,
+                    )
+                ),
+                name="chk_ops_object_location",
+            ),
             # Ограничения держит БАЗА, а не форма: строки пишет код через
             # .create(), то есть мимо full_clean. Поле с choices и без
             # дефолта молча принимает "" — и объект без состояния прошёл бы
@@ -178,6 +196,8 @@ class OpsSecurityPost(TimeStampedModel):
     task = models.CharField(max_length=1000, blank=True)
     requirements = models.CharField(max_length=1000, blank=True)
     position = models.PositiveIntegerField()
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_security_posts"
@@ -185,6 +205,17 @@ class OpsSecurityPost(TimeStampedModel):
         verbose_name_plural = "Посты паспорта объекта"
         ordering = ["position", "id"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(latitude__isnull=True, longitude__isnull=True)
+                    | models.Q(
+                        latitude__isnull=False, longitude__isnull=False,
+                        latitude__gte=-90, latitude__lte=90,
+                        longitude__gte=-180, longitude__lte=180,
+                    )
+                ),
+                name="chk_ops_post_location",
+            ),
             models.CheckConstraint(
                 condition=models.Q(name__regex=r"\S"),
                 name="chk_ops_security_post_name",
@@ -220,6 +251,10 @@ class OpsPassportVersion(TimeStampedModel):
     published_by = models.CharField(max_length=255)
     note = models.CharField(max_length=1000, blank=True)
     sectors_snapshot = models.JSONField()
+    # Immutable coordinates at publication. Pre-map versions remain NULL and
+    # never inherit the location of a later catalog edit.
+    latitude_snapshot = models.FloatField(null=True, blank=True)
+    longitude_snapshot = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_passport_versions"
@@ -227,6 +262,20 @@ class OpsPassportVersion(TimeStampedModel):
         verbose_name_plural = "Версии паспорта объекта"
         ordering = ["version_number", "id"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(latitude_snapshot__isnull=True, longitude_snapshot__isnull=True)
+                    | models.Q(
+                        latitude_snapshot__isnull=False,
+                        longitude_snapshot__isnull=False,
+                        latitude_snapshot__gte=-90,
+                        latitude_snapshot__lte=90,
+                        longitude_snapshot__gte=-180,
+                        longitude_snapshot__lte=180,
+                    )
+                ),
+                name="chk_ops_passport_location",
+            ),
             models.UniqueConstraint(
                 fields=["security_object", "version_number"],
                 name="uniq_ops_passport_version_number",

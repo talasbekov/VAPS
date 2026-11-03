@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reviewed schema and network transition for the complete 27 October package."""
+"""Reviewed schema and network transition for the installed3380 AI/map package."""
 import argparse
 import importlib.util
 import json
@@ -239,9 +239,11 @@ class TransitionUpdate(app.ApplicationUpdate):
                 after = run_json(py, 'current', env={**clone_env, 'PGOPTIONS': '-c default_transaction_read_only=on'})
             else:
                 after = run_json(py, 'migrate', before=restored, graph=self.graph, env=clone_env)
-            base.save_json(folder / 'rehearsal-after.json', after)
+            base.save_json(folder / 'rehearsal-after.json', after if no_migrations else after['snapshot'])
+            if not no_migrations:
+                base.save_json(folder / 'rehearsal-transition-audit.json', after['transition_audit'])
             print('Backup restored; ' + ('current schema verified' if no_migrations else 'reviewed migrations passed') +
-                  '; all original rows and business sequences preserved.', flush=True)
+                  '; original data preservation and reviewed seed effects verified.', flush=True)
             return after
         finally:
             found = base.run(['docker', 'ps', '-aq', '--filter', 'name=^/' + name + '$']).strip()
@@ -287,9 +289,12 @@ class TransitionUpdate(app.ApplicationUpdate):
             base.save_json(folder / 'live-migration.json', {'container': self.live_migration_container,
                 'label': 'sj-schema-live=' + self.live_migration_container})
             migration_attempted = True
-            migrated = self.migrate_live(before, rehearsal['schema'])
+            migration_result = self.migrate_live(before, rehearsal['snapshot']['schema'])
+            migrated = migration_result['snapshot']
+            transition_audit = migration_result['transition_audit']
             committed = True
             base.save_json(folder / 'database-after-migrations.json', migrated)
+            base.save_json(folder / 'transition-audit.json', transition_audit)
             self.set_images(new_backend, self.new_frontend, self.new_proxy)
             self.start_application()
             after = self.database_snapshot()
@@ -301,13 +306,14 @@ class TransitionUpdate(app.ApplicationUpdate):
             base.save_json(folder / 'SUCCESS.json', {
                 'mode': 'reviewed-schema-transition', 'source_revision': self.manifest['source_revision'],
                 'migrations_executed': plan, 'backup_restored_and_migrated': True,
-                'all_original_rows_and_columns_preserved': True, 'business_sequences_preserved': True,
+                'all_other_original_rows_preserved': True, 'reviewed_seed_effects_verified': True,
+                'transition_audit': transition_audit,
                 'schema_matches_rehearsal': True, 'uploads_unchanged': True,
                 'database_container_unchanged': True, 'database_volume': self.volume,
                 'verified_before_resuming_background_jobs': True,
                 'backend_image': new_backend, 'frontend_image': self.new_frontend,
                 'proxy_image': self.new_proxy, 'proxy_configuration_sha256': self.proxy_configuration_sha256})
-            print('UPDATE PASSED. All ' + str(len(plan)) + ' migrations applied; original data and uploads preserved. Backup: ' + str(folder), flush=True)
+            print('UPDATE PASSED. All ' + str(len(plan)) + ' migrations applied; reviewed seed effects, original data preservation and uploads verified. Backup: ' + str(folder), flush=True)
         except BaseException:
             if stopped:
                 self.recovery_required = True

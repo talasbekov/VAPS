@@ -4,8 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { assistantGuidance, assistantProcessingBusy, type AssistantTask } from "@/features/om-assistant/model";
 
-export function AssistantConversation({ task, acknowledged, disabled, pending, send, retry }: {
-  task: AssistantTask; acknowledged: AssistantTask | null; disabled: boolean; pending: boolean;
+export function AssistantConversation({ task, acknowledged, disabled, pending, send, retry, answerId = "assistant-answer" }: {
+  answerId?: string; task: AssistantTask; acknowledged: AssistantTask | null; disabled: boolean; pending: boolean;
   send: (message: string, revision: number) => Promise<AssistantTask | undefined>;
   retry: () => Promise<AssistantTask | undefined>;
 }) {
@@ -72,7 +72,7 @@ export function AssistantConversation({ task, acknowledged, disabled, pending, s
       <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Текущий вопрос</p>
       <h3 id={`${id}-question`} className="mt-2 whitespace-pre-wrap break-words text-lg font-semibold leading-relaxed">{current.text}</h3>
     </div>}
-    <form id="assistant-answer" tabIndex={-1} className="mt-4 scroll-mt-6" onSubmit={event => { event.preventDefault(); void submit(); }}>
+    <form id={answerId} tabIndex={-1} className="mt-4 scroll-mt-6" onSubmit={event => { event.preventDefault(); void submit(); }}>
       <label htmlFor={id} className="text-sm font-semibold">{current && task.guidance ? "Ваш ответ" : "Сообщение помощнику"}</label>
       {(!pending && !busy && !failed && (options.length > 0 || current?.canDefer || allDeferred)) && <div className="mt-2">
         <div className="flex flex-wrap gap-2" aria-label="Варианты ответа">

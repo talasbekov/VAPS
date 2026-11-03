@@ -71,6 +71,7 @@ export interface StatusCalendarMonth {
 
 /** Человек в группе занятости дня — с подписью СВОЕГО статуса. */
 export interface StatusCalendarPerson {
+  combat_assignment?: import('@/entities/combat-duty').CombatAssignment | null;
   id: string;
   name: string;
   rank: string;

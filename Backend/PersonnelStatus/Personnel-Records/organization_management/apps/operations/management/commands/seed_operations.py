@@ -115,6 +115,9 @@ PERMISSIONS = [
     # ослабление проверки старшего для всех держателей `placement.manage`.
     ("placement.command", "Расстановка на любом объекте: штаб"),
     ("duty.manage", "Управление дежурствами"),
+    ("duty.combat.manage", "Управление боевыми группами и приём состава штабом"),
+    ("duty.roster", "Формирование боевых групп своего подразделения"),
+    ("duty.catalog.manage", "Справочники боевого дежурства своего подразделения"),
     # Чтение плана и утверждение — свои права (мерка event.view): план смотрят
     # и не планирующие, а утверждает не тот, кто планирует.
     ("duty.view", "Просмотр плана дежурств"),
@@ -569,6 +572,10 @@ ROLE_PERMISSIONS = {
 # Screen access and the data reads needed by the service summary are distinct.
 # Explicitly adding another role remains supported; no actor-name prohibition.
 for _role_code, _permission_codes in ROLE_PERMISSIONS.items():
+    if _role_code in {"HEAD_DEPARTMENT_LINE", "HEAD_DIRECTORATE_LINE", "DIRECTORATE_HEAD", "HEAD_OPS_UNIT", "DUTY_PLANNER"}:
+        _permission_codes.extend(["duty.view", "duty.roster", "duty.catalog.manage"])
+    if _role_code == "DUTY_OFFICER":
+        _permission_codes.append("duty.combat.manage")
     if "status.view" in _permission_codes and _role_code not in {"DUTY_OFFICER", "INTEGRATION_USER"}:
         _permission_codes.append("status.workspace")
 
@@ -675,6 +682,7 @@ class Command(BaseCommand):
              "Дежурство боевой группы на нескольких Трассах", True),
         ]:
             OpsCombatDutyType.objects.update_or_create(
+                division=None,
                 duty_type_code=code,
                 defaults={"safe_label": label, "supports_multiple_routes": multi},
             )
@@ -684,6 +692,7 @@ class Command(BaseCommand):
             ("route-3", "Трасса №3 (Вокзал — Гостиница)"),
         ]:
             OpsCombatRoute.objects.update_or_create(
+                division=None,
                 route_code=code, defaults={"safe_label": label}
             )
         self.stdout.write(self.style.SUCCESS("Seeded combat registries"))

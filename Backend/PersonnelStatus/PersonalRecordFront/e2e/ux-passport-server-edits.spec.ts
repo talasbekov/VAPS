@@ -6,7 +6,7 @@ async function prepare(page: Page) {
   await page.clock.install();
   const object: SecurityObject = {
     id: '1', name: 'Паспорт новой редакции', code: 'UX-REVISION', type: 'Здание', region: 'Астана', address: 'Адрес проверки',
-    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null,
+    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null, location: null,
     sectors: [{ id: 's1', name: 'Исходный сектор', posts: [{ id: 'p1', name: 'Исходный пост', task: 'Исходная задача', requirements: 'Исходные требования' }] }],
     passportVersions: [], createdAt: '2026-10-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z',
   };

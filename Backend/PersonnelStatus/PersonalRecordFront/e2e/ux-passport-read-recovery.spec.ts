@@ -7,7 +7,7 @@ const target = '/security-ops/objects/1?tab=posts&back=ownership%3DOWN%26search%
 async function prepare(page: Page, options: { holdPermissions?: boolean; denied?: boolean; fail?: number } = {}) {
   const object: SecurityObject = {
     id: '1', name: 'Объект восстановления паспорта', code: 'UX-READ', type: 'Здание', region: 'Астана', address: 'Адрес проверки',
-    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null,
+    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null, location: null,
     sectors: [{ id: 's1', name: 'Сектор исходный', posts: [{ id: 'p1', name: 'Пост исходный', task: 'Задача исходная', requirements: 'Требования исходные' }] }],
     passportVersions: [], createdAt: '2026-10-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z',
   };

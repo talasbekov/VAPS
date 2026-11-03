@@ -197,6 +197,9 @@ def process_task(pk, generation):
                 return
             _permissions(current)
             planning.protect_committed_plan(current, plan)
+            for key in ("_reviewBeforeExecute", "_confirmedActions"):
+                if key in current.plan:
+                    plan[key] = current.plan[key]
             current.plan = plan
             current.processing = {**current.processing, "state": "failed" if notice else "ready", "error": notice}
             current.revision += 1

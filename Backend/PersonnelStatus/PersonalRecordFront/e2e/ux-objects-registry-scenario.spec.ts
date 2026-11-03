@@ -5,7 +5,7 @@ import type { SecurityObject } from '@/entities/security-object';
 const root = '/security-ops/objects/';
 const first: SecurityObject = {
   id: '1', code: 'UX-ONE', name: 'Объект учебного каталога', type: 'Здание', region: 'Астана', address: 'Учебный адрес',
-  ownership: 'OWN', objectState: 'ACTIVE', passportState: 'GREEN', hasSecurityEvents: false, photoUrl: null,
+  ownership: 'OWN', objectState: 'ACTIVE', passportState: 'GREEN', hasSecurityEvents: false, photoUrl: null, location: null,
   sectors: [], passportVersions: [], createdAt: '2026-10-23T10:00:00Z', updatedAt: '2026-10-23T10:00:00Z',
 };
 

@@ -106,7 +106,8 @@ function readFixture(origin: string): Fixture {
 function ownedBackend(fixture: Fixture): string {
   const identity = process.env.ASSISTANT_ACCEPTANCE_BACKEND_CONTAINER || '';
   if (!/^[a-f0-9]{64}$/.test(identity)) throw new Error('A full owned backend container ID is required.');
-  const info = JSON.parse(execFileSync('docker', ['inspect', identity], { encoding: 'utf8' }))[0];
+  const metadataFormat = '{"Id":{{json .Id}},"Config":{"Labels":{{json .Config.Labels}}},"State":{"Running":{{json .State.Running}}},"HostConfig":{"ReadonlyRootfs":{{json .HostConfig.ReadonlyRootfs}}},"NetworkSettings":{"Networks":{{json .NetworkSettings.Networks}}}}';
+  const info = JSON.parse(execFileSync('docker', ['inspect', '--format', metadataFormat, identity], { encoding: 'utf8' }));
   expect(info.Id).toBe(identity);
   expect(info.Config.Labels?.verification).toBe(fixture.standMarker);
   expect(info.State.Running).toBe(true);
@@ -132,6 +133,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
   const writes: UiWrite[] = [], blocked: { path: string; reason: string }[] = [], checks: Record<string, unknown>[] = [];
   const keys = new Set<string>();
   let task: DialogueTask, taskId: string | null = null, messageIndex = 0, retryAllowed = false, continuationAllowed = false;
+  let confirmationPayload: { confirmationToken: string; revision: number } | null = null;
   let context!: BrowserContext, page!: Page, api!: APIRequestContext, observerApi!: APIRequestContext;
   const endpoint = '/api/ops/assistant/tasks/';
   const initial = 'Подготовь внутреннее мероприятие «Встреча» 01.06.2027 на объектах Аккорда.';
@@ -176,6 +178,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     expect((await (await api.get(endpoint)).json()).results).toEqual([]);
     const configuration = await (await api.get(endpoint + 'configuration/')).json();
     expect(configuration.enabled).toBe(true); expect(configuration.isHeadquarters).toBe(false);
+    expect(configuration.reviewBeforeExecute).toBe(true);
     const catalogs = await (await api.get(endpoint + 'catalogs/')).json();
     expect(catalogs.objects).toEqual([expect.objectContaining({ id: String(fixture.object.id), name: fixture.object.name })]);
     const observerLogin = await request.newContext({ baseURL: origin });
@@ -195,12 +198,12 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     save('observer-create-refused.json', { status: refusedCreate.status(), body: await refusedCreate.json() });
     context = await browser.newContext({ baseURL: origin, viewport: { width: 1440, height: 1000 }, locale: 'ru-RU',
       timezoneId: 'Asia/Qyzylorda', serviceWorkers: 'block' });
-    await context.route('**/api/**', async route => {
+    await context.route('**/*', async route => {
       const req = route.request();
       const address = new URL(req.url());
       const pathname = address.pathname;
       if (address.origin !== origin) {
-        blocked.push({ path: pathname, reason: 'API request outside fixture origin' });
+        blocked.push({ path: pathname, reason: 'Request outside fixture origin' });
         return route.abort('blockedbyclient');
       }
       if (pathname.startsWith('/api/auth/') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method())) return route.continue();
@@ -210,7 +213,8 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
         if (taskId && pathname === `${endpoint}${taskId}/continue/`) {
           expect(continuationAllowed).toBe(true);
           continuationAllowed = false;
-          expect(body).toEqual({});
+          expect(confirmationPayload).not.toBeNull();
+          expect(body).toEqual(confirmationPayload);
           writes.push({ path: pathname, body, explicitlyConfirmed: true });
           return route.continue();
         }
@@ -220,7 +224,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
         if (pathname === endpoint) {
           expect(taskId).toBeNull();
           expect(writes).toHaveLength(0);
-          expect(body).toEqual({ requestKey: body.requestKey, message: initial, fields: {}, interpret: true });
+          expect(body).toEqual({ requestKey: body.requestKey, message: initial, fields: {}, interpret: true, reviewBeforeExecute: true });
         } else if (taskId && pathname === `${endpoint}${taskId}/messages/`) {
           expect(body.revision).toBeGreaterThanOrEqual(1);
           expect(Number.isSafeInteger(body.revision)).toBe(true);
@@ -264,12 +268,13 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     await page.getByLabel('Какой наряд нужно подготовить?').fill(initial);
     const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === endpoint);
     const started = Date.now();
-    await page.getByRole('button', { name: 'Подготовить по поручению', exact: true }).click();
+    await page.getByRole('button', { name: 'Подготовить план', exact: true }).click();
     const createdResponse = await created;
     expect(createdResponse.status()).toBe(201);
     task = dialogue(await createdResponse.json() as AssistantTask); taskId = task.id;
     expect(taskId).toMatch(/^[a-f0-9-]{36}$/);
     expect(task.processing.state).toBe('queued');
+    expect(task.reviewBeforeExecute).toBe(true);
     expect(task.guidance!.current).toBeNull();
     save('created.json', task);
     const saveMilliseconds = Date.now() - started;
@@ -372,16 +377,23 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     await say('Улан Мусахан');
     expect(String(object(task).chiefEmployeeId)).toBe(String(fixture.chief.id));
     expect(task.guidance!.remaining).toBe(0); expect(task.guidance!.deferred).toBe(0);
-    expect(task.canContinue).toBe(true);
+    expect(task.canContinue).toBe(false);
+    expect(task.reviewBeforeExecute).toBe(true);
+    expect(task.event).toBeNull();
+    expect(task.confirmation).toMatchObject({ operation: 'create_bulletin', canConfirm: true });
+    expect(task.confirmation!.token).toMatch(/^[a-f0-9]{64}$/);
+    confirmationPayload = { confirmationToken: task.confirmation!.token!, revision: task.revision };
     expect(task.plan.title).toBe(fixture.title); expect(task.plan.businessDate).toBe(fixture.businessDate);
     expect(task.plan.kind).toBe('INTERNAL'); expect(task.plan.personnelTotal).toBeNull();
     const storedUserKeys = writes.filter(write => write.path === endpoint || write.path === `${endpoint}${taskId}/messages/`)
       .map(write => String(write.body.requestKey));
     assertStoredDialogue(task, fixture, [initial, ...answers], storedUserKeys);
-    await expect(page.getByRole('button', { name: 'Создать ОМ от своего имени', exact: true })).toBeEnabled();
+    const reviewedPlan = page.getByRole('region', { name: 'Проверка плана перед выполнением', exact: true });
+    await expect(reviewedPlan).toContainText(fixture.title);
+    await expect(reviewedPlan.getByRole('button', { name: 'Подтвердить создание ОМ', exact: true })).toBeEnabled();
     await page.setViewportSize({ width: 390, height: 1000 });
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Создать ОМ от своего имени', exact: true })).toBeEnabled();
+    await expect(reviewedPlan.getByRole('button', { name: 'Подтвердить создание ОМ', exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     expect(messageIndex).toBe(17); expect(writes).toHaveLength(19);
     expect(errors).toEqual([]); expect(blocked).toEqual([]);
@@ -405,10 +417,10 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     expect(beforeExecution.tables.ops_assistant_receipts.rows).toBe(0);
     continuationAllowed = true;
     const executing = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === continuationPath);
-    await page.getByRole('button', { name: 'Создать ОМ от своего имени', exact: true }).click();
+    await reviewedPlan.getByRole('button', { name: 'Подтвердить создание ОМ', exact: true }).click();
     const executedResponse = await executing;
     expect(executedResponse.status()).toBe(200);
-    expect(executedResponse.request().postDataJSON()).toEqual({});
+    expect(executedResponse.request().postDataJSON()).toEqual(confirmationPayload);
     const executed = await executedResponse.json() as AssistantTask;
     save('executed-task.json', executed);
     expect(executed.event).not.toBeNull();
@@ -444,7 +456,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     expect(changedTables.sort()).toEqual([...allowedTables].sort());
     expect(afterExecution.tables.ops_security_events.rows).toBe(1);
     expect(afterExecution.tables.ops_security_event_visit_objects.rows).toBe(1);
-    const replayResponse = await api.post(continuationPath, { data: {} });
+    const replayResponse = await api.post(continuationPath, { data: confirmationPayload });
     expect(replayResponse.status()).toBe(200);
     const replay = await replayResponse.json() as AssistantTask; save('replayed-task.json', replay);
     const comparable = (value: AssistantTask) => { const copy = structuredClone(value); delete (copy as Partial<AssistantTask>).updatedAt; return copy; };
@@ -453,7 +465,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     expect(capture('database-after-replay.json', true)).toEqual(afterExecution);
     await page.reload();
     await expect(page.getByRole('region', { name: 'Переписка по поручению', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Создать ОМ от своего имени', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Подтвердить создание ОМ', exact: true })).toHaveCount(0);
     await expect(page.getByText(executed.event!.code, { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Ожидают выполнения', exact: true })).toBeVisible();
     await expect(page.getByText('Запросы ещё не отправлены.', { exact: false })).toBeVisible();
@@ -467,7 +479,7 @@ test('real assistant: durable dialogue, explicit OM creation and duplicate-free 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await testInfo.attach('mobile-created', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
     save('execution-receipt.json', { complete: true, taskId, eventId: executed.event!.id, userMessages: 18,
-      actualUiConfirmation: true, exactUiContinuationBody: {}, revisionBefore: task.revision,
+      actualUiConfirmation: true, exactUiContinuationBody: confirmationPayload, revisionBefore: task.revision,
       ownerId: fixture.users.owner.id, observerId: fixture.users.observer.id, observerContinuationStatus: denied.status(),
       noExecutionBeforeExplicitConfirmation: true, replayPreservedAllNonDialogueTables: true,
       replayTaskUnchangedExceptTimestamp: true, changedTables, otherTablesPreserved: Object.keys(beforeExecution.tables).length - changedTables.length,

@@ -54,32 +54,7 @@ from organization_management.apps.operations.models_recon_material import OpsRec
 from organization_management.apps.operations.models_legal import OpsLegalDocumentFile
 from organization_management.apps.ops.security_events import new_recon_checklist
 from . import admin_dictionaries  # noqa: F401 — register the reference-aware editor
-from organization_management.apps.operations.models_assistant_connection import OpsAssistantConnection
-from organization_management.apps.operations.models_assistant_connection_check import OpsAssistantConnectionCheck
 from organization_management.apps.operations.models_duty_log import OpsDutyCreationClosure, OpsDutyLogEntry, OpsDutyRecordSupplement
-
-
-@admin.register(OpsAssistantConnection)
-class OpsAssistantConnectionAdmin(admin.ModelAdmin):
-    """Inspect redacted state; writes use the audited, revision-checked API."""
-    fields = ("provider", "base_url", "model", "has_key", "revision", "updated_at", "updated_by")
-    readonly_fields = fields
-    list_display = ("provider", "base_url", "model", "has_key", "updated_at")
-    search_fields = ("model",)
-    actions = None
-
-    @admin.display(boolean=True, description="Ключ задан")
-    def has_key(self, obj):
-        return bool(obj.api_key)
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(OpsDutyLogEntry, OpsDutyRecordSupplement)
@@ -408,10 +383,8 @@ class OpsSecurityEventAdmin(admin.ModelAdmin):
 
 from organization_management.admin_auto import register_allowed  # noqa: E402
 from organization_management.apps.operations.models_assistant import OpsAssistantTask, OpsAssistantReceipt, OpsAssistantMessage  # noqa: E402
+from organization_management.apps.operations.models_assistant_connection import OpsAssistantConnection  # noqa: E402
 from organization_management.apps.operations.models_resource_calculation import OpsResourceCalculation  # noqa: E402
-from organization_management.apps.operations.models_duty_template import OpsDutyTemplate  # noqa: E402
-from organization_management.apps.operations.models_employee_qualification import OpsEmployeeQualification  # noqa: E402
-from organization_management.apps.operations.models_object_inspection import OpsObjectInspection  # noqa: E402
 
 
 class AssistantHistoryAdmin(admin.ModelAdmin):
@@ -437,19 +410,34 @@ class AssistantTaskAdmin(AssistantHistoryAdmin):
     search_fields = ("initiated_by", "request_key", "message")
 
 
-@admin.register(OpsAssistantConnectionCheck)
-class AssistantConnectionCheckAdmin(AssistantHistoryAdmin):
-    list_display = ("checked_at", "succeeded", "provider", "model", "checked_saved_revision")
-    list_filter = ("succeeded", "provider")
-    actions = None
-
-
 @admin.register(OpsAssistantReceipt)
 class AssistantReceiptAdmin(AssistantHistoryAdmin):
     list_display = ("id", "task", "operation_key", "executed_by", "created_at")
     list_filter = ("operation_key",)
     search_fields = ("executed_by", "operation_key")
 
+
+@admin.register(OpsAssistantConnection)
+class OpsAssistantConnectionAdmin(admin.ModelAdmin):
+    """Inspect redacted state; writes use the audited, revision-checked API."""
+    fields = ("provider", "base_url", "model", "has_key", "revision", "updated_at", "updated_by")
+    readonly_fields = fields
+    list_display = ("provider", "base_url", "model", "has_key", "updated_at")
+    search_fields = ("model",)
+    actions = None
+
+    @admin.display(boolean=True, description="Ключ задан")
+    def has_key(self, obj):
+        return bool(obj.api_key)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(OpsAssistantMessage)
 class AssistantMessageAdmin(AssistantHistoryAdmin):
@@ -468,33 +456,6 @@ class ResourceCalculationAdmin(AssistantHistoryAdmin):
     list_filter = ("updated_at",)
     actions = None
 
-@admin.register(OpsDutyTemplate)
-class DutyTemplateAdmin(AssistantHistoryAdmin):
-    list_display = ("name", "owner_actor", "owner_division", "revision", "is_active", "updated_at")
-    list_select_related = ("owner_division",)
-    search_fields = ("name", "owner_actor", "owner_division__name")
-    list_filter = ("is_active", "updated_at")
-    actions = None
-
-
-@admin.register(OpsEmployeeQualification)
-class EmployeeQualificationAdmin(AssistantHistoryAdmin):
-    list_display = ("employee", "skill", "score", "assessed_on", "valid_until", "recorded_by_name")
-    list_select_related = ("employee",)
-    search_fields = ("recorded_by", "recorded_by_name", "basis")
-    list_filter = ("skill", "assessed_on", "valid_until")
-    actions = None
-
-
-@admin.register(OpsObjectInspection)
-class ObjectInspectionAdmin(AssistantHistoryAdmin):
-    list_display = ("security_object", "reviewer", "inspected_on", "completed_at", "revision")
-    list_select_related = ("security_object", "reviewer")
-    search_fields = ("security_object__name", "reviewer__username")
-    list_filter = ("inspected_on", "completed_at")
-    actions = None
-
-
 register_allowed(
     "operations",
     (
@@ -505,6 +466,7 @@ register_allowed(
         # Справочники и настройки, которые администратор действительно ведёт.
         "OpsDictionaryEntry", "StatusType", "OpsDutyType", "OpsCombatDutyType",
         "OpsCombatRoute", "OpsServiceReportType", "OpsFeedbackRegistry",
+        "OpsCombatGroup", "OpsCombatPlace", "OpsCombatDutyMember",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle", "OpsCountry",
         "OpsCity", "OpsRatingGroup", "OpsPolicySetting",

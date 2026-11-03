@@ -4,9 +4,9 @@ import type { SecurityObject } from '@/entities/security-object';
 import type { ProtectedPerson } from '@/entities/protected-person';
 
 type Source = 'detail' | 'registry' | 'objectHistory' | 'personHistory';
-const object: SecurityObject = { id: '1', name: 'Объект проверки доступа', code: 'UX-PRIVATE', type: 'Здание', region: 'Регион закрытых данных', address: 'Адрес', objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: true, photoUrl: null,
+const object: SecurityObject = { id: '1', name: 'Объект проверки доступа', code: 'UX-PRIVATE', type: 'Здание', region: 'Регион закрытых данных', address: 'Адрес', objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: true, photoUrl: null, location: null,
   sectors: [{ id: 's1', name: 'Сектор закрытых данных', posts: [{ id: 'p1', name: 'Пост закрытых данных', task: 'Задача', requirements: 'Требования' }] }],
-  passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Закрытое примечание', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX', sectors: [{ id: 'as1', name: 'Архив закрытых данных', posts: [] }] }], createdAt: '2026-09-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z' };
+  passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Закрытое примечание', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX', location: null, sectors: [{ id: 'as1', name: 'Архив закрытых данных', posts: [] }] }], createdAt: '2026-09-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z' };
 const person: ProtectedPerson = { id: '1', name: 'Лицо проверки доступа', code: 'OL-UX', category: 'OURS', callsign: '', bio: '', country: '', position: '', facts: [], photoUrl: null };
 const paths: Record<Source,string> = { detail: '/api/ops/objects/1/', registry: '/api/ops/objects/', objectHistory: '/api/ops/objects/1/history/', personHistory: '/api/ops/protected-persons/1/history/' };
 

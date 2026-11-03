@@ -34,7 +34,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { moduleOpenFor, modulePermissionsOf } from "@/entities/portal-access";
+import { modulePermissionsOf } from "@/entities/portal-access";
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
 import {
   directorateDenial,
@@ -62,7 +62,7 @@ import {
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
 import { ForcesWorkspace } from "@/features/forces-workspace/ui/ForcesWorkspace";
-import { legacyDailyExpenseHref, legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole } from "@/features/forces-workspace/model/workspace";
+import { legacyWorkspaceTitle, legacyWorkspaceView, resolveWorkspaceRole } from "@/features/forces-workspace/model/workspace";
 
 /**
  * «Сбор сил на ОМ» — прежний экран личного состава, ДОПОЛНЕННЫЙ разрезом
@@ -206,17 +206,9 @@ export default function EmployeesPage() {
 function EmployeesEntry() {
   const access = useOpsPermissions();
   const client = useQueryClient();
-  const query = useSearchParams();
-  const router = useRouter();
-  const dailyHref = !access.isLoading && !access.error && access.permissions !== undefined &&
-    moduleOpenFor("/daily-expense", access.hasPermission) ? legacyDailyExpenseHref(new URLSearchParams(query)) : null;
-  useEffect(() => {
-    if (dailyHref) router.replace(`${dailyHref}${window.location.hash}`, { scroll: false });
-  }, [dailyHref, router]);
   const role = resolveWorkspaceRole(access);
   if (role === "loading") return <DashboardLayout><p role="status">Загрузка рабочего места…</p></DashboardLayout>;
-  if (dailyHref) return <DashboardLayout><p role="status">Открываем ежедневный расход…</p></DashboardLayout>;
-  if (role === "denied" || !moduleOpenFor("/employees", access.hasPermission)) {
+  if (role === "denied") {
     return <DashboardLayout><Card><CardContent className="p-9 text-center">
       <h1 className="text-lg font-semibold">Доступ закрыт</h1>
       <p className="my-3 text-muted-foreground">{access.error ? "Не удалось загрузить права рабочего места." : "Недостаточно прав для этого рабочего места."}</p>

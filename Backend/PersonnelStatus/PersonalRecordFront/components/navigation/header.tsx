@@ -21,6 +21,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { AssistantLauncher } from "@/features/assistant-dock/assistant-dock";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -117,6 +118,7 @@ export function Header({
               ) : null}
             </span>
           )}
+          <AssistantLauncher />
           <ThemeToggle />
           <NotificationsDropdown />
 

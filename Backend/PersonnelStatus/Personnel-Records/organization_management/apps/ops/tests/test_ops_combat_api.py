@@ -42,7 +42,7 @@ def registries(db):
 @pytest.fixture
 def planner():
     api, _ = client_for(
-        "combat-planner", "COMBAT_PLANNER", perms=("duty.view", "duty.manage")
+        "combat-planner", "COMBAT_PLANNER", perms=("duty.view", "duty.manage", "duty.combat.manage")
     )
     return api
 

@@ -253,14 +253,14 @@ class LifecycleNetworkTests(ComposeFixture):
             events.append('rehearsal')
             if failure == 'rehearsal':
                 raise RuntimeError('rehearsal failed')
-            return {'schema': {}} if pending else {}
+            return {'snapshot': {'schema': {}}, 'transition_audit': {}} if pending else {}
         obj.rehearse_transition = obj.clone_check = rehearse
         def migrate(*args, **kwargs):
             events.append('migration')
             self.assertEqual(self.path.read_bytes(), EXPECTED)
             if failure == 'migration':
                 raise RuntimeError('migration interrupted')
-            return {}
+            return {'snapshot': {}, 'transition_audit': {}}
         obj.migrate_live = migrate
         if failure == 'drift':
             self.path.write_bytes(LEGACY + b'# operator edit\n')

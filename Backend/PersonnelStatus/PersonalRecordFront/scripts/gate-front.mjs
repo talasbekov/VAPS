@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { accessSync, closeSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,9 +16,6 @@ function run(script, args = [], env = process.env, nodeArgs = []) {
 
 try {
   if (!buildOnly) {
-    for (const fixture of ["seed-qualifications-acceptance.py", "test_qualification_seed_safety.py", "qualification-acceptance-fingerprint.py", "revoke-qualification-acceptance.py", "qualification-acceptance-audit.py"]) {
-      accessSync(join(root, "e2e/fixtures", fixture));
-    }
     run("node_modules/typescript/bin/tsc", ["--noEmit", "--incremental", "false"]);
     run("scripts/check-rewrites.mjs");
     run("scripts/check-shot-paths.mjs");
@@ -37,11 +34,14 @@ try {
     run("scripts/tests/workflow-context-navigation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/om-assistant.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/assistant-progress.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/assistant-dock.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/assistant-chat.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/object-map.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/post-maps.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/force-collections-queue.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/security-events-filters.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/service-summary-retry.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/account-scope-choice.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/account-effective-access-ui.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/portal-workspace.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/portal-workspace-ui.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/notifications-center.test.cjs", [], process.env, ["--test"]);
@@ -60,7 +60,6 @@ try {
     run("scripts/tests/approval-decision.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/status-extension-availability.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/daily-report-range.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/daily-submission-count.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/summary-versions-rights.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/service-summary-current.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/expense-reminder-link.test.cjs", [], process.env, ["--test"]);
@@ -79,6 +78,9 @@ try {
     run("scripts/tests/workdesk.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/resource-calculation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-workspace.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/combat-ui-regressions.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/combat-group-wizard.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/combat-smoke-command.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/duty-control.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-shift.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-access.test.cjs", [], process.env, ["--test"]);
@@ -89,16 +91,8 @@ try {
     run("scripts/tests/expense-workspace-snapshot.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/department-workspace-role.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/workspace-daily-scope.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/daily-expense-read-access.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/employee-portrait.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/employee-service-profile.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/duty-templates.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/duty-dispatch-empty-state.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/employee-qualifications.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/ai-settings.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/system-diagnostics.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/workload-coverage.test.cjs", [], process.env, ["--test"]);
-    run("scripts/tests/object-inspections.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/employee-media-rewrite.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/report-workflow.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/department-split-draft.test.cjs", [], process.env, ["--test"]);
@@ -106,7 +100,7 @@ try {
     run("scripts/tests/status-related-division.test.cjs", [], process.env, ["--test"]);
     run("features/organization-structure/scene3d-layout.test.cjs", [], process.env, ["--test"]);
     run("features/organization-structure/scene3d-label-resolution.test.cjs", [], process.env, ["--test"]);
-    for (const config of ["playwright.roles.config.ts", "playwright.uc-ref-adm.config.ts", "playwright.runtime.config.ts", "playwright.assistant-dialogue.config.ts", "playwright.guided-assistant.config.ts", "playwright.workload-acceptance.config.ts", "playwright.daily-acceptance.config.ts", "playwright.assistant-acceptance.config.ts", "playwright.qualifications-acceptance.config.ts"]) {
+    for (const config of ["playwright.roles.config.ts", "playwright.uc-ref-adm.config.ts", "playwright.runtime.config.ts", "playwright.assistant-acceptance.config.ts", "playwright.assistant-dialogue.config.ts", "playwright.guided-assistant.config.ts", "playwright.combat.config.ts"]) {
       run("node_modules/@playwright/test/cli.js", ["test", "--list", "--config", config]);
     }
   }

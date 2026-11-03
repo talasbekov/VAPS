@@ -41,6 +41,7 @@ import { useForceCampaignReserves } from "@/hooks/use-force-campaigns";
 export interface OpsSectionStatus {
   code: string;
   name: string;
+  assignment?: import('@/entities/combat-duty').CombatAssignment | null;
 }
 
 /**
@@ -169,6 +170,7 @@ export function useOpsSectionStatuses(enabled = true) {
     statusByEmployee.set(row.employee_id, {
       code: row.status_type_code,
       name: nameOfCode.get(row.status_type_code) ?? row.status_type_code,
+      assignment: row.combat_assignment,
     });
   }
 

@@ -269,7 +269,7 @@ def test_frozen_identity_keeps_same_named_units_distinct(branches):
 def test_submit_api_ignores_forged_division_id_and_freezes_actor_identity(branches, staffed_actor):
     own_department, own = branches[0]
     foreign_department, foreign = branches[1]
-    api, actor = client_for("group-submitter", "GROUP_SUBMITTER", ["duty.view", "duty.manage"], own_department.pk)
+    api, actor = client_for("group-submitter", "GROUP_SUBMITTER", ["duty.view", "duty.manage", "duty.combat.manage"], own_department.pk)
     if staffed_actor:
         employee = make_employee(own)
         employee.user = actor
@@ -284,6 +284,13 @@ def test_submit_api_ignores_forged_division_id_and_freezes_actor_identity(branch
         "reserveEmployeeNames": [], "submittedByUnitName": foreign.name,
         "submittedByDivisionId": foreign.pk,
     }, format="json")
+    if not staffed_actor:
+        # A scoped writer without an employee identity cannot establish an owner
+        # for a name-only legacy roster. New groups use explicit authorised IDs.
+        assert response.status_code == 403, response.data
+        shift.refresh_from_db()
+        assert shift.submission is None
+        return
     assert response.status_code == 200, response.data
     assert response.json()["submission"]["submittedByDivisionId"] == (own.pk if staffed_actor else None)
     assert response.json()["submission"]["submittedByUnitName"] == (own.name if staffed_actor else "")

@@ -58,6 +58,7 @@ import {
   Factory,
   Landmark,
   LayoutGrid,
+  MapPin,
   Rows3,
   Search,
   Warehouse,
@@ -67,6 +68,7 @@ import {
   useSecurityObjects,
 } from "@/hooks/use-security-objects";
 import { EventHistoryDialog } from "@/features/event-history";
+import { ObjectsMap } from "@/features/object-map";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
@@ -199,12 +201,13 @@ const FRESHNESS_CLASS: Record<PassportFreshnessState, string> = {
   NO_PUBLISHED_VERSION: "text-muted-foreground",
 };
 
-/** Режим показа реестра. Как в прототипе — два: карточный и построчный.
+/** Режим показа реестра: карточки, строки и локальная карта.
  * Живёт в URL рядом с поиском и фильтрами, поэтому переживает перезагрузку
  * и уезжает вместе со ссылкой. Порядок ключей задаёт порядок кнопок. */
 const VIEW_MODES = {
   cards: { label: "Карточки", icon: LayoutGrid },
   table: { label: "Таблица", icon: Rows3 },
+  map: { label: "Карта", icon: MapPin },
 } as const;
 
 type ViewMode = keyof typeof VIEW_MODES;
@@ -546,7 +549,7 @@ function SecurityObjectsScreen() {
             <div
               role="group"
               aria-label="Вид реестра"
-              className="ml-auto flex items-center gap-1 rounded-lg bg-muted p-1"
+              className="ml-auto flex max-w-full flex-wrap items-center gap-1 rounded-lg bg-muted p-1"
             >
               {(Object.keys(VIEW_MODES) as ViewMode[]).map((mode) => {
                 const Icon = VIEW_MODES[mode].icon;
@@ -813,6 +816,7 @@ function ObjectsRegistry({
       </Card>
     );
   }
+  if (view === "map") return <ObjectsMap objects={objects} backSuffix={backSuffix} />;
   return view === "cards" ? (
     <ObjectsCards backSuffix={backSuffix} objects={objects} />
   ) : (

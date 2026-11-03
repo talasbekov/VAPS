@@ -166,7 +166,20 @@ def _save_receipt(task, key, payload, result, request):
 def _live_event(request, task):
     if task.event_id:
         return call_manual(request, "retrieve", event_id=task.event_id)
-    return None
+    # The worker prepares a proposal without persisting a domain link. Resolve
+    # its existing target with the caller's current access for the preview too.
+    # Canonicalize only this in-memory instance, exactly as continue_task does;
+    # GET must not save a link, mutate business data or change the revision.
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+    event_id = task.plan.get("eventId")
+    if not event_id and task.plan.get("eventCode"):
+        event_id = OpsSecurityEvent.objects.filter(code=task.plan["eventCode"]).values_list("pk", flat=True).first()
+    if not event_id:
+        return None
+    event = call_manual(request, "retrieve", event_id=event_id)
+    task.event = OpsSecurityEvent.objects.get(pk=event["id"])
+    task.plan = {**task.plan, "eventId": str(event["id"])}
+    return event
 
 
 def _task_questions(task):
@@ -179,7 +192,7 @@ def _task_questions(task):
 
 
 def live_status(task, event):
-    if event is None and task.plan.get("eventId") and (not task.processing or task.event_id or task.receipts.exists()):
+    if event is None and (task.plan.get("eventId") or task.plan.get("eventCode")) and (not task.processing or task.event_id or task.receipts.exists() or task.processing.get("state") == "ready"):
         return "event_unavailable"
     if _task_questions(task):
         return "needs_information"
@@ -206,14 +219,71 @@ def live_status(task, event):
     return "prepared"
 
 
+def pending_confirmation(request, task, event):
+    """A preview is bound to its actor, proposal and current domain state.
+
+    The token detects stale consent, not authorization. The existing manual API
+    reauthenticates and checks all domain permissions again at execution time.
+    """
+    from .dialogue import processing_state
+    if (not task.plan.get("_reviewBeforeExecute") or _task_questions(task)
+            or processing_state(task)["state"] != "ready"):
+        return None
+    actor = resolve_actor_id(request)
+    blocked_reason = None
+    if not event:
+        if task.plan.get("eventId") or task.plan.get("eventCode") or task.receipts.filter(operation_key="create_bulletin").exists():
+            return None
+        operation = "create_bulletin"
+        can_confirm = task.initiated_by == actor and bool(effective_permissions(request) & {"*", "event.create"})
+    else:
+        from .briefing_execution import can_resume_briefing
+        from organization_management.apps.ops.security_events import can_collect_forces
+        if task.plan.get("briefing") and can_resume_briefing(event, task.plan.get("briefingPending")):
+            operation = "apply_briefing"
+            can_confirm = task.initiated_by == actor
+        elif (task.plan.get("intent") != "send" or not task.plan.get("allocations")
+                or not event.get("reconForceRequestedAt") or not task.event
+                or task.event.force_handover or not can_collect_forces(task.event)
+                or task.receipts.filter(operation_key="send_allocations").exists()):
+            return None
+        else:
+            operation = "send_allocations"
+            can_confirm = access.is_headquarters(request)
+        proposed = {str(row["departmentId"]): row for row in task.plan.get("allocations", [])}
+        for row in event.get("forceAllocation", []) if operation == "send_allocations" else []:
+            if row.get("topUpOf") or row.get("sentAt"):
+                continue
+            replacement = proposed.get(str(row.get("departmentId")))
+            if (replacement is None or row.get("groupDemandIds") or row.get("groupDemands")
+                    or row.get("comment") or (row.get("dueAt") and row["dueAt"] != replacement.get("dueAt"))):
+                # Legacy execution preserves these conditions. The compact review
+                # does not show them, so consent must happen in the full workspace.
+                blocked_reason = "В черновиках есть дополнительные условия или другие запросы. Проверьте полный состав и выполните отправку в сборе сил."
+                can_confirm = False
+                break
+    state = {key: event.get(key) for key in (
+        "id", "title", "stage", "businessDate", "businessDateEnd", "eventTime", "kind",
+        "reconForceRequestedAt", "forceDemandTotal", "forceAllocation",
+        "visitObjects", "reconSectors", "reconSectorPosts", "protectedPersonIds",
+    )} if event else None
+    token = digest({"task": str(task.pk), "actor": actor, "revision": task.revision,
+                    "operation": operation, "plan": task.plan, "event": state})
+    return {"operation": operation, "canConfirm": can_confirm, "token": token if can_confirm else None,
+            **({"blockedReason": blocked_reason} if blocked_reason else {})}
+
+
 @transaction.atomic
-def continue_task(request, pk, *, fields=None, revision=None):
+def continue_task(request, pk, *, fields=None, revision=None, confirmation_token=None):
     task = access.lock_task(request, pk)
     from .dialogue import processing_state
     processing = processing_state(task)
     if processing["state"] in {"queued", "running"} or (processing["state"] == "failed" and not fields):
         conflict()
     actor = resolve_actor_id(request)
+    if confirmation_token is not None and task.plan.get("_confirmedActions", {}).get(confirmation_token) == actor:
+        # Lost response: return the receipt-bound result; never execute the next action.
+        return task
     patch = validate_fields(fields) if fields else None
     if revision is not None and (type(revision) is not int or revision != task.revision):
         # A response lost after commit can replay only the already-saved values.
@@ -254,6 +324,11 @@ def continue_task(request, pk, *, fields=None, revision=None):
         remember(task.plan, {'deferred': old.get('guidedDeferred', [])})
         planning.protect_committed_plan(task, task.plan)
         task.processing = {**task.processing, "state": "ready", "error": None}
+        for key in ("_reviewBeforeExecute", "_confirmedActions"):
+            if key in old:
+                task.plan[key] = old[key]
+        if "personnelTotal" not in patch.get("proposal", {}):
+            task.plan["questions"].extend(row for row in old.get("questions", []) if row["field"] == "personnelTotal")
         task.revision += 1
     plan = task.plan
     if not task.event_id and plan.get("eventId") and task.receipts.exists():
@@ -271,7 +346,20 @@ def continue_task(request, pk, *, fields=None, revision=None):
             event = call_manual(request, "retrieve", event_id=event_id)
             task.event_id = int(event["id"])
             plan["eventId"] = str(event["id"])
-    if not task.event_id and not plan.get("questions"):
+    reviewed = plan.get("_reviewBeforeExecute") is True
+    approved_operation = None
+    if confirmation_token is not None:
+        if task.event_id:
+            # Match consent against the state protected by the same row lock as
+            # the domain write. A task lock alone cannot exclude manual edits.
+            from organization_management.apps.operations.models_event import OpsSecurityEvent
+            task.event = OpsSecurityEvent.objects.select_for_update().get(pk=task.event_id)
+        confirmation = pending_confirmation(request, task, _live_event(request, task))
+        if (not reviewed or not confirmation or not confirmation["canConfirm"]
+                or confirmation["token"] != confirmation_token):
+            conflict()
+        approved_operation = confirmation["operation"]
+    if not task.event_id and not plan.get("questions") and (not reviewed or approved_operation == "create_bulletin"):
         prior = task.receipts.filter(operation_key="create_bulletin").first()
         if prior is not None:
             invalid("Сохранённый бюллетень больше недоступен. Выберите другое мероприятие.", "eventId")
@@ -292,11 +380,14 @@ def continue_task(request, pk, *, fields=None, revision=None):
         if any(facts.get(key) is not None and facts[key] != event.get(key)
                for key in ("title", "businessDate", "businessDateEnd", "eventTime", "kind")):
             plan["questions"] = [*plan.get("questions", []), planning.question("event", "Мероприятие изменено после подготовки поручения. Проверьте актуальные сведения в карточке ОМ.")]
-    if event and plan.get("briefing") and not plan.get("questions"):
+    created_briefing = task.receipts.filter(operation_key="create_bulletin", result__briefing=True).exists()
+    if (event and plan.get("briefing") and not plan.get("questions")
+            and (not reviewed or approved_operation in {"create_bulletin", "apply_briefing"} or not created_briefing)):
         from .briefing_execution import apply_briefing
         event = apply_briefing(request, task, event)
     task.delegated = bool(task.event_id and plan.get("intent") == "send" and not access.is_headquarters(request)) or task.delegated
-    if event and not plan.get("questions") and plan.get("intent") == "send" and event.get("reconForceRequestedAt"):
+    if (event and not plan.get("questions") and plan.get("intent") == "send" and event.get("reconForceRequestedAt")
+            and (not reviewed or approved_operation == "send_allocations")):
         if not plan.get("allocations"):
             plan["questions"] = [planning.question("allocations", "Укажите департаменты и количество людей для каждого.")]
         elif access.is_headquarters(request):
@@ -336,6 +427,8 @@ def continue_task(request, pk, *, fields=None, revision=None):
                         key: plan.get("proposal", {}).get(key)
                         for key in ("allocations", "intent", "personnelTotal")
                     }}
+    if approved_operation:
+        plan.setdefault("_confirmedActions", {})[confirmation_token] = actor
     task.status = live_status(task, event)
     task.plan = plan
     task.save(update_fields=["event", "plan", "status", "delegated", "revision", "processing", "updated_at"])
@@ -391,13 +484,27 @@ def serialize_task(request, task):
     if not messages and task.message:
         messages = [{"id": "initial", "role": "user", "text": task.message, "requestKey": task.request_key,
                      "createdAt": task.created_at.isoformat()}]
+    confirmation = None if unavailable else pending_confirmation(request, task, event)
+    if confirmation and confirmation["canConfirm"]:
+        status = "awaiting_confirmation"
+    can_handoff = bool(processing["state"] == "ready" and not unavailable
+                       and status != "event_unavailable" and not questions and event
+                       and task.plan.get("intent") == "send" and task.plan.get("allocations")
+                       and not task.delegated and task.initiated_by == resolve_actor_id(request)
+                       and not access.is_headquarters(request))
+    # A mistyped/unavailable target with no committed link or effects remains
+    # correctable by its author. Keep its unavailable event details redacted.
+    can_edit = bool(task.initiated_by == resolve_actor_id(request)
+                    and (not unavailable or (not task.event_id and not task.receipts.exists())))
     return {"id": str(task.pk), "initiatedBy": task.initiated_by, "message": task.message, "revision": task.revision,
             "messages": messages, "processing": processing,
             "guidance": public_guidance(task.plan, blocking=questions,
                                         enabled=bool(processing['state'] == 'ready' and not unavailable and status != 'event_unavailable'
                                                      and task.initiated_by == resolve_actor_id(request))),
             "canMessage": bool(not unavailable and task.initiated_by == resolve_actor_id(request) and processing["state"] not in {"queued", "running"} and within_limit(task)),
-            "status": status, "delegated": task.delegated, "canEdit": not unavailable and task.initiated_by == resolve_actor_id(request), "canContinue": can_continue,
+            "status": status, "delegated": task.delegated, "canEdit": can_edit, "canContinue": (can_continue and not task.plan.get("_reviewBeforeExecute", False)) or can_handoff,
+            "canHandoff": can_handoff,
+            "reviewBeforeExecute": bool(task.plan.get("_reviewBeforeExecute")), "confirmation": confirmation,
             "gathering": _gathering_context(request, task, event, collection_eligible=collection_eligible),
             "questions": questions, "interpretationNotice": processing.get("error") or task.plan.get("interpretationNotice") or creation_notice, "plan": plan,
             "event": ({"id": str(event["id"]), "code": event["code"], "title": event["title"], "stage": event["stage"], "forceDemandTotal": event.get("forceDemandTotal"), "requested": sum(int(row.get("need") or 0) for row in event.get("forceAllocation", []) if row.get("sentAt")), "rosterCount": len(event.get("forceRoster", [])), "progress": assignment_progress(event, handed_over=bool(task.event and task.event.force_handover)), "href": f"/security-ops/events/{event['id']}/"} if event else None),

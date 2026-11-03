@@ -2,12 +2,15 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import type { PassportVersion } from "@/entities/security-object";
+import { ObjectLocationMap } from "@/features/object-map/ui/ObjectLocationMap";
 
 export function PassportVersionSnapshot({ version }: { version: PassportVersion }) {
   return <>
     <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
       Опубликованная версия неизменяема: это снимок паспорта на момент публикации, а не действующая редакция.
     </p>
+    <ObjectLocationMap location={version.location ?? null} sectors={version.sectors} label={`Версия ${version.versionNumber}`}
+      title="Местоположение в опубликованной версии" emptyMessage="В этой версии паспорта координаты не сохранены." />
     {version.note !== "" && <Card className="mb-4"><CardContent className="p-4">
       <h2 className="mb-1 text-sm font-semibold">Примечание к публикации</h2>
       <p className="text-sm text-muted-foreground">{version.note}</p>

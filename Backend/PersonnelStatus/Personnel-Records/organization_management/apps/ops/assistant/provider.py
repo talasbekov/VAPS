@@ -55,6 +55,82 @@ def provider_configuration():
 
 
 @sensitive_variables()
+def _complete_documentation(messages, *, schema=None, max_tokens, max_bytes):
+    """Use the same saved configuration and protected transport as task parsing."""
+    try:
+        config = connection.configuration()
+    except credentials.CredentialUnavailable:
+        raise ProviderUnavailable(credentials.UNAVAILABLE) from None
+    if config["provider"] not in {"ollama", "openai"} or not config["model"]:
+        raise ProviderUnavailable("Модель не подключена.")
+    try:
+        origin = connection.normalize_url(config["baseUrl"])
+    except connection.ValidationError:
+        raise ProviderUnavailable("Проверьте адрес сервера модели.") from None
+    if config.get("environmentOnly"):
+        address = urlsplit(origin)
+        if address.scheme != "http" or address.hostname not in {"127.0.0.1", "localhost", "::1", "host.docker.internal"} or address.path:
+            raise ProviderUnavailable("Проверьте настройку локальной модели.")
+    endpoint = origin + "/api/chat"
+    body = {"model": config["model"], "stream": False, "messages": messages, "format": schema or "json",
+            "options": {"temperature": 0, "num_predict": max_tokens, "num_ctx": 8192}, "keep_alive": "1m"}
+    if config["provider"] == "openai":
+        endpoint = origin if origin.endswith("/chat/completions") else origin + ("/chat/completions" if origin.endswith("/v1") else "/v1/chat/completions")
+        response_format = {"type": "json_object"} if schema is None else {
+            "type": "json_schema", "json_schema": {"name": "assistant_documentation", "strict": True, "schema": schema},
+        }
+        body = {"model": config["model"], "stream": False, "messages": messages, "temperature": 0,
+                "max_tokens": max_tokens, "response_format": response_format}
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if config["apiKey"]:
+        headers["Authorization"] = "Bearer " + config["apiKey"]
+    try:
+        request = Request(endpoint, data=json.dumps(body).encode(), headers=headers, method="POST")
+        with urlopen(request, timeout=55) as response:
+            raw = response.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            raise ValueError("Response exceeds limit")
+        envelope = json.loads(raw)
+        if not isinstance(envelope, dict):
+            raise ValueError("Invalid provider envelope")
+        if config["provider"] == "openai":
+            choices = envelope.get("choices")
+            if not isinstance(choices, list) or len(choices) != 1 or choices[0].get("finish_reason") != "stop":
+                raise ValueError("Incomplete model response")
+            output = choices[0]["message"]
+            if output.get("tool_calls") or output.get("function_call") or output.get("refusal"):
+                raise ValueError("Unsupported model response")
+        else:
+            if envelope.get("done") is False or envelope.get("done_reason") not in (None, "stop") or (envelope.get("done") is not True and envelope.get("done_reason") != "stop"):
+                raise ValueError("Incomplete model response")
+            output = envelope["message"]
+        return json.loads(output["content"])
+    except HTTPError as error:
+        error.close()
+        raise ProviderUnavailable("Сервер модели отклонил запрос. Проверьте подключение в настройках.") from None
+    except (URLError, TimeoutError, OSError, HTTPException, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        raise ProviderUnavailable("Не удалось получить подтверждённый ответ модели.") from None
+
+
+@sensitive_variables()
+def answer_from_context(question, verified_turns, chunks, role_context):
+    from .documentation_provider import answer_from_context as generate
+    try:
+        return generate(question, verified_turns, chunks, role_context, complete=_complete_documentation)
+    except (ValueError, TypeError, KeyError):
+        raise ProviderUnavailable("Не удалось получить подтверждённый ответ модели.") from None
+
+
+@sensitive_variables()
+def select_documentation(message, history, documents, role_context):
+    from .documentation_provider import select_documentation as select
+    try:
+        return select(message, history, documents, role_context, complete=_complete_documentation)
+    except (ValueError, TypeError, KeyError):
+        raise ProviderUnavailable("Не удалось получить подтверждённый ответ модели.") from None
+
+
+@sensitive_variables()
 def interpret(message, *, context=None):
     try:
         config = connection.configuration()
