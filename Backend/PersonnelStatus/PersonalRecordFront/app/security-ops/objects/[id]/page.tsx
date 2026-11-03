@@ -1,6 +1,24 @@
 "use client";
 
-// Published passport data and dated inspections have separate lifecycles.
+// Паспорт объекта по экрану прототипа Smart Josparlau (`Прототип/Объекты.dc.html`,
+// экран `scrPass`, строки 127–312).
+//
+// Прототип держит здесь шесть вкладок, и теперь видны все шесть. У трёх есть
+// живой источник: «Общие данные» (поля объекта + свежесть проверки из
+// конверта реестра), «Посты и секторы» (действующая редакция паспорта) и
+// «История» (опубликованные версии). У остальных трёх — «Инфраструктура»,
+// «Чек-лист» и «Привлекаемые группы» — живого источника нет (ни модели, ни
+// ручки на сервере), но пустыми они не рисуются: пустая вкладка читалась бы
+// как «данные есть, просто их ноль». Вместо этого — макет по прототипу
+// (`PassportPlannedTabs`): настоящая структура секций и заголовки, вместо
+// значений — плейсхолдер-полосы и одна честная строка причины на вкладку.
+// Раньше эти три были названы только внизу экрана, в списке «Чего нет»;
+// теперь они названы в собственных вкладках, и список ниже сократился на
+// эти три пункта.
+//
+// Экран НИЧЕГО не считает сам. Состояние паспорта, срок проверки, политику
+// свежести и снимки версий присылает сервер; страница только раскладывает их
+// по вкладкам и печатает его же словами.
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -31,13 +49,52 @@ import type {
 } from "@/entities/security-object";
 import {
   PassportForm,
+  PassportPlannedTabs,
   PassportVersionsPanel,
 } from "@/features/object-passport";
 import { DutyForcesSection } from "@/features/object-duty-forces";
-import { ObjectInspectionsPanel } from "@/features/object-passport/ui/ObjectInspectionsPanel";
-import { PASSPORT_TABS as TABS, passportTab, type PassportTab as TabCode } from "@/features/object-passport/model/inspections";
+import { ObjectLocationEditor } from "@/features/object-map";
+
+// Порядок и подписи — из `tabs` прототипа (`Прототип/Объекты.dc.html:532`).
+const TABS = [
+  { code: "general", label: "Общие данные" },
+  { code: "infra", label: "Инфраструктура" },
+  { code: "posts", label: "Посты и секторы" },
+  { code: "check", label: "Чек-лист" },
+  { code: "groups", label: "Привлекаемые группы" },
+  { code: "history", label: "История" },
+] as const;
+
+type TabCode = (typeof TABS)[number]["code"];
 
 const DEFAULT_TAB: TabCode = "general";
+
+function isTab(value: string | null): value is TabCode {
+  return TABS.some((tab) => tab.code === value);
+}
+
+/**
+ * Чего в паспорте нет и почему. Две первые строки — СЛОВАМИ СЕРВЕРА
+ * (`unavailableKpi` конверта реестра), остальные принадлежат этому экрану:
+ * вкладок прототипа сервер не знает, называть их за него было бы подлогом.
+ *
+ * «Инфраструктура», «Чек-лист» и «Привлекаемые группы» раньше стояли здесь
+ * же — теперь у каждой свой макет (`PassportPlannedTabs`) с честной строкой
+ * причины прямо во вкладке, и повторять их тут значило бы называть одно и
+ * то же отсутствие дважды.
+ */
+const MISSING_TABS: ReadonlyArray<{ title: string; reason: string }> = [
+  {
+    title: "«Мероприятия и инциденты» во вкладке «История»",
+    reason:
+      "История паспорта — это его опубликованные версии. Построчного журнала правок и ленты мероприятий по объекту сервер не отдаёт; лента ОМ живёт в реестре мероприятий.",
+  },
+  {
+    title: "«Старший объекта», тип поста и предельное время без смены",
+    reason:
+      "У объекта нет поля ответственного, а у поста — типа (наружный/внутренний) и предельного времени без смены: пост несёт имя, задачу и требования.",
+  },
+];
 
 export default function SecurityObjectPage() {
   return (
@@ -68,7 +125,7 @@ function SecurityObjectScreen() {
   const back = searchParams.get("back") ?? "";
   const backTo = back === "" ? "/security-ops/objects" : `/security-ops/objects?${back}`;
   const tabParam = searchParams.get("tab");
-  const tab: TabCode = passportTab(tabParam);
+  const tab: TabCode = isTab(tabParam) ? tabParam : DEFAULT_TAB;
   // Счётчик собственных сохранений паспорта: см. комментарий у key ниже.
   const [formGeneration, setFormGeneration] = useState(0);
 
@@ -198,11 +255,21 @@ function SecurityObjectScreen() {
         </>
       )}
 
+      <div hidden={tab !== "general"}>
+        <ObjectLocationEditor key={`location-${object.id}`} objectId={object.id} label={object.name}
+          sectors={object.sectors}
+          location={object.location ?? null} canEdit={canManagePassport && !query.isError}
+          isActive={tab === "general"} isCurrentResult={isCurrentResult} />
+      </div>
+
       {/* Макет по прототипу — плейсхолдер-структура, без своего состояния,
           поэтому размонтирование ей не вредит. `hidden`, а не условный
           рендер, здесь ради ЕДИНООБРАЗИЯ с формой постов ниже: обе новые
           вкладки, добавленные этой задачей, не должны молча заменить
           проверенный способ прятать «Посты и секторы» на конкурирующий. */}
+      <div hidden={tab !== "infra"}>
+        <PassportPlannedTabs kind="infra" />
+      </div>
 
       {/* Форма НЕ снимается при уходе на другую вкладку, а прячется:
           несохранённый черновик живёт в её собственном состоянии, и
@@ -217,14 +284,20 @@ function SecurityObjectScreen() {
           key={`posts-${object.id}-${formGeneration}`}
           objectId={object.id}
           sectors={object.sectors}
-          canEdit={canManagePassport}
+          objectLocation={object.location ?? null}
+          isActive={tab === "posts"}
+          canEdit={canManagePassport && !query.isError}
           onSaved={() => setFormGeneration((value) => value + 1)}
           isCurrentResult={isCurrentResult}
         />
       </div>
 
       <div hidden={tab !== "check"}>
-        <ObjectInspectionsPanel objectId={object.id} active={tab === "check"} />
+        <PassportPlannedTabs kind="check" />
+      </div>
+
+      <div hidden={tab !== "groups"}>
+        <PassportPlannedTabs kind="groups" />
       </div>
 
       {/* Сверка постов и чужое обновление объекта сохраняют черновик
@@ -244,7 +317,7 @@ function SecurityObjectScreen() {
         />
       </div>
 
-      {unavailableKpi.length > 0 && <details className="mt-4 text-sm"><summary className="cursor-pointer text-muted-foreground">Ограничения показателей</summary><MissingSection unavailableKpi={unavailableKpi} /></details>}
+      <MissingSection unavailableKpi={unavailableKpi} />
     </DashboardLayout>
   );
 }
@@ -377,10 +450,10 @@ function PassportAlert({
         <p className="text-xs">
           {freshness?.verificationDueAt !== undefined &&
           freshness.verificationDueAt !== null
-            ? `Срок обновления паспорта — ${freshness.verificationDueAt}. `
+            ? `Срок очередной проверки — ${freshness.verificationDueAt}. `
             : ""}
-          Проверьте посты и секторы и при необходимости опубликуйте новую версию.
-          Результаты обследования ведутся отдельно.
+          Какие именно поля не заполнены, сервер не сообщает — он отдаёт
+          состояние паспорта целиком.
         </p>
       </div>
     </div>
@@ -404,7 +477,7 @@ function GeneralTab({
     ["Состояние объекта", OBJECT_STATE_LABEL[object.objectState]],
     ["Статус паспорта", PASSPORT_STATE_LABEL[object.passportState]],
     [
-      "Срок обновления паспорта",
+      "Срок проверки",
       freshness?.verificationDueAt ?? "не назначен: паспорт не публиковался",
     ],
     [
@@ -419,7 +492,7 @@ function GeneralTab({
       <CardHeader>
         <CardTitle>Общие данные</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Основные сведения и актуальность опубликованного паспорта. Обследования ведутся отдельно.
+          Поля объекта и срок проверки — как их отдал сервер
         </p>
       </CardHeader>
       <CardContent>
@@ -447,9 +520,9 @@ function MissingSection({
   return (
     <Card className="mt-4">
       <CardHeader>
-        <CardTitle>Доступность показателей</CardTitle>
+        <CardTitle>Чего в этом паспорте нет</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Для этих показателей пока недостаточно данных.
+          Блоки прототипа, которым не нашлось живого источника
         </p>
       </CardHeader>
       <CardContent>
@@ -457,6 +530,12 @@ function MissingSection({
           {unavailableKpi.map((item) => (
             <li key={item.code}>
               <span className="font-semibold">{item.label}</span>
+              <p className="text-xs text-muted-foreground">{item.reason}</p>
+            </li>
+          ))}
+          {MISSING_TABS.map((item) => (
+            <li key={item.title}>
+              <span className="font-semibold">{item.title}</span>
               <p className="text-xs text-muted-foreground">{item.reason}</p>
             </li>
           ))}

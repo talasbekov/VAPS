@@ -55,6 +55,7 @@ CONTRACT_FIELDS = {
     "hasSecurityEvents",
     # Снимок объекта-каталога (Plane SJ-1049) — null, пока не загружен.
     "photoUrl",
+    "location",
     "createdAt",
     "updatedAt",
 }

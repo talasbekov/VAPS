@@ -1,4 +1,4 @@
-"""The reported September schema may advance without losing any existing row."""
+"""Combat schema and exact bootstrap additions preserve every installed3380 row."""
 import copy
 import importlib.util
 from pathlib import Path
@@ -10,6 +10,7 @@ import json
 import re
 import sys
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 
 def load(name):
@@ -188,26 +189,286 @@ class ApprovedPlanTests(unittest.TestCase):
     def test_only_ordered_subsets_of_the_current_reviewed_delta_are_accepted(self):
         checks = load('schema-transition-checks')
         checks.require_plan([list(item) for item in checks.APPROVED_PLAN])
-        checks.require_plan([list(item) for item in checks.ACCESS_PLAN])
         checks.require_plan([])
         checks.require_plan(checks.APPROVED_PLAN[:-1])
         checks.require_plan(checks.APPROVED_PLAN[1:])
-        for plan in (checks.ACCESS_PLAN * 2, list(checks.APPROVED_PLAN) + [('operations', '9999_other')],
-                     list(reversed(checks.APPROVED_PLAN)), [('employees', '0005_employee_import_identity')]):
+        self.assertEqual(checks.APPROVED_PLAN, (
+            ('operations', '0150_combat_day_planning'),
+            ('operations', '0151_combat_owned_places'),
+            ('operations', '0152_combat_day_permissions'),
+            ('operations', '0153_combat_day_labels'),
+            ('operations', '0154_combat_post_history_reference'),
+            ('operations', '0155_combat_optional_event_lifecycle'),
+            ('operations', '0156_security_post_locations')))
+        for plan in (checks.APPROVED_PLAN * 2, list(checks.APPROVED_PLAN) + [('operations', '9999_other')],
+                     list(reversed(checks.APPROVED_PLAN)), [('employees', '0005_employee_import_identity')],
+                     [('operations', '0148_assistant_connection')], [('operations', '0155_merge_r7_combat')]):
             with self.subTest(plan=plan), self.assertRaises(RuntimeError):
                 checks.require_plan(plan)
 
-    def test_new_role_can_be_inserted_without_exempting_existing_role_values(self):
+    def test_post_locations_only_has_no_seed_or_business_row_exceptions(self):
         checks = load('schema-transition-checks')
-        self.assertIn('ops_roles', checks.SEED_TABLES)
-        self.assertNotIn('ops_user_roles', checks.SEED_TABLES)
+        plan = [('operations', '0156_security_post_locations')]
+        before = {'tables': {'ops_security_posts': {'columns': ['id', 'name'], 'rows': 7, 'sha256': 'original'}},
+                  'seed_keys': {}, 'sequences': {}}
+        graph = {'order': [list(item) for item in checks.APPROVED_PLAN]}
+        policy = checks.prepare_preservation(before, plan, graph)
+        self.assertEqual(policy['spec'], before)
+        self.assertEqual(policy['expected'], before)
+        self.assertEqual(policy['sequences'], {})
+        self.assertIsNone(policy['combat'])
+        self.assertEqual(policy['empty_tables'], [])
+
+    def test_no_role_or_business_permission_rows_are_exempted(self):
+        checks = load('schema-transition-checks')
+        self.assertEqual(checks.SEED_TABLES, {'django_migrations', 'django_content_type', 'auth_permission'})
         before = {'tables': {'ops_roles': {'columns': ['code', 'name', 'is_active'], 'rows': 1, 'sha256': 'original-custom-role'}},
-                  'seed_keys': {'ops_roles': {'column': 'code', 'values': ['CUSTOM'], 'sequence': None}}, 'sequences': {}}
+                  'seed_keys': {}, 'sequences': {}}
         checks.require_preserved(before, copy.deepcopy(before))
-        changed = copy.deepcopy(before)
-        changed['tables']['ops_roles']['sha256'] = 'existing-custom-role-overwritten'
-        with self.assertRaisesRegex(RuntimeError, 'existing table, row or original column changed'):
-            checks.require_preserved(before, changed)
+        for field, value in [('sha256', 'existing-custom-role-overwritten'), ('rows', 2)]:
+            changed = copy.deepcopy(before)
+            changed['tables']['ops_roles'][field] = value
+            with self.assertRaisesRegex(RuntimeError, 'existing table, row or original column changed'):
+                checks.require_preserved(before, changed)
+
+
+class CombatSeedTests(unittest.TestCase):
+    """Only locked, missing bootstrap rows may be appended; old grants stay exact."""
+    def setUp(self):
+        self.checks = load('schema-transition-checks')
+        self.seed = ('operations', '0152_combat_day_permissions')
+        self.graph = {'nodes': [{'app': 'operations', 'name': self.seed[1],
+            'sha256': 'ba596d829c203efde0064b3d688fdf40ecc2361cf48e73f5f43fcd182f02f0b9'}],
+            'order': [list(self.seed)]}
+        old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        self.rows = {
+            'permissions': [('duty.view', 'Custom view', None, True),
+                            ('duty.manage', 'Custom management', None, True)],
+            'roles': ['DUTY_OFFICER', 'DUTY_PLANNER', 'CUSTOM_ADMIN'],
+            'grants': [(41, 'DUTY_OFFICER', 'duty.manage', 'admin', old, old),
+                       (42, 'DUTY_PLANNER', 'duty.view', 'admin', old, old)],
+            'divisions': [7],
+            'types': [(9, None, 'OLD', 'Custom legacy', 'DAY', False, True, True, 'admin', old, old)],
+        }
+        self.before = {'tables': {
+            'ops_permissions': {'columns': ['code', 'name', 'description', 'is_active'], 'rows': 2, 'sha256': 'permissions'},
+            'ops_role_permissions': {'columns': ['id', 'role_code', 'permission_code', 'created_by', 'created_at', 'updated_at'], 'rows': 2, 'sha256': 'grants'},
+            'ops_combat_duty_types': {'columns': ['id', 'duty_type_code', 'safe_label', 'supports_multiple_routes', 'created_by', 'created_at', 'updated_at'], 'rows': 1, 'sha256': 'types'},
+            'ops_roles': {'columns': ['code'], 'rows': 3, 'sha256': 'roles'},
+            'ops_user_roles': {'columns': ['id'], 'rows': 3, 'sha256': 'assignments'},
+        }, 'seed_keys': {}, 'sequences': {
+            'ops_role_permissions_id_seq': {'last_value': 42, 'is_called': True},
+            'ops_combat_duty_types_id_seq': {'last_value': 9, 'is_called': True},
+        }}
+
+    def prepare(self, rows=None, before=None, plan=None):
+        with patch.dict(sys.modules, {'django.db': SimpleNamespace(connection=object())}), \
+             patch.object(self.checks, '_read_seed_state', return_value=copy.deepcopy(rows or self.rows), create=True), \
+             patch.object(self.checks, '_seed_sequence', side_effect=lambda connection, table: table + '_id_seq', create=True):
+            return self.checks.prepare_preservation(before or self.before, [self.seed] if plan is None else plan, self.graph)
+
+    def added(self, policy):
+        rows = copy.deepcopy(self.rows)
+        stamp = policy['combat']['started_at']
+        rows['permissions'] += [
+            ('duty.roster', 'Формирование боевых групп своего подразделения', None, True),
+            ('duty.catalog.manage', 'Справочники боевого дежурства своего подразделения', None, True),
+            ('duty.combat.manage', 'Управление боевыми группами и приём состава штабом', None, True)]
+        rows['grants'] += [(43, 'DUTY_PLANNER', 'duty.roster', None, stamp, stamp),
+                           (44, 'DUTY_PLANNER', 'duty.catalog.manage', None, stamp, stamp),
+                           (45, 'DUTY_OFFICER', 'duty.combat.manage', None, stamp, stamp)]
+        rows['types'] += [(10, 7, 'DAY', 'Дневное', 'DAY', False, False, True, None, stamp, stamp),
+                          (11, 7, 'NIGHT', 'Ночное', 'NIGHT', False, False, True, None, stamp, stamp),
+                          (12, 7, 'DAILY', 'Суточное', 'DAILY', True, False, True, None, stamp, stamp)]
+        after = copy.deepcopy(self.before)
+        after['sequences']['ops_role_permissions_id_seq']['last_value'] = 45
+        after['sequences']['ops_combat_duty_types_id_seq']['last_value'] = 12
+        return rows, after
+
+    def verify(self, policy, rows, after):
+        with patch.dict(sys.modules, {'django.db': SimpleNamespace(connection=object())}), \
+             patch.object(self.checks, '_read_seed_state', return_value=rows, create=True):
+            return self.checks.require_transition_effects(policy, after)
+
+    def test_exact_appends_preserve_all_old_keys_and_report_no_revokes(self):
+        original = copy.deepcopy(self.before)
+        policy = self.prepare()
+        self.assertEqual(self.before, original)
+        self.assertEqual(policy['expected'], original)
+        self.assertEqual(policy['spec']['seed_keys']['ops_role_permissions']['values'], ['41', '42'])
+        self.assertNotIn('ops_roles', policy['spec']['seed_keys'])
+        self.assertNotIn('ops_user_roles', policy['spec']['seed_keys'])
+        rows, after = self.added(policy)
+        audit = self.verify(policy, rows, after)
+        self.assertIsNone(audit['officer_permission'])
+        self.assertEqual(audit['permissions']['inserted_count'], 3)
+        self.assertEqual(audit['role_permissions']['inserted_count'], 3)
+        self.assertEqual(audit['combat_types']['inserted_count'], 3)
+        projected = copy.deepcopy(original)
+        projected['sequences'] = after['sequences']
+        self.checks.require_preserved(policy['expected'], projected, policy['sequences'])
+        projected['tables']['ops_role_permissions']['sha256'] = 'officer-right-revoked'
+        with self.assertRaises(RuntimeError):
+            self.checks.require_preserved(policy['expected'], projected, policy['sequences'])
+
+    def test_missing_unexpected_duplicate_and_changed_seed_rows_are_refused(self):
+        policy = self.prepare()
+        for table in ('permissions', 'grants', 'types'):
+            for mutation in ('missing', 'unexpected', 'duplicate', 'changed'):
+                rows, after = self.added(policy)
+                if mutation == 'missing':
+                    rows[table].pop()
+                elif mutation == 'duplicate':
+                    rows[table].append(rows[table][-1])
+                elif mutation == 'unexpected':
+                    row = list(rows[table][-1])
+                    row[0] = 'unreviewed.permission' if table == 'permissions' else 999
+                    if table != 'permissions':
+                        row[1] = 'CUSTOM_ADMIN' if table == 'grants' else 999
+                    rows[table].append(tuple(row))
+                else:
+                    row = list(rows[table][-1])
+                    row[1 if table == 'permissions' else 3] = 'unexpected-value'
+                    rows[table][-1] = tuple(row)
+                with self.subTest(table=table, mutation=mutation), self.assertRaises(RuntimeError):
+                    self.verify(policy, rows, after)
+
+    def test_both_business_sequences_and_inserted_ids_are_exact(self):
+        policy = self.prepare()
+        for sequence in self.before['sequences']:
+            for field, value in [('last_value', 500), ('is_called', False)]:
+                rows, after = self.added(policy)
+                after['sequences'][sequence][field] = value
+                with self.subTest(sequence=sequence, field=field), self.assertRaises(RuntimeError):
+                    self.verify(policy, rows, after)
+        for table in ('grants', 'types'):
+            rows, after = self.added(policy)
+            row = list(rows[table][-1]); row[0] = 999
+            rows[table][-1] = tuple(row)
+            with self.subTest(table=table), self.assertRaises(RuntimeError):
+                self.verify(policy, rows, after)
+
+    def test_already_existing_custom_defaults_are_not_reseeded(self):
+        policy = self.prepare()
+        rows, after = self.added(policy)
+        rows['permissions'][-1] = ('duty.combat.manage', 'Admin custom label', 'Keep description', False)
+        type_row = list(rows['types'][-1]); type_row[3] = 'Admin custom daily'; type_row[7] = False
+        rows['types'][-1] = tuple(type_row)
+        before = copy.deepcopy(after)
+        before['tables']['ops_combat_duty_types']['columns'] += ['division_id', 'shift_kind', 'rest_day_after', 'is_active']
+        repeated = self.prepare(rows=rows, before=before)
+        self.assertEqual(repeated['sequences'], after['sequences'])
+        audit = self.verify(repeated, rows, after)
+        self.assertEqual([audit[key]['inserted_count'] for key in ('permissions', 'role_permissions', 'combat_types')], [0, 0, 0])
+
+    def test_schema_only_plan_cannot_exempt_business_rows_or_sequences(self):
+        policy = self.prepare(plan=[])
+        self.assertEqual(policy['spec'], self.before)
+        self.assertEqual(policy['expected'], self.before)
+        self.assertEqual(policy['sequences'], {})
+        changed = copy.deepcopy(self.before)
+        changed['tables']['ops_permissions']['rows'] += 1
+        with self.assertRaises(RuntimeError):
+            self.checks.require_preserved(policy['expected'], changed)
+
+    def test_unreviewed_seed_source_is_refused(self):
+        self.graph['nodes'][0]['sha256'] = 'a' * 64
+        with self.assertRaisesRegex(RuntimeError, 'seed migration source'):
+            self.prepare()
+
+    def test_original_grant_deletion_and_legacy_new_column_backfill_are_refused(self):
+        policy = self.prepare()
+        for key in ('permissions', 'grants', 'types'):
+            rows, after = self.added(policy)
+            rows[key].pop(0)
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                self.verify(policy, rows, after)
+        rows, after = self.added(policy)
+        row = list(rows['types'][0]); row[1] = 7
+        rows['types'][0] = tuple(row)
+        with self.assertRaises(RuntimeError):
+            self.verify(policy, rows, after)
+
+    def test_missing_roles_and_eligible_divisions_do_not_gain_grants_or_types(self):
+        original = copy.deepcopy(self.rows)
+        original['roles'] = ['CUSTOM_ADMIN']
+        original['divisions'] = []
+        policy = self.prepare(rows=original)
+        rows, _ = self.added(policy)
+        rows['grants'] = original['grants']
+        rows['types'] = original['types']
+        after = copy.deepcopy(self.before)
+        audit = self.verify(policy, rows, after)
+        self.assertEqual(audit['role_permissions']['inserted_count'], 0)
+        self.assertEqual(audit['combat_types']['inserted_count'], 0)
+        self.assertEqual(policy['sequences'], self.before['sequences'])
+
+    def test_unavailable_duty_view_is_not_created_or_granted(self):
+        original = copy.deepcopy(self.rows)
+        original['permissions'] = [row for row in original['permissions'] if row[0] != 'duty.view']
+        original['grants'] = original['grants'][:1]
+        policy = self.prepare(rows=original)
+        rows, after = self.added(policy)
+        rows['permissions'] = [row for row in rows['permissions'] if row[0] != 'duty.view']
+        rows['grants'] = [row for row in rows['grants'] if row[2] != 'duty.view']
+        audit = self.verify(policy, rows, after)
+        self.assertEqual(audit['role_permissions']['inserted_count'], 3)
+
+    def test_uncalled_sequence_consumes_its_current_value_first(self):
+        original = copy.deepcopy(self.rows)
+        original['grants'] = []
+        original['types'] = []
+        before = copy.deepcopy(self.before)
+        before['sequences'] = {name: {'last_value': 1, 'is_called': False} for name in before['sequences']}
+        policy = self.prepare(rows=original, before=before)
+        self.assertEqual(policy['sequences'], {
+            'ops_role_permissions_id_seq': {'last_value': 4, 'is_called': True},
+            'ops_combat_duty_types_id_seq': {'last_value': 3, 'is_called': True}})
+
+    def test_new_combat_tables_must_remain_empty_even_without_data_seed(self):
+        schema = ('operations', '0150_combat_day_planning')
+        self.graph['order'] = [list(schema)]
+        policy = self.prepare(plan=[schema])
+        after = copy.deepcopy(self.before)
+        for table in ('ops_combat_groups', 'ops_combat_duty_members'):
+            after['tables'][table] = {'rows': 0}
+        self.verify(policy, {}, after)
+        for table in ('ops_combat_groups', 'ops_combat_duty_members'):
+            changed = copy.deepcopy(after)
+            changed['tables'][table]['rows'] = 1
+            with self.subTest(table=table), self.assertRaises(RuntimeError):
+                self.verify(policy, {}, changed)
+
+    def test_seed_pin_matches_the_actual_reviewed_migration(self):
+        root = Path(__file__).resolve().parents[2]
+        migration = root / 'PersonnelStatus/Personnel-Records/organization_management/apps/operations/migrations/0152_combat_day_permissions.py'
+        self.assertEqual(hashlib.sha256(migration.read_bytes()).hexdigest(), self.checks.SEED_SOURCE_SHA256)
+
+    def test_seed_timestamp_outside_the_transaction_window_is_refused(self):
+        policy = self.prepare()
+        for key in ('grants', 'types'):
+            rows, after = self.added(policy)
+            row = list(rows[key][-1]); row[-2] = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            rows[key][-1] = tuple(row)
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                self.verify(policy, rows, after)
+
+    def test_sequence_reader_refuses_unowned_cached_incrementing_or_cycling_sequences(self):
+        cursor = Mock()
+        connection = SimpleNamespace(cursor=lambda: SimpleNamespace())
+        class Context:
+            def __enter__(self): return cursor
+            def __exit__(self, *_): return False
+        connection.cursor = Context
+        for config in (('seq', 2, 1, False), ('seq', 1, 2, False), ('seq', 1, 1, True)):
+            cursor.fetchone.side_effect = [('public.seq',), config]
+            with self.subTest(config=config), self.assertRaises(RuntimeError):
+                self.checks._seed_sequence(connection, 'ops_combat_duty_types')
+        cursor.fetchone.side_effect = [(None,)]
+        with self.assertRaises(RuntimeError):
+            self.checks._seed_sequence(connection, 'ops_combat_duty_types')
+        cursor.fetchone.side_effect = [('public.seq',), ('seq', 1, 1, False)]
+        self.assertEqual(self.checks._seed_sequence(connection, 'ops_combat_duty_types'), 'seq')
 
 
 class LifecycleTests(unittest.TestCase):
@@ -231,6 +492,8 @@ class LifecycleTests(unittest.TestCase):
             obj.check_space = Mock()
             obj.wrap_image = Mock(side_effect=lambda value: value + '-no-migrations')
             obj.database_snapshot = Mock(return_value={'schema': {}})
+            if failure == 'startup-mutation':
+                obj.database_snapshot = Mock(side_effect=[{'schema': {}}, {'schema': {}}, {'schema': {'unexpected': True}}])
             obj.upload_snapshot = Mock(return_value={})
             obj.verify_database_identity = Mock()
             def backup(folder, **kwargs):
@@ -241,13 +504,13 @@ class LifecycleTests(unittest.TestCase):
                 events.append('rehearse')
                 if failure == 'rehearse':
                     raise RuntimeError('Rehearsal refused')
-                return {'schema': {}}
+                return {'snapshot': {'schema': {}}, 'transition_audit': {'officer_permission': None, 'role_permissions': {'inserted_count': 3}, 'combat_types': {'inserted_count': 3}}}
             obj.rehearse_transition = rehearse
             def migrate(before, schema):
                 events.append('live-migrate')
                 if failure == 'migrate':
                     raise RuntimeError('Docker attach interrupted while migrator may still run')
-                return {'schema': {}}
+                return {'snapshot': {'schema': {}}, 'transition_audit': {'officer_permission': None, 'role_permissions': {'inserted_count': 3}, 'combat_types': {'inserted_count': 3}}}
             obj.migrate_live = migrate
             obj.set_images = Mock(side_effect=lambda *args: events.append('set-images'))
             def start():
@@ -268,7 +531,17 @@ class LifecycleTests(unittest.TestCase):
             recovery = (root / 'backup/RECOVERY_REQUIRED.json').is_file()
             rolled_back = (root / 'backup/ROLLED_BACK.json').is_file()
             success = (root / 'backup/SUCCESS.json').is_file()
+            self.success_record = json.loads((root / 'backup/SUCCESS.json').read_text()) if success else None
             return events, obj.recovery_required, recovery, rolled_back, success
+
+    def test_seed_audit_is_separate_from_raw_startup_snapshot_and_reports_exact_exception(self):
+        self.exercise()
+        self.assertTrue(self.success_record['all_other_original_rows_preserved'])
+        self.assertTrue(self.success_record['reviewed_seed_effects_verified'])
+        self.assertIsNone(self.success_record['transition_audit']['officer_permission'])
+        self.assertEqual(self.success_record['transition_audit']['role_permissions']['inserted_count'], 3)
+        self.assertNotIn('all_original_rows_and_columns_preserved', self.success_record)
+        self.assertNotIn('business_sequences_preserved', self.success_record)
 
     def test_separate_beat_is_stopped_before_worker_backup_and_live_migration(self):
         events, recovery, _, _, success = self.exercise()
@@ -282,8 +555,8 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(recovery)
         self.assertTrue(success)
 
-    def test_access_only_transition_uses_the_same_backup_and_rehearsal_guards(self):
-        events, recovery, _, _, success = self.exercise(plan=load('schema-transition-checks').ACCESS_PLAN)
+    def test_schema_only_remaining_transition_uses_the_same_backup_and_rehearsal_guards(self):
+        events, recovery, _, _, success = self.exercise(plan=load('schema-transition-checks').APPROVED_PLAN[-2:])
         self.assertLess(events.index('backup'), events.index('rehearse'))
         self.assertLess(events.index('rehearse'), events.index('live-migrate'))
         self.assertLess(events.index('live-migrate'), events.index('start-writers'))
@@ -316,6 +589,13 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(rolled_back or success)
         commands = [value for value in events if isinstance(value, list)]
         self.assertTrue(all('pg_restore' not in cmd and 'down' not in cmd for cmd in commands))
+
+    def test_raw_startup_mutation_is_refused_even_when_seed_audit_passed(self):
+        events, recovery, record, rolled_back, success = self.exercise('startup-mutation')
+        self.assertIn('start-application', events)
+        self.assertNotIn('start-writers', events)
+        self.assertTrue(recovery and record)
+        self.assertFalse(rolled_back or success)
 
     def test_unreviewed_plan_does_not_stop_services(self):
         updater = load('update-with-migrations')

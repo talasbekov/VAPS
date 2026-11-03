@@ -10,9 +10,9 @@ async function prepare(page: Page) {
   await page.clock.install();
   const object: SecurityObject = {
     id: '1', name: 'Объект сверки', code: 'UX-PEEK', type: 'Здание', region: 'Астана', address: 'Адрес проверки',
-    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null,
+    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null, location: null,
     sectors: [{ id: 's1', name: 'Сектор текущий', posts: [{ id: 'p1', name: 'Пост текущий', task: 'Задача текущая', requirements: 'Требования текущие' }] }],
-    passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Примечание снимка', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX',
+    passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-09-12', note: 'Примечание снимка', publishedAt: '2026-09-12T10:00:00Z', publishedBy: 'UX', location: null,
       sectors: [{ id: 'old-s1', name: 'Сектор архивный', posts: [{ id: 'old-p1', name: 'Пост архивный', task: 'Задача архивная', requirements: 'Требования архивные' }] }] }],
     createdAt: '2026-09-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z',
   };

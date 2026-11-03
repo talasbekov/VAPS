@@ -253,7 +253,6 @@ export function useAccessUserRoles(userId: number | null, options?: AccessReadOp
 }
 
 function invalidateAccess(queryClient: ReturnType<typeof useQueryClient>): void {
-  void queryClient.invalidateQueries({ queryKey: ["ops-account-effective-access"] });
   void queryClient.invalidateQueries({ queryKey: ["ops-access-user-roles"] });
   // Права текущего пользователя тоже перечитываются: администратор мог
   // раздать или снять роль самому себе.
@@ -308,7 +307,6 @@ export function useSetAccessAccountActive() {
       opsApiClient.patch<AccessAccount>(accessAccountPath(id), { is_active }),
     onSuccess: () => {
       invalidateAccounts(queryClient);
-      void queryClient.invalidateQueries({ queryKey: ["ops-account-effective-access"] });
       // Заблокировать могли и себя: права актора перечитываются.
       void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
     },

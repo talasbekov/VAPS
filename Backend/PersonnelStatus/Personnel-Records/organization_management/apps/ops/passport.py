@@ -22,6 +22,7 @@ from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
     OpsSecurityPost,
 )
+from organization_management.apps.ops.object_locations import location_from_pair, normalize_location
 
 # Показатели прототипа, которых модель не выдаёт, — честный список с причиной
 # (контракт unavailableKpi). Порт фикстуры клиента: пока считать нечего, об
@@ -171,10 +172,16 @@ def _validate_sectors_payload(sectors):
                     field_errors[f"sectors.{i}.posts.{j}.{field}"] = ["Ожидается строка."]
                 elif len(value) > 1000:
                     field_errors[f"sectors.{i}.posts.{j}.{field}"] = ["Не длиннее 1000 символов."]
-            normalized_posts.append({
+            normalized_post = {
                 "id": post.get("id"), "name": post_name,
                 "task": task, "requirements": requirements,
-            })
+            }
+            if "location" in post:
+                try:
+                    normalized_post["location"] = normalize_location(post["location"])
+                except DomainError as error:
+                    field_errors[f"sectors.{i}.posts.{j}.location"] = error.detail["location"]
+            normalized_posts.append(normalized_post)
         normalized.append({"id": sector.get("id"), "name": name, "posts": normalized_posts})
     if field_errors:
         raise _validation(field_errors)
@@ -411,6 +418,12 @@ def update_passport(security_object, sectors):
             saved = existing_posts.get(post["id"])
             values = {"sector": row, "name": post["name"], "task": post["task"],
                       "requirements": post["requirements"], "position": j}
+            if "location" in post:
+                location = post["location"]
+                values.update(
+                    latitude=location["latitude"] if location is not None else None,
+                    longitude=location["longitude"] if location is not None else None,
+                )
             if saved is None:
                 saved = OpsSecurityPost.objects.create(**values)
             else:
@@ -470,14 +483,14 @@ def resolve_passport_state(security_object):
     if latest is None:
         return OpsSecurityObject.PassportState.YELLOW
 
-    # Черновик против последней версии: сравниваются ИМЕНА секторов и постов,
-    # а не идентификаторы — правка паспорта пересоздаёт строки, и сравнение по
-    # id объявляло бы расхождением каждое сохранение.
+    # Compare content rather than row IDs. Older snapshots omitted location;
+    # missing and explicit null both mean the post's point is unknown.
     def shape(sectors):
         return [
             (
                 str(sector.get("name", "")).strip(),
-                [str(post.get("name", "")).strip() for post in sector.get("posts", [])],
+                [(str(post.get("name", "")).strip(), post.get("location"))
+                 for post in sector.get("posts", [])],
             )
             for sector in sectors or []
         ]
@@ -515,6 +528,7 @@ def snapshot_sectors(security_object):
                     "name": post.name,
                     "task": post.task,
                     "requirements": post.requirements,
+                    "location": location_from_pair(post.latitude, post.longitude),
                 }
                 for post in sector.posts.all()
             ],
@@ -533,6 +547,9 @@ def publish_version(security_object, *, effective_from, note, actor):
     Журнал пишется в той же транзакции: откат публикации не оставляет строки
     о событии, которого не было.
     """
+    # Share the object lock with draft/location edits, and discard a caller's
+    # stale prefetched sectors/versions before capturing either snapshot.
+    security_object = OpsSecurityObject.objects.select_for_update().get(pk=security_object.pk)
     field_errors = {}
     raw = str(effective_from or "").strip()
     try:
@@ -569,6 +586,8 @@ def publish_version(security_object, *, effective_from, note, actor):
         published_by=actor,
         note=str(note or "").strip(),
         sectors_snapshot=snapshot_sectors(security_object),
+        latitude_snapshot=security_object.latitude,
+        longitude_snapshot=security_object.longitude,
     )
     security_object.save(update_fields=["updated_at"])
     # Публикация — единственный путь объекта в «зелёное» (Plane №66).

@@ -46,8 +46,7 @@ export function assertOpsReadAuthority(client: QueryClient, access: OpsReadAcces
 export function useOpsProtectedRead<T>(
   prefix: readonly [string, string], parts: readonly unknown[], access: OpsReadAccess,
   read: (signal: AbortSignal) => Promise<T>,
-  options: { enabled?: boolean; staleTime?: number; gcTime?: number; refetchOnWindowFocus?: boolean;
-    poll?: (data: T | undefined) => number | false;
+  options: { enabled?: boolean; staleTime?: number; poll?: (data: T | undefined) => number | false;
     /** Sibling source kinds with the same denial contract; the source's own filters always match. */
     denialFamily?: readonly string[] } = {},
 ) {
@@ -81,8 +80,7 @@ export function useOpsProtectedRead<T>(
     enabled,
     staleTime: options.staleTime ?? 0,
     retry: false,
-    refetchOnWindowFocus: options.refetchOnWindowFocus ?? true,
-    ...(options.gcTime !== undefined ? { gcTime: options.gcTime } : {}),
+    refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     refetchInterval: current => !enabled || current.state.status === "error" || isReadAccessBlocked(client, key)
       ? false : options.poll?.(current.state.data) ?? false,

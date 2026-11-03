@@ -1,4 +1,5 @@
 "use client";
+import { CombatAssignmentDetails } from '@/features/combat-duty/ui/CombatAssignmentDetails';
 
 // Панель занятости за выбранный день (Plane №270, Ш-4).
 //
@@ -135,6 +136,7 @@ function Group({
               {person.division ? ` · ${person.division.name}` : ""}
               {" · "}
               {person.status.name}
+              <CombatAssignmentDetails assignment={person.combat_assignment} />
             </li>
           ))}
           {group.hasMore ? (

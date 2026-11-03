@@ -17,6 +17,7 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
   const searchInput = useRef<HTMLInputElement>(null);
   const drag = useRef<{ x: number; y: number; center: [number, number]; moved: boolean } | null>(null);
   const wheelTime = useRef(0);
+  const fittedView = useRef<string | null>(null);
   const [size, setSize] = useState({ width: 0, height: 440 });
   const [asset, setAsset] = useState<AstanaMapAsset | null>(peekAstanaMapAsset);
   const [error, setError] = useState(false);
@@ -27,6 +28,8 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
   const [shownPlace, setShownPlace] = useState<MapSearchPlace | null>(null);
   const searchIndex = useMemo(() => asset ? buildMapSearchIndex(asset.geometry) : [], [asset]);
   const searchResults = useMemo(() => searchMapPlaces(searchIndex, search), [searchIndex, search]);
+  const markerLocations = markers.filter(marker => marker.kind !== 'draft')
+    .map(marker => `${marker.kind}:${marker.id}:${marker.location.latitude}:${marker.location.longitude}`).sort().join('|');
   const scale = 2 ** (zoom - 16);
   const metersPerPixel = 2 * Math.PI * 6378137 * Math.cos(unproject(center[0], center[1]).latitude * Math.PI / 180) / (256 * 2 ** zoom);
   const scaleMeters = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5].find(distance => distance <= metersPerPixel * 100) || 5;
@@ -75,6 +78,15 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
     setCenter(project(focusPoint.location));
     setZoom(current => Math.max(15, current));
   }, [focusPoint]);
+  useEffect(() => {
+    if (!asset || !size.width || !size.height || locating || focusPoint) return;
+    // Fit only when the saved points or available space change. Ordinary
+    // rerenders must leave the user's pan, wheel zoom and search position alone.
+    const view = `${markerLocations}/${size.width}/${size.height}`;
+    if (fittedView.current === view) return;
+    fittedView.current = view;
+    fit();
+  }, [asset, markerLocations, size.width, size.height, locating, focusPoint]);
   useEffect(() => {
     const target = box.current;
     if (!target || !asset) return;
@@ -186,16 +198,11 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
   return <section aria-label="Офлайн-карта Астаны" className="min-w-0 overflow-hidden rounded-lg border bg-background">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
       <div><h3 className="text-sm font-semibold">Астана · офлайн</h3><p className="text-xs text-muted-foreground">Синий — объект, зелёный — наружный пост. Перетаскивайте карту для перемещения.</p></div>
-      <div className="flex items-center gap-1">
-        <Button size="sm" variant="outline" aria-label="Отдалить карту" onClick={() => changeZoom(-1)} disabled={zoom === 11}>−</Button>
-        <Button size="sm" variant="outline" aria-label="Приблизить карту" onClick={() => changeZoom(1)} disabled={zoom === 18}>+</Button>
-        <Button size="sm" variant="outline" onClick={fit}>Показать точки</Button>
-      </div>
     </div>
-    <form role="search" aria-label="Поиск по карте" className="border-b p-3" onSubmit={event => { event.preventDefault(); if (searchResults[0]) showPlace(searchResults[0]); }}>
+    <div role="search" aria-label="Поиск по карте" className="border-b p-3">
       <div className="flex items-center gap-2">
         <Input ref={searchInput} type="search" aria-label="Поиск улицы или района" placeholder="Улица или район Астаны" value={search} disabled={!asset}
-          onChange={event => { setSearch(event.target.value); setShownPlace(null); }} className="min-w-0" />
+          onChange={event => { setSearch(event.target.value); setShownPlace(null); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); if (searchResults[0]) showPlace(searchResults[0]); } }} className="min-w-0" />
         {search && <Button type="button" variant="outline" size="sm" aria-label="Очистить поиск на карте" onClick={() => { setSearch(''); setShownPlace(null); }}>Очистить</Button>}
       </div>
       {shownPlace ? <p role="status" className="mt-2 break-words text-xs text-muted-foreground">Найдено: {shownPlace.name}</p>
@@ -205,7 +212,7 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
             onClick={() => showPlace(place)}><span className="min-w-0 break-words">{place.name}</span><span className="shrink-0 text-xs text-muted-foreground">{place.kind === 'street' ? 'Улица' : 'Место'}</span></button></li>)}
         </ul> : <p role="status" className="mt-2 text-xs text-muted-foreground">Улицы и районы не найдены.</p>
         : <p className="mt-2 text-xs text-muted-foreground">Поиск по названиям из офлайн-карты. Введите хотя бы две буквы.</p>}
-    </form>
+    </div>
     <div ref={box} className="relative h-[clamp(320px,55dvh,560px)] min-w-0 w-full bg-[#f5f2ea]" style={{ cursor: locating ? 'crosshair' : 'grab' }}>
       <canvas ref={canvas} tabIndex={0} aria-label={locating ? 'Выберите точку на карте' : 'Карта Астаны. Стрелки перемещают карту, плюс и минус меняют масштаб.'}
         className="h-full w-full touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
@@ -234,9 +241,9 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
           style={{ left: x, top: y }}>{marker.kind === 'object' ? 'О' : marker.kind === 'post' ? 'П' : '+'}</button>;
       })}
       {!asset && <div className="absolute inset-0 flex items-center justify-center bg-background/90 p-6 text-center text-sm" role={error ? 'alert' : 'status'}>
-        {error ? <div><p>Не удалось загрузить офлайн-карту.</p><Button className="mt-3" variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку карты</Button></div> : 'Загружаем карту Астаны с локального сервера…'}
+        {error ? <div><p>Не удалось загрузить офлайн-карту.</p><Button type="button" className="mt-3" variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку карты</Button></div> : 'Загружаем карту Астаны с локального сервера…'}
       </div>}
-      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">Нажмите на карту или введите координаты ниже. Точка сохранится после нажатия «Сохранить точку».</div>}
+      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">Нажмите на карту или введите координаты ниже. Выбранная точка ещё не сохранена.</div>}
       {asset && <div className={`pointer-events-none absolute left-3 rounded bg-white/95 px-2 py-1 text-center text-[11px] text-slate-700 shadow-sm ${locating ? 'bottom-16' : 'bottom-3'}`}>
         <div style={{ width: scaleMeters / metersPerPixel }} className="h-1.5 border-x border-b border-slate-600" />
         <output aria-label="Масштаб карты">{scaleLabel}</output>

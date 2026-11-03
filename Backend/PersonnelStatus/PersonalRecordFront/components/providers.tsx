@@ -6,6 +6,7 @@ import { useEffect, useRef, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query"
 import { ThemeProvider } from "next-themes"
 import { MotionConfig } from "framer-motion"
+import { GlobalAssistantProvider } from "@/features/assistant-dock/assistant-dock"
 import { currentOpsAuthorityStamp, registerOpsWriteAuthority } from "@/lib/ops-write-authority"
 
 function OpsWriteAuthority() {
@@ -67,7 +68,7 @@ export function Providers({ children }: { children: ReactNode }) {
               позже, чем он случился. */}
           <SessionProvider refetchInterval={60}>
             <OpsWriteAuthority />
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider><GlobalAssistantProvider>{children}</GlobalAssistantProvider></AuthProvider>
           </SessionProvider>
         </QueryClientProvider>
       </MotionConfig>

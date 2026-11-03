@@ -12,6 +12,7 @@ from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
 )
 from organization_management.apps.ops.passport import snapshot_sectors
+from organization_management.apps.ops.object_locations import location_from_pair
 from organization_management.apps.ops import event_location
 from organization_management.apps.ops import security_events
 from organization_management.apps.ops import vehicles as vehicles_service
@@ -42,6 +43,10 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
     sectors = serializers.SerializerMethodField()
     passportVersions = serializers.SerializerMethodField()
     photoUrl = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+
+    def get_location(self, obj):
+        return location_from_pair(obj.latitude, obj.longitude)
 
     def get_photoUrl(self, obj):
         # Тот же приём, что `person_photo_url` (apps/ops/gvo.py) — снимок
@@ -78,6 +83,7 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
                 "publishedBy": version.published_by,
                 "note": version.note,
                 "sectors": version.sectors_snapshot,
+                "location": location_from_pair(version.latitude_snapshot, version.longitude_snapshot),
             }
             for version in obj.passport_versions.all()
         ]
@@ -98,6 +104,7 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "sectors",
             "passportVersions",
             "photoUrl",
+            "location",
             "createdAt",
             "updatedAt",
         ]

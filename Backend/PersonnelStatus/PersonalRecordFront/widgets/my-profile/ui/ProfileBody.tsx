@@ -52,6 +52,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
 import { MyNextShift } from "./MyNextShift";
+import { MyCombatDuty } from '@/features/combat-duty/ui/MyCombatDuty';
 import { ProfileEventLink as EventLink } from "./ProfileEventLink";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
@@ -340,6 +341,7 @@ export function ProfileBody({
   return (
     <>
       {!readOnly && <MyNextShift employeeId={String(employee.id)} />}
+      {!readOnly && <MyCombatDuty employeeId={String(employee.id)} />}
       <HeroCard
         employee={employee}
         rankLabel={employee.rank_label ?? directories.rankLabel(employee.rank_code)}

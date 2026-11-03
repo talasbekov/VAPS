@@ -220,6 +220,9 @@ from organization_management.apps.operations.models_duty_log import (  # noqa: E
 )
 
 from organization_management.apps.operations.models_combat import (  # noqa: E402
+    OpsCombatGroup,  # noqa: F401
+    OpsCombatDutyMember,  # noqa: F401
+    OpsCombatPlace,  # noqa: F401
     OpsCombatDutyShift,  # noqa: F401
     OpsCombatDutyType,  # noqa: F401
     OpsCombatRoute,  # noqa: F401
@@ -313,10 +316,6 @@ from organization_management.apps.operations.models_assistant import (  # noqa: 
     OpsAssistantTask, OpsAssistantReceipt, OpsAssistantMessage,
 )
 from organization_management.apps.operations.models_assistant_connection import OpsAssistantConnection  # noqa: E402,F401
-from organization_management.apps.operations.models_assistant_connection_check import OpsAssistantConnectionCheck  # noqa: E402,F401
-from organization_management.apps.operations.models_duty_template import OpsDutyTemplate  # noqa: E402,F401
-from organization_management.apps.operations.models_employee_qualification import OpsEmployeeQualification  # noqa: E402,F401
-from organization_management.apps.operations.models_object_inspection import OpsObjectInspection  # noqa: E402,F401
 from organization_management.apps.operations.models_resource_calculation import (  # noqa: E402,F401
     OpsResourceCalculation,
 )

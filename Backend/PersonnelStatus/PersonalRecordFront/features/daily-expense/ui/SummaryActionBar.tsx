@@ -24,7 +24,7 @@ import { SummaryCorrection } from "./SummaryCorrection";
 // (`[ДОП-20-04]`: не копия, а тот же источник). Мутации — общие хуки
 // `useAssembleSummary`/`useSendSummary`, они же инвалидируют оба ключа.
 import { useState } from "react";
-import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -58,10 +58,13 @@ type Tone = "off" | "wait" | "ok";
 export const SUMMARY_ACTION_ANCHOR = "summary-action";
 
 export function SummaryActionBar({ businessDate, divisionId, labelOfDivision }: SummaryActionBarProps) {
-  const query = useDailyExpenseRead("summaries", [businessDate, divisionId], (_signal, authorize) =>
+  const query = useQuery({
+    queryKey: ["daily-expense-board", "summaries", businessDate, divisionId],
+    queryFn: () =>
       opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${divisionId}&business_date=${encodeURIComponent(businessDate)}`, authorize
-      ));
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${divisionId}&business_date=${encodeURIComponent(businessDate)}`
+      ),
+  });
   // Retain the accepted correction/read-retry control on failed background
   // reads. The query's success state still gates every write below.
   const versions: DailySummaryRow[] = parseSubmissionList(query.data);

@@ -5,13 +5,15 @@ import { X } from "lucide-react";
 // Форма действующей редакции паспорта: секторы и постоянные посты.
 // Черновик правится локально и сохраняется целиком (PATCH sectors);
 // «Сохранить» активна только при изменениях.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useUpdatePassport } from "@/hooks/use-object-passport";
-import type { ObjectSector, SecurityPost } from "@/entities/security-object";
+import type { GeoPoint, ObjectSector, SecurityPost } from "@/entities/security-object";
+import { ObjectLocationMap } from "@/features/object-map/ui/ObjectLocationMap";
+import { PostLocationEditor } from "./PostLocationEditor";
 
 let localSeq = 0;
 function nextLocalId(): string {
@@ -24,6 +26,8 @@ interface PassportFormProps {
   sectors: ObjectSector[];
   /** object.manage: сервер требует тот же код у PATCH /passport/. */
   canEdit: boolean;
+  isActive?: boolean;
+  objectLocation?: GeoPoint | null;
   /** Своё сохранение прошло — родитель может пересобрать форму. */
   onSaved?: () => void;
   /** Ignore results from a form closed by navigation or access loss. */
@@ -34,11 +38,14 @@ export function PassportForm({
   objectId,
   sectors: initial,
   canEdit,
+  isActive = true,
+  objectLocation = null,
   onSaved,
   isCurrentResult,
 }: PassportFormProps) {
   const mutation = useUpdatePassport(objectId, onSaved, isCurrentResult);
   const [sectors, setSectors] = useState<ObjectSector[]>(initial);
+  const [selectedPost, setSelectedPost] = useState<{ sectorId: string; postId: string } | null>(null);
   const initialSnapshot = JSON.stringify(initial);
   const [baseSnapshot, setBaseSnapshot] = useState(initialSnapshot);
   const [confirmation, setConfirmation] = useState<{
@@ -50,6 +57,15 @@ export function PassportForm({
   const fieldset = useRef<HTMLFieldSetElement>(null);
   const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
+  const context = useMemo(() => ({}), [objectId, canEdit, isActive]);
+  const latest = useRef({ context, isCurrentResult, selectedPost, pending: mutation.isPending, confirmation });
+  latest.current = { context, isCurrentResult, selectedPost, pending: mutation.isPending, confirmation };
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const canMutate = () => mounted.current && latest.current.context === context && canEdit && isActive &&
+    !latest.current.pending && latest.current.confirmation === null && latest.current.isCurrentResult?.() !== false;
+  const selected = selectedPost && sectors.find(sector => sector.id === selectedPost.sectorId)?.posts.find(post => post.id === selectedPost.postId);
+  useEffect(() => { if (selectedPost && !selected) setSelectedPost(null); }, [selectedPost, selected]);
 
   const draftSnapshot = JSON.stringify(sectors);
   const dirty = draftSnapshot !== baseSnapshot && draftSnapshot !== initialSnapshot;
@@ -90,20 +106,25 @@ export function PassportForm({
   }
 
   function addSector(): void {
+    if (!canMutate()) return;
     setSectors((prev) => [...prev, { id: nextLocalId(), name: "", posts: [] }]);
   }
 
   function updateSector(sectorId: string, patch: Partial<ObjectSector>): void {
+    if (!canMutate()) return;
     setSectors((prev) =>
       prev.map((s) => (s.id === sectorId ? { ...s, ...patch } : s))
     );
   }
 
   function removeSector(sectorId: string): void {
+    if (!canMutate()) return;
+    setSelectedPost(previous => previous?.sectorId === sectorId ? null : previous);
     setSectors((prev) => prev.filter((s) => s.id !== sectorId));
   }
 
   function addPost(sectorId: string): void {
+    if (!canMutate()) return;
     setSectors((prev) =>
       prev.map((s) =>
         s.id === sectorId
@@ -124,6 +145,7 @@ export function PassportForm({
     postId: string,
     patch: Partial<SecurityPost>
   ): void {
+    if (!canMutate()) return;
     setSectors((prev) =>
       prev.map((s) =>
         s.id === sectorId
@@ -137,6 +159,8 @@ export function PassportForm({
   }
 
   function removePost(sectorId: string, postId: string): void {
+    if (!canMutate()) return;
+    setSelectedPost(previous => previous?.sectorId === sectorId && previous.postId === postId ? null : previous);
     setSectors((prev) =>
       prev.map((s) =>
         s.id === sectorId
@@ -148,6 +172,7 @@ export function PassportForm({
 
   return (
     <>
+      <ObjectLocationMap location={objectLocation} sectors={sectors} title="Карта постов паспорта" />
       {!canEdit && (
         <p
           className="mb-4 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
@@ -167,7 +192,7 @@ export function PassportForm({
           </Button>
         </div>
       )}
-      <fieldset ref={fieldset} disabled={!canEdit || mutation.isPending || confirmation !== null} className="contents">
+      <fieldset ref={fieldset} disabled={!canEdit || !isActive || mutation.isPending || confirmation !== null} className="contents">
       <div className="mb-4 flex flex-col gap-4">
         {sectors.map((sector) => (
           <Card key={sector.id}>
@@ -238,6 +263,14 @@ export function PassportForm({
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
                     </Button>
+                    <div className="md:col-span-4">
+                      <Button type="button" size="sm" variant="outline" aria-label={`Местоположение поста: ${post.name || "Без названия"}`}
+                        disabled={Boolean(selected)}
+                        aria-expanded={selectedPost?.sectorId === sector.id && selectedPost.postId === post.id}
+                        onClick={() => { if (canMutate() && !latest.current.selectedPost) setSelectedPost({ sectorId: sector.id, postId: post.id }); }}>
+                        Местоположение поста
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 <Button
@@ -255,6 +288,12 @@ export function PassportForm({
         ))}
       </div>
 
+      {selected && selectedPost && <PostLocationEditor key={`${selectedPost.sectorId}:${selectedPost.postId}`} post={selected}
+        canEdit={canEdit && !mutation.isPending && confirmation === null} isActive={isActive} isCurrentResult={isCurrentResult}
+        onCancel={() => setSelectedPost(null)} onApply={location => {
+          if (!canMutate() || latest.current.selectedPost !== selectedPost) return;
+          updatePost(selectedPost.sectorId, selectedPost.postId, { location }); setSelectedPost(null);
+        }} />}
       <div className="mb-4 flex justify-between">
         <Button variant="outline" type="button" onClick={addSector}>
           + Сектор
@@ -267,9 +306,9 @@ export function PassportForm({
           )}
           <Button
             type="button"
-            disabled={mutation.isPending || !dirty}
+            disabled={mutation.isPending || !dirty || Boolean(selected)}
             onClick={(event) => {
-              if (!canEdit || mutation.isPending || isCurrentResult?.() === false) return;
+              if (!canMutate() || selected) return;
               if (serverChanged) ask("save", event.currentTarget);
               else mutation.mutate({ sectors });
             }}

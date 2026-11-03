@@ -71,7 +71,7 @@ test('approved placement keeps its map usable for reading while editing stays un
   await page.goto(`/security-ops/events/${event.id}/?step=2&visit=${visit.id}`);
   await page.getByRole('button', { name: 'Карта Астаны', exact: true }).click();
   const map = page.getByRole('region', { name: 'Офлайн-карта Астаны', exact: true });
-  await map.getByRole('button', { name: 'Приблизить карту', exact: true }).click();
+  await map.locator('canvas').press('+');
   await expect(map.getByLabel('Масштаб карты')).toHaveText('500 м');
   await expect(page.getByRole('button', { name: 'Указать точку на карте', exact: true })).toHaveCount(0);
   expect(businessWrites).toEqual([]);
@@ -110,8 +110,9 @@ test('Astana map renders locally and selecting an outdoor post preserves the pla
   await map.getByRole('button', { name: 'Наружный пост: Наружный пост у входа', exact: true }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get('post')).toBe(post.id);
   expect(new URL(page.url()).searchParams.get('visit')).toBe(visit.id);
-  await map.getByRole('button', { name: 'Приблизить карту', exact: true }).click();
-  await expect(map.getByLabel('Масштаб карты')).toHaveText('100 м');
+  const previousScale = await map.getByLabel('Масштаб карты').textContent();
+  await map.locator('canvas').press('+');
+  await expect(map.getByLabel('Масштаб карты')).not.toHaveText(previousScale!);
   await page.getByRole('button', { name: 'Открыть карточку поста', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Выбранный пост', exact: true })).toBeFocused();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

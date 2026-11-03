@@ -26,6 +26,7 @@ SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "django-insecure-^18w8^kyktt4q14w%c4tci%w(8po97jj2pd&3(#hv(dyn3hznv",
 )
+
 SECRET_KEY_FALLBACKS = [key.strip() for key in os.environ.get("DJANGO_SECRET_KEY_FALLBACKS", "").split(",") if key.strip()]
 
 # Django behavior settings

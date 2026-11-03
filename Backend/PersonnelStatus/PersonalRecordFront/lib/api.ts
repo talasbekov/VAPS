@@ -428,6 +428,7 @@ export interface CoreDivision {
 export const PERSONNEL_STATUS_SOURCE = "PERSONNEL";
 
 export interface OpsEmployeeStatusRow {
+  combat_assignment?: import('@/entities/combat-duty').CombatAssignment | null;
   id: number;
   employee_id: number;
   status_type_code: string;

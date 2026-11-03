@@ -30,9 +30,11 @@ interface OpsAccessDeniedProps {
    */
   what: string;
   actions?: ReactNode;
+  /** The caller already owns the page shell. */
+  embedded?: boolean;
 }
 
-export function OpsAccessDenied({ what, actions }: OpsAccessDeniedProps): ReactElement {
+export function OpsAccessDenied({ what, actions, embedded = false }: OpsAccessDeniedProps): ReactElement {
   const { error, isLoading } = useOpsPermissions();
   const queryClient = useQueryClient();
   const [isRetrying, setIsRetrying] = useState(false);
@@ -52,8 +54,7 @@ export function OpsAccessDenied({ what, actions }: OpsAccessDeniedProps): ReactE
     );
   }
 
-  return (
-    <DashboardLayout>
+  const content = (
       <Card>
         {/* Заголовок — словами заказчика (`[РЕЕ-09]`, Plane №422): экран
             без права отвечает «Доступ закрыт». Фраза под ним — прежняя: по
@@ -68,6 +69,6 @@ export function OpsAccessDenied({ what, actions }: OpsAccessDeniedProps): ReactE
           {actions && <div className="mt-4">{actions}</div>}
         </CardContent>
       </Card>
-    </DashboardLayout>
   );
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 }

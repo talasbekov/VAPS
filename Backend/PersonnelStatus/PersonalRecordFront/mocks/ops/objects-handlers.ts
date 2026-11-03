@@ -25,6 +25,7 @@ import {
 // политика свежести живёт в «Настройках» — здесь только читается
 import { readFreshnessPolicy } from "./settings-store";
 import { appendAudit } from "./audit-store";
+import { isGeoPoint } from "@/features/object-map/model/location";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -44,7 +45,11 @@ let objects: SecurityObject[] | null = null;
 function loadPersisted(): SecurityObject[] | null {
   try {
     const raw = sessionStorage.getItem(STORE_KEY);
-    return raw === null ? null : (JSON.parse(raw) as SecurityObject[]);
+    if (raw === null) return null;
+    const rows = JSON.parse(raw) as SecurityObject[];
+    if (!Array.isArray(rows)) return null;
+    return rows.map(object => ({ ...object, location: object.location ?? null,
+      passportVersions: object.passportVersions.map(version => ({ ...version, location: version.location ?? null })) }));
   } catch {
     return null;
   }
@@ -174,6 +179,28 @@ export const objectsHandlers = [
     return HttpResponse.json(found);
   }),
 
+  // The route template is literal: encoding ":id" would remove the parameter.
+  http.patch(`*${OPS_OBJECTS_PATH}:id/location/`, async ({ params, request }) => {
+    const id = params.id as string;
+    const existing = getObjects().find(object => object.id === id);
+    if (!existing) return notFound(id);
+    const body = await request.json() as Record<string, unknown> | null;
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        !Object.prototype.hasOwnProperty.call(body, "location") ||
+        (body.location !== null && !isGeoPoint(body.location))) {
+      return validationError({ location: ["Укажите обе координаты WGS84 или null для удаления точки."] });
+    }
+    const location = body.location === null ? null : {
+      latitude: Number((body.location as { latitude: number }).latitude.toFixed(6)),
+      longitude: Number((body.location as { longitude: number }).longitude.toFixed(6)),
+    };
+    const updated: SecurityObject = { ...existing, location, updatedAt: nowIso() };
+    replaceObject(updated);
+    appendAudit({ action: "object.location.update", entityType: "SecurityObject", entityId: existing.code,
+      oldValue: { location: existing.location }, newValue: { location } });
+    return HttpResponse.json(updated);
+  }),
+
   http.patch(`*${objectPassportPath(":id")}`, async ({ params, request }) => {
     const id = params.id as string;
     const body = (await request.json()) as UpdatePassportRequest;
@@ -244,6 +271,7 @@ export const objectsHandlers = [
         publishedAt: nowIso(),
         publishedBy: "demo-admin",
         note: body.note.trim(),
+        location: existing.location ? { ...existing.location } : null,
         // снимок — глубокая копия: версия неизменяема после публикации
         sectors: existing.sectors.map((sector) => ({
           ...sector,

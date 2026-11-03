@@ -5,7 +5,7 @@ import type { SecurityObject } from '@/entities/security-object';
 async function prepare(page: Page, canManage = true) {
   const object: SecurityObject = {
     id: '1', name: 'Объект проверки паспорта', code: 'UX-PASSPORT', type: 'Здание', region: 'Астана', address: 'Адрес проверки',
-    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null,
+    objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: false, photoUrl: null, location: null,
     sectors: [{ id: 's1', name: 'Сектор проверки', posts: [{ id: 'p1', name: 'Пост проверки', task: 'Исходная задача', requirements: 'Требования проверки' }] }],
     passportVersions: [], createdAt: '2026-10-12T10:00:00Z', updatedAt: '2026-10-12T10:00:00Z',
   };
@@ -25,7 +25,7 @@ async function prepare(page: Page, canManage = true) {
     const body = request.postDataJSON(); state.writes.push({ method: request.method(), body });
     if (state.hold) await pending;
     if (state.fail) return route.fulfill({ status: state.fail, json: { detail: 'Проверка отказа паспорта' } });
-    state.object = { ...state.object, updatedAt: '2026-10-12T12:00:00Z', ...(isSave ? { sectors: body.sectors } : { passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: body.effectiveFrom, note: body.note, publishedAt: '2026-10-12T12:00:00Z', publishedBy: 'ux', sectors: state.object.sectors }] }) };
+    state.object = { ...state.object, updatedAt: '2026-10-12T12:00:00Z', ...(isSave ? { sectors: body.sectors } : { passportVersions: [{ id: 'v1', versionNumber: 1, effectiveFrom: body.effectiveFrom, note: body.note, publishedAt: '2026-10-12T12:00:00Z', publishedBy: 'ux', location: null, sectors: state.object.sectors }] }) };
     return route.fulfill({ json: state.object });
   });
   await signIn(page);
@@ -61,7 +61,7 @@ test('a publication draft survives checking posts and general data without chang
   await page.goto(target + '&tab=history');
   await page.getByLabel('Действует с *', { exact: true }).fill('2026-10-14');
   await page.getByLabel('Примечание к публикации', { exact: true }).fill('Проверить состав постов');
-  for (const tab of ['Посты и секторы', 'Общие данные', 'Обследования', 'История']) await page.getByRole('tab', { name: tab, exact: true }).click();
+  for (const tab of ['Посты и секторы', 'Общие данные', 'Инфраструктура', 'История']) await page.getByRole('tab', { name: tab, exact: true }).click();
   await expect(page.getByLabel('Действует с *', { exact: true })).toHaveValue('2026-10-14');
   await expect(page.getByLabel('Примечание к публикации', { exact: true })).toHaveValue('Проверить состав постов');
   expect(new URL(page.url()).searchParams.get('back')).toBe('ownership=OWN&search=UX');

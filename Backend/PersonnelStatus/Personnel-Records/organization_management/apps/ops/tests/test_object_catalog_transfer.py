@@ -312,3 +312,31 @@ def test_cli_default_writes_only_dry_run_receipt(
     printed = capsys.readouterr().out
     assert "SYNTHETIC" not in printed
     assert json.loads(printed)["applied"] is False
+
+
+def test_v1_export_excludes_map_coordinates_without_mutating_catalog_or_versions(transfer, actor):
+    obj = make_object()
+    obj.latitude, obj.longitude = 51.15, 71.45
+    obj.save(update_fields=["latitude", "longitude"])
+    post = obj.sectors.get().posts.first()
+    post.latitude, post.longitude = 51.128456, 71.430125
+    post.save(update_fields=["latitude", "longitude"])
+    passport.publish_version(obj, effective_from="2026-11-02", note="Map snapshot", actor=str(actor.pk))
+    before_posts = list(OpsSecurityPost.objects.filter(sector__security_object=obj).order_by("pk").values())
+    before_versions = list(obj.passport_versions.values())
+
+    bundle = transfer.export_bundle(
+        str(obj.pk), actor_id=str(actor.pk), source_namespace=str(uuid4()),
+        export_id=str(uuid4()),
+    )
+
+    assert transfer.validate_bundle(bundle) == bundle
+    assert not {"location", "latitude", "longitude"} & bundle["object"].keys()
+    assert bundle["sectors"][0]["posts"] == [
+        {"id": str(row["id"]), "name": row["name"], "task": row["task"], "requirements": row["requirements"]}
+        for row in before_posts
+    ]
+    assert list(OpsSecurityPost.objects.filter(sector__security_object=obj).order_by("pk").values()) == before_posts
+    assert list(obj.passport_versions.values()) == before_versions
+    obj.refresh_from_db()
+    assert (obj.latitude, obj.longitude) == (51.15, 71.45)

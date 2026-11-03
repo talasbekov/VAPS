@@ -28,6 +28,8 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
+    // Local documentation chat allows a 55s provider request, including cold starts.
+    proxyTimeout: 90_000,
     // A 10 MiB file also needs multipart headers and metadata in the request.
     // The API independently validates the file's 10 MiB limit.
     middlewareClientMaxBodySize: "12mb",

@@ -130,6 +130,7 @@ export function buildObjectsFixtures(
       ownership: "GUARDED",
       hasSecurityEvents: true,
       photoUrl: null,
+      location: null,
       sectors: palaceSectors,
       passportVersions: [
         {
@@ -138,6 +139,7 @@ export function buildObjectsFixtures(
           effectiveFrom: businessDate,
           publishedAt: now,
           publishedBy: "demo-seed",
+          location: null,
           note: "Первичная публикация паспорта объекта.",
           sectors: snapshotSectors(palaceSectors),
         },
@@ -157,6 +159,7 @@ export function buildObjectsFixtures(
       ownership: "GUARDED",
       hasSecurityEvents: true,
       photoUrl: null,
+      location: null,
       sectors: buildSectors([
         {
           name: "Сектор A",
@@ -185,6 +188,7 @@ export function buildObjectsFixtures(
       ownership: "OWN",
       hasSecurityEvents: false,
       photoUrl: null,
+      location: null,
       sectors: [],
       passportVersions: [],
       createdAt: now,
@@ -202,6 +206,7 @@ export function buildObjectsFixtures(
       ownership: "OWN",
       hasSecurityEvents: true,
       photoUrl: null,
+      location: null,
       sectors: dueSoonSectors,
       passportVersions: [
         {
@@ -211,6 +216,7 @@ export function buildObjectsFixtures(
           effectiveFrom: addDays(businessDate, -110),
           publishedAt: now,
           publishedBy: "demo-seed",
+          location: null,
           note: "Плановая публикация паспорта.",
           sectors: snapshotSectors(dueSoonSectors),
         },
@@ -230,6 +236,7 @@ export function buildObjectsFixtures(
       ownership: "GUARDED",
       hasSecurityEvents: false,
       photoUrl: null,
+      location: null,
       sectors: overdueSectors,
       passportVersions: [
         {
@@ -239,6 +246,7 @@ export function buildObjectsFixtures(
           effectiveFrom: addDays(businessDate, -200),
           publishedAt: now,
           publishedBy: "demo-seed",
+          location: null,
           note: "Публикация прошлого периода.",
           sectors: snapshotSectors(overdueSectors),
         },

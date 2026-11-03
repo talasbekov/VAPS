@@ -2,6 +2,9 @@
 // паспорта и актуальность паспорта — РАЗНЫЕ поля, не один бейдж.
 export type ObjectState = "ACTIVE" | "ARCHIVED";
 
+/** Authoritative WGS84 catalog point; missing coordinates remain null. */
+export type GeoPoint = { latitude: number; longitude: number };
+
 /** Красный/жёлтый/зелёный — состояние ПАСПОРТА, не объекта. */
 export type PassportState = "RED" | "YELLOW" | "GREEN";
 
@@ -51,6 +54,8 @@ export interface SecurityPost {
   name: string;
   task: string;
   requirements: string;
+  /** Missing in old immutable passport versions. */
+  location?: GeoPoint | null;
 }
 
 export interface ObjectSector {
@@ -73,6 +78,8 @@ export interface PassportVersion {
   /** Идентификатор опубликовавшего (ФИО в demo-модели нет). */
   publishedBy: string;
   note: string;
+  /** Saved when this version was published; never falls back to the object. */
+  location: GeoPoint | null;
   sectors: ObjectSector[];
 }
 
@@ -92,6 +99,7 @@ export interface SecurityObject {
   /** Снимок объекта-каталога (Plane SJ-1049); null — не загружен. Свойство
    * каталога, а не визита: одно здание снимают один раз. */
   photoUrl: string | null;
+  location: GeoPoint | null;
   /** Действующая редакция (черновик): её и правит форма паспорта. */
   sectors: ObjectSector[];
   /** История публикаций, по возрастанию номера версии. Неизменяема. */
@@ -138,6 +146,10 @@ export interface UpdatePassportRequest extends Record<string, unknown> {
   sectors: ObjectSector[];
 }
 
+export interface UpdateObjectLocationRequest extends Record<string, unknown> {
+  location: GeoPoint | null;
+}
+
 /**
  * Публикация версии. Секторы в запросе НЕ передаются: снимок берётся с
  * действующей редакции на сервере — иначе клиент мог бы опубликовать не то,
@@ -166,6 +178,10 @@ export function objectDetailPath(id: string): string {
 /** Снимок объекта-каталога (Plane SJ-1049). */
 export function objectPhotoPath(id: string): string {
   return `${OPS_OBJECTS_PATH}${encodeURIComponent(id)}/photo/`;
+}
+
+export function objectLocationPath(id: string): string {
+  return `${OPS_OBJECTS_PATH}${encodeURIComponent(id)}/location/`;
 }
 
 export function objectPassportPath(id: string): string {

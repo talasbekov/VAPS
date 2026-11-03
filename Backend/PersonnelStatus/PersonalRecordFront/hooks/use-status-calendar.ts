@@ -66,6 +66,7 @@ interface DayResponse {
       count: number;
       has_more: boolean;
       employees: {
+        combat_assignment?: import('@/entities/combat-duty').CombatAssignment | null;
         id: string;
         name: string;
         rank: string;

@@ -1,4 +1,5 @@
 "use client";
+import { CombatAssignmentDetails } from '@/features/combat-duty/ui/CombatAssignmentDetails';
 
 import { Fragment, useState, useMemo, useEffect, useRef} from "react";
 import Link from "next/link";
@@ -186,7 +187,7 @@ function SectionAccountCell({
   /** Открыт ли человеку модуль «Сбор сил» (ключ пункта меню, №939). */
   forcesOpen: boolean;
   reserve: { campaignCode: string; campaignTitle: string; kindCode: string } | null;
-  status: { code: string; name: string } | null;
+  status: { code: string; name: string; assignment?: import('@/entities/combat-duty').CombatAssignment | null } | null;
   participations: {
     event_id: number;
     event_code: string;
@@ -256,6 +257,7 @@ function SectionAccountCell({
           {status.name}
         </span>
       )}
+      <CombatAssignmentDetails assignment={status?.assignment} />
       {participations.map((participation) =>
         participation.event_code ? (
           <Link

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useDailyExpenseRead } from "@/hooks/use-daily-expense-read";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { opsApiClient } from "@/lib/ops-api";
@@ -25,9 +25,11 @@ export function VersionSnapshot({ id, labelOfDivision = fallbackDivision, ancest
   const [openSource, setOpenSource] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const detail = useDailyExpenseRead("summary-snapshot", [id],
-    (_signal, authorize) => opsApiClient.get<unknown>(`/api/operations/daily-submissions/${id}/`, authorize), {
+  const detail = useQuery({
+    queryKey: ["daily-expense-board", "summary-snapshot", id],
+    queryFn: () => opsApiClient.get<unknown>(`/api/operations/daily-submissions/${id}/`),
     enabled: allowed && !cyclic,
+    retry: false,
   });
   if (!allowed) return <p className="text-sm text-muted-foreground">Для просмотра состава требуется доступ к статусам.</p>;
   if (cyclic) return <p role="alert">Не удалось открыть состав: некорректная цепочка версий.</p>;
