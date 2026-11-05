@@ -57,7 +57,7 @@ export function PassportForm({
     isCurrentResult?: () => boolean;
   } | null>(null);
   const fieldset = useRef<HTMLFieldSetElement>(null);
-  const postFields = useRef(new Map<string, HTMLInputElement>());
+  const mapRegion = useRef<HTMLDivElement>(null);
   const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const context = useMemo(() => ({}), [objectId, canEdit, isActive]);
@@ -189,16 +189,29 @@ export function PassportForm({
     );
   }
 
+  function selectPost(sectorId: string, postId: string): void {
+    if (!canMutate() || latest.current.selectedPost) return;
+    setSelectedPost({ sectorId, postId });
+    mapRegion.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    mapRegion.current?.querySelector<HTMLCanvasElement>("canvas")?.focus({ preventScroll: true });
+  }
+
+  function placeSelectedPost(location: GeoPoint | null): void {
+    if (!canMutate() || !selectedPost || latest.current.selectedPost !== selectedPost || (location !== null && !isGeoPoint(location))) return;
+    updatePost(selectedPost.sectorId, selectedPost.postId, { location });
+    setSelectedPost(null);
+  }
+
   return (
     <>
-      {canEdit ? <PassportPostsMap location={objectLocation} sectors={sectors}
-        canEdit={isActive && !mutation.isPending && confirmation === null && !selected && isCurrentResult?.() !== false}
-        onAddPost={addPostAt} onSelectPost={(sectorId, postId) => {
-          if (!canMutate() || latest.current.selectedPost) return;
-          const input = postFields.current.get(`${sectorId}:${postId}`);
-          input?.scrollIntoView({ block: "center", behavior: "smooth" });
-          input?.focus({ preventScroll: true });
-        }} /> : <ObjectLocationMap location={objectLocation} sectors={sectors} title="Карта постов паспорта" />}
+      <div ref={mapRegion}>{canEdit ? <PassportPostsMap location={objectLocation} sectors={sectors}
+        canEdit={isActive && !mutation.isPending && confirmation === null && isCurrentResult?.() !== false}
+        selectedPost={selected && selectedPost ? { ...selectedPost, name: selected.name, location: selected.location } : null}
+        onAddPost={addPostAt} onSelectPost={selectPost} onPlacePost={placeSelectedPost} onCancelPlacement={() => setSelectedPost(null)}>
+        {selected && selectedPost && <PostLocationEditor key={`${selectedPost.sectorId}:${selectedPost.postId}`} post={selected}
+          canEdit={canEdit && !mutation.isPending && confirmation === null} isActive={isActive} isCurrentResult={isCurrentResult}
+          onCancel={() => setSelectedPost(null)} onApply={placeSelectedPost} />}
+      </PassportPostsMap> : <ObjectLocationMap location={objectLocation} sectors={sectors} title="Карта постов паспорта" />}</div>
       {!canEdit && (
         <p
           className="mb-4 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
@@ -252,11 +265,6 @@ export function PassportForm({
                       className="h-8 text-xs"
                       placeholder="Название поста"
                       aria-label="Название поста"
-                      ref={element => {
-                        const key = `${sector.id}:${post.id}`;
-                        if (element) postFields.current.set(key, element);
-                        else postFields.current.delete(key);
-                      }}
                       maxLength={255}
                       value={post.name}
                       onChange={(e) =>
@@ -298,8 +306,8 @@ export function PassportForm({
                       <Button type="button" size="sm" variant="outline" aria-label={`Местоположение поста: ${post.name || "Без названия"}`}
                         disabled={Boolean(selected)}
                         aria-expanded={selectedPost?.sectorId === sector.id && selectedPost.postId === post.id}
-                        onClick={() => { if (canMutate() && !latest.current.selectedPost) setSelectedPost({ sectorId: sector.id, postId: post.id }); }}>
-                        Местоположение поста
+                        onClick={() => selectPost(sector.id, post.id)}>
+                        {post.location ? "Переставить на карте" : "Указать на карте"}
                       </Button>
                     </div>
                   </div>
@@ -319,12 +327,6 @@ export function PassportForm({
         ))}
       </div>
 
-      {selected && selectedPost && <PostLocationEditor key={`${selectedPost.sectorId}:${selectedPost.postId}`} post={selected}
-        canEdit={canEdit && !mutation.isPending && confirmation === null} isActive={isActive} isCurrentResult={isCurrentResult}
-        onCancel={() => setSelectedPost(null)} onApply={location => {
-          if (!canMutate() || latest.current.selectedPost !== selectedPost) return;
-          updatePost(selectedPost.sectorId, selectedPost.postId, { location }); setSelectedPost(null);
-        }} />}
       <div className="mb-4 flex justify-between">
         <Button variant="outline" type="button" onClick={addSector}>
           + Сектор

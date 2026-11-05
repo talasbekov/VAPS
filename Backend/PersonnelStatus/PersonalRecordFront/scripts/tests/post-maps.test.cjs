@@ -78,6 +78,23 @@ function passportMap(sectors = []) {
   return { ...f, writes, overview: () => f.find(n => n.type === 'passport-map') };
 }
 
+test('existing posts use the same overview for placement, preserving their identity and saving once', () => {
+  const f = passportMap([{ id: 's', name: 'Сектор', posts: [{ id: 'p', name: 'КПП', task: 'Вход', requirements: '' }] }]);
+  f.find(n => n.props['aria-label'] === 'Местоположение поста: КПП').props.onClick(); f.render();
+  assert.equal(f.overview().props.selectedPost.postId, 'p');
+  f.overview().props.onPlacePost(point); f.render();
+  assert.equal(f.overview().props.selectedPost, null);
+  assert.deepEqual(f.writes, []);
+  f.button('Сохранить паспорт').props.onClick({ currentTarget: {} });
+  assert.deepEqual(plain(f.writes[0].sectors[0].posts), [{ id: 'p', name: 'КПП', task: 'Вход', requirements: '', location: point }]);
+});
+
+test('optional manual coordinate entry never mounts a second map', () => {
+  const f = editor();
+  assert.equal(f.nodes().some(n => n.type === 'local-map'), false);
+  assert.equal(f.find(n => n.type === 'details').props.open, undefined);
+});
+
 test('map placement adds a named post and a first sector locally, then Save Passport persists both', () => {
   const f = passportMap();
   f.overview().props.onAddPost(null, point); f.render();
@@ -173,11 +190,11 @@ test('combat map stays compact without visible markers and retains group navigat
   f.props.shifts[0].stateCode = 'CANCELLED'; f.render();
   assert.equal(f.nodes().length, 0);
 });
-test('post map clicks and clear stay local until Apply; cancel never alters the passport', () => {
-  const f = editor(); f.map().props.onPoint({ latitude: 51.14, longitude: 71.45 }); f.render();
+test('manual coordinates and clear stay local until Apply', () => {
+  const f = editor(); f.type('Широта поста', '51.140000'); f.type('Долгота поста', '71.450000');
   assert.equal(f.input('Широта поста').props.value, '51.140000'); assert.deepEqual(f.changes, []);
   f.click('Очистить точку поста'); assert.deepEqual(f.changes, []);
-  f.click('Отмена'); assert.deepEqual(f.changes, []); assert.equal(f.cancelled.length, 1);
+  assert.deepEqual(f.changes, []);
   const g = editor(); g.click('Очистить точку поста'); g.click('Применить к черновику');
   assert.deepEqual(g.changes, [null]);
   assert.ok(g.nodes().filter(n => n.type === 'button').every(n => n.props.type === 'button'));
@@ -187,18 +204,18 @@ test('post manual inputs validate pairs, permit zero and preserve draft after re
   const f = editor(); f.type('Широта поста', ''); assert.equal(f.button('Применить к черновику').props.disabled, true);
   f.type('Широта поста', '0'); f.type('Долгота поста', '0');
   f.props.post = { ...f.props.post, location: { latitude: 51.2, longitude: 71.5 } }; f.render();
-  f.map().props.onPoint({ latitude: 80, longitude: 0 }); f.render();
+  f.render();
   assert.equal(f.input('Широта поста').props.value, '0'); f.click('Применить к черновику');
   assert.deepEqual(plain(f.changes), [{ latitude: 0, longitude: 0 }]);
 });
 for (const reason of ['readonly', 'inactive', 'stale']) test(`post editor rejects current and retained callbacks after ${reason}`, () => {
-  const f = editor(); const choose = f.map().props.onPoint, apply = f.button('Применить к черновику').props.onClick;
+  const f = editor(); const choose = f.input('Широта поста').props.onChange, apply = f.button('Применить к черновику').props.onClick;
   if (reason === 'readonly') f.props.canEdit = false;
   if (reason === 'inactive') f.props.isActive = false;
   if (reason === 'stale') f.props.isCurrentResult = () => false;
-  f.render(); choose({ latitude: 51.2, longitude: 71.5 }); apply(); f.map().props.onPoint({ latitude: 51.2, longitude: 71.5 });
+  f.render(); choose({ target: { value: '51.2' } }); apply(); f.type('Широта поста', '51.2');
   f.render(); assert.equal(f.input('Широта поста').props.value, '51.128'); assert.deepEqual(f.changes, []);
-  if (reason !== 'stale') { f.props.canEdit = true; f.props.isActive = true; f.render(); choose({ latitude: 51.2, longitude: 71.5 }); f.render(); assert.equal(f.input('Широта поста').props.value, '51.128'); }
+  if (reason !== 'stale') { f.props.canEdit = true; f.props.isActive = true; f.render(); choose({ target: { value: '51.2' } }); f.render(); assert.equal(f.input('Широта поста').props.value, '51.128'); }
 });
 test('passport applies a post point to its existing unsaved draft and persists only with Save Passport', () => {
   const writes = [];
@@ -207,7 +224,7 @@ test('passport applies a post point to its existing unsaved draft and persists o
     '@/hooks/use-object-passport': { useUpdatePassport: () => ({ mutate: body => writes.push(body), isPending: false, error: null }) },
     './PostLocationEditor': { PostLocationEditor: 'post-editor' },
   });
-  f.type('Название поста', 'Мой черновик'); f.click('Местоположение поста');
+  f.type('Название поста', 'Мой черновик'); f.click('Указать на карте');
   f.find(n => n.type === 'post-editor').props.onApply(point); f.render(); assert.deepEqual(writes, []);
   f.button('Сохранить паспорт').props.onClick({ currentTarget: {} });
   assert.equal(writes[0].sectors[0].posts[0].name, 'Мой черновик');
