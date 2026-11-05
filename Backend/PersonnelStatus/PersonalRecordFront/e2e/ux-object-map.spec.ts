@@ -1,18 +1,18 @@
 import { test, expect, signIn } from './ux-fixture';
 import type { Page } from '@playwright/test';
-import type { GeoPoint, SecurityObject } from '@/entities/security-object';
+import type { GeoPoint, ObjectSector, SecurityObject } from '@/entities/security-object';
 
 const pointA: GeoPoint = { latitude: 51.128, longitude: 71.43 };
 const pointB: GeoPoint = { latitude: 51.135, longitude: 71.44 };
 const registry = '/security-ops/objects/';
 const card = '/security-ops/objects/1/';
 
-async function prepare(page: Page, options: { readOnly?: boolean; location?: GeoPoint | null } = {}) {
+async function prepare(page: Page, options: { readOnly?: boolean; location?: GeoPoint | null; sectors?: ObjectSector[] } = {}) {
   const object: SecurityObject = {
     id: '1', name: 'Учебный объект карты', code: 'MAP-ONE', type: 'Здание', region: 'Учебный регион', address: 'Учебный адрес',
     objectState: 'ACTIVE', passportState: 'GREEN', ownership: 'OWN', hasSecurityEvents: true, photoUrl: null,
     location: options.location ?? null,
-    sectors: [{ id: 's1', name: 'Учебный сектор', posts: [{ id: 'p1', name: 'Учебный пост', task: 'Задача', requirements: '' }] }],
+    sectors: options.sectors ?? [{ id: 's1', name: 'Учебный сектор', posts: [{ id: 'p1', name: 'Учебный пост', task: 'Задача', requirements: '' }] }],
     passportVersions: [
       { id: 'old', versionNumber: 1, effectiveFrom: '2026-09-01', publishedAt: '2026-09-01T10:00:00Z', publishedBy: 'Synthetic', note: '', location: null, sectors: [] },
       { id: 'mapped', versionNumber: 2, effectiveFrom: '2026-10-01', publishedAt: '2026-10-01T10:00:00Z', publishedBy: 'Synthetic', note: '', location: pointA, sectors: [] },
@@ -22,6 +22,7 @@ async function prepare(page: Page, options: { readOnly?: boolean; location?: Geo
   const missing = { ...object, id: '2', code: 'MAP-MISSING', name: 'Учебный объект без координат', ownership: 'GUARDED' as const, hasSecurityEvents: false, location: null, passportVersions: [] };
   const distant = { ...object, id: '3', code: 'MAP-OUTSIDE', name: 'Учебный объект вне покрытия', ownership: 'GUARDED' as const, location: { latitude: 0, longitude: 0 }, passportVersions: [] };
   const state = { object, rows: [object, missing, distant], writes: [] as { location: GeoPoint | null }[],
+    passportWrites: [] as { sectors: ObjectSector[] }[],
     permissions: ['object.view', ...(options.readOnly ? [] : ['object.manage'])], readFailure: 0, readCount: 0,
     saveFailure: 0, holdSave: false, releaseSave: () => {} };
   const held = new Promise<void>(resolve => { state.releaseSave = resolve; });
@@ -36,6 +37,12 @@ async function prepare(page: Page, options: { readOnly?: boolean; location?: Geo
     if (request.method() === 'GET' && path === '/api/ops/objects/1/') {
       state.readCount++;
       if (state.readFailure) return route.fulfill({ status: state.readFailure, json: { detail: 'Synthetic read failure' } });
+      return route.fulfill({ json: state.object });
+    }
+    if (request.method() === 'PATCH' && path === '/api/ops/objects/1/passport/') {
+      const body = request.postDataJSON() as { sectors: ObjectSector[] }; state.passportWrites.push(body);
+      if (state.saveFailure) return route.fulfill({ status: state.saveFailure, json: { detail: 'Synthetic save failure' } });
+      state.object = { ...state.object, sectors: body.sectors };
       return route.fulfill({ json: state.object });
     }
     if (request.method() === 'PATCH' && path === '/api/ops/objects/1/location/') {
@@ -74,7 +81,7 @@ test('legacy passport links open general data; compact maps keep object and post
   await enter(page);
   await page.getByRole('tab', { name: 'Посты и секторы', exact: true }).click();
   await page.getByLabel('Название сектора', { exact: true }).fill('Несохранённый сектор');
-  await expect(page.getByLabel('Карта постов паспорта', { exact: true }).locator('canvas')).toHaveCount(0);
+  await expect(page.getByLabel('Карта постов паспорта', { exact: true }).locator('canvas')).toBeVisible();
   await page.getByRole('button', { name: 'Местоположение поста: Учебный пост', exact: true }).click();
   await page.getByLabel('Широта поста', { exact: true }).fill('51.14');
   await page.getByLabel('Долгота поста', { exact: true }).fill('71.45');
@@ -255,4 +262,106 @@ for (const width of [390, 1440]) test(`local map paints offline and fits ${width
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   await expect(map.getByRole('button', { name: 'Учебный объект карты', exact: true })).toBeVisible();
   expect(attempts).toBe(2); expect(external).toEqual([]); expect(businessWrites).toEqual([]);
+});
+
+for (const width of [390, 1440]) test(`passport posts are placed directly on the map and persist only on Save at ${width}px`, async ({ page, businessWrites }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const state = await prepare(page, { sectors: [], location: pointA });
+  await page.goto(card + '?tab=posts');
+  const map = page.getByLabel('Карта постов паспорта', { exact: true });
+  const canvas = map.locator('canvas');
+  await canvas.click({ position: { x: 80, y: 120 } });
+  await expect(page.getByLabel('Название сектора', { exact: true })).toHaveValue('Основной сектор');
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveValue('Пост 1');
+  await page.getByLabel('Название поста', { exact: true }).fill('Вход');
+  await canvas.click({ position: { x: 160, y: 200 } });
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(2);
+  await map.getByRole('button', { name: 'Основной сектор · Вход', exact: true }).click();
+  await expect(page.getByLabel('Название поста', { exact: true }).first()).toBeFocused();
+  expect(state.passportWrites).toEqual([]);
+  expect(state.object.sectors).toEqual([]);
+  await page.getByRole('tab', { name: 'Общие данные', exact: true }).click();
+  await page.getByRole('tab', { name: 'Посты и секторы', exact: true }).click();
+  await expect(page.getByLabel('Название поста', { exact: true }).first()).toHaveValue('Вход');
+  await page.getByRole('button', { name: 'Сохранить паспорт', exact: true }).click();
+  await expect.poll(() => state.passportWrites.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'Сохранить паспорт', exact: true })).toBeDisabled();
+  const saved = state.object.sectors[0].posts;
+  expect(saved.map(p => p.name)).toEqual(['Вход', 'Пост 2']);
+  expect(saved.every(p => p.location && Number.isFinite(p.location.latitude) && Number.isFinite(p.location.longitude))).toBe(true);
+  expect(saved[0].location).not.toEqual(saved[1].location);
+  await page.reload();
+  await expect(map.getByRole('button', { name: 'Основной сектор · Вход', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(state.writes).toEqual([]); expect(businessWrites).toEqual([]);
+});
+
+test('map placement requires a sector, preserves existing fields and survives a failed save', async ({ page, businessWrites }) => {
+  const state = await prepare(page, { location: pointA });
+  state.object.sectors.push({ id: 's2', name: 'Второй сектор', posts: [] });
+  await page.goto(card + '?tab=posts');
+  const map = page.getByLabel('Карта постов паспорта', { exact: true });
+  await page.getByLabel('Название поста', { exact: true }).fill('Существующий пост');
+  await map.locator('canvas').click({ position: { x: 100, y: 100 } });
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(1);
+  await page.getByLabel('Сектор для нового поста', { exact: true }).selectOption('s2');
+  await map.locator('canvas').click({ position: { x: 100, y: 100 } });
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(2);
+  expect(state.passportWrites).toEqual([]);
+  state.saveFailure = 503;
+  await page.getByRole('button', { name: 'Сохранить паспорт', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Не удалось сохранить паспорт.' })).toBeVisible();
+  await expect(page.getByLabel('Название поста', { exact: true }).first()).toHaveValue('Существующий пост');
+  state.saveFailure = 0;
+  await page.getByRole('button', { name: 'Сохранить паспорт', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Сохранить паспорт', exact: true })).toBeDisabled();
+  expect(state.object.sectors[0].posts[0].name).toBe('Существующий пост');
+  expect(state.object.sectors[0].posts[0].location).toBeUndefined();
+  expect(state.object.sectors[1].posts[0].location).toBeTruthy();
+  expect(businessWrites).toEqual([]);
+});
+
+test('view-only passport map cannot create posts', async ({ page, businessWrites }) => {
+  const state = await prepare(page, { readOnly: true, location: pointA });
+  await page.goto(card + '?tab=posts');
+  await page.getByLabel('Карта постов паспорта', { exact: true }).locator('canvas').click({ position: { x: 100, y: 100 } });
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel('Название поста', { exact: true })).toBeDisabled();
+  expect(state.passportWrites).toEqual([]); expect(businessWrites).toEqual([]);
+});
+
+test('mobile post overview initially fits all saved points and keeps its view after adding one', async ({ page, businessWrites }) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await prepare(page, { location: pointA, sectors: [{ id: 's', name: 'Сектор', posts: [
+    { id: 'p', name: 'Дальний пост', task: '', requirements: '', location: { latitude: 51.18, longitude: 71.5 } },
+  ] }] });
+  await page.goto(card + '?tab=posts');
+  const map = page.getByLabel('Карта постов паспорта', { exact: true });
+  const objectMarker = map.getByRole('button', { name: 'Объект', exact: true });
+  await expect(objectMarker).toBeVisible();
+  await expect(map.getByRole('button', { name: 'Сектор · Дальний пост', exact: true })).toBeVisible();
+  const before = await objectMarker.evaluate(node => ({ left: (node as HTMLElement).style.left, top: (node as HTMLElement).style.top }));
+  await map.locator('canvas').click({ position: { x: 100, y: 150 } });
+  await expect(page.getByLabel('Название поста', { exact: true })).toHaveCount(2);
+  expect(await objectMarker.evaluate(node => ({ left: (node as HTMLElement).style.left, top: (node as HTMLElement).style.top }))).toEqual(before);
+  expect(businessWrites).toEqual([]);
+});
+
+test('posts first opened after saving an object location center on its current point', async ({ page, businessWrites }) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await prepare(page);
+  await page.goto(card);
+  await enter(page, '51.18', '71.5');
+  await page.getByRole('button', { name: 'Сохранить точку', exact: true }).click();
+  await expect(page.getByText('Местоположение сохранено.', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Посты и секторы', exact: true }).click();
+  const map = page.getByLabel('Карта постов паспорта', { exact: true });
+  const marker = map.getByRole('button', { name: 'Объект', exact: true });
+  await expect(marker).toBeVisible();
+  await expect.poll(async () => {
+    const box = await map.locator('canvas').boundingBox(), pin = await marker.boundingBox();
+    return box && pin ? Math.abs(pin.x + pin.width / 2 - box.x - box.width / 2) : 1000;
+  }).toBeLessThan(3);
+  expect(businessWrites).toEqual([]);
 });

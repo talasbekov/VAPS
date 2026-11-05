@@ -14,6 +14,8 @@ import { useUpdatePassport } from "@/hooks/use-object-passport";
 import type { GeoPoint, ObjectSector, SecurityPost } from "@/entities/security-object";
 import { ObjectLocationMap } from "@/features/object-map/ui/ObjectLocationMap";
 import { PostLocationEditor } from "./PostLocationEditor";
+import { PassportPostsMap } from "./PassportPostsMap";
+import { isGeoPoint } from "@/features/object-map/model/location";
 
 let localSeq = 0;
 function nextLocalId(): string {
@@ -55,6 +57,7 @@ export function PassportForm({
     isCurrentResult?: () => boolean;
   } | null>(null);
   const fieldset = useRef<HTMLFieldSetElement>(null);
+  const postFields = useRef(new Map<string, HTMLInputElement>());
   const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const context = useMemo(() => ({}), [objectId, canEdit, isActive]);
@@ -140,6 +143,22 @@ export function PassportForm({
     );
   }
 
+  function addPostAt(sectorId: string | null, point: GeoPoint): void {
+    if (!canMutate() || latest.current.selectedPost || !isGeoPoint(point)) return;
+    const postId = nextLocalId();
+    const firstSectorId = nextLocalId();
+    setSectors(previous => {
+      if (previous.length && !previous.some(s => s.id === sectorId)) return previous;
+      if (!previous.length && sectorId !== null) return previous;
+      const allPosts = previous.flatMap(s => s.posts);
+      let number = allPosts.length + 1;
+      while (allPosts.some(p => p.name === `Пост ${number}`)) number++;
+      const post = { id: postId, name: `Пост ${number}`, task: "", requirements: "", location: point };
+      if (!previous.length) return [{ id: firstSectorId, name: "Основной сектор", posts: [post] }];
+      return previous.map(s => s.id === sectorId ? { ...s, posts: [...s.posts, post] } : s);
+    });
+  }
+
   function updatePost(
     sectorId: string,
     postId: string,
@@ -172,7 +191,14 @@ export function PassportForm({
 
   return (
     <>
-      <ObjectLocationMap location={objectLocation} sectors={sectors} title="Карта постов паспорта" />
+      {canEdit ? <PassportPostsMap location={objectLocation} sectors={sectors}
+        canEdit={isActive && !mutation.isPending && confirmation === null && !selected && isCurrentResult?.() !== false}
+        onAddPost={addPostAt} onSelectPost={(sectorId, postId) => {
+          if (!canMutate() || latest.current.selectedPost) return;
+          const input = postFields.current.get(`${sectorId}:${postId}`);
+          input?.scrollIntoView({ block: "center", behavior: "smooth" });
+          input?.focus({ preventScroll: true });
+        }} /> : <ObjectLocationMap location={objectLocation} sectors={sectors} title="Карта постов паспорта" />}
       {!canEdit && (
         <p
           className="mb-4 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
@@ -226,6 +252,11 @@ export function PassportForm({
                       className="h-8 text-xs"
                       placeholder="Название поста"
                       aria-label="Название поста"
+                      ref={element => {
+                        const key = `${sector.id}:${post.id}`;
+                        if (element) postFields.current.set(key, element);
+                        else postFields.current.delete(key);
+                      }}
                       maxLength={255}
                       value={post.name}
                       onChange={(e) =>

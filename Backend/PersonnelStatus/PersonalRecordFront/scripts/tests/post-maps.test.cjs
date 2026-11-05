@@ -68,6 +68,69 @@ function editor() {
   return { ...f, changes, cancelled };
 }
 
+function passportMap(sectors = []) {
+  const writes = [];
+  const f = fixture('@/features/object-passport/ui/PassportForm', 'PassportForm', { objectId: 'o', canEdit: true, isActive: true, sectors }, {
+    '@/hooks/use-object-passport': { useUpdatePassport: () => ({ mutate: body => writes.push(body), isPending: false, error: null }) },
+    './PassportPostsMap': { PassportPostsMap: 'passport-map' },
+    './PostLocationEditor': { PostLocationEditor: 'post-editor' },
+  });
+  return { ...f, writes, overview: () => f.find(n => n.type === 'passport-map') };
+}
+
+test('map placement adds a named post and a first sector locally, then Save Passport persists both', () => {
+  const f = passportMap();
+  f.overview().props.onAddPost(null, point); f.render();
+  assert.equal(f.input('Название сектора').props.value, 'Основной сектор');
+  assert.equal(f.input('Название поста').props.value, 'Пост 1');
+  assert.deepEqual(f.writes, []);
+  const sectorId = f.overview().props.sectors[0].id;
+  f.overview().props.onAddPost(sectorId, { latitude: 51.14, longitude: 71.45 }); f.render();
+  assert.deepEqual(f.nodes().filter(n => n.props['aria-label'] === 'Название поста').map(n => n.props.value), ['Пост 1', 'Пост 2']);
+  f.button('Сохранить паспорт').props.onClick({ currentTarget: {} });
+  assert.equal(f.writes[0].sectors[0].posts.length, 2);
+  assert.deepEqual(plain(f.writes[0].sectors[0].posts.map(p => p.location)), [point, { latitude: 51.14, longitude: 71.45 }]);
+});
+
+test('map placement uses only the requested existing sector and avoids duplicate generated names', () => {
+  const f = passportMap([{ id: 's', name: 'Север', posts: [{ id: 'p', name: 'Пост 2' }] }, { id: 't', name: 'Юг', posts: [] }]);
+  f.overview().props.onAddPost('missing', point); f.render();
+  f.overview().props.onAddPost(null, point); f.render();
+  assert.equal(f.overview().props.sectors.flatMap(s => s.posts).length, 1);
+  f.overview().props.onAddPost('t', point); f.render();
+  assert.equal(f.overview().props.sectors[0].posts.length, 1);
+  assert.equal(f.overview().props.sectors[1].posts[0].name, 'Пост 3');
+});
+
+for (const reason of ['readonly', 'inactive', 'stale']) test(`retained map-placement callback cannot write after ${reason}`, () => {
+  const f = passportMap(); const add = f.overview().props.onAddPost;
+  if (reason === 'readonly') f.props.canEdit = false;
+  if (reason === 'inactive') f.props.isActive = false;
+  if (reason === 'stale') f.props.isCurrentResult = () => false;
+  f.render(); add(null, point); f.render();
+  assert.equal(f.nodes().some(n => n.props['aria-label'] === 'Название поста'), false);
+  assert.deepEqual(f.writes, []);
+});
+
+test('the editable overview requires a sector when several exist and rejects invalid/outside map clicks', () => {
+  const added = [], selected = [];
+  const f = fixture('@/features/object-passport/ui/PassportPostsMap', 'PassportPostsMap', {
+    location: point, sectors: [{ id: 's', name: 'Север', posts: [{ id: 'p', name: 'Пост', location: point }] }, { id: 't', name: 'Юг', posts: [] }],
+    canEdit: true, onAddPost: (...args) => added.push(args), onSelectPost: (...args) => selected.push(args),
+  });
+  assert.equal(f.map().props.locating, false);
+  f.map().props.onPoint(point); assert.equal(added.length, 0);
+  f.find(n => n.type === 'select').props.onChange({ target: { value: 't' } }); f.render();
+  assert.equal(f.map().props.locating, true);
+  f.map().props.onPoint({ latitude: 0, longitude: 0 });
+  f.map().props.onPoint({ latitude: NaN, longitude: 71.4 }); assert.equal(added.length, 0);
+  f.map().props.onPoint(point); assert.deepEqual(plain(added), [['t', point]]);
+  f.map().props.onSelect(f.map().props.markers.find(m => m.id === 'p'));
+  assert.deepEqual(selected, [['s', 'p']]);
+  f.props.sectors = [f.props.sectors[0], { id: 'u', name: 'Восток', posts: [] }]; f.render();
+  assert.equal(f.map().props.locating, false, 'deleted selected sector must not receive posts');
+});
+
 test('empty object map opens for editing and preserves coordinates across tab changes', () => {
   const writes = [];
   const f = fixture('@/features/object-map/ui/ObjectLocationEditor', 'ObjectLocationEditor', {

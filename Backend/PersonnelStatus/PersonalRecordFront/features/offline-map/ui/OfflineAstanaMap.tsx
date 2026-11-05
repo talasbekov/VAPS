@@ -11,7 +11,7 @@ const roadWidths: Record<string, number> = { trunk: 4, primary: 3.5, secondary: 
 const fills: Record<string, string> = { green: '#dceacb', water: '#aad4ec', building: '#d8d4cd' };
 const order = ['green', 'water', 'building', 'rail', 'path', 'road', 'secondary', 'primary', 'trunk', 'river'];
 
-export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; focusPoint?: { key: number; location: GeoPoint } | null }) {
+export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating, focusPoint, pointHint, fitOnce = false }: { markers: MapMarker[]; onSelect: (marker: MapMarker) => void; onPoint: (point: GeoPoint) => void; locating: boolean; pointHint?: string; fitOnce?: boolean; focusPoint?: { key: number; location: GeoPoint } | null }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -79,14 +79,17 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
     setZoom(current => Math.max(15, current));
   }, [focusPoint]);
   useEffect(() => {
-    if (!asset || !size.width || !size.height || locating || focusPoint) return;
+    if (!asset || !size.width || !size.height || (locating && !fitOnce) || focusPoint) return;
+    // The passport editor fits its existing posts once, then keeps the view
+    // still while the user places more posts, pans or switches tabs.
+    if (fitOnce && fittedView.current !== null) return;
     // Fit only when the saved points or available space change. Ordinary
     // rerenders must leave the user's pan, wheel zoom and search position alone.
     const view = `${markerLocations}/${size.width}/${size.height}`;
     if (fittedView.current === view) return;
     fittedView.current = view;
     fit();
-  }, [asset, markerLocations, size.width, size.height, locating, focusPoint]);
+  }, [asset, markerLocations, size.width, size.height, locating, focusPoint, fitOnce]);
   useEffect(() => {
     const target = box.current;
     if (!target || !asset) return;
@@ -243,7 +246,7 @@ export default function OfflineAstanaMap({ markers, onSelect, onPoint, locating,
       {!asset && <div className="absolute inset-0 flex items-center justify-center bg-background/90 p-6 text-center text-sm" role={error ? 'alert' : 'status'}>
         {error ? <div><p>Не удалось загрузить офлайн-карту.</p><Button type="button" className="mt-3" variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку карты</Button></div> : 'Загружаем карту Астаны с локального сервера…'}
       </div>}
-      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">Нажмите на карту или введите координаты ниже. Выбранная точка ещё не сохранена.</div>}
+      {locating && asset && <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded bg-background/95 p-2 text-center text-xs shadow">{pointHint ?? "Нажмите на карту или введите координаты ниже. Выбранная точка ещё не сохранена."}</div>}
       {asset && <div className={`pointer-events-none absolute left-3 rounded bg-white/95 px-2 py-1 text-center text-[11px] text-slate-700 shadow-sm ${locating ? 'bottom-16' : 'bottom-3'}`}>
         <div style={{ width: scaleMeters / metersPerPixel }} className="h-1.5 border-x border-b border-slate-600" />
         <output aria-label="Масштаб карты">{scaleLabel}</output>

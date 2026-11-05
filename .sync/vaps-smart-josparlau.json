@@ -1,5 +1,5 @@
 {
-  "base_revision": "c9c087420a0a82c7044e7f423baabcfad6e1a054",
+  "base_revision": "9b753f33d5029786254a95105aa10b0067b1eb61",
   "excluded_categories": [
     "runtime credentials and database/media backups",
     "external docs/vault notes",
@@ -2948,10 +2948,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-multi-object-forces.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-object-map.spec.ts": {
-      "bytes": 20656,
+      "bytes": 28750,
       "mode": "100644",
-      "sha": "f787df9cf8684092110263afc85874f03bdc4658",
-      "sha256": "a92ed89df6539720efe229613b6e1f1768cd0d514910fe294f0c5ffd7dea8286",
+      "sha": "94198ee426794e5c748cbf8fa242e16f279f29e9",
+      "sha256": "9f515b6b92436dbce4f6d54e51455e01fd3ab99d3cf361f0cd10df049b996a8d",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-object-map.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-objects-registry-scenario.spec.ts": {
@@ -4684,10 +4684,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/model/use-object-map-asset.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-map/ui/LocalObjectMap.tsx": {
-      "bytes": 1592,
+      "bytes": 1695,
       "mode": "100644",
-      "sha": "ed6884c26226fcb0f1a4c612de5cbf0de875c225",
-      "sha256": "f8e8965891830f8d7497a92f46b71deced8e6e71bc15de5228b9711ca86fea0e",
+      "sha": "6f7cf72064d5208dfc1bdb5e14e02939c69c75fa",
+      "sha256": "c2458e38935bcf4fecefaae2291df5827c824371612e278c6a051953416d8046",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/ui/LocalObjectMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectLocationEditor.tsx": {
@@ -4726,11 +4726,18 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/index.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportForm.tsx": {
-      "bytes": 15555,
+      "bytes": 17458,
       "mode": "100644",
-      "sha": "025f766f1fd364f9ae59ffb79c2401e3f347b18a",
-      "sha256": "2611d74d756f65889db223a45f1a57ad13fdc8bfdd622db2eea28148e0c70d63",
+      "sha": "318c8f792abe085bff198d040c83ecc3a8dbe90b",
+      "sha256": "c02e51c9bf79f63e5e2d7ea87cf5eeb0fbe49f24de3a44a74cad554ba7c43ab7",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportForm.tsx"
+    },
+    "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportPostsMap.tsx": {
+      "bytes": 2700,
+      "mode": "100644",
+      "sha": "3f3bea71c7ec589d84fc2ed0011be52001ed05b5",
+      "sha256": "b70547524f08adefdd1976373514e449ad4227c96398e3218bc9e8076536af63",
+      "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportPostsMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportVersionSnapshot.tsx": {
       "bytes": 1938,
@@ -4775,10 +4782,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/offline-map/model/viewport.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/offline-map/ui/OfflineAstanaMap.tsx": {
-      "bytes": 19343,
+      "bytes": 19653,
       "mode": "100644",
-      "sha": "a2bc17a64cafc7a4b1420d98cb91e39fa3002213",
-      "sha256": "4f8058923238853cf6fd7b0d64f0ba54390474d5de5dee8d24afe9d5d6eb98c8",
+      "sha": "284d01b5b6899ddd9fd9ea26b9e817f1e4ae3884",
+      "sha256": "a807d731d25d04e044729623e395e208af5900f392dc52bcf0e3aeee26a1d0b2",
       "source": "PersonnelStatus/PersonalRecordFront/features/offline-map/ui/OfflineAstanaMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/offline-map/ui/PlacementMap.tsx": {
@@ -6903,10 +6910,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/portal-workspace.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/post-maps.test.cjs": {
-      "bytes": 18079,
+      "bytes": 22137,
       "mode": "100644",
-      "sha": "85d0791eaa61a7d3319709b6749090253834ac08",
-      "sha256": "5f568e15ebf3e1e546b7b777ed81012fe72d33481cebf421eb8f5fce32aa3b38",
+      "sha": "84bce349363f78e57244f305020a35e8e3e4439a",
+      "sha256": "92fb413bea7a03928244ae7471301b0386b4178c59bcf14021b8dd2a85719f2f",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/post-maps.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/profile-next-access.test.cjs": {
@@ -18904,13 +18911,13 @@
   "format": 1,
   "repository": "talasbekov/VAPS",
   "source_layout": "PersonnelStatus",
-  "source_revision": "8dd09d665103179b95d6018547791bbf4f2e3ef2",
+  "source_revision": "14949feb778998349d1b28a134a91fdea1a110b1",
   "target_layout": "Backend/PersonnelStatus",
   "verification": {
     "backendChangeInLatestCommit": false,
     "databaseAndFilesPreserved": true,
     "frontendProductionBuild": true,
-    "readOnlyBrowserChecks": 22,
-    "scope": "Accepted local 3380 application with combat duty, scoped rights and offline object/post maps; latest frontend simplification verified on desktop/mobile."
+    "readOnlyBrowserChecks": 23,
+    "scope": "Accepted local 3380 application with combat duty, scoped rights and offline object/post maps; direct post placement verified on desktop/mobile."
   }
 }
