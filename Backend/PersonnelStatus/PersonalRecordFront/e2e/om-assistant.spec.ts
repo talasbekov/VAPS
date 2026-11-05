@@ -18,6 +18,13 @@ const makeTask = (patch: Partial<AssistantTask> = {}): AssistantTask => ({
 
 async function mockReads(page: Page, permissions: string[], state: { task: AssistantTask; headquarters?: boolean; enabled?: boolean; denied?: boolean }) {
   await page.route('**/api/operations/my-permissions/**', route => route.fulfill({ json: { permissions, global_permissions: permissions, roles: [] } }));
+  await page.route('**/api/ops/security-events/**', route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const event = { id: state.task.event?.id ?? state.task.plan.eventId ?? '70', title: state.task.plan.title || 'Проверка поручения',
+      businessDate: state.task.plan.businessDate || '2026-10-25', code: 'ОМ-70' };
+    if (new URL(route.request().url()).pathname === '/api/ops/security-events/') return route.fulfill({ json: { results: [event], count: 1, next: null, previous: null, owners: [] } });
+    return route.fulfill({ json: event });
+  });
   await page.route('**/api/ops/assistant/tasks/**', route => {
     if (route.request().method() !== 'GET') return route.fallback();
     const pathname = new URL(route.request().url()).pathname;
@@ -28,6 +35,61 @@ async function mockReads(page: Page, permissions: string[], state: { task: Assis
     return route.fulfill({ json: state.task });
   });
 }
+
+for (const width of [390, 1440]) test(`existing OM selection searches and pages by name/date with retained draft and focus at ${width}px`, async ({ page, businessWrites }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await mockReads(page, ['event.create', 'event.view'], { task: makeTask() });
+  const searches: URLSearchParams[] = [];
+  await page.route('**/api/ops/security-events/**', route => {
+    const url = new URL(route.request().url());
+    const event = { id: '72', title: 'Встреча делегации', businessDate: '2026-11-05', code: 'ОМ-72' };
+    if (url.pathname.endsWith('/72/')) return route.fulfill({ json: event });
+    searches.push(url.searchParams);
+    const second = url.searchParams.get('page') === '2';
+    return route.fulfill({ json: { results: [second ? event : { ...event, id: '71', title: 'Другая встреча' }], count: 11, next: second ? null : '?page=2', previous: second ? '?page=1' : null, owners: [] } });
+  });
+  await signIn(page); await page.goto('/security-ops/assistant/');
+  await page.getByLabel('Какой наряд нужно подготовить?').fill('Сохранённый текст поручения');
+  await page.getByText('Выбрать существующее ОМ', { exact: true }).click();
+  await page.getByLabel('Название ОМ', { exact: true }).fill('Встреча');
+  await page.getByLabel('Дата ОМ', { exact: true }).fill('2026-11-05');
+  const pages = page.getByRole('navigation', { name: 'Страницы поиска ОМ' });
+  await pages.getByRole('button', { name: 'Далее', exact: true }).click();
+  const choice = page.getByRole('button', { name: /Встреча делегации.*05\.11\.2026/ });
+  await choice.click();
+  await expect(page.getByText('Выбрать другое ОМ', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Какой наряд нужно подготовить?')).toHaveValue('Сохранённый текст поручения');
+  await expect(page.getByLabel('Существующее ОМ', { exact: true })).toContainText('Встреча делегации');
+  expect(searches.some(params => params.get('page') === '2' && params.get('search') === 'Встреча' && params.get('from') === '2026-11-05' && params.get('to') === '2026-11-05')).toBeTruthy();
+  await page.getByLabel('Заполнить форму', { exact: true }).check();
+  await page.getByText('Дополнительные сведения', { exact: true }).click();
+  await expect(page.getByLabel('Существующее ОМ', { exact: true })).toContainText('Встреча делегации');
+  await page.getByLabel('Описать задачу', { exact: true }).check();
+  await page.getByRole('button', { name: 'Не связывать с ОМ', exact: true }).click();
+  await expect(page.getByText('Выбрать существующее ОМ', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Какой наряд нужно подготовить?')).toHaveValue('Сохранённый текст поручения');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  expect(businessWrites).toEqual([]);
+});
+
+test('global help uses one launcher and returns keyboard focus while preserving the selected task view', async ({ page, businessWrites }) => {
+  await mockReads(page, ['event.create'], { task: makeTask() });
+  await signIn(page); await page.goto('/workspace');
+  await expect(page.getByRole('form', { name: 'Обращение к помощнику' })).toHaveCount(0);
+  const launcher = page.getByRole('button', { name: 'Открыть ИИ-помощника', exact: true });
+  await launcher.click();
+  const panel = page.getByRole('dialog', { name: 'Помощник Smart Josparlau' });
+  await expect(panel.getByRole('tab', { name: 'Помощь по системе' })).toHaveAttribute('aria-selected', 'true');
+  await panel.getByRole('tab', { name: 'Подготовить ОМ', exact: true }).click();
+  await panel.getByLabel('Какой наряд нужно подготовить?').fill('Продолжить подготовку');
+  await page.keyboard.press('Escape');
+  await expect(launcher).toBeFocused();
+  await launcher.click();
+  await expect(panel.getByLabel('Какой наряд нужно подготовить?')).toBeFocused();
+  await expect(panel.getByLabel('Какой наряд нужно подготовить?')).toHaveValue('Продолжить подготовку');
+  await expect(panel.getByText('Нет доступа к реестру ОМ.', { exact: false })).toBeVisible();
+  expect(businessWrites).toEqual([]);
+});
 
 for (const width of [320, 1440]) for (const canEdit of [true, false]) {
   test(`interpretation notice offers a permitted next step for editable=${canEdit} at ${width}px`, async ({ page, businessWrites }) => {
@@ -205,7 +267,8 @@ test('disabled text understanding offers visible manual fields and an explicit m
   await expect(page.getByRole('button', { name: 'Подготовить по поручению' })).toHaveCount(0);
   await expect(page.getByRole('radio', { name: 'Описать задачу', exact: true })).toBeDisabled();
   await page.getByText('Дополнительные сведения', { exact: true }).click();
-  await page.getByLabel('Существующее ОМ, ID (если уже создано)').fill('70');
+  await page.getByText('Выбрать существующее ОМ', { exact: true }).click();
+  await page.getByRole('button', { name: /Проверка поручения.*25\.10\.2026/ }).click();
   await page.getByText('Запросы по департаментам', { exact: true }).click();
   await page.getByRole('button', { name: 'Добавить департамент' }).click();
   const department = page.getByRole('combobox', { name: 'Департамент 1', exact: true });
@@ -291,11 +354,20 @@ test('the 26th unfinished task remains reachable with queue page, event context 
   expect(businessWrites).toEqual([]);
 });
 
-test('a mistyped existing event ID is recovered from the queue and corrected on the same saved task', async ({ page, businessWrites }) => {
+test('an event removed after selection is recovered from the queue and replaced on the same saved task', async ({ page, businessWrites }) => {
   const state = { enabled: false, task: makeTask({ status: 'event_unavailable', event: null, canEdit: true,
     gathering: null, plan: { eventId: '999999999', intent: 'prepare', allocations: [] } }) };
   await mockReads(page, ['event.create', 'event.view'], state);
   let saved = false;
+  await page.route('**/api/ops/security-events/**', route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const pathname = new URL(route.request().url()).pathname;
+    const event = { id: '70', title: 'Доступное ОМ', businessDate: '2026-10-25', code: 'ОМ-70' };
+    const old = { ...event, id: '999999999', title: 'Удалённое ОМ' };
+    if (pathname === '/api/ops/security-events/') return route.fulfill({ json: { results: saved ? [event] : [old], count: 1, next: null, previous: null, owners: [] } });
+    if (pathname.endsWith('/999999999/') && saved) return route.fulfill({ status: 404, json: { detail: 'Мероприятие не найдено.' } });
+    return route.fulfill({ json: pathname.endsWith('/999999999/') ? old : event });
+  });
   const creates: Record<string, unknown>[] = [];
   const corrections: { pathname: string; body: { revision?: number; fields?: { eventId?: string } } }[] = [];
   await page.route('**/api/ops/assistant/tasks/**', route => {
@@ -317,7 +389,8 @@ test('a mistyped existing event ID is recovered from the queue and corrected on 
   });
   await signIn(page); await page.goto('/security-ops/assistant');
   await page.getByText('Дополнительные сведения', { exact: true }).click();
-  await page.getByLabel('Существующее ОМ, ID (если уже создано)').fill('999999999');
+  await page.getByText('Выбрать существующее ОМ', { exact: true }).click();
+  await page.getByRole('button', { name: /Удалённое ОМ.*25\.10\.2026/ }).click();
   await page.getByRole('button', { name: 'Сохранить по указанным сведениям', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Мероприятие не найдено' })).toBeVisible();
   expect(new URL(page.url()).searchParams.has('task')).toBe(false);
@@ -328,7 +401,8 @@ test('a mistyped existing event ID is recovered from the queue and corrected on 
   await expect(page).toHaveURL(new RegExp('task=' + id));
   await page.getByText('Изменить предложение запросов', { exact: true }).click();
   await page.getByText('Дополнительные сведения', { exact: true }).click();
-  await page.getByLabel('Существующее ОМ, ID (если уже создано)').fill('70');
+  await page.getByText('Выбрать другое ОМ', { exact: true }).click();
+  await page.getByRole('button', { name: /Доступное ОМ.*25\.10\.2026/ }).click();
   await page.getByRole('button', { name: 'Сохранить сведения и продолжить', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Состояние поручения' })).toContainText('Ожидается рекогносцировка');
   expect(creates).toHaveLength(1);
@@ -411,7 +485,7 @@ for (const width of [1440, 390]) test(`basic clarification and collapsed request
   await expect(page.getByLabel('Людей по поручению', { exact: true })).toHaveValue('200');
   await expect(page.getByRole('combobox', { name: 'Объект', exact: true })).toHaveValue('30');
   await page.getByText('Изменить распознанные сведения', { exact: true }).click();
-  await expect(page.getByLabel('Существующее ОМ, ID (если уже создано)')).toBeHidden();
+  await expect(page.getByLabel('Существующее ОМ', { exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Добавить департамент', exact: true })).toBeHidden();
   await page.getByLabel('Название', { exact: true }).fill('Наряд на Аккорду');
   await card.getByText('Исходное поручение', { exact: true }).click();
@@ -490,6 +564,7 @@ for (const width of [320, 1440]) test(`five dialogue turns keep one saved task a
   });
   await signIn(page); await page.goto('/security-ops/assistant?task=' + id);
   const chat = page.getByRole('region', { name: 'Переписка по поручению' });
+  await chat.getByText(/^История диалога \(/).click();
   for (const text of ['Внутреннее мероприятие, встреча', 'Второй департамент 80, шестой 120', 'Всего нужно 180', 'У шестого оставь 100', 'Дата остаётся 30 октября']) {
     await chat.getByLabel('Сообщение помощнику').fill(text);
     await chat.getByRole('button', { name: 'Отправить сообщение', exact: true }).click();
@@ -498,7 +573,8 @@ for (const width of [320, 1440]) test(`five dialogue turns keep one saved task a
     if (messages.length === 3) await expect(chat).toContainText('Сумма по департаментам 200, всего указано 180');
   }
   expect(messages).toHaveLength(5); expect(new Set(messages.map(row => row.requestKey)).size).toBe(5);
-  await page.reload(); await expect(chat.getByRole('list', { name: 'История сообщений' }).getByRole('listitem')).toHaveCount(11);
+  await page.reload(); await chat.getByText(/^История диалога \(/).click();
+  await expect(chat.getByRole('list', { name: 'История сообщений' }).getByRole('listitem')).toHaveCount(11);
   await expect(page).toHaveURL(new RegExp(`task=${id}`));
   const card = page.getByRole('region', { name: 'Состояние поручения' });
   await expect(card).toContainText('30.10.2026'); await expect(card).toContainText('Аккорда'); await expect(card).toContainText('180');
@@ -527,6 +603,7 @@ test('dialogue retains draft on lost response and retries one saved turn with th
   await page.getByRole('button', { name: 'Повторить сохранение', exact: true }).click();
   await expect(input).toHaveValue(''); expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]);
   await page.reload(); await expect(page.getByText('Сообщение сохранено. Ожидает обработки.', { exact: true })).toBeVisible();
+  await page.getByText(/^История диалога \(/).click();
   await expect(input).toBeDisabled(); await expect(page.getByRole('list', { name: 'История сообщений' }).getByRole('listitem')).toHaveCount(2);
   state.task = { ...state.task, canMessage: true, processing: { state: 'failed', attempt: 1, retryable: true, error: 'Модель недоступна' } };
   await page.getByRole('button', { name: 'Обновить состояние', exact: true }).click();

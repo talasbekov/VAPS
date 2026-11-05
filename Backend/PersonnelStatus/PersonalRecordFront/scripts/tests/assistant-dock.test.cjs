@@ -34,6 +34,18 @@ test('pending chat does not start a second submission, and new questions open di
  assert.equal(m.submitDock(state,'a','new question'),null);
  assert.equal(m.submitDock({...state,chatPending:false},'a','new question').view,'chat');
 });
+test('first opening on an event prepares that OM only with assistant authority; reopening retains work',()=>{
+ const m=model(),empty=m.visibleDock(null,'a');
+ const context=m.openDock(empty,'a','/security-ops/events/70/',true);
+ assert.equal(context.view,'tasks');assert.equal(context.eventId,'70');assert.equal(context.open,true);
+ assert.equal(m.openDock(empty,'a','/workspace',true).view,'chat');
+ assert.equal(m.openDock(empty,'a','/security-ops/events/70/',false).eventId,null);
+ assert.equal(m.openDock(empty,'a','/security-ops/events/new/',true).eventId,null);
+ const existing={...context,open:false,view:'chat',taskId:'saved',taskMessage:'draft',page:3};
+ const reopened=m.openDock(existing,'a','/security-ops/events/99/',true);
+ assert.equal(reopened.eventId,'70');assert.equal(reopened.taskId,'saved');assert.equal(reopened.view,'chat');
+ assert.equal(reopened.taskMessage,'draft');assert.equal(reopened.page,3);
+});
 test('global owner includes status-management and duty scopes through the existing authority key',()=>{
  let data={permissions:['event.create'],global_permissions:['event.create'],roles:[],status_manage_division_ids:[1],duty_register_scope:{read:['1']}};
  const React=require('react'),modules=new Map();
@@ -44,7 +56,8 @@ test('global owner includes status-management and duty scopes through the existi
   if(name==='@tanstack/react-query')return {useQueryClient:()=>({getQueryState:()=>({status:'success',data})})};
   if(name==='@/hooks/use-ops-permissions')return {useOpsPermissions:()=>({permissions:new Set(data.permissions),globalPermissions:new Set(data.global_permissions),roles:[],isLoading:false,error:null})};
   if(name==='@/lib/ops-errors')return {OpsServerError:class extends Error{}};
-  if(name==='next/navigation'||name==='lucide-react'||name.includes('.module.css')||name==='next/link'||name==='./chat')return {};
+  if(name==='next/navigation')return {usePathname:()=>'/workspace'};
+  if(name==='lucide-react'||name.includes('.module.css')||name==='next/link'||name==='./chat')return {};
   if(name==='@/features/portal-workspace/model'||name==='@/features/om-assistant/workspace'||name==='@/features/om-assistant/model')return {};
   const file=name==='./model'?path.join(__dirname,'../../features/assistant-dock/model.ts'):path.join(__dirname,'../..',name.slice(2)+'.ts');
   if(modules.has(file))return modules.get(file);const exports={};modules.set(file,exports);

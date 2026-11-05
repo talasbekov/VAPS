@@ -21,7 +21,7 @@ export function PortalWorkspace() {
   const ready = !access.isLoading && !access.error && access.permissions !== undefined;
   const hasAssistant = all.some(task => task.id === 'assistant');
   const lead = tasks.primary[0];
-  const showLead = kind === 'admin' || kind === 'status';
+  const showLead = kind === 'admin' || kind === 'status' || kind === 'expense' || kind === 'duty';
   const scope = [...new Set(access.roles.map(role => role.scope_division_name).filter(Boolean))].join(' · ');
   return <DashboardLayout><div className={styles.desk}>
     <header>
@@ -41,8 +41,9 @@ export function PortalWorkspace() {
         {showLead && lead && <section className={styles.lead} aria-label="Главное действие">
           <h2>{lead.title}</h2><p>{lead.description}</p><Link href={lead.href} className={styles.action}>{lead.title}<ArrowRight className="size-4" aria-hidden /></Link>
         </section>}
+        {(kind === 'expense' || kind === 'duty') && all.some(task => task.id === 'department-forces') && <DepartmentWorkQueue />}
         {kind === 'commander' && <AssistantWorkQueue />}
-        {kind === 'department' && hasAssistant && <details className={styles.panel}><summary className="cursor-pointer p-5 text-sm font-semibold">Мои поручения по ОМ</summary>
+        {['department', 'expense', 'duty'].includes(kind) && hasAssistant && <details className={styles.panel}><summary className="cursor-pointer p-5 text-sm font-semibold">Мои поручения по ОМ</summary>
           <AssistantWorkQueue />
         </details>}
         {kind === 'admin' && <section className={`${styles.panel} ${styles.empty}`} aria-label="Как настроить доступ">

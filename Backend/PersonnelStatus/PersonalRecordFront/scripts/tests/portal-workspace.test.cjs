@@ -14,6 +14,45 @@ function access(codes=[],roles=[],global=codes) {
     hasPermission:code=>codes.includes('*')||codes.includes(code),hasGlobalPermission:code=>global.includes('*')||global.includes(code)};
 }
 const ids = rows=>Array.from(rows,row=>row.id);
+test('expense responsibility leads to daily submission while retaining requests and headquarters',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  const result=portalWorkspace(access(['forces.allocate','forces.command','status.view','status.workspace','duty.manage'],['DEPARTMENT_EXPENSE_OFFICER','DUTY_PLANNER'],[]));
+  assert.equal(result.primary[0].id,'daily');
+  assert.equal(result.primary[0].href,'/employees?view=daily');
+  const all=[...result.primary,...result.more];
+  for(const id of ['department-forces','headquarters','duties','statuses']) assert.ok(all.some(task=>task.id===id),id);
+  for(const missing of ['forces.allocate','status.view']) {
+    const restricted=portalWorkspace(access(['forces.allocate','status.view'].filter(code=>code!==missing),['DEPARTMENT_EXPENSE_OFFICER'],[]));
+    assert.ok(![...restricted.primary,...restricted.more].some(task=>task.id==='daily'));
+  }
+});
+test('duty planning precedes generic personnel and opens a section its permissions allow',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  for(const [grant,section] of [['duty.manage','roster'],['duty.roster','combat'],['duty.combat.manage','combat'],['duty.dispatch','shifts']]) {
+    const result=portalWorkspace(access(['status.view','status.workspace',grant],['DUTY_PLANNER'],[]));
+    assert.equal(result.primary[0].id,'duties',grant);
+    assert.equal(new URLSearchParams(result.primary[0].href.split('?')[1]).get('section'),section,grant);
+  }
+  const denied=portalWorkspace(access(['status.view','status.workspace'],['DUTY_PLANNER'],[]));
+  assert.ok(![...denied.primary,...denied.more].some(task=>task.id==='duties'));
+});
+test('global administrator wins mixed daily and duty responsibilities but scoped admin never does',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  const codes=['admin.roles','forces.allocate','status.view','duty.manage'];
+  const roles=['DEPARTMENT_EXPENSE_OFFICER','DUTY_PLANNER'];
+  assert.equal(portalWorkspace(access(codes,roles)).primary[0].id,'users');
+  const scoped=portalWorkspace(access(codes,roles,[]));
+  assert.equal(scoped.primary[0].id,'daily');
+  assert.ok(![...scoped.primary,...scoped.more].some(task=>task.id==='users'));
+});
+test('daily action promises submission only with the existing summary write grant',()=>{
+  const {portalWorkspace}=load('@/features/portal-workspace/model');
+  for(const writable of [false,true]) {
+    const result=portalWorkspace(access(['status.view','forces.allocate',...(writable?['daily_report.generate']:[])],['DEPARTMENT_EXPENSE_OFFICER'],[]));
+    assert.equal(result.primary[0].id,'daily');
+    assert.equal(result.primary[0].title,writable?'Сдать расход департамента':'Проверить расход департамента');
+  }
+});
 test('employee gets their own work first without registers filling the home',()=>{
   const {portalWorkspace}=load('@/features/portal-workspace/model');
   const result=portalWorkspace(access(['status.view','status.workspace','catalog.view','object.view'],['EMPLOYEE']));

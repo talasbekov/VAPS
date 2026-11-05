@@ -1,9 +1,11 @@
 import type { DepartmentRequestRow } from '@/entities/security-event';
 
-export type WorkdeskKind = 'admin' | 'department' | 'commander' | 'status' | 'resources' | 'personal';
+export type WorkdeskKind = 'admin' | 'expense' | 'duty' | 'department' | 'commander' | 'status' | 'resources' | 'personal';
 /** Presentation from already-authorized destinations, never an authorization rule. */
 export function workdeskKind(tasks: readonly { id: string }[], administrator: boolean, calculation = false): WorkdeskKind {
   if (administrator) return 'admin';
+  if (tasks[0]?.id === 'daily') return 'expense';
+  if (tasks[0]?.id === 'duties') return 'duty';
   if (tasks.some(task => task.id === 'department-forces')) return 'department';
   if (tasks.some(task => task.id === 'assistant')) return 'commander';
   if (tasks.some(task => task.id === 'statuses')) return 'status';
@@ -13,9 +15,11 @@ export function workdeskKind(tasks: readonly { id: string }[], administrator: bo
 
 export const WORKDESK_COPY: Record<WorkdeskKind, { title: string; description: string }> = {
   admin: { title: 'Доступ и пользователи', description: 'Учётные записи, рабочие роли и доступ к подразделениям.' },
+  expense: { title: 'Ежедневный расход', description: 'Сдача подразделений и свод на выбранную дату.' },
+  duty: { title: 'Дежурства', description: 'Состав на выбранную дату, места дежурства и назначения.' },
   department: { title: 'Работа департамента', description: 'Запросы на людей и ежедневная работа вашего подразделения.' },
   commander: { title: 'Поручения и подготовка наряда', description: 'Поставьте задачу и следите за её выполнением здесь.' },
-  status: { title: 'Люди и ежедневная работа', description: 'Отметьте изменения по сотрудникам и проверьте дежурства.' },
+  status: { title: 'Люди и ежедневная работа', description: 'Присутствие и доступность сотрудников вашего подразделения.' },
   resources: { title: 'Расчёт сил и средств', description: 'Планируйте маршруты, группы и технику по охранному мероприятию.' },
   personal: { title: 'Мои задания и дежурства', description: 'Ближайшее назначение и всё необходимое для вашей работы.' },
 };

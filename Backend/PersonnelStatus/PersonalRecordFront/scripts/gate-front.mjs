@@ -88,6 +88,7 @@ try {
     run("scripts/tests/profile-next-panel.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/profile-next-link.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/expense-workspace-actions.test.cjs", [], process.env, ["--test"]);
+    run("scripts/tests/responsible-daily-presentation.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/expense-workspace-snapshot.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/department-workspace-role.test.cjs", [], process.env, ["--test"]);
     run("scripts/tests/workspace-daily-scope.test.cjs", [], process.env, ["--test"]);

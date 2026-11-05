@@ -1,5 +1,5 @@
 {
-  "base_revision": "61e764e075a043710bb339f722b706cd13d82ab1",
+  "base_revision": "c9c087420a0a82c7044e7f423baabcfad6e1a054",
   "excluded_categories": [
     "runtime credentials and database/media backups",
     "external docs/vault notes",
@@ -302,10 +302,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/app/security-ops/layout.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx": {
-      "bytes": 25241,
+      "bytes": 18557,
       "mode": "100644",
-      "sha": "6cc0b7c28fc3745674da9c69f4e4c93a089c529e",
-      "sha256": "07e97bb4812291c1257bf015f9c2bfe09a03314d134d3c03854378251d726fad",
+      "sha": "61cc197662df76778dcf3876230b75668257bc79",
+      "sha256": "929b783ca70d9c0c8e86e038e8780a91144543a1bf4a709cb736506e1b3f7058",
       "source": "PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/page.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/objects/[id]/passports/[versionId]/page.tsx": {
@@ -470,10 +470,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/app/settings/permissions/page.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/settings/roles/page.tsx": {
-      "bytes": 25684,
+      "bytes": 25591,
       "mode": "100644",
-      "sha": "501414be779fbf421de21e153f765a90e8d473d4",
-      "sha256": "4b5bba174392ea3a16b91a0ee2b72714ce963cb3a434dbe5b1fa764d5bb01860",
+      "sha": "3f51292d822445c158fe7f2d0c99303d4ec93ef3",
+      "sha256": "36fa3341c737260f98cc621908fb48bdf7dded324c84749cb62eaf3eca6c93b0",
       "source": "PersonnelStatus/PersonalRecordFront/app/settings/roles/page.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/app/settings/users/account-employee-link.tsx": {
@@ -526,10 +526,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/components/api-gap-notice.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/components/dashboard-layout.tsx": {
-      "bytes": 14869,
+      "bytes": 14757,
       "mode": "100755",
-      "sha": "3768ba233ee50030d76f5160e4d9f8d51b1f3d7a",
-      "sha256": "7135098ee97a5fab6dceaacc55d4eb09622733d4f36776702693d248d0ab1a4e",
+      "sha": "7e9940d9513835b129d13a9e7da60b3d4e75701a",
+      "sha256": "7d6c2e134db5af3316671efb104c8f3dd1cdadf50f84e9c4abee767874516d80",
       "source": "PersonnelStatus/PersonalRecordFront/components/dashboard-layout.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/components/dashboard/stats-cards.tsx": {
@@ -967,10 +967,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/access-matrix-menu.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/access-multi-role.spec.ts": {
-      "bytes": 21883,
+      "bytes": 21881,
       "mode": "100644",
-      "sha": "ad57c3864287136873b6dd9aeb808df78193f228",
-      "sha256": "9e836003fb6a9ffb9be8d8159594454cd3e6f44bc8f2fc83f8e2dbaa88e3c3cf",
+      "sha": "b4fd6aca97a796d7384fb35782664eff488f95db",
+      "sha256": "14ec5524ae400784e968ff4432a6948cb6418199fae1ccc53fad1d9eb2e69780",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/access-multi-role.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/access-permissions.spec.ts": {
@@ -988,10 +988,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/access-role-scope-readiness.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/access-roles.spec.ts": {
-      "bytes": 14219,
+      "bytes": 14228,
       "mode": "100644",
-      "sha": "87d33f267b842dd94d6f4f23a4c4965c20476ab7",
-      "sha256": "c8120ffe0cc926a3768e9adb34b301ea21a2da907e075261f36b5624a8606f52",
+      "sha": "25e8c22afd29c7528c37259a5150208ad2f244ca",
+      "sha256": "6df22032f2a9a5a544766ea8070fb55f96a0b188265d3aceffe6620527d33b51",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/access-roles.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/access-users.spec.ts": {
@@ -1975,10 +1975,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/notifications-feed.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/object-passport.spec.ts": {
-      "bytes": 23518,
+      "bytes": 15831,
       "mode": "100644",
-      "sha": "28d97452523554812bfc48ab3994cc1438d84578",
-      "sha256": "537446630d2afa0813e7790b52ec7e35bcdb84131abfcf27b6f9868ea5e3c765",
+      "sha": "02190300cc0444f53fb8f2b86597c3fb627fa3bb",
+      "sha256": "0228da77dd4c66c1560f5520e2cf3603e8041d9e4b46968cf2fdd96b2c00d29f",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/object-passport.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/objects-tabs.spec.ts": {
@@ -2003,10 +2003,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/om-assistant-real.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/om-assistant.spec.ts": {
-      "bytes": 46194,
+      "bytes": 52778,
       "mode": "100644",
-      "sha": "e0a198875fddbf3e6ee53f933802a47ef621c77e",
-      "sha256": "8e93669bf03237612000f34be571f4b0da5427c5f69d654c0b8d9adf56893d56",
+      "sha": "1c64b944a76e4d6fd3561f7df9d10d57661b25a4",
+      "sha256": "9813875afd73244396357b82bca37fdf050d459c6123ab5ec1f42261f98e1f3f",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/om-assistant.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/operations-analytics.spec.ts": {
@@ -2164,10 +2164,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/portal-start.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/portal-workspace.spec.ts": {
-      "bytes": 10678,
+      "bytes": 10694,
       "mode": "100644",
-      "sha": "8989d95f515724f20079253923f19aff410c529f",
-      "sha256": "3c0b23478087d868258522018cb3e20e40c1af1fb6baa5953821c9e4f4567a5b",
+      "sha": "ad42ada8a629849ea9beeb4e000f0e621f5bb89d",
+      "sha256": "f7f1322179563e7b94dd48e858e232dcb37288ce360d2d7428f1e58283608fdb",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/portal-workspace.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/prepare-events.ts": {
@@ -2318,10 +2318,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/resource-calculation.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/responsible-daily-expense.spec.ts": {
-      "bytes": 24676,
+      "bytes": 24659,
       "mode": "100644",
-      "sha": "586ffbe0618fe00bce0c2dfb373f88741b07aacd",
-      "sha256": "d099460f55c09ae4717e7f218f6a0411aeaf5ede8c01c07be9329ede31c7d22d",
+      "sha": "dfdef656d1d5774416130d91965867d4d4fe34f7",
+      "sha256": "f1a48545104b872ba2f57d2cfffe355dd135703c13ef25baa1f518191a1c561f",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/responsible-daily-expense.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/right-hint-pattern.spec.ts": {
@@ -2737,6 +2737,13 @@
       "sha256": "d16853de9a097933a5d1b0c82e9681644c133c1d0a7a0029ee77e4026c67497c",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-collections-layout.spec.ts"
     },
+    "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-combat-first-assignment.spec.ts": {
+      "bytes": 4135,
+      "mode": "100644",
+      "sha": "8f8ae0b451ba8d16f826c1d2c4ed3214d47a37d4",
+      "sha256": "6d156ecfaada76049809deb112509ac4adda3c00d1dfb35d0a5fc2bd0c2307c4",
+      "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-combat-first-assignment.spec.ts"
+    },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-daily-status-catalog.spec.ts": {
       "bytes": 7940,
       "mode": "100644",
@@ -2941,10 +2948,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-multi-object-forces.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-object-map.spec.ts": {
-      "bytes": 17744,
+      "bytes": 20656,
       "mode": "100644",
-      "sha": "7790c9a897e7ade93d3fbdfe8fec3f26a3e4e6fd",
-      "sha256": "7bbe2449fcd5131c995926db922e4e305f3851ca19cfdd1f1991f87279bff984",
+      "sha": "f787df9cf8684092110263afc85874f03bdc4658",
+      "sha256": "a92ed89df6539720efe229613b6e1f1768cd0d514910fe294f0c5ffd7dea8286",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-object-map.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-objects-registry-scenario.spec.ts": {
@@ -2969,10 +2976,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-org-organizations.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-passport-drafts.spec.ts": {
-      "bytes": 10896,
+      "bytes": 10864,
       "mode": "100644",
-      "sha": "779cd3e1ae349e439b291ee72ada57ca8f643b4a",
-      "sha256": "011b6bcfee51e0c512428bb678685a6200b4029816cf36467b0ea4190aaf5a74",
+      "sha": "d2f23cb340042546be8631a481e39bac13383f95",
+      "sha256": "a1823dfbc929241916e1483a5fec82665448926d5c2bdb29c6c910b52b91b6b7",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-passport-drafts.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-passport-read-recovery.spec.ts": {
@@ -3102,10 +3109,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-retired-workflows.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-role-focused-start.spec.ts": {
-      "bytes": 9607,
+      "bytes": 11240,
       "mode": "100644",
-      "sha": "33826ce45dfb8a3f29522007e863916806da0d8e",
-      "sha256": "fc440be0f71cdd9dba579324024f431891204a889f3d3d039ff23242adc8ff5c",
+      "sha": "1ee8e9b2eb76b6c0469ab3485d0bdfe204a401f6",
+      "sha256": "1f26add29763f6e00fec9e4b457a9e643b5c9de0bd53c5ea54972bf5790e3a20",
       "source": "PersonnelStatus/PersonalRecordFront/e2e/ux-role-focused-start.spec.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/e2e/ux-service-employees-scope.spec.ts": {
@@ -3718,17 +3725,17 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/approval-route/ui/ApprovalRouteCard.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/assistant-dock/assistant-dock.module.css": {
-      "bytes": 6328,
+      "bytes": 5166,
       "mode": "100644",
-      "sha": "1299872ffd2967a75cf7f70af77b6f7aef5280e1",
-      "sha256": "ff997ee901c4b9d9010e1c4e159f8121ea66039c2f0a8d733263c522e0b704f8",
+      "sha": "f4db7294dac82bf667e701c8e1f39dd1b55e87a5",
+      "sha256": "9834d23c45c7253dab78ecf7fdc741f39323f8a4a134ac79f36f3ea7c0784975",
       "source": "PersonnelStatus/PersonalRecordFront/features/assistant-dock/assistant-dock.module.css"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/assistant-dock/assistant-dock.tsx": {
-      "bytes": 10322,
+      "bytes": 8275,
       "mode": "100644",
-      "sha": "91be2909ef8d225629b4de2a3d62dc57a07070d5",
-      "sha256": "6582cd72e4071e0fdcfa34f79f5b1fadab2cc7318ef0550293b9eff53461b8d6",
+      "sha": "adb2f3892d4d1cea0d7a0e90e1a735226866b250",
+      "sha256": "7d35053348a2b4efa64ee2d8fe65bb69cd2dead88b24a5d75fcee2aa991a05f0",
       "source": "PersonnelStatus/PersonalRecordFront/features/assistant-dock/assistant-dock.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/assistant-dock/chat-model.ts": {
@@ -3746,10 +3753,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/assistant-dock/chat.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/assistant-dock/model.ts": {
-      "bytes": 1579,
+      "bytes": 2029,
       "mode": "100644",
-      "sha": "ae59c4322088bbbea0d7caea1b209d67d1eef085",
-      "sha256": "19889393fe84e34f0ec8bbd2182a93fd1ed4e495879192b125ae5d90000b2a4a",
+      "sha": "3129c67c95c836005e7ccc5638d68181468ba9f1",
+      "sha256": "36e64b57178c9da6f765baa4280989231604a047d7e31e2a66d6388ee99aaa95",
       "source": "PersonnelStatus/PersonalRecordFront/features/assistant-dock/model.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatAssignmentDetails.tsx": {
@@ -3767,17 +3774,17 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatCatalogs.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyBoard.tsx": {
-      "bytes": 10863,
+      "bytes": 11444,
       "mode": "100644",
-      "sha": "c90677e25e5ab3a479a870d0862ce114de781d61",
-      "sha256": "2da4f1683b8e6e6db682713dbef95929cb5b0936d055ee88d0694a89c178ed19",
+      "sha": "1cb66003e098552e72febda7895281033e242eac",
+      "sha256": "3c6506a66798b7d1149db4ee43d29b5a1bb2f9b3a888733d03a650f7f18b3297",
       "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyBoard.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyMap.tsx": {
-      "bytes": 2932,
+      "bytes": 2933,
       "mode": "100644",
-      "sha": "1a486a43c4315281f7c6753038bfc8463ef2910d",
-      "sha256": "9aaa02930a9f10ecdf1bac7feff96c13f0237f1e2fa822b84b6414a3f23a2990",
+      "sha": "c010bddd86a71d13a14ca7e8421ef1db85a4451e",
+      "sha256": "77e6f0cef4f7fec8e2dda44af0a71725936c96023e8ea61fcebed6a386101acd",
       "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyTable.tsx": {
@@ -3787,11 +3794,18 @@
       "sha256": "1626b9b9248c8c571a4dd0999f46c30ba02113b5b7764a1e3a499905fe9645ff",
       "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatDutyTable.tsx"
     },
-    "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatGroupForm.tsx": {
-      "bytes": 15822,
+    "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatFirstSetup.tsx": {
+      "bytes": 4099,
       "mode": "100644",
-      "sha": "53a4ce6d59b97dad91b677a22acc0475ac2d238d",
-      "sha256": "c9e8e94a64c3f66fdda1b80922bc51a98df4f715741b0e920889ccde2fadac00",
+      "sha": "0844f9b48982110742eab317272a24f50f6612eb",
+      "sha256": "002b2ab5bc4a5bfcdb025c4933ca2bfe72f43d40a818e134f02b8e74e1837337",
+      "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatFirstSetup.tsx"
+    },
+    "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatGroupForm.tsx": {
+      "bytes": 16931,
+      "mode": "100644",
+      "sha": "4ed76cfacb5f58afa2d1fa9c204f668afc7f6585",
+      "sha256": "efa27586b776b7afc884425e3d2587d1dda952a6fe0473906cdb80a86058494e",
       "source": "PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatGroupForm.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/combat-duty/ui/CombatLocationFields.tsx": {
@@ -3935,10 +3949,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/LeadershipStrip.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/ResponsibleDailyExpense.tsx": {
-      "bytes": 35363,
+      "bytes": 36177,
       "mode": "100644",
-      "sha": "de6b79a5cc73bad753b0bfd67b0ef032ca01102b",
-      "sha256": "4bcab1f60de77cb3e33dafda1eed9bbb277d00fd735bc8cbb8804ecda5dd19fa",
+      "sha": "435738b0c734fa62a666cf6878902d42fb8d7bca",
+      "sha256": "3f1bd5eb700dcff776e4b983c67a1c7442a3376f44e4eed43794f3f61ddf9acb",
       "source": "PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/ResponsibleDailyExpense.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/SetStatusDialog.tsx": {
@@ -3991,10 +4005,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/VersionSnapshot.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/responsible-daily.module.css": {
-      "bytes": 10445,
+      "bytes": 10560,
       "mode": "100644",
-      "sha": "5f5f69a6279b7817a7f4598cb0c95c9f5fc9bb1c",
-      "sha256": "b6f97bc3869e92136bf7f9d2425fd5a8d2ce929f9eb5094c575158350bc4281d",
+      "sha": "59a035ce074a7187b2e611f7da9ece7a4046ba55",
+      "sha256": "34e2ca17373daae7b9f31188a04f9f86c412cb7897238f1d0b140704db13afd6",
       "source": "PersonnelStatus/PersonalRecordFront/features/daily-expense/ui/responsible-daily.module.css"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/department-requests/index.ts": {
@@ -4558,10 +4572,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/forces-workspace/ui/EventForcesLink.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/forces-workspace/ui/ForcesWorkspace.tsx": {
-      "bytes": 12413,
+      "bytes": 12255,
       "mode": "100644",
-      "sha": "eefa250523aef4cec0ad0652cadb565c8e6b4da0",
-      "sha256": "21adb53d8924c69fc2c30303c45d383dbf37e4d2cc13e299615cced4a77f4968",
+      "sha": "f526aa5e13ab5cd0baddb3c140885cde7dbcf6e1",
+      "sha256": "d08a2aa3d4b50128d37b75ecf5004c139169ed7da1090ddc27a85f457f7cbf31",
       "source": "PersonnelStatus/PersonalRecordFront/features/forces-workspace/ui/ForcesWorkspace.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/forces-workspace/ui/workspace.module.css": {
@@ -4677,17 +4691,17 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/ui/LocalObjectMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectLocationEditor.tsx": {
-      "bytes": 9056,
+      "bytes": 8984,
       "mode": "100644",
-      "sha": "bfad5356d7cb3d08d02c51758f96b9f281daa2ce",
-      "sha256": "bd6d4f641f869467d22127041593b3a14b8f8efab36d11971b2fe7c3aa96ccc6",
+      "sha": "033562546961fbc0e6c9265266209aa314d8661b",
+      "sha256": "b620d0cbc91574509216f2620c2200988ffe906c1a60fb58130db26c291c9cf7",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectLocationEditor.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectLocationMap.tsx": {
-      "bytes": 2447,
+      "bytes": 2601,
       "mode": "100644",
-      "sha": "e7125182f2ea3b4e54ddecdf3c93b6d577d21222",
-      "sha256": "d7259736b4345572c9596fa5679bced363d4a6d9c845690ea05fb54b0d498610",
+      "sha": "56f5106b40272e819140b032ad4fc42ca82b6d5a",
+      "sha256": "d5112fed242bf0fa7294b0dff987caabb8c7ee464f2b6eadf9260d750f1d54ad",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectLocationMap.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-map/ui/ObjectsMap.tsx": {
@@ -4705,10 +4719,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/object-map/ui/PostLocationSummary.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/index.ts": {
-      "bytes": 406,
+      "bytes": 220,
       "mode": "100644",
-      "sha": "605dae575ee8b43cfd0a63462ad90f45d1fc3584",
-      "sha256": "2f1a12d9530214c372805dcf97b3e600ac589dc98f98105311644cd6d7251792",
+      "sha": "cd5533117e82dc107f733e3acab7de025ac3164b",
+      "sha256": "e5695146a928e373870e420bb5b3d0014e76022a681e586f22a7f8749afe45b6",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/index.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportForm.tsx": {
@@ -4717,13 +4731,6 @@
       "sha": "025f766f1fd364f9ae59ffb79c2401e3f347b18a",
       "sha256": "2611d74d756f65889db223a45f1a57ad13fdc8bfdd622db2eea28148e0c70d63",
       "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportForm.tsx"
-    },
-    "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportPlannedTabs.tsx": {
-      "bytes": 8740,
-      "mode": "100644",
-      "sha": "4f7a0061d76094d4fc87f58087d675021bf4c7dc",
-      "sha256": "24fbf3870d9fbdb2bb356d73f9fc98643fd9d8a282cecd3468d4fef0e84d68c5",
-      "source": "PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportPlannedTabs.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/object-passport/ui/PassportVersionSnapshot.tsx": {
       "bytes": 1938,
@@ -4809,6 +4816,13 @@
       "sha256": "8e25db2ce9245dbcfad0a2e64ac3a60bf83a8a074a137bfc40126e3bd9e7d41a",
       "source": "PersonnelStatus/PersonalRecordFront/features/om-assistant/conversation.tsx"
     },
+    "Backend/PersonnelStatus/PersonalRecordFront/features/om-assistant/event-picker.tsx": {
+      "bytes": 6506,
+      "mode": "100644",
+      "sha": "9f569592e619579e7642118c4a56427aa8593b9a",
+      "sha256": "f401ea4ab628c213346a9fe032d21f6487a6f73d2d7638676be71ea91db548b7",
+      "source": "PersonnelStatus/PersonalRecordFront/features/om-assistant/event-picker.tsx"
+    },
     "Backend/PersonnelStatus/PersonalRecordFront/features/om-assistant/home-entry.tsx": {
       "bytes": 1945,
       "mode": "100644",
@@ -4838,10 +4852,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/om-assistant/progress.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/om-assistant/workspace.tsx": {
-      "bytes": 53514,
+      "bytes": 53471,
       "mode": "100644",
-      "sha": "e5a79aa68defd79bf642b2de86b00fde10aa9244",
-      "sha256": "b1132c3522f3dd81512f60186ab53c14ce9557c710823876708f155406ad8ee6",
+      "sha": "07ee12c69ac625f51bc14941bc8afe889d15fafe",
+      "sha256": "0e0fb7a7f9a305c8689c499db9bcc7676d5c44ff5ed3c971c5e58e75386f5410",
       "source": "PersonnelStatus/PersonalRecordFront/features/om-assistant/workspace.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/ops-changelog/changelog-view.tsx": {
@@ -5041,17 +5055,17 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/personnel-picker/ui/PersonnelPicker.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/portal-workspace/desk-model.ts": {
-      "bytes": 4284,
+      "bytes": 4728,
       "mode": "100644",
-      "sha": "3780bf2b2fdda33ad4d4112fa53348d1becd8f82",
-      "sha256": "0faaabd8fcd1e6e4090499407e3ce382a5968273caa516bd0f1d6bd5c90994e0",
+      "sha": "abcec0428d4e1784d3bc2a4d819862778511ea6b",
+      "sha256": "2a36091f6a14d0014571118d3a1d3f143851e540dc5620eb7f1009984b68d81d",
       "source": "PersonnelStatus/PersonalRecordFront/features/portal-workspace/desk-model.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/portal-workspace/model.ts": {
-      "bytes": 7141,
+      "bytes": 8081,
       "mode": "100644",
-      "sha": "9c43241925136c9cd1fccdb29f17f38b5d2b64ba",
-      "sha256": "77cef32923a37511e05a61d0c63f72c3997f44f1c77c5563851e9121ddb46aca",
+      "sha": "1fc472b8dced1b0f65999a4f5f00542333c1cfab",
+      "sha256": "fc4bf3b5d4f8f68c130ab60d571618fa2309f1d76e0300a593f50a10d5f034aa",
       "source": "PersonnelStatus/PersonalRecordFront/features/portal-workspace/model.ts"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/portal-workspace/work-queues.tsx": {
@@ -5069,10 +5083,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/features/portal-workspace/workspace.module.css"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/portal-workspace/workspace.tsx": {
-      "bytes": 3660,
+      "bytes": 3858,
       "mode": "100644",
-      "sha": "57d107bc33745bf7813df74c98a57bc771a3c6b4",
-      "sha256": "d70871206758f27fca1ca4fc0610752f62842f6f9850d5b1ecf2501f9bb2e864",
+      "sha": "78c594742bba1ae2b4d285e06cc787bcedc1f8a1",
+      "sha256": "3e8b44193a5920b065e3907a0f0f5756887f52f8caa9aeacf2da1f7e640fc8e0",
       "source": "PersonnelStatus/PersonalRecordFront/features/portal-workspace/workspace.tsx"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/features/secondment-requests/api/secondment-requests-api.ts": {
@@ -6483,10 +6497,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/ensure-worktree-deps.sh"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/gate-front.mjs": {
-      "bytes": 8664,
+      "bytes": 8759,
       "mode": "100644",
-      "sha": "8607411a63ac1766a76e1e09c5bdb7d7b3d43ca1",
-      "sha256": "84a944ae0b206119191c8c5eefbbf68c43cdde0c25a5efce9cea687d4f013c7b",
+      "sha": "d93836e0d486dd3865ac8fb3df6b99c335a52cfb",
+      "sha256": "5977227a54e746508ba3573e21469433e9a1150c4c2bdc667e76aaede588888b",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/gate-front.mjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/neighbours.sh": {
@@ -6567,10 +6581,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/assistant-chat.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/assistant-dock.test.cjs": {
-      "bytes": 5721,
+      "bytes": 6691,
       "mode": "100644",
-      "sha": "224a5e535a5c941aba0a0472e499272e0bb6ac39",
-      "sha256": "92557f895aada382543699cb692411722c02a084226cd1fe0d1e7770492996b2",
+      "sha": "09c7d993e16d73784d83370a5e32425270d9f941",
+      "sha256": "c0d303361e30ba62d9bac2637bc9cae498bb981660a1f211faf1ce0b4ef44a82",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/assistant-dock.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/assistant-progress.test.cjs": {
@@ -6602,10 +6616,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/check-shot-paths.test.mjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/combat-group-wizard.test.cjs": {
-      "bytes": 8246,
+      "bytes": 8305,
       "mode": "100644",
-      "sha": "23c7c2eb79b794023468d2d5be90d6c72d3205e0",
-      "sha256": "587f2f2c2fba359850861a98f72c763e945ed56eedc39c93e46f9341945bb7ce",
+      "sha": "912334b763541f9cd19f91adcbaa79e26720c57a",
+      "sha256": "fefccca9bffe76c69d7cdd297d13191f655d3e62d8f4bc2d0ccce354a31cab6a",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/combat-group-wizard.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/combat-smoke-command.test.cjs": {
@@ -6616,10 +6630,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/combat-smoke-command.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/combat-ui-regressions.test.cjs": {
-      "bytes": 16412,
+      "bytes": 22138,
       "mode": "100644",
-      "sha": "d3bdbbc31d0d1d504e7cb7d28f4471359565173c",
-      "sha256": "fa6ea2fc4e0832061fe223ceefe6898fbfd0a6d60c2e77ceb4dd7cce70e2b90e",
+      "sha": "d51b3d5f9dc724bf68a51bfd43e6baf08a4d18ac",
+      "sha256": "910d39d2200411873c813e5d794a89a37e164ddd50bf481b8ec217cc686d9bb6",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/combat-ui-regressions.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/daily-report-range.test.cjs": {
@@ -6728,10 +6742,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/expense-reminder-link.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/expense-workspace-actions.test.cjs": {
-      "bytes": 9806,
+      "bytes": 10693,
       "mode": "100644",
-      "sha": "1ba93c98bb4cdfabda4433f1dc102470a396e821",
-      "sha256": "1e4f37890b0a3a0e2cfb816dc902c3e0c80dcb403ffb3454a96fae3953871420",
+      "sha": "8974860a814eae0bb263331d1dcff4ecf3724826",
+      "sha256": "85515fc9bbe7881f9ab8f35d276389375efa3f958e7625fb87e8f5c201923e18",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/expense-workspace-actions.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/expense-workspace-snapshot.test.cjs": {
@@ -6833,10 +6847,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/object-map.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/om-assistant.test.cjs": {
-      "bytes": 113957,
+      "bytes": 120466,
       "mode": "100644",
-      "sha": "bc31f013ed560569e7f0dd526ba39af96ab51b8a",
-      "sha256": "77ced1787f1690a01ae6d455afdc93f3d2213e967b0da91a92bb4fd328d9e27c",
+      "sha": "034953dac264a077614b5597839a3be10baa99f9",
+      "sha256": "3a4d590caa0e22506dd418f0743ba0c17277d83db672197e0fbb96c2ee76b5ff",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/om-assistant.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/ops-permissions-state.test.cjs": {
@@ -6882,17 +6896,17 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/portal-workspace-ui.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/portal-workspace.test.cjs": {
-      "bytes": 6343,
+      "bytes": 9174,
       "mode": "100644",
-      "sha": "ad6f75a1b411674af3a0e4c9b17a7862c3d901ec",
-      "sha256": "841d37f807ae2091314774027e1c3d9c9d99cf85aebe224ecd4758bf58902290",
+      "sha": "2e0d21b82cc93102ad98ffbfccbfae3663cc2d93",
+      "sha256": "feee3d916633b5c105509b3cd3296bbdf47c54f104bc50bb3345ef9aae01a938",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/portal-workspace.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/post-maps.test.cjs": {
-      "bytes": 15295,
+      "bytes": 18079,
       "mode": "100644",
-      "sha": "b812a172de7d093a4385e496fcc3e4a4c814fc76",
-      "sha256": "e3799e43de3f40845ac9ff9d0b3100d397c436bbf8dc62347bb30094ebb093bc",
+      "sha": "85d0791eaa61a7d3319709b6749090253834ac08",
+      "sha256": "5f568e15ebf3e1e546b7b777ed81012fe72d33481cebf421eb8f5fce32aa3b38",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/post-maps.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/profile-next-access.test.cjs": {
@@ -6985,6 +6999,13 @@
       "sha": "d7381af5a56ff562330b322c9907db4e80aa04c4",
       "sha256": "76055bf7997a7c49c3f5c28c80385039578799cf3a68a4bb82754e5ef9a67032",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/resource-calculation.test.cjs"
+    },
+    "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/responsible-daily-presentation.test.cjs": {
+      "bytes": 3714,
+      "mode": "100644",
+      "sha": "dc792e09b6ad3256d084bacec805ed80f560cee2",
+      "sha256": "e338f00962319542e3bc788a92e1d5a793d9afe3bf04455e186806bf3477f1cf",
+      "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/responsible-daily-presentation.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/security-events-filters.test.cjs": {
       "bytes": 11370,
@@ -7085,10 +7106,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/summary-versions-rights.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/workdesk.test.cjs": {
-      "bytes": 4759,
+      "bytes": 5280,
       "mode": "100644",
-      "sha": "3dd8eb9b75115029153ef3983a4b6f02ab825238",
-      "sha256": "c73651545074691321b28c69d8f1ecd0ff985956a675b3f45f3e9a7dbe152fd8",
+      "sha": "1870cd0f1b4ad6056a78075b48cd3c459d3dc446",
+      "sha256": "201d3a7a884f0c900c73028f6c16b754609bae2745c49540dd9cb0acd09ea345",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/workdesk.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/workflow-action-gates.test.cjs": {
@@ -7106,10 +7127,10 @@
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/workflow-context-navigation.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/scripts/tests/workspace-daily-scope.test.cjs": {
-      "bytes": 2899,
+      "bytes": 3272,
       "mode": "100644",
-      "sha": "bcbc252b4cfa2439223d3ed5b5fc71f888797c66",
-      "sha256": "422fe6e59f3b392a0da7c7579bbe60e9a1da554fae60d3f14ab46a128a95ca08",
+      "sha": "5f2668c25e8f1ec1a004b752941925127275b339",
+      "sha256": "69faf871adfc68a37d0cd907b44645b47ab9a851bc66adc66f0164a457286f2a",
       "source": "PersonnelStatus/PersonalRecordFront/scripts/tests/workspace-daily-scope.test.cjs"
     },
     "Backend/PersonnelStatus/PersonalRecordFront/shared/config/env.ts": {
@@ -18883,13 +18904,13 @@
   "format": 1,
   "repository": "talasbekov/VAPS",
   "source_layout": "PersonnelStatus",
-  "source_revision": "cda6a5127b99eeb321c6cdb8538bb2392f09aee5",
+  "source_revision": "8dd09d665103179b95d6018547791bbf4f2e3ef2",
   "target_layout": "Backend/PersonnelStatus",
   "verification": {
     "backendChangeInLatestCommit": false,
     "databaseAndFilesPreserved": true,
     "frontendProductionBuild": true,
-    "readOnlyBrowserChecks": 16,
+    "readOnlyBrowserChecks": 22,
     "scope": "Accepted local 3380 application with combat duty, scoped rights and offline object/post maps; latest frontend simplification verified on desktop/mobile."
   }
 }

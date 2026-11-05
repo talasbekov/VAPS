@@ -161,8 +161,7 @@ function AccessRolesScreen() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[34%]">Код</TableHead>
-                        <TableHead>Название</TableHead>
+                        <TableHead>Роль</TableHead>
                         <TableHead className="w-[90px] text-right">
                           Прав
                         </TableHead>
@@ -255,17 +254,16 @@ function RoleRow({
 }) {
   return (
     <TableRow className={isSelected ? "bg-muted/60" : undefined}>
-      <TableCell className="font-mono text-[12.5px]">
+      <TableCell className="text-[13px]">
         <button
           type="button"
           className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-pressed={isSelected}
           onClick={onSelect}
         >
-          {role.code}
+          {role.name}
         </button>
       </TableCell>
-      <TableCell className="text-[13px]">{role.name}</TableCell>
       <TableCell className="text-right text-[13px] tabular-nums">
         {role.permissions.length}
       </TableCell>
@@ -347,7 +345,7 @@ function RoleDetails({ role }: { role: AccessRole }) {
             {role.is_active ? "Отключить" : "Включить"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Отключение роли не снимает доступ. Для отзыва доступа снимите назначение роли у пользователя.</p>
+        <p className="text-xs text-muted-foreground">Отключение роли приостанавливает выданные через неё права у всех назначенных пользователей. Другие роли продолжают действовать.</p>
         {setActive.error !== null && (
           <p className="text-[12px] text-destructive">
             Не удалось изменить состояние роли. Попробуйте ещё раз.

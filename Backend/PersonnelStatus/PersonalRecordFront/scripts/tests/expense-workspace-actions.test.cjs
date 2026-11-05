@@ -70,10 +70,25 @@ function render(snapshot = state(), query = 'businessDate=2026-10-20&search=reta
   return renderToStaticMarkup(React.createElement(ForcesWorkspace, { role }));
 }
 
-test('expense opens with the missing-submission action queue before its existing daily form', () => {
+function renderGatheringQueue(snapshot = state()) {
+  const gathering = { ...snapshot, access: { ...snapshot.access,
+    roles: snapshot.access.roles.map(role => ({ ...role, code: 'FORCES_GATHERING_OFFICER' })),
+  } };
+  const html = render(gathering, 'businessDate=2026-10-20&search=retained', 'responsible');
+  const queue = html.match(/<section[^>]*aria-label="Очередь ежедневного расхода"[^>]*>[\s\S]*?<\/section>/)?.[0];
+  assert.ok(queue, 'the gathering desk must retain its protected daily queue');
+  return queue;
+}
+
+test('expense opens the daily form once without a duplicate missing-submission queue', () => {
   const html = render();
-  assert.match(html, /Требует моего действия/);
-  assert.ok(html.indexOf('Требует моего действия') < html.indexOf('Existing department daily form'));
+  assert.equal((html.match(/Existing department daily form/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /Требует моего действия|Очередь ежедневного расхода|Первое управление/);
+  assert.match(html, /businessDate=2026-10-20&amp;search=retained&amp;view=daily/);
+});
+
+test('gathering desk retains missing-source details and an exact-date link to summary actions', () => {
+  const html = renderGatheringQueue();
   assert.match(html, /Не сдали[^<]*2/);
   assert.match(html, /Первое управление/);
   assert.match(html, /Начальник первого/);
@@ -92,12 +107,12 @@ for (const [label, patch, expected] of [
   ['unavailable snapshot after cached success', { query: { isError: true, error: { status: 503 } } }, /Очередь[^<]*недоступна/],
   ['wrong department snapshot', { data: { scope: { id: '18', name: 'Чужой департамент' }, sources: [source(3, 'Первое управление', 'Начальник первого', 2)], total: {} } }, /Загрузка очереди/],
 ]) test(`${label} hides source identities and incomplete missing counts`, () => {
-  const html = render(state(patch));
+  const html = renderGatheringQueue(state(patch));
   assert.match(html, expected);
   assert.doesNotMatch(html, /Первое управление|Начальник первого|Не сдали[^<]*2|Чужой департамент/);
 });
 
-test('a retained expense role cannot reveal the queue after status access is revoked', () => {
+test('a retained expense role cannot open the daily form after status access is revoked', () => {
   const snapshot = state();
   snapshot.access.hasPermission = code => code === 'forces.allocate';
   const html = render(snapshot, 'view=daily&businessDate=2026-10-20');
@@ -107,14 +122,14 @@ test('a retained expense role cannot reveal the queue after status access is rev
 
 test('permission loading hides cached source names and is not presented as a forbidden read', () => {
   const snapshot = state(); snapshot.access.isLoading = true;
-  const html = render(snapshot);
+  const html = renderGatheringQueue(snapshot);
   assert.match(html, /Загрузка очереди/);
   assert.doesNotMatch(html, /Первое управление|Начальник первого|Недостаточно прав/);
 });
 
 test('an empty source list is explained without a misleading zero-laggard success', () => {
   const snapshot = state(); snapshot.data.sources = [];
-  const html = render(snapshot);
+  const html = renderGatheringQueue(snapshot);
   assert.match(html, /Нет обязательных источников/);
   assert.doesNotMatch(html, /Не сдали|Все обязательные источники сдали/);
 });
@@ -122,7 +137,7 @@ test('an empty source list is explained without a misleading zero-laggard succes
 test('a fully sent department with submitted sources has a completed empty queue', () => {
   const snapshot = state(); snapshot.data.sources = [source(3, 'Первое управление', 'Начальник первого', 0, true)];
   snapshot.data.total.submission = { sent_at: '2026-10-20T08:00:00Z' };
-  const html = render(snapshot);
+  const html = renderGatheringQueue(snapshot);
   assert.match(html, /Свод отправлен/);
   assert.match(html, /Нет ожидающих сдач/);
   assert.doesNotMatch(html, /Первое управление|Не сдали/);

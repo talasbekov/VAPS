@@ -1,6 +1,12 @@
 export interface DockState {
   owner: string; open: boolean; visited: boolean; message: string; taskId: string | null; blocked?: boolean; page?: number; submission?: number;
-  chatPending?: boolean; view?: "chat" | "tasks"; taskGeneration?: number; taskMessage?: string;
+  chatPending?: boolean; view?: "chat" | "tasks"; taskGeneration?: number; taskMessage?: string; eventId?: string | null;
+}
+export function openDock(state: DockState, owner: string, pathname: string | null, canUseTasks: boolean): DockState {
+  const current = visibleDock(state, owner);
+  if (current.visited) return { ...current, open: true };
+  const eventId = canUseTasks ? pathname?.match(/^\/security-ops\/events\/(\d+)\/?$/)?.[1] ?? null : null;
+  return { ...current, open: true, visited: true, view: eventId ? "tasks" : "chat", eventId };
 }
 export function visibleDock(state: DockState | null, owner: string): DockState {
   return state?.owner === owner ? state : { owner, open: false, visited: false, message: "", taskId: null, blocked: false };

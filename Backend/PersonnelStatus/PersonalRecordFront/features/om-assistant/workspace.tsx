@@ -8,6 +8,7 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { AssistantBrief } from "@/features/om-assistant/brief";
+import { AssistantEventPicker } from "@/features/om-assistant/event-picker";
 import { AssistantBriefingSummary } from "@/features/om-assistant/briefing-summary";
 import { AssistantConversation } from "@/features/om-assistant/conversation";
 import { AssistantProgress } from "@/features/om-assistant/progress";
@@ -159,7 +160,7 @@ function DraftEditor({ draft, onChange, catalogs, metadata, disabled, questions 
     objectId: <label className={label}>Объект<select className={input} value={draft.objectId} onChange={event => field("objectId", event.target.value)} disabled={!catalogs}><option value="">Выберите объект</option>{catalogs?.objects.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>,
     personnelTotal: <><label className={label}>Людей по поручению<input className={input} inputMode="numeric" maxLength={6} value={draft.personnelTotal} aria-describedby={`${idPrefix}-personnel-total-help`} onChange={event => field("personnelTotal", event.target.value)} /></label>
       <p id={`${idPrefix}-personnel-total-help`} className="mt-1 text-xs text-slate-500">Общее число из поручения. Количество по департаментам задаётся отдельно; потребность ОМ не меняется.</p></>,
-    eventId: <label className={label}>Существующее ОМ, ID (если уже создано)<input className={input} value={draft.eventId} onChange={event => field("eventId", event.target.value)} placeholder="Из адреса карточки ОМ" /></label>,
+    eventId: <AssistantEventPicker value={draft.eventId} onChange={value => field("eventId", value)} disabled={disabled} />,
     businessDateEnd: <label className={label}>Дата окончания (необязательно)<input className={input} type="date" value={draft.businessDateEnd} onChange={event => field("businessDateEnd", event.target.value)} /></label>,
     eventTime: <label className={label}>Время (необязательно)<input className={input} type="time" value={draft.eventTime} onChange={event => field("eventTime", event.target.value)} /></label>,
   };
@@ -344,7 +345,8 @@ export function AssistantTaskQueue({ data, selectedTaskId, search, isPending, is
   </aside>;
 }
 
-export function AssistantAuthorizedWorkspace({ embedded = false, selectedTaskId = null, onSelectTask, selectedPage = 1, onSelectPage, draftMessage, onDraftMessageChange, onWriteBlockedChange }: {
+export function AssistantAuthorizedWorkspace({ embedded = false, initialEventId = null, selectedTaskId = null, onSelectTask, selectedPage = 1, onSelectPage, draftMessage, onDraftMessageChange, onWriteBlockedChange }: {
+  initialEventId?: string | null;
   embedded?: boolean; selectedTaskId?: string | null; onSelectTask?: (id: string | null) => void;
   selectedPage?: number; onSelectPage?: (page: number) => void;
   draftMessage?: string; onDraftMessageChange?: (value: string) => void; onWriteBlockedChange?: (blocked: boolean) => void;
@@ -358,7 +360,7 @@ export function AssistantAuthorizedWorkspace({ embedded = false, selectedTaskId 
   };
   const taskParam = search.get("task"); const taskId = isTaskId(taskParam) ? taskParam : null;
   const page = assistantListPage(search.get("page"));
-  const eventContext = search.get("event");
+  const eventContext = embedded ? initialEventId : search.get("event");
   const access = useAssistantAccess(); const permissions = useOpsPermissions();
   const configuration = useAssistantConfiguration(); const catalogs = useAssistantCatalogs();
   const tasks = useAssistantTasks(page); const selected = useAssistantTask(taskId);
@@ -394,7 +396,7 @@ export function AssistantAuthorizedWorkspace({ embedded = false, selectedTaskId 
   return <div className={embedded ? "min-w-0 space-y-5 p-4" : "mx-auto max-w-4xl space-y-6 p-4 sm:p-6"}>
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Охранные мероприятия</p>
-        <Heading className={`mt-1 font-semibold tracking-tight ${embedded ? "text-xl" : "text-3xl"}`}>Помощник по ОМ</Heading>
+        <Heading className={`mt-1 font-semibold tracking-tight ${embedded ? "text-xl" : "text-3xl"}`}>Подготовить ОМ</Heading>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">Опишите задачу. Помощник подготовит мероприятие и запросы, покажет, кто продолжает работу и что уже сохранено.</p></div>
       {taskParam && <Button variant="outline" disabled={frozen} onClick={newTask}>Новая задача</Button>}
     </header>
@@ -419,8 +421,8 @@ export function AssistantAuthorizedWorkspace({ embedded = false, selectedTaskId 
           {configuration.data && !reviewBeforeExecute && <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" role="status">Сервер использует прежний режим: полностью заполненное поручение может сразу создать ОМ или отправить запросы при наличии прав. Для отдельного подтверждения обновите backend помощника.</p>}
           {mode === "text" ? <>
           <AssistantBrief value={message} onChange={setMessage} disabled={creationBlocked} pending={writer.pending} reviewBeforeExecute={reviewBeforeExecute}
-            onSubmit={() => { if (!creationBlocked) void writer.create(message, eventContext ? { eventId: eventContext } : {}, true, reviewBeforeExecute); }} />
-          {eventContext && <p className="mt-2 text-sm text-blue-700 dark:text-blue-300">Поручение связано с выбранным ОМ. Его фактические сведения проверит сервер.</p>}
+            onSubmit={() => { if (!creationBlocked) void writer.create(message, draft.eventId ? { eventId: draft.eventId } : {}, true, reviewBeforeExecute); }} />
+          <div className="mt-3"><AssistantEventPicker value={draft.eventId} onChange={eventId => setDraft(previous => ({ ...previous, eventId }))} disabled={frozen} /></div>
           </> : <DraftEditor draft={draft} onChange={setDraft} catalogs={catalogs.data} metadata disabled={frozen} idPrefix={idPrefix} />}
           {mode === "manual" && <Button className="mt-4 h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" disabled={creationBlocked} onClick={manual}>
             {writer.pending ? "Сохраняем поручение…" : reviewBeforeExecute ? "Проверить план по сведениям" : "Сохранить по указанным сведениям"}

@@ -176,7 +176,7 @@ test.describe(LIVE ? 'несколько ролей у человека' : 'не
     expect(created.status()).toBe(201)
     expect(await created.json()).toMatchObject({ code: PROBE_ROLE, name: roleName,
       description: roleDescription, is_active: true, permissions: [] })
-    await expect(rolesRegistry.getByRole('button', { name: PROBE_ROLE, exact: true })).toBeVisible()
+    await expect(rolesRegistry.getByRole('button', { name: roleName, exact: true })).toBeVisible()
     const readFirstRolePage = async () => {
       const response = await request.get(`${API}/api/operations/roles/?limit=50`, { headers })
       expect(response.status()).toBe(200)

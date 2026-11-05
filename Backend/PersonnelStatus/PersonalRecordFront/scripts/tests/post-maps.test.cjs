@@ -67,6 +67,49 @@ function editor() {
   });
   return { ...f, changes, cancelled };
 }
+
+test('empty object map opens for editing and preserves coordinates across tab changes', () => {
+  const writes = [];
+  const f = fixture('@/features/object-map/ui/ObjectLocationEditor', 'ObjectLocationEditor', {
+    objectId: 'o', label: 'Объект', location: null, canEdit: true, isActive: true,
+    sectors: [{ id: 's', name: 'Сектор', posts: [{ id: 'p', name: 'Пост' }] }],
+  }, { '@/hooks/use-security-objects': { useUpdateObjectLocation: () => ({ mutate: body => writes.push(body), reset() {}, isPending: false }) } });
+  assert.equal(f.nodes().some(n => n.type === 'local-map'), false);
+  f.click('Указать местоположение');
+  assert.equal(f.map().props.locating, true);
+  f.map().props.onPoint(point); f.render();
+  f.props.isActive = false; f.render();
+  f.props.isActive = true; f.render();
+  assert.equal(f.input('Широта объекта').props.value, '51.128000');
+  assert.equal(f.input('Долгота объекта').props.value, '71.430000');
+  assert.deepEqual(writes, []);
+  f.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(plain(writes), [{ location: point }]);
+});
+
+test('post overview stays compact without mapped coordinates and reveals saved post points', () => {
+  const f = fixture('@/features/object-map/ui/ObjectLocationMap', 'ObjectLocationMap', {
+    location: null, sectors: [{ id: 's', name: 'Сектор', posts: [{ id: 'p', name: 'Пост' }] }],
+  });
+  assert.equal(f.nodes().some(n => n.type === 'local-map'), false);
+  f.props.sectors[0].posts[0].location = point; f.render();
+  assert.deepEqual(plain(f.map().props.markers.map(m => m.location)), [point]);
+  f.props.sectors[0].posts[0].location = { latitude: 0, longitude: 0 }; f.render();
+  assert.equal(f.nodes().some(n => n.type === 'local-map'), false);
+});
+
+test('combat map stays compact without visible markers and retains group navigation', () => {
+  const selected = [];
+  const f = fixture('@/features/combat-duty/ui/CombatDutyMap', 'CombatDutyMap', { shifts: [], onSelect: id => selected.push(id) });
+  assert.equal(f.nodes().length, 0, 'the board already provides the empty assignment state');
+  f.props.shifts = [{ id: '1', groupName: 'Резерв', stateCode: 'SUBMITTED', location: { kind: 'RESERVE' } }]; f.render();
+  assert.equal(f.nodes().some(n => n.type === 'local-map'), false);
+  f.click('Резерв'); assert.deepEqual(selected, ['1']);
+  f.props.shifts[0] = { ...f.props.shifts[0], location: { kind: 'POINT', ...point } }; f.render();
+  assert.equal(f.map().props.markers.length, 1);
+  f.props.shifts[0].stateCode = 'CANCELLED'; f.render();
+  assert.equal(f.nodes().length, 0);
+});
 test('post map clicks and clear stay local until Apply; cancel never alters the passport', () => {
   const f = editor(); f.map().props.onPoint({ latitude: 51.14, longitude: 71.45 }); f.render();
   assert.equal(f.input('Широта поста').props.value, '51.140000'); assert.deepEqual(f.changes, []);
@@ -174,6 +217,7 @@ test('combat stored coordinates remain readable if the offline map cannot load',
     shifts: [{ id: '1', groupName: 'Группа', stateCode: 'SUBMITTED', location: { kind: 'POST', ...point } }], onSelect() {},
   }, { '@/features/object-map/model/use-object-map-asset': { useObjectMapAsset: () => ({ bounds: null, isLoading: false, error: true }) } });
   assert.match(f.text(), /51.128/); assert.match(f.text(), /71.43/);
+  assert.equal(f.map().props.asset.error, true, 'map retry remains available for saved coordinates');
 });
 test('OBJECT and POST wizard previews resolve scoped choices, never forged input or parent object fallback', () => {
   const choices = { places: [{ id: 'place', divisionId: 'd', objectId: 'o', name: 'Объект', location: point,

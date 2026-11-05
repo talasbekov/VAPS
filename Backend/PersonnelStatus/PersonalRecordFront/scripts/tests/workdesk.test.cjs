@@ -18,6 +18,15 @@ test('workdesk follows actual authorized destinations and retains mixed-role dep
   assert.equal(workdeskKind(tasks('personal'), false), 'personal');
 });
 
+test('daily and duty lead entries select their workdesks without overriding administration', () => {
+  const { workdeskKind } = load();
+  const tasks = (...ids) => ids.map(id => ({ id }));
+  assert.equal(workdeskKind(tasks('daily','department-forces','assistant'),false),'expense');
+  assert.equal(workdeskKind(tasks('duties','statuses'),false),'duty');
+  assert.equal(workdeskKind(tasks('department-forces','daily','duties'),false),'department');
+  assert.equal(workdeskKind(tasks('daily','duties'),true),'admin');
+});
+
 test('calculation grant gets its desk while all existing work priorities remain intact', () => {
   const { workdeskKind, WORKDESK_COPY } = load();
   const tasks = (...ids) => ids.map(id => ({ id }));

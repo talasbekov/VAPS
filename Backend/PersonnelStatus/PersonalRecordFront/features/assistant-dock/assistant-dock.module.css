@@ -1,14 +1,5 @@
 .launcher { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 11px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .launcher:hover { background: hsl(var(--accent)); }
-.dock { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); z-index: 35; display: flex; align-items: flex-end; gap: 12px; padding: 9px 10px 9px 18px; border: 1px solid hsl(var(--border)); border-radius: 32px; background: hsl(var(--card) / .97); box-shadow: 0 8px 32px #182a3a1c, 0 2px 6px #182a3a0d; backdrop-filter: blur(16px); }
-.mark { flex: none; align-self: center; color: hsl(var(--primary)); }
-.input { flex: 1; min-width: 0; height: 42px; max-height: 100px; padding: 10px 0; resize: none; border: 0; background: transparent; font-size: 15px; line-height: 22px; outline: none; color: hsl(var(--foreground)); }
-.input::placeholder { color: hsl(var(--muted-foreground)); }
-.send { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-.send:disabled { opacity: .4; cursor: default; }
-.dock:focus-within { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .12), 0 8px 32px #182a3a1c; }
-.dock[hidden] { display: none; }
-.spacer { height: 112px; flex: none; pointer-events: none; }
 .panel { position: fixed; z-index: 48; top: 16px; right: 16px; bottom: 16px; width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; min-height: 0; border: 1px solid hsl(var(--border)); border-radius: 24px; background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 12px 70px #182a3a38; }
 .panel[hidden] { display: none; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid hsl(var(--border)); flex: none; }
@@ -52,6 +43,6 @@
 .guide a span { display: block; color: hsl(var(--muted-foreground)); font-size: 12px; }
 .guide textarea { width: 100%; min-height: 90px; padding: 12px; border: 1px solid hsl(var(--input)); border-radius: 12px; color: hsl(var(--foreground)); background: hsl(var(--background)); }
 .guide button { margin-top: 10px; min-height: 40px; padding: 8px 14px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-radius: 10px; }
-.launcher:focus-visible, .send:focus-visible, .close:focus-visible, .guide a:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+.launcher:focus-visible, .close:focus-visible, .guide a:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
 @media (max-width: 1279px) { .launcher span { display: none; } .launcher { padding: 8px 10px; } }
-@media (prefers-reduced-motion: no-preference) { .launcher, .send { transition: background-color .15s, box-shadow .15s; } }
+@media (prefers-reduced-motion: no-preference) { .launcher { transition: background-color .15s, box-shadow .15s; } }

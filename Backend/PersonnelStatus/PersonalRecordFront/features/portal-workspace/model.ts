@@ -40,18 +40,31 @@ export function portalWorkspace(access: TaskAccess): { primary: PortalTask[]; mo
   if (can('forces.command')) add(task('headquarters', 'Распределения Штаба', 'Подготовить сбор, проверить ответы и передать людей на расстановку.', '/employees?view=forces&tab=collections'));
   if (can('forces.allocate')) add(task('department-forces', 'Ответить на запрос людей', 'Открыть входящие запросы и подготовить ответ своего подразделения.', '/employees?view=forces&tab=requests'));
   add(task('statuses', can('status.manage') ? 'Отметить статусы сотрудников' : 'Посмотреть личный состав', 'Проверить присутствие и доступность людей своего подразделения.', '/statuses'));
-  if (can('forces.allocate') && can('status.view')) add(task('daily', 'Сдать расход департамента', 'Проверить сдачу подразделений и отправить свод.', '/employees?view=daily'));
+  if (can('forces.allocate') && can('status.view')) add(task('daily',
+    can('daily_report.generate') ? 'Сдать расход департамента' : 'Проверить расход департамента',
+    can('daily_report.generate') ? 'Проверить сдачу подразделений и отправить свод.' : 'Проверить сдачу подразделений на выбранную дату.', '/employees?view=daily'));
   add(task('assistant', 'Подготовить наряд', 'Описать поручение или продолжить уже сохранённое.', '/security-ops/assistant'));
   add(task('events', 'Продолжить работу по ОМ', 'Открыть мероприятие и выполнить свой текущий этап.', '/security-ops/events'));
   add(task('summary', 'Проверить свод по Службе', 'Увидеть состояние подразделений на выбранную дату.', '/security-ops/service-summary'));
-  if (['duty.view', 'duty.manage', 'duty.combat.manage', 'duty.roster', 'duty.catalog.manage', 'status.manage', 'duty.dispatch'].some(can)) add(task('duties', 'Посмотреть дежурства', 'Открыть график и журнал дежурств.', '/security-ops/duty-register'));
+  const plansDuty = ['duty.manage', 'duty.combat.manage', 'duty.roster', 'duty.catalog.manage', 'duty.dispatch'].some(can);
+  if (['duty.view', 'duty.manage', 'duty.combat.manage', 'duty.roster', 'duty.catalog.manage', 'status.manage', 'duty.dispatch'].some(can)) {
+    const section = can('duty.dispatch') && !can('duty.view') && !can('duty.manage') && !can('status.manage') ? 'shifts'
+      : ['duty.view', 'analytics.view', 'duty.manage', 'status.manage'].some(can) ? 'roster' : 'combat';
+    add(task('duties', 'Состав и назначения дежурства', 'Открыть состав на дату, места дежурства и назначения.', `/security-ops/duty-register?section=${section}`));
+  }
   add(task('objects', 'Объекты и паспорта', 'Найти объект и проверить его паспорт.', '/security-ops/objects'));
   add(task('overview', 'Обзор подразделения', 'Посмотреть структуру и состояние личного состава.', '/dashboard'));
   const reportHref = moduleOpenFor('/reports', can) ? '/reports' : '/security-ops/service-reports';
   add(task('reports', 'Подготовить отчёт', 'Выбрать нужный отчёт и сформировать документ.', reportHref));
   add(task('service-analytics', 'Аналитика службы', 'Проверить показатели личного состава и подразделений.', '/security-ops/analytics'));
   add(task('om-analytics', 'Аналитика мероприятий', 'Проверить подготовку и результаты охранных мероприятий.', '/security-ops/analytics/operations'));
-  if (!administrator) tasks.sort((a, b) => Number(b.accessHref === preferred) - Number(a.accessHref === preferred));
+  if (!administrator) {
+    // A role chooses presentation only among destinations its grants already allow.
+    const priority = (entry: PortalTask) => entry.id === 'daily' && hasRole('DEPARTMENT_EXPENSE_OFFICER') ? 3
+      : entry.id === 'duties' && (plansDuty || hasRole('DUTY_PLANNER')) ? 2
+      : Number(entry.accessHref === preferred);
+    tasks.sort((a, b) => priority(b) - priority(a));
+  }
   tasks.push(personal);
   return { primary: tasks.slice(0, 3), more: tasks.slice(3) };
 }

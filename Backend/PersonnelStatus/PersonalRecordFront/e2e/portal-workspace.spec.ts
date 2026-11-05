@@ -21,7 +21,7 @@ const cases: { name: string; access: AccessFixture; tasks: string[]; forbidden: 
     tasks: ['Мои задания и дежурства'], forbidden: ['Пользователи', 'Распределения Штаба', 'Подготовить наряд'] },
   { name: 'status manager', access: { permissions: ['status.view', 'status.workspace', 'status.manage', 'forces.select', 'duty.view'],
     global_permissions: [], roles: [role('DIRECTORATE_HEAD', 'Начальник управления', 3)], status_manage_division_ids: [3] },
-    tasks: ['Отметить статусы сотрудников', 'Посмотреть дежурства', 'Мои задания и дежурства'],
+    tasks: ['Отметить статусы сотрудников', 'Состав и назначения дежурства', 'Мои задания и дежурства'],
     forbidden: ['Пользователи', 'Распределения Штаба', 'Подготовить наряд', 'Ответить на запрос людей'] },
   { name: 'headquarters', access: { permissions: ['forces.command', 'event.view', 'event.create'],
     global_permissions: ['forces.command', 'event.view', 'event.create'], roles: [role('OPS_STAFF', 'Штаб')] },

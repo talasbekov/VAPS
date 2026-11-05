@@ -15,6 +15,92 @@ const task = patch => ({ id: taskId, initiatedBy: 'chief', revision: 2, status: 
   event: { id: '70', code: 'ОМ-70', title: 'Встреча', stage: 'RECON', forceDemandTotal: 10, requested: 0, rosterCount: 0 },
   receipts: [], updatedAt: '2026-10-21T10:00:00Z', ...patch });
 
+test('event lookup uses authorized server search, date and pagination without writes', async t => {
+  const f = fixture(t), api = f.load('@/features/om-assistant/event-picker');
+  api.useAssistantEventOptions('Встреча', '2026-11-05', 3, true);
+  assert.equal(f.state.options.at(-1).enabled, false, 'event.create must not imply event.view');
+  f.client.setQueryData(['ops-me'], { permissions: ['event.create', 'event.view'], roles: [] });
+  api.useAssistantEventOptions('Встреча', '2026-11-05', 3, true);
+  const option = f.state.options.at(-1);
+  assert.equal(option.enabled, true);
+  await f.client.fetchQuery(option);
+  const url = new URL(f.state.reads.at(-1), 'http://local');
+  assert.equal(url.pathname, '/api/ops/security-events/');
+  assert.equal(url.searchParams.get('search'), 'Встреча');
+  assert.equal(url.searchParams.get('from'), '2026-11-05');
+  assert.equal(url.searchParams.get('to'), '2026-11-05');
+  assert.equal(url.searchParams.get('page'), '3');
+  assert.equal(url.searchParams.get('page_size'), '10');
+  assert.equal(f.state.writes.length, 0);
+});
+
+test('event lookup hides stale cached events on denial and authority change', async t => {
+  const f = fixture(t), api = f.load('@/features/om-assistant/event-picker');
+  f.client.setQueryData(['ops-me'], { permissions: ['event.view'], roles: [] });
+  api.useAssistantEventOptions('', '', 1, true);
+  const options = f.state.options.at(-1), rows = { results: [{ id: '70', title: 'Private OM' }], count: 1, next: null, previous: null };
+  f.client.setQueryData(options.queryKey, rows);
+  api.useAssistantSelectedEvent('70');
+  f.client.setQueryData(f.state.options.at(-1).queryKey, { id: '70', title: 'Private OM' });
+  assert.equal(api.useAssistantEventOptions('', '', 1, true).data.results[0].title, 'Private OM');
+  f.state.readError = { status: 403 };
+  await assert.rejects(f.client.fetchQuery(options));
+  assert.equal(api.useAssistantEventOptions('', '', 1, true).data, undefined);
+  assert.equal(api.useAssistantSelectedEvent('70').data, undefined, 'registry denial must also hide a previously cached selected label');
+  f.state.actor = 'other';
+  assert.equal(api.useAssistantEventOptions('', '', 1, true).data, undefined);
+  assert.notDeepEqual(f.state.options.at(-1).queryKey, options.queryKey);
+});
+
+test('selected event keeps its name and date outside the result page; denial preserves the reference', t => {
+  const f = fixture(t), api = f.load('@/features/om-assistant/event-picker');
+  f.client.setQueryData(['ops-me'], { permissions: ['event.view'], roles: [] });
+  api.useAssistantSelectedEvent('70');
+  f.client.setQueryData(f.state.options.at(-1).queryKey, { id: '70', title: 'Встреча делегации', businessDate: '2026-11-05', code: 'ОМ-70' });
+  const changed = [];
+  const render = () => renderToStaticMarkup(React.createElement(api.AssistantEventPicker, { value: '70', onChange: value => changed.push(value) }));
+  assert.match(render(), /Встреча делегации/); assert.match(render(), /05\.11\.2026/);
+  f.client.setQueryData(['ops-me'], { permissions: ['event.create'], roles: [] });
+  const html = render();
+  assert.doesNotMatch(html, /Встреча делегации|Из адреса|ID/);
+  assert.match(html, /Выбранное ОМ сохранено/);
+  assert.match(html, /Нет доступа к реестру ОМ/);
+  assert.deepEqual(changed, []);
+});
+
+test('event picker changes pages and search independently of the retained choice and restores focus after selection', t => {
+  const f = fixture(t), slots = []; let cursor = 0, value = '70', focusCount = 0;
+  f.client.setQueryData(['ops-me'], { permissions: ['event.view'], roles: [] });
+  f.override('react', { ...React, useState(initial) {
+    const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
+    return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }];
+  }, useRef: () => ({ current: { focus() { focusCount++; } } }) });
+  const { AssistantEventPicker } = f.load('@/features/om-assistant/event-picker');
+  const render = (disabled = false) => { cursor = 0; return AssistantEventPicker({ value, onChange: id => { value = id; }, disabled }); };
+  const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...React.Children.toArray(tree.props?.children).flatMap(nodes)];
+  const latestList = () => f.state.options.filter(option => option.queryKey[1] === 'list').at(-1);
+  const seedPage = (id, next) => f.client.setQueryData(latestList().queryKey, { results: [{ id, title: 'Встреча ' + id, businessDate: '2026-11-05' }], count: 11, next, previous: null });
+  nodes(render()).find(node => node.type === 'details').props.onToggle({ currentTarget: { open: true } });
+  render(); seedPage('71', '/api/ops/security-events/?page=2');
+  nodes(render()).find(node => node.props?.children === 'Далее').props.onClick();
+  render(); assert.match(latestList().queryKey.at(-1), /page=2/); assert.equal(value, '70');
+  seedPage('72', null);
+  let choices = nodes(render()).filter(node => node.type === 'button' && node.props['aria-pressed'] !== undefined);
+  assert.equal(choices.length, 1);
+  choices[0].props.onClick();
+  assert.equal(value, '72'); assert.equal(focusCount, 1, 'focus must leave the now-hidden option and return to the disclosure');
+  assert.equal(nodes(render()).find(node => node.type === 'details').props.open, false);
+  nodes(render()).find(node => node.type === 'details').props.onToggle({ currentTarget: { open: true } });
+  nodes(render()).find(node => node.type === 'input' && node.props.type === 'search').props.onChange({ target: { value: 'Другая встреча' } });
+  render(); assert.match(latestList().queryKey.at(-1), /page=1/); assert.equal(value, '72');
+  seedPage('73', null);
+  choices = nodes(render(true)).filter(node => node.type === 'button' && node.props['aria-pressed'] !== undefined);
+  assert.equal(choices[0].props.disabled, true); choices[0].props.onClick(); assert.equal(value, '72');
+  f.client.getQueryCache().find({ queryKey: latestList().queryKey, exact: true }).setState({ status: 'error', error: { status: 503 } });
+  assert.equal(nodes(render()).filter(node => node.type === 'button' && node.props['aria-pressed'] !== undefined).length, 0);
+  assert.equal(value, '72'); assert.equal(f.state.writes.length, 0);
+});
+
 test('confirmation of pending multi-object details names the action and the reviewed objects', t => {
   const f = fixture(t);
   const value = task({ reviewBeforeExecute: true,
@@ -459,13 +545,14 @@ test('clarification exposes only unanswered basics and keeps recognized values e
   const extras = html.match(/<details[^>]*><summary[^>]*>Дополнительные сведения<\/summary>[\s\S]*?<\/details>/)?.[0];
   const requests = html.match(/<details[^>]*><summary[^>]*>Запросы по департаментам<\/summary>[\s\S]*?<\/details>/)?.[0];
   const recognized = html.match(/<details[^>]*><summary[^>]*>Изменить распознанные сведения<\/summary>[\s\S]*?<\/details>/)?.[0];
-  assert.ok(extras, 'event ID and optional date/time must have their own disclosure');
+  assert.ok(extras, 'existing event and optional date/time must have their own disclosure');
   assert.ok(requests, 'request quotas must not dominate basic clarification');
   assert.ok(recognized, 'known values need an explicit correction affordance');
   assert.doesNotMatch(recognized.slice(0, recognized.indexOf('>') + 1), /open=/);
   assert.doesNotMatch(extras.slice(0, extras.indexOf('>') + 1), /open=/);
   assert.doesNotMatch(requests.slice(0, requests.indexOf('>') + 1), /open=/);
-  assert.match(extras, /Существующее ОМ, ID/);
+  assert.match(extras, /Существующее ОМ/);
+  assert.doesNotMatch(extras, /Из адреса|Существующее ОМ, ID/);
   const primary = html.slice(html.indexOf('<fieldset'), html.indexOf(recognized));
   assert.ok(primary.indexOf('Название<input') < primary.indexOf('Вид ОМ<select'));
   assert.doesNotMatch(primary, /Дата начала<input|Объект<select|Людей по поручению<input|Существующее ОМ, ID|Дата окончания|Срок ответа/);

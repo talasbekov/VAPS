@@ -1,6 +1,5 @@
 "use client";
 
-import { AssistantHomeDock } from "@/features/assistant-dock/assistant-dock";
 
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
@@ -251,7 +250,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           >
             {apiGap && <ApiGapNotice gap={apiGap} />}
             {children}
-            <AssistantHomeDock />
           </main>
         </div>
       </div>

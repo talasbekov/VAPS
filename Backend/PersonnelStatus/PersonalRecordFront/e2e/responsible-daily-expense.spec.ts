@@ -172,7 +172,7 @@ test.describe('ежедневный расход ответственного', 
     const screen = page.getByRole('region', { name: 'Расход департамента' })
     await expect(screen.getByTestId('daily-list-total')).toHaveText('4')
     await expect(screen.getByTestId('daily-ready-total')).toHaveText('4')
-    await expect(screen.getByText('Без отдельной отметки · в строю', { exact: true }).locator('..').locator('dd')).toHaveText('4')
+    await expect(screen.getByText('Без отдельной отметки', { exact: true }).locator('..').locator('dd')).toHaveText('4')
     await expect(screen.getByText('Сдали 0 из 1')).toBeVisible()
     // Бланк: «Руководство» первой строкой (прямой состав департамента = 1), «ИТОГО» последней.
     await expect(screen.getByRole('row', { name: /Руководство департамента/ })).toContainText('1')

@@ -14,7 +14,7 @@ function harness(overrides = {}) {
   let cursor = 0;
   const cache = new Map();
   const deps = {
-    react: { ...React, useState(initial) {
+    react: { ...React, useEffect() {}, useState(initial) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
       return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
@@ -48,7 +48,7 @@ function harness(overrides = {}) {
     vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
       esModuleInterop: true,
-    } }).outputText, { exports, require: load, URLSearchParams, Set, Map });
+    } }).outputText, { exports, require: load, URLSearchParams, Set, Map, Error });
     return exports;
   }
   return { load, loadActual: name => { delete deps[name]; return load(name); }, render: fn => { cursor = 0; return fn(); } };
@@ -126,6 +126,86 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return tree?.props ? [tree, ...nodes(tree.props.children)] : [];
 }
+
+for (const authorized of [false, true]) test(`first assignment supplies an inline setup only for a catalog manager (${authorized})`, () => {
+  const h = harness({
+    '@/components/ui/dialog': { Dialog: 'div', DialogContent: 'div', DialogHeader: 'header', DialogTitle: 'h2' },
+    './CombatLocationFields': { CombatLocationFields: 'location' },
+    './CombatFirstSetup': { CombatFirstSetup: 'first-setup' },
+    '@/hooks/use-combat-duty': { useCombatRead: () => ({ data: { results: [] } }), useCombatRefresh: () => async () => {} },
+    '@/lib/ops-api': { opsApiClient: {} },
+  });
+  const { CombatGroupForm } = h.load('@/features/combat-duty/ui/CombatGroupForm');
+  const tree = h.render(() => CombatGroupForm({ date: '2026-11-05', divisionId: '2',
+    choices: { groups: [], types: [], routes: [], places: [], events: [] },
+    onClose() {}, onConfigure: authorized ? () => {} : undefined }));
+  const all = nodes(tree);
+  assert.equal(all.some(n => n.type === 'first-setup'), authorized);
+  assert.equal(all.some(n => n.type === 'select'), false, 'missing catalogues must not leave empty selectors');
+  assert.equal(all.some(n => n.props.children === 'Далее: люди'), false, 'no dead-end disabled next button');
+  if (!authorized) assert.match(renderToStaticMarkup(tree), /Обратитесь к ответственному/);
+});
+
+test('refreshing a newly created group never creates it twice and retains the chosen owner', async () => {
+  const writes = [], selected = [];
+  let failures = true;
+  const h = harness({
+    '@/hooks/use-combat-duty': { useCombatRefresh: () => async () => { if (failures) throw Error('Сеть недоступна'); } },
+    '@/lib/ops-api': { opsApiClient: { post: async (path, body) => { writes.push({ path, body }); return { id: '8', ...body }; } } },
+  });
+  const { CombatFirstSetup } = h.load('@/features/combat-duty/ui/CombatFirstSetup');
+  const tree = () => h.render(() => CombatFirstSetup({ divisionId: '2', kind: 'groups', onCreated: row => selected.push(row.id), onConfigure() {} }));
+  nodes(tree()).find(n => n.props['aria-label'] === 'Название первой группы').props.onChange({ target: { value: 'Патруль' } });
+  nodes(tree()).find(n => n.props.children === 'Создать группу').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(JSON.parse(JSON.stringify(writes[0].body)), { kind: 'groups', divisionId: '2', name: 'Патруль', maxMembers: 4 });
+  assert.deepEqual(selected, ['8']);
+  assert.match(renderToStaticMarkup(tree()), /Сеть недоступна/);
+  failures = false;
+  nodes(tree()).find(n => n.props.children === 'Обновить список').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(writes.length, 1);
+  assert.equal(nodes(tree()).some(n => n.type === 'form'), false, 'setup must not nest a form inside the assignment form');
+});
+
+test('board retains acknowledged creations through a choices failure and wizard remount', () => {
+  const catalog = { ...choices, groups: [], types: [], places: [], routes: [], events: [], permissions: {
+    roster: true, manageCatalogs: true, review: false, rosterDivisionIds: ['2'], manageCatalogsDivisionIds: ['2'], reviewDivisionIds: [] } };
+  let unavailable = false;
+  const h = harness({
+    'next/navigation': { useSearchParams: () => new URLSearchParams('section=combat&date=2026-11-05&combat_division=2'), useRouter: () => ({ replace() {} }) },
+    '@/hooks/use-combat-duty': { useCombatRead: path => ({
+      data: path.includes('choices/') ? unavailable ? undefined : catalog : path.includes('week/') ? { results: [] } :
+        { businessDate: '2026-11-05', summary: {}, shifts: [] }, isError: path.includes('choices/') && unavailable,
+      access: { hasPermission: () => false }, refetch() {},
+    }) },
+    './CombatGroupForm': { CombatGroupForm: 'wizard' }, './CombatCatalogs': {},
+    './CombatDutyTable': { CombatDutyTable: 'table' }, './CombatDutyMap': { CombatDutyMap: 'map' },
+  });
+  const { CombatDutyBoard } = h.loadActual('@/features/combat-duty/ui/CombatDutyBoard');
+  const render = () => h.render(CombatDutyBoard);
+  const wizard = () => nodes(render()).find(n => n.type === 'wizard');
+  nodes(render()).find(n => n.props.children === 'Назначить людей').props.onClick();
+  wizard().props.onCatalogCreated('groupId', '8');
+  unavailable = true;
+  assert.equal(wizard(), undefined, 'protected choices are hidden after failed reads');
+  unavailable = false;
+  assert.equal(wizard().props.createdSelection.groupId, '8', 'receipt survives the real parent unmount condition');
+});
+
+test('a remounted wizard with an acknowledged but unavailable group offers refresh, not another creation', () => {
+  const h = harness({
+    '@/components/ui/dialog': { Dialog: 'div', DialogContent: 'div', DialogHeader: 'header', DialogTitle: 'h2' },
+    './CombatLocationFields': { CombatLocationFields: 'location' }, './CombatFirstSetup': { CombatFirstSetup: 'first-setup' },
+    '@/hooks/use-combat-duty': { useCombatRead: () => ({ data: { results: [] } }), useCombatRefresh: () => async () => {} },
+    '@/lib/ops-api': { opsApiClient: {} },
+  });
+  const { CombatGroupForm } = h.load('@/features/combat-duty/ui/CombatGroupForm');
+  const tree = h.render(() => CombatGroupForm({ date: '2026-11-05', divisionId: '2',
+    choices: { groups: [], types: [], routes: [], places: [], events: [] }, createdSelection: { groupId: '8' }, onClose() {}, onConfigure() {} }));
+  assert.equal(nodes(tree).some(n => n.type === 'first-setup'), false);
+  assert.ok(nodes(tree).some(n => n.props.children === 'Обновить список'));
+});
 test('equal catalogue names show the full owner path and an honest fallback for an unknown owner', () => {
   const { tree } = catalogHarness();
   const html = renderToStaticMarkup(tree());
@@ -215,7 +295,7 @@ test('the workdesk exposes duties for a dedicated combat manager', () => {
   const workspace = portalWorkspace({ permissions: new Set(['duty.combat.manage']), roles: [],
     hasPermission: code => code === 'duty.combat.manage', hasGlobalPermission: () => false,
     isLoading: false, error: null });
-  assert.ok([...workspace.primary, ...workspace.more].some(task => task.href === '/security-ops/duty-register'));
+  assert.ok([...workspace.primary, ...workspace.more].some(task => task.href.startsWith('/security-ops/duty-register')));
 });
 
 test('calendar combat assignments retain historical place and only link for an authorized reader', () => {

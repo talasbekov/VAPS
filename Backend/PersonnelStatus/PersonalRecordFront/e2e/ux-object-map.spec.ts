@@ -63,6 +63,34 @@ async function refresh(page: Page) {
   await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')); });
 }
 
+test('legacy passport links open general data; compact maps keep object and post drafts across tabs', async ({ page, businessWrites }) => {
+  const state = await prepare(page);
+  const back = 'tab=own&search=Учебный';
+  for (const tab of ['infra', 'check', 'groups']) {
+    await page.goto(card + '?' + new URLSearchParams({ tab, back }));
+    await expect(page.getByRole('tab', { name: 'Общие данные', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Указать местоположение', exact: true })).toBeVisible();
+  }
+  await enter(page);
+  await page.getByRole('tab', { name: 'Посты и секторы', exact: true }).click();
+  await page.getByLabel('Название сектора', { exact: true }).fill('Несохранённый сектор');
+  await expect(page.getByLabel('Карта постов паспорта', { exact: true }).locator('canvas')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Местоположение поста: Учебный пост', exact: true }).click();
+  await page.getByLabel('Широта поста', { exact: true }).fill('51.14');
+  await page.getByLabel('Долгота поста', { exact: true }).fill('71.45');
+  await page.getByRole('tab', { name: 'История', exact: true }).click();
+  await page.getByRole('tab', { name: 'Общие данные', exact: true }).click();
+  await expect(page.getByLabel('Широта объекта', { exact: true })).toHaveValue('51.135');
+  await expect(page.getByLabel('Долгота объекта', { exact: true })).toHaveValue('71.44');
+  await page.getByRole('tab', { name: 'Посты и секторы', exact: true }).click();
+  await expect(page.getByLabel('Название сектора', { exact: true })).toHaveValue('Несохранённый сектор');
+  await expect(page.getByLabel('Широта поста', { exact: true })).toHaveValue('51.14');
+  await page.getByRole('button', { name: 'Применить к черновику', exact: true }).click();
+  await expect(page.getByLabel('Карта постов паспорта', { exact: true }).locator('canvas')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('back')).toBe(back);
+  expect(state.writes).toEqual([]); expect(businessWrites).toEqual([]);
+});
+
 test('registry map follows filters, counts null/outside points and opens the matching catalog passport with its return query', async ({ page, businessWrites }) => {
   await prepare(page, { location: pointA });
   await page.goto(registry + '?view=map');
@@ -81,6 +109,8 @@ test('registry map follows filters, counts null/outside points and opens the mat
 
 test('card click and cancel leave the server untouched; explicit Save, reload and Clear persist only the chosen point', async ({ page, businessWrites }) => {
   const state = await prepare(page); await page.goto(card);
+  await expect(page.getByRole('button', { name: 'Указать местоположение', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Офлайн-карта Астаны', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Указать местоположение', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Офлайн-карта Астаны', exact: true }).locator('canvas');
   await canvas.click({ position: { x: 160, y: 160 } });
@@ -93,12 +123,12 @@ test('card click and cancel leave the server untouched; explicit Save, reload an
   await expect(page.getByText('Местоположение сохранено.', { exact: true })).toBeVisible();
   expect(state.writes).toEqual([{ location: pointB }]);
   await page.reload();
-  await expect(page.getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('51.135000');
+  await expect(page.getByLabel('Местоположение объекта', { exact: true }).getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('51.135000');
   await page.getByRole('button', { name: 'Изменить местоположение', exact: true }).click();
   await page.getByRole('button', { name: 'Очистить точку', exact: true }).click();
   expect(state.object.location).toEqual(pointB);
   await page.getByRole('button', { name: 'Сохранить точку', exact: true }).click();
-  await expect(page.getByText('Координаты объекта не указаны.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Местоположение объекта', { exact: true }).getByText('Координаты объекта не указаны.', { exact: true })).toBeVisible();
   expect(state.writes).toEqual([{ location: pointB }, { location: null }]); expect(businessWrites).toEqual([]);
 });
 
@@ -106,7 +136,7 @@ test('manual zero coordinates remain outside coverage without a fabricated local
   const state = await prepare(page); await page.goto(card); await enter(page, '0', '0');
   await expect(page.getByRole('status').filter({ hasText: 'Точка находится вне покрытия' })).toBeVisible();
   await page.getByRole('button', { name: 'Сохранить точку', exact: true }).click();
-  await expect(page.getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('Широта: 0.000000 · Долгота: 0.000000');
+  await expect(page.getByLabel('Местоположение объекта', { exact: true }).getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('Широта: 0.000000 · Долгота: 0.000000');
   await expect(page.getByRole('region', { name: 'Офлайн-карта Астаны', exact: true }).getByRole('button', { name: state.object.name, exact: true })).toHaveCount(0);
   expect(state.writes).toEqual([{ location: { latitude: 0, longitude: 0 } }]); expect(businessWrites).toEqual([]);
 });
@@ -149,7 +179,7 @@ test('external reads preserve unsaved coordinates and a delayed save cannot clos
   const state = await prepare(page); await page.goto(card); await enter(page);
   state.object = { ...state.object, location: pointA };
   await refresh(page);
-  await expect(page.getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('51.128000');
+  await expect(page.getByLabel('Местоположение объекта', { exact: true }).getByLabel('Сохранённые координаты объекта', { exact: true })).toContainText('51.128000');
   await expect(page.getByLabel('Широта объекта', { exact: true })).toHaveValue('51.135');
   state.holdSave = true;
   try {

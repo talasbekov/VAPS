@@ -284,6 +284,7 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
   const nameOf = (id: number) => divisions.data?.find(row => row.id === String(id))?.name ?? `Подразделение №${id}`
   const submissionReady = submissions.isSuccess && !submissions.isError
   const submitted = data?.sources.filter(row => row.submission).length ?? 0
+  const missing = submissionReady ? data?.sources.filter(row => !row.submission) ?? [] : []
   const inServiceColumn = catalog.all.find(row => row.code === 'IN_SERVICE')?.report_column_code
   const columns = useMemo(() => orderColumns(report.data?.columns ?? [], inServiceColumn), [report.data, inServiceColumn])
   const labels = report.data?.column_labels ?? {}
@@ -317,7 +318,7 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
           <RangeTiles from={rangeFrom} to={rangeTo} activeDate={date} sources={data.sources} divisions={divisions.data ?? []} scopeId={state.scopeId} inServiceColumn={inServiceColumn} onPick={onBusinessDateChange} />
           <p className={styles.hint}>Выберите дату, чтобы открыть расход за этот день. Значения разных дней не суммируются.</p>
         </div>}
-        <div className={styles.hero}><div>{submissions.isError ? <DailyRetry label="Не удалось получить состояние сдачи" action="Повторить состояние сдачи" onRetry={submissions.refetch} /> : submissions.isPending ? <p role="status">Загрузка состояния сдачи…</p> : <><strong>Сдали {submitted} из {data.sources.length}</strong><progress aria-label="Сдача обязательных источников" max={Math.max(data.sources.length, 1)} value={submitted} /><p>{data.sources.length === 0 ? 'Нет обязательных источников с сотрудниками.' : submitted === data.sources.length ? 'Все обязательные источники сдали расход.' : `Ожидаем: ${data.sources.filter(row => !row.submission).map(row => row.division.name).join(', ')}.`}</p></> }</div>
+        <div className={styles.hero}><div>{submissions.isError ? <DailyRetry label="Не удалось получить состояние сдачи" action="Повторить состояние сдачи" onRetry={submissions.refetch} /> : submissions.isPending ? <p role="status">Загрузка состояния сдачи…</p> : <><strong>Сдали {submitted} из {data.sources.length}</strong><progress aria-label="Сдача обязательных источников" max={Math.max(data.sources.length, 1)} value={submitted} /><p>{data.sources.length === 0 ? 'Нет обязательных источников с сотрудниками.' : submitted === data.sources.length ? 'Все обязательные источники сдали расход.' : 'Свод неполный: есть несдавшие подразделения.'}</p></> }</div>
           {/* Главное действие экрана — свод (Plane №1221, [РАСХ-РШ-03]): чип
               состояния и кнопка ступени стоят здесь, в блоке готовности, а не
               под таблицей. «Напомнить» — вторичное действие, ниже него. */}
@@ -326,8 +327,16 @@ export function ResponsibleDailyExpense({ businessDate: selectedDate, onBusiness
             {state.access.hasPermission('daily_report.generate') && <Reminder key={`r:${date}:${state.scopeId}`} date={date} scopeId={state.scopeId} disabled={!submissionReady || submitted === data.sources.length} nameOf={nameOf} />}
           </div>}
         </div>
+        {missing.length > 0 && <details className={styles.readiness}>
+          <summary>Не сдали: {missing.length} · подробности</summary>
+          <ul>{missing.map(row => <li key={row.division.id}>
+            <strong>{row.division.name}</strong>
+            <p>Получатель напоминания: {row.division.notify_recipient_name || 'не назначен'}. Без отдельной отметки: {row.withoutStatus}.</p>
+          </li>)}</ul>
+        </details>}
         {catalog.isError && <DailyRetry label="Не удалось получить справочник статусов" onRetry={catalog.refetch} />}
-        <dl className={styles.stats}><div><dt>По списку</dt><dd data-testid="daily-list-total">{data.total.listTotal}</dd></div><div><dt>В строю</dt><dd data-testid="daily-ready-total">{data.total.inService ?? '—'}</dd></div><div><dt>Всего отклонений</dt><dd>{data.total.deviations ?? '—'}</dd></div><div><dt>Без отдельной отметки · в строю</dt><dd>{data.total.withoutStatus}</dd></div></dl>
+        <dl className={styles.stats}><div><dt>По списку</dt><dd data-testid="daily-list-total">{data.total.listTotal}</dd></div><div><dt>В строю</dt><dd data-testid="daily-ready-total">{data.total.inService ?? '—'}</dd></div><div><dt>Всего отклонений</dt><dd>{data.total.deviations ?? '—'}</dd></div><div><dt>Без отдельной отметки</dt><dd>{data.total.withoutStatus}</dd></div></dl>
+        <p className={styles.hint}>Без отдельной отметки сотрудник считается в строю по правилу расчёта. Это не означает, что подразделение сдало расход.</p>
 
         <div className={styles.list}>
           <header className={styles.listHead}>

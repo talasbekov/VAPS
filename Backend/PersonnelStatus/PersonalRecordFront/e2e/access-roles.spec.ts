@@ -150,11 +150,11 @@ test.describe(LIVE ? 'роли в настройках' : 'роли в наст�
     expect(found.next).toBeNull()
     expect(found.results[0]).toMatchObject({ code: PROBE_ROLE, name: roleName,
       description: roleDescription, is_active: true, permissions: [] })
-    await expect(registry.getByRole('button', { name: PROBE_ROLE, exact: true })).toBeVisible()
+    await expect(registry.getByRole('button', { name: roleName, exact: true })).toBeVisible()
     // ОТСЕВ: без него проба зеленела бы и на поиске, который ничего не делает.
     await expect.poll(async () => registry.getByRole('row').count()).toBeLessThan(everything)
 
-    await registry.getByRole('button', { name: PROBE_ROLE }).click()
+    await registry.getByRole('button', { name: roleName, exact: true }).click()
     await expect(page.getByText('Состав прав')).toBeVisible()
 
     // Выдача: право уезжает из «выдать» в «состав». Локатор строки — по CSS,

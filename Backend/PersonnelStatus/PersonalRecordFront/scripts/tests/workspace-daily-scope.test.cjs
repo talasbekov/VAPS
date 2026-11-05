@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
 }
 const workspace = load('features/forces-workspace/model/workspace.ts');
 const expense = scope_division_id => ({ code: 'DEPARTMENT_EXPENSE_OFFICER', scope_division_id });
-function dailyComponent(roles, globals = [], workspaceRole = 'expense') {
+function dailyComponent(roles, globals = [], workspaceRole = 'expense', allTypes = false) {
   const access = { roles, globalPermissions: new Set(globals), permissions: new Set(['*']), isLoading: false, error: null,
     hasPermission: () => true, hasGlobalPermission: code => globals.includes('*') || globals.includes(code) };
   const { ForcesWorkspace } = load('features/forces-workspace/ui/ForcesWorkspace.tsx', {
@@ -30,7 +30,7 @@ function dailyComponent(roles, globals = [], workspaceRole = 'expense') {
     types.push(node.type); visit(node.props?.children);
   }
   visit(ForcesWorkspace({ role: workspaceRole }));
-  return types.filter(type => ['DailyExpenseBoard', 'ResponsibleDailyExpense'].includes(type));
+  return allTypes ? types : types.filter(type => ['DailyExpenseBoard', 'ResponsibleDailyExpense'].includes(type));
 }
 for (const [label, roles, globals, selected] of [
   ['single department', [expense(2)], [], 'ResponsibleDailyExpense'],
@@ -41,3 +41,9 @@ for (const [label, roles, globals, selected] of [
   ['custom global wildcard plus scoped expense', [expense(2), { code: 'CUSTOM', scope_division_id: null }], ['*'], 'DailyExpenseBoard'],
 ]) test(label, () => assert.deepEqual(dailyComponent(roles, globals), [selected]));
 test('headquarters daily remains the generic board', () => assert.deepEqual(dailyComponent([{ code: 'OPS_STAFF', scope_division_id: null }], ['forces.command'], 'headquarters'), ['DailyExpenseBoard']));
+
+test('daily screen uses the full board readiness once instead of a preceding duplicate queue', () => {
+  const types = dailyComponent([expense(2)], [], 'expense', true);
+  assert.equal(types.filter(type => type === 'ResponsibleDailyExpense').length, 1);
+  assert.equal(types.filter(type => type === 'DailyActionQueue').length, 0);
+});

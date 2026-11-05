@@ -50,6 +50,8 @@ export function ObjectLocationEditor({ objectId, label, location, sectors = [], 
     : covered && point ? [{ id: objectId, kind: "object", label, location: point }] : [];
   const posts = buildPostMapMarkers(sectors, asset.bounds);
   markers.push(...posts);
+  const hasCoordinates = point !== null || sectors.some(sector => sector.posts.some(post => isGeoPoint(post.location)));
+  const showMap = editing || markers.length > 0 || (hasCoordinates && !asset.bounds);
   // Refetches may update the saved point, but never replace a user's fields.
   const focusPoint = useMemo(() => !editing && posts.length === 0 && covered && point ? { key: 0, location: point } : null,
     [editing, posts.length, covered, point?.latitude, point?.longitude]);
@@ -79,8 +81,8 @@ export function ObjectLocationEditor({ objectId, label, location, sectors = [], 
     <CardContent className="space-y-3">
       {point ? <p className="text-sm tabular-nums" aria-label="Сохранённые координаты объекта">Широта: {point.latitude.toFixed(6)} · Долгота: {point.longitude.toFixed(6)}</p>
         : <p className="text-sm text-muted-foreground">Координаты объекта не указаны.</p>}
-      <LocalObjectMap asset={asset} markers={markers} onSelect={() => {}} onPoint={choose}
-        locating={editing && !disabled} focusPoint={focusPoint} />
+      {showMap && <LocalObjectMap asset={asset} markers={markers} onSelect={() => {}} onPoint={choose}
+        locating={editing && !disabled} focusPoint={focusPoint} />}
       <PostLocationSummary sectors={sectors} bounds={asset.bounds} />
       {outside && <p role="status" className="text-sm text-muted-foreground">Точка находится вне покрытия локальной карты Астаны. Корректные координаты можно сохранить вручную; метка на этой карте не отображается.</p>}
       {!editing && canEdit && <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={start}>
@@ -107,7 +109,6 @@ export function ObjectLocationEditor({ objectId, label, location, sectors = [], 
           }}>Очистить точку</Button>
         </div>
       </form>}
-      {!canEdit && <p className="text-xs text-muted-foreground">Карта доступна для просмотра. Для изменения координат требуется право управления объектом и успешная загрузка паспорта.</p>}
       {saved && !editing && <p role="status" className="text-sm text-muted-foreground">Местоположение сохранено.</p>}
     </CardContent>
   </Card>;

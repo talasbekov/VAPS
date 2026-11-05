@@ -116,7 +116,6 @@ export function ForcesWorkspace({ role: defaultRole }: { role: WorkspaceRole }) 
       {access.hasPermission('status.view') && <Link href={workspaceHref(query, 'daily')} aria-current={view === 'daily' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Расход департамента</Link>}
       {access.hasPermission('forces.allocate') && <Link href={workspaceHref(query, 'forces')} aria-current={view === 'forces' ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md border px-3 py-2 aria-[current=page]:bg-muted">Сбор сил на ОМ</Link>}
     </nav>}
-    {role === 'expense' && view === 'daily' && access.hasPermission('status.view') && singleDepartmentDaily && <DailyActionQueue query={query} standalone />}
     {view === 'desk' ? <ResponsibleDesk query={query} />
       : view === 'daily' ? access.hasPermission('status.view') ? singleDepartmentDaily ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {
         const next = new URLSearchParams(query); next.set('businessDate', date)

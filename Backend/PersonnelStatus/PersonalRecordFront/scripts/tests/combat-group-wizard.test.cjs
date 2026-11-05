@@ -23,6 +23,7 @@ function setup({ noGroups = false, fail = false } = {}) {
     '@/hooks/use-combat-duty': { useCombatRead: () => ({ data: candidatesFailed ? undefined : { results: people }, isError: candidatesFailed, refetch: () => { candidatesFailed = false; } }), useCombatRefresh: () => async () => {} },
     '@/lib/ops-api': { opsApiClient: { post: async (...args) => { writes.push(args); if (fail) throw Error('Проверочная ошибка'); } } },
     './CombatLocationFields': { CombatLocationFields: () => null },
+    './CombatFirstSetup': { CombatFirstSetup: 'first-setup' },
   };
   const exports = {};
   const source = fs.readFileSync(path.join(__dirname, '../../features/combat-duty/ui/CombatGroupForm.tsx'), 'utf8');
@@ -47,7 +48,7 @@ test('new assignment starts with group only; own catalog choices and explicit se
   assert.equal(h.button('Далее: люди').props.disabled, true);
   assert.equal(h.nodes().some(n => n.props['aria-label'] === 'Добавить: Асан'), false);
   assert.equal(h.nodes().some(n => n.type === 'option' && n.props.value === 'foreign'), false);
-  const empty = setup({ noGroups: true }); empty.button('Настроить справочники').props.onClick();
+  const empty = setup({ noGroups: true }); empty.nodes().find(n => n.type === 'first-setup').props.onConfigure();
   assert.equal(empty.configured(), true);
 });
 

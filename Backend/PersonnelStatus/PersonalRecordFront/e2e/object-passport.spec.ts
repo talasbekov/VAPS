@@ -1,26 +1,7 @@
 /**
- * Паспорт объекта на ЖИВОМ стенде.
- *
- * Проба отвечает на шесть вопросов:
- *
- * 1. вкладки прототипа переключают содержимое, состояние живёт в адресе и
- *    переживает перезагрузку, а умолчание в адрес НЕ пишется — и все ШЕСТЬ
- *    вкладок прототипа видны, а не только три живых;
- * 2. «Общие данные» и срок проверки сходятся с ответами сервера — причём
- *    свежесть берётся по СВОЕМУ объекту, а не первой строкой конверта;
- * 3. баннер неготовности появляется ровно тогда, когда так сказал сервер, и
- *    молчит на зелёном объекте с соблюдённым сроком;
- * 4. «Чего в этом паспорте нет» печатает причины сервера ЕГО словами, и
- *    больше НЕ называет три вкладки, у которых теперь есть свой макет;
- * 5. три вкладки без бэка («Инфраструктура», «Чек-лист», «Привлекаемые
- *    группы») рисуют макет прототипа и по одной честной строке причины —
- *    ДОСЛОВНО, не подстрокой;
- * 6. набранный черновик на «Посты и секторы» переживает уход через ЛЮБУЮ
- *    вкладку, включая новые макетные, — вкладки прячутся `hidden`, а не
- *    снимаются условным рендером.
- *
- * 🔴 Service worker MSW блокируется на весь файл: без этого запросы идут через
- * воркер, и сверка с живым ответом проверяла бы мок. Разделу ОМ мок не нужен.
+ * Паспорт на изолированном стенде: вкладки, серверные сведения,
+ * сохранность черновика, снимок объекта и права просмотра.
+ * Service worker заблокирован, чтобы сверка использовала API стенда.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { requireFixture } from './fixtures'
@@ -30,30 +11,6 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const SCREEN = '/security-ops/objects'
-
-// Пин дословно совпадает с константами на экране
-// (features/object-passport/ui/PassportPlannedTabs.tsx) — проба ловит
-// расхождение текста, а не только факт наличия какой-то строки.
-const PLANNED_TABS: ReadonlyArray<{ code: string; label: string; honestLine: string }> = [
-  {
-    code: 'infra',
-    label: 'Инфраструктура',
-    honestLine:
-      'Входы и выходы, транспорт, вертикальные коммуникации, инженерные системы, уязвимые места и ремонтные работы объекта в модели не хранятся — ни таблиц, ни ручек нет; появится бэк-этапом.',
-  },
-  {
-    code: 'check',
-    label: 'Чек-лист',
-    honestLine:
-      'Контрольных вопросов, ответов «да / нет / не применимо» и решения по расчёту постов в бэке нет — дата проверки в шапке паспорта считается политикой свежести от последней публикации, а не от пройденного чек-листа; появится бэк-этапом.',
-  },
-  {
-    code: 'groups',
-    label: 'Привлекаемые группы',
-    honestLine:
-      'Кинологическая, инженерно-сапёрная, группа быстрого реагирования и подобные привлекаемые группы у объекта не заведены: такие силы живут в мероприятии, а не в паспорте объекта; появится бэк-этапом.',
-  },
-]
 
 interface Freshness {
   objectId: string
@@ -143,17 +100,8 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     )
     await expect(generalCard(page)).toBeVisible()
 
-    // Прототип держит ШЕСТЬ вкладок паспорта — три живых и три макетных
-    // (см. PLANNED_TABS); все шесть обязаны быть видимыми контролами.
-    await expect(page.getByRole('tab')).toHaveCount(6)
-    for (const label of [
-      'Общие данные',
-      'Инфраструктура',
-      'Посты и секторы',
-      'Чек-лист',
-      'Привлекаемые группы',
-      'История',
-    ]) {
+    await expect(page.getByRole('tab')).toHaveCount(3)
+    for (const label of ['Общие данные', 'Посты и секторы', 'История']) {
       await expect(page.getByRole('tab', { name: label })).toBeVisible()
     }
 
@@ -205,57 +153,18 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     expect(fresh.results.find((row) => row.id === object.id)?.name).toBe(object.name)
   })
 
-  /**
-   * Тот же черновик, но уход теперь идёт через НОВУЮ макетную вкладку —
-   * ровно тот риск, который вносит эта задача: три вкладки добавляются в
-   * общий рендер паспорта, и если хоть одна обёрнута условным рендером
-   * (`&&`) вместо `hidden`, форма «Посты и секторы» может размонтироваться
-   * при проходе через неё. Красная проба на этот ассерт — в отчёте задачи.
-   */
-  test('набранный черновик переживает уход через новую макетную вкладку', async ({ page }) => {
-    // Объект с НЕПУСТЫМ паспортом, а не первый попавшийся (Plane №196):
-    // предмет пробы — набранный черновик в поле сектора, а у объекта без
-    // секторов полей нет вовсе, и проба падала на «поле не найдено», не
-    // добравшись до своего вопроса. Первым в реестре стоит «Отан» —
-    // объект заказчика, паспорт которого никто не заполнял.
+  test('старые ссылки на макеты открывают общие данные и сохраняют возврат в реестр', async ({ page }) => {
     const snapshot = await registry(await apiToken())
-    const object = requireFixture(
-      snapshot.results.find((row) => row.sectors.length > 0),
-      'объект с непустым паспортом (секторы и посты)',
-    )
-
+    const object = requireFixture(snapshot.results[0], 'объект для проверки старых ссылок')
+    const back = 'tab=own&search=объект'
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}/${object.id}?tab=posts`)
-    const sector = page.getByRole('textbox').first()
-    await expect(sector).toBeVisible({ timeout: 15_000 })
-
-    const typed = `черновик через макет ${object.code}`
-    await sector.fill(typed)
-
-    await page.getByRole('tab', { name: 'Инфраструктура' }).click()
-    await expect(page.getByText(PLANNED_TABS[0].honestLine, { exact: true })).toBeVisible()
-    await page.getByRole('tab', { name: 'Посты и секторы' }).click()
-
-    await expect(page.getByRole('textbox').first()).toHaveValue(typed)
-  })
-
-  test('три вкладки без бэка рисуют макет прототипа и честную причину', async ({ page }) => {
-    const snapshot = await registry(await apiToken())
-    const object = snapshot.results[0]
-
-    await signIn(page)
-    await page.goto(`${APP}${SCREEN}/${object.id}`)
-    await expect(generalCard(page)).toBeVisible({ timeout: 15_000 })
-
-    for (const planned of PLANNED_TABS) {
-      await page.getByRole('tab', { name: planned.label }).click()
-      await expect(page.getByRole('tab', { name: planned.label })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      )
-      // Дословно, не подстрокой: «появится» само по себе — слишком общая
-      // подстрока, чтобы доказать, что причина именно ЭТА, а не какая-то.
-      await expect(page.getByText(planned.honestLine, { exact: true })).toBeVisible()
+    for (const tab of ['infra', 'check', 'groups']) {
+      await page.goto(`${APP}${SCREEN}/${object.id}?${new URLSearchParams({ tab, back })}`)
+      await expect(generalCard(page)).toBeVisible()
+      await expect(page.getByRole('tab', { name: 'Общие данные' })).toHaveAttribute('aria-selected', 'true')
+      await page.getByRole('tab', { name: 'Посты и секторы' }).click()
+      expect(new URL(page.url()).searchParams.get('back')).toBe(back)
+      await expect(page.getByRole('link', { name: '← Назад к реестру' })).toHaveAttribute('href', `${SCREEN}?${back}`)
     }
   })
 
@@ -377,37 +286,11 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
     await page.goto(`${APP}${SCREEN}/${notReady!.id}`)
     const banner = page.getByRole('status').first()
     await expect(banner).toBeVisible({ timeout: 15_000 })
-    // Список незаполненных полей НЕ выдумывается: сервер его не отдаёт, и
-    // экран обязан сказать это вслух, а не перечислить поля догадкой.
-    await expect(banner).toContainText('сервер не сообщает')
+    await expect(banner).toContainText('Паспорт:')
 
     await page.goto(`${APP}${SCREEN}/${ready!.id}`)
     await expect(page.getByRole('heading', { name: ready!.name })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByRole('status')).toHaveCount(0)
   })
 
-  test('«чего нет» печатается словами сервера', async ({ page }) => {
-    const snapshot = await registry(await apiToken())
-    expect(
-      snapshot.unavailableKpi.length,
-      'сервер не назвал ни одного недоступного показателя',
-    ).toBeGreaterThan(0)
-
-    await signIn(page)
-    await page.goto(`${APP}${SCREEN}/${snapshot.results[0].id}`)
-    const missing = page
-      .locator('[data-slot="card"]', { hasText: 'Чего в этом паспорте нет' })
-      .first()
-    await expect(missing).toBeVisible({ timeout: 15_000 })
-    for (const item of snapshot.unavailableKpi) {
-      await expect(missing).toContainText(item.label)
-      await expect(missing).toContainText(item.reason)
-    }
-    // Три вкладки получили собственный макет и честную строку — список
-    // «чего нет» их больше не называет, иначе одно и то же отсутствие
-    // читалось бы дважды двумя разными словами.
-    for (const tab of PLANNED_TABS) {
-      await expect(missing).not.toContainText(tab.label)
-    }
-  })
 })

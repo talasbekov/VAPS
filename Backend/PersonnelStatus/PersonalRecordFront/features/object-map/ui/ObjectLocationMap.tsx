@@ -20,6 +20,8 @@ export function ObjectLocationMap({ location, sectors = [], label = "Объек�
   const point = isGeoPoint(location) ? location : null;
   const covered = point !== null && isWithinMapCoverage(point, asset.bounds);
   const posts = buildPostMapMarkers(sectors, asset.bounds);
+  const hasCoordinates = point !== null || sectors.some(sector => sector.posts.some(post => isGeoPoint(post.location)));
+  const showMap = covered || posts.length > 0 || (hasCoordinates && !asset.bounds);
   const focusPoint = useMemo(() => posts.length === 0 && covered && point ? { key: 0, location: point } : null,
     [posts.length, covered, point?.latitude, point?.longitude]);
   return <Card className="mb-4 min-w-0" aria-label={title}>
@@ -28,7 +30,7 @@ export function ObjectLocationMap({ location, sectors = [], label = "Объек�
       {point ? <p className="text-sm tabular-nums" aria-label="Сохранённые координаты объекта">Широта: {point.latitude.toFixed(6)} · Долгота: {point.longitude.toFixed(6)}</p>
         : <p className="text-sm text-muted-foreground">{emptyMessage}</p>}
       {point && asset.bounds && !covered && <p role="status" className="text-sm text-muted-foreground">Точка находится вне покрытия локальной карты Астаны. Сохранённые координаты показаны выше.</p>}
-      {(point || sectors.some(sector => sector.posts.length > 0)) && <LocalObjectMap asset={asset} markers={[...(covered && point ? [{ id: "snapshot", kind: "object" as const, label, location: point }] : []), ...posts]}
+      {showMap && <LocalObjectMap asset={asset} markers={[...(covered && point ? [{ id: "snapshot", kind: "object" as const, label, location: point }] : []), ...posts]}
         onSelect={() => {}} onPoint={() => {}} locating={false} focusPoint={focusPoint} />}
       <PostLocationSummary sectors={sectors} bounds={asset.bounds} />
     </CardContent>
